@@ -241,6 +241,37 @@ One Vercel project for the Admin, connected to this repository.
    staging → preview check → `db push` to production → promote or merge to
    `main`.
 
+## The camera scanner on phones and iPads
+
+The Scan screen (`/scan`) uses the camera, which browsers allow only in a
+secure context: HTTPS, or `localhost` on the same machine. Over plain
+`http://192.168.x.x:3000` the scanner says "The camera only works over a
+secure connection" and only manual entry ("Or type the code on the label")
+works; that is expected, not a bug. Production and Vercel previews are
+HTTPS, so scanning works there once camera access is allowed (iPhone:
+Settings → Safari → Camera → Allow).
+
+To try scanning on an iPad or phone on the LAN:
+
+- Easiest: a Vercel preview on staging (HTTPS end to end).
+- Locally: `npx next dev --experimental-https -H 0.0.0.0` serves the app over
+  HTTPS with a self-signed certificate (accept it on the device, or pass a
+  trusted one with `--experimental-https-key` / `--experimental-https-cert`,
+  e.g. made with mkcert and its CA installed on the device). The browser
+  also refuses plain-http requests from an HTTPS page, so
+  `NEXT_PUBLIC_SUPABASE_URL` must point at the devstack gateway through an
+  HTTPS address the device can reach (a TLS proxy in front of
+  `:54321`), not `http://127.0.0.1:54321`.
+- Android Chrome only: `chrome://flags` → "Insecure origins treated as
+  secure" with the LAN URL lets the camera work over http for testing.
+
+Labels encode `{NEXT_PUBLIC_PUBLIC_SITE_URL}/q/{short_id}` (PLAN D9); the
+scanner accepts that base, the Admin's own `/q/…` URLs and bare short IDs,
+and shows anything else as "Not a BICII label" without opening it. A label
+printed for another environment's public site URL is therefore foreign on
+this one (Phase 8 adds the database QR base to the accepted list,
+`src/lib/qr.ts`).
+
 ## CI
 
 `.github/workflows/ci.yml` runs `check`, `test` and `build` on every pull

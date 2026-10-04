@@ -158,6 +158,8 @@ The pattern every Server Action form follows (`staffAction` +
 - Every nav link (tab bar, rail) marks its icon while its navigation is
   pending (`LinkPending`, `useLinkStatus`), which also covers the sections
   without a `loading.tsx`.
+- `/q/[shortId]` has no `loading.tsx` on purpose: its job is a server
+  `redirect()`, which must happen before anything streams.
 - Record pages (`/customers/[id]`, `/bikes/[id]`) have their own
   `loading.tsx`, so opening a row shows the record skeleton at once. An
   unknown or malformed id renders the not-found screen (with a 200 status,
@@ -174,7 +176,7 @@ The pattern every Server Action form follows (`staffAction` +
 | `TabBar` (client) | Phones (< md): fixed bottom bar, Today · Jobs · **Scan** · Inventory · More. Scan is a raised 64px yellow disc. Pads for `env(safe-area-inset-bottom)`; pages pad their bottom to clear it. |
 | `SideRail` (client) | md and up: sticky labelled rail with the mark, the four primary sections (Scan in yellow) and every More destination. |
 | `AppHeader` | Sticky; mark (phones only), `HeaderSearch`, and `ProfileChip` (initials → `/settings/profile`) streamed in `<Suspense>`. Clears `env(safe-area-inset-top)`. |
-| `HeaderSearch` (client) | The global search field: a `next/form` GET form to `/search?q=` (works before hydration), remembered in recent searches on submit; `/` focuses it from anywhere on a keyboard. On `/search` it steps aside for the page's own field. |
+| `HeaderSearch` (client) | The global search field ("Search customers, bikes, jobs and stock"): a `next/form` GET form to `/search?q=` (works before hydration), remembered in recent searches on submit; a query that is exactly a short ID in any case ("p-000123") opens the record straight away through `/q/{id}` instead (`shortIdJump`, `src/lib/search.ts`; still remembered); `/` focuses it from anywhere on a keyboard. On `/search` it steps aside for the page's own field. |
 | `nav.ts` | Single source for tabs, More items and active-state matching. |
 | `ComingSoon` | `PageHeader` + `EmptyState` naming the phase that builds a section. |
 | `StatusScreen` | 401/403/404/500 pages. |
@@ -223,8 +225,15 @@ upload itself, below).
 | `StockTransferButton` / `StockTransferSheet` (`stock-transfer-sheet.tsx`) | manage_inventory: From (locations holding stock, with counts), To (the other active locations), quantity (or the unit, fixed) and an optional reason; "Move stock". Not `transfer-sheet.tsx`, the bike ownership transfer. Counted products from the product page; a unit from its own page while available or reserved. |
 | `ProductSheet`, `NewProductButton`, `EditProductButton` | manage_inventory. New: Quantity / Unique first (read-only afterwards), name, SKU, brand, category (`Select` of `product` categories), description, sale price, cost (view_costs only; on edit, empty keeps it), reorder point (counted only), Active. Unique adds the first unit on the same sheet (`UnitFields`: location, serial, "Condition (shown publicly when published)", unit sale price, unit cost with view_costs, and an optional "This is a complete bike" `SearchPicker` over shop bikes with no owner and no unit, saying customer bikes must be transferred first); both the product and the unit carry their own `newId()`, and a refused unit leaves the product, whose page offers Add unit. Creating opens the product. |
 | `AddUnitButton` / `AddUnitSheet`, `EditUnitButton`, `WriteOffUnitControl` (`unit-sheet.tsx`) | Add unit: `UnitFields` with the unit id as key. Edit details (manage_inventory): serial, condition (public once published), own price, cost (view_costs; empty keeps), internal notes. Write off (adjust_stock, units in stock): `ReasonConfirm` whose request id is made when the confirmation opens. |
-| `AddPartButton` / `AddPartSheet` | "Add part" beside Add service and Add manual line, locked the same way (D15). A `SearchPicker` over saleable stock (archived, inactive, consigned and unavailable units left out, D27; a unique product found by name offers its available units), each option with name, P-/U- number, SKU, price and a `StockBadge`. Then a counted part: quantity with steppers and "Take from" segments with their counts (default location chosen); a unit: quantity 1 at its own location. The selling price, an optional "Price each" for anyone (D14; required when the part has none, D24), a cost and yield preview only with view_costs, a line total. More than the location holds shows the non-blocking D23 warning ("Only 1 at Shop floor. Adding 2 takes the count below zero; …"). Success toast "Added 2 × Road inner tube. 37 left at Shop floor." With no active location, the sheet (like Adjust stock and the unique part of New product) shows "No active stock location. Ask someone with inventory access to add one in Settings." |
+| `AddPartButton` / `AddPartSheet` | "Add part" beside Add service and Add manual line, locked the same way (D15). A `SearchPicker` over saleable stock (archived, inactive, consigned and unavailable units left out, D27; a unique product found by name offers its available units), each option with name, P-/U- number, SKU, price and a `StockBadge`. Then a counted part: quantity with steppers and "Take from" segments with their counts (default location chosen); a unit: quantity 1 at its own location. The selling price, an optional "Price each" for anyone (D14; required when the part has none, D24), a cost and yield preview only with view_costs, a line total. More than the location holds shows the non-blocking D23 warning ("Only 1 at Shop floor. Adding 2 takes the count below zero; …"). Success toast "Added 2 × Road inner tube. 37 left at Shop floor." With no active location, the sheet (like Adjust stock, the unique part of New product and the product page's Stock card) shows `NoActiveLocation`: "No active stock location. Ask someone with inventory access to add one in Settings → Locations", the last words linking to `/settings/locations`. |
 | `MovementList`, `HistoryList` (server, `movement-list.tsx`) | Movements newest first: signed quantity first (tabular, `text-done-deep` in, `text-danger-deep` out, a real minus sign), the label (`movementLabel`: "Used on job", "Returned from job", "Adjustment", "Damaged", "Transfer in/out", "Received"), the J- link and `#id`, the product and unit (linked; left out on the product's own page), location · actor · time (Singapore), the reason quoted, "Reverses #n" / "Reversed by #m" anchors to `#movement-{id}` (to the movements list when the other row is not on the page), and the unit cost only when the DTO carries it. `HistoryList` renders product and unit events through `describeProductEvent` / `describeUnitEvent` (`src/lib/inventory-history.ts`): "Cost changed" never shows a value; a unit's job-driven status reads "Put on job J-…", "Sold when J-… was completed", "Back on hold: J-… was reopened". |
+| `PublicationControls` (`publication-card.tsx`) | The product page's Publication card (D26): status pill and what it means; the manual moves as buttons from `publicationActions` (over `manualPublicationTargets`): Make internal, Publish, Unpublish, Archive listing, Restore; never Sold; a sold product offers only Archive listing with "Sold items return to public automatically if the sale is reversed."; no Publish for a unique product without an available unit. Buttons are keyed by status and disabled for 400 ms after each change (`useArmedAfter`). While not public: "Publishing needs" with a tick or cross per requirement (`publicationChecklist`: a name, a sale price, a public photo, and for unique products an available unit, computed from the loaded data; the database stays the authority), Publish disabled and described by "Still needed: …". Refusals (`publication_requires_*`, `publication_sold_by_sale`) show their mapped message inline and as a toast. Then the QR label URL (`CopyText`) and `PublicPreviewPanel`. Moves only for manage_inventory; everyone sees the status, URL and preview. |
+| `PublicPreviewPanel` (server or client, `public-preview.tsx`) | "What the public sees": the record's `reporting.public_items` row as staff read it (name, price, availability, condition for a unit, the public photo count), or "Not public. Anonymous scans show nothing." Read-only, also on the unit page. |
+| `CopyText` | A value as selectable monospace text with Copy (Clipboard API; without it, e.g. plain http on a LAN iPad, it selects the text and says to copy it). The QR URL comes from the one server helper `src/lib/qr.ts` (`qrUrl`), never from an env read in a page. |
+| `SplitToUniqueButton` / `SplitToUniqueSheet` | "Split off as unique item" on a counted product's Stock card, only for staff with adjust_stock and manage_inventory (D28): name (the product's), Take from (active locations holding stock, with counts), serial, "Condition (shown publicly when published)", sale price (the product's to start with) and a required reason (480 characters: the ledger adds "Split to U-…: "). The new product id and unit id are `newId()`s made when the sheet opens; success toasts "Split off as U-…" and opens the new unit. |
+| `NewLocationButton`, `EditLocationButton`, `LocationActiveSwitch` (`location-controls.tsx`) | Settings → Locations (manage_inventory): a sheet with name, kind (`Select`: Shop floor, Workshop, Storage, Off-site) and sort order, the new location's `newId()` as its key; the Active `Switch` applies at once with `useOptimistic` and a toast, and a location still holding stock snaps back with the `location_has_stock` error toast. |
+| `CameraPermission` (`camera-permission.tsx`) | The camera's state when there is no picture: Phase 0's messages (checking, allow, allowed, blocked with the iPhone Settings path, unsupported) plus "needs a secure connection" and "would not start", with "Allow camera" / "Try again" where pressing helps. `cameraErrorState` maps getUserMedia errors onto them. |
+| `Scanner` (`scanner.tsx`) | The Scan screen; see "Scanning" below. |
 
 ### Inventory
 
@@ -266,6 +275,76 @@ upload itself, below).
   hold for this job. To return it to stock, void its line after
   reopening." (D25); the timeline reads "Used 2 × … (P-…) from Shop floor"
   and "Returned 2 × … to Shop floor".
+- **Publication card** (`PublicationControls`, after Prices and Units on
+  the product page): status, the manual moves, the requirement checklist
+  with Publish disabled until all are met, the QR label URL with Copy and
+  "What the public sees". The unit page has a read-only "Public listing"
+  card: its QR URL, its own `public_items` row and a link to change it on
+  the product.
+- **Split off as unique item** sits with Adjust stock and Transfer on a
+  counted product's Stock card (both permissions); the new item is a draft
+  at the same location and keeps the source's cost (D28).
+- **Locations settings** (`/settings/locations`, listed in Settings): the
+  services-settings pattern: readable by every staff member, with its own
+  `loading.tsx` (no permission gate below it; `/settings` itself keeps
+  none), edit controls only with manage_inventory. Rows show kind and sort
+  order, a "Default" pill on the default location (active, lowest sort
+  order, then name: `listLocations`' `defaultLocationId`) and "Inactive";
+  Add and Edit open a sheet, Active is a switch applied at once. Nothing is
+  deleted; a location holding stock cannot be switched off.
+- **Bike stock card**: a bike that is a unique unit shows a "Stock" card on
+  its page, "In stock as U-000001 · Available" (`unitStatusLabel`; "Stock
+  unit U-… · Sold" once it has left stock) linking to the unit, with the
+  note that it cannot go to a customer or be archived while in stock. The
+  transfer sheet and `ArchiveControl` show the `bike_in_stock` message when
+  that is refused.
+
+### Scanning
+
+- **Scan screen** (`/scan`, `Scanner`): mobile-first; the square
+  viewfinder (a yellow-bordered square over a dimmed `<video playsInline
+  muted autoPlay>`) fills the width on phones and is capped at `max-w-md`
+  on iPad; "Hold the label inside the square."; a Torch on/off toggle when
+  `track.getCapabilities().torch`; under it, always, "Or type the code on
+  the label" (`autoCapitalize="characters"`, autocomplete off,
+  `enterKeyHint="go"`) with Open, which goes to `/q/{code}` when it parses
+  (a short ID in any case, or a pasted BICII label URL) and otherwise says
+  "Enter a code like P-000123". It works with no camera at all. The page
+  pads its bottom like every page, so the raised Scan tab and toasts never
+  cover the field.
+- **Decoder choice**: `BarcodeDetector` when it exists and
+  `getSupportedFormats()` includes `qr_code`, run at most ~6 times a second
+  on `requestVideoFrameCallback` (else a throttled `requestAnimationFrame`);
+  otherwise `@zxing/browser`'s `BrowserQRCodeReader.decodeFromVideoElement`,
+  imported dynamically only then, so ZXing (~470 KB) is never in the first
+  load.
+- **Camera lifecycle**: `getUserMedia({ video: { facingMode: "environment" } })`
+  starts at once when access is already granted, otherwise after "Allow
+  camera". Every track stops on unmount, on `visibilitychange` to hidden
+  and on `pagehide`, and before navigating away on a hit; the camera
+  restarts when the page is visible again. A session counter makes a late
+  async step of an old start give up. Errors map onto `CameraPermission`'s
+  messages (blocked, unsupported, needs HTTPS, would not start).
+- **What a code means** (`interpretScan`, `src/lib/scan.ts`): a BICII label
+  is `{base}/q/{shortId}` for an accepted public base (`scanBases()` in
+  `src/lib/qr.ts`: today `NEXT_PUBLIC_PUBLIC_SITE_URL`; Phase 8 adds the
+  database QR base there and nowhere else), a `/q/{shortId}` URL on the
+  Admin's own origin, or a bare short ID. A hit vibrates (30 ms), stops the
+  camera and pushes `/q/{shortId}`. Anything else shows "Not a BICII
+  label" with the text cut to 60 characters, keeps scanning and ignores the
+  same text for 2 s. A foreign code is **never** opened, followed, fetched
+  or rendered as a link, whatever its scheme.
+- **The /q resolver** (`/q/[shortId]`, the only Admin /q route):
+  `requireStaff()`, then `resolveShortId` (`src/lib/domain/scan.ts`: the
+  prefix picks the table, RLS-scoped, archived records included) and
+  `redirect()` to the page from `hrefForRecord` (`src/lib/ids.ts`, also used
+  by search hits). An unknown code renders the not-found content in the
+  shell: "No record with P-999999", Scan again and Search. It has no
+  `loading.tsx`: a loading boundary would commit a 200 before the redirect
+  (see "Loading"). Later phases extend `resolveShortId` (C- and S- in Phase
+  6, PO- in Phase 7) instead of adding routes.
+- **Header short-ID jump**: see `HeaderSearch`; the same /q route answers
+  it, so a typed B-/J-/P-/U- number and a scanned label land the same way.
 
 ### Workshop
 
@@ -348,8 +427,11 @@ upload itself, below).
 - `/search` groups hits by kind (Customers, Bikes, Jobs, Products,
   Units), the group with the best hit first: an exact J- number
   ("j-000004", "J000004") puts Jobs first, an exact P- number or SKU puts
-  Products first. The search fields are labelled "Search customers, bikes and
-  jobs". Archived search returns no jobs.
+  Products first. The search fields are labelled "Search customers, bikes,
+  jobs and stock". Product hits show the RPC's subtitle ("SKU · brand · 34
+  in stock"), unit hits their status first ("Available · Shop floor ·
+  S/N …"). An exact short ID typed in the header skips the results and
+  opens the record (`/q`). Archived search returns no jobs.
   Recent searches are kept per device in `localStorage`
   (`src/lib/recent-searches.ts`: every access in try/catch, at most eight,
   newest first) when a query is submitted or a result opened, and shown

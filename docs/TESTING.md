@@ -232,6 +232,21 @@ same PR.
   Shop floor", "Returned … to Shop floor", no cost). No product or unit
   subtitle is rebuilt in TypeScript, so `display-parity.test.ts` is
   unchanged.
+- Phase 4 Step 4: `hrefForRecord` (`ids.test.ts`: B/J/P/U to their pages,
+  C, PO and S null until Phases 6 and 7, every kind covered);
+  `interpretScan` (`scan.test.ts`: bare IDs in any case, the public QR URL
+  of each accepted base, the Admin's own /q URL, other hosts and paths,
+  `http` against an `https` base, javascript:, data:, file: and Wi-Fi
+  codes, empty input, all foreign; `truncateScan`); the publication card's
+  buttons (`inventory.test.ts`: `publicationActions` names every manual
+  move, a sold product offers only Archive listing and nothing offers
+  Sold, a unique product without an available unit has no Publish;
+  `publicationChecklist`, `missingRequirements`,
+  `publicAvailabilityLabel`); the header jump (`search.test.ts`:
+  `shortIdJump` opens an exact short ID in any case through /q, anything
+  else goes to the results); the camera states (`camera.test.ts`:
+  getUserMedia errors to denied / insecure / unsupported / failed, Phase
+  0's messages kept).
 
 ### Database (SPEC §27.2 and §23)
 
@@ -403,6 +418,43 @@ Shop floor count minus 1 (relative, the database is shared), totals
 $279.00 / cost $3.80 / yield $275.20 / Cult Commons $82.56 / after $192.64,
 and the timeline shows the line and its `stock_consumed` entry.
 
+Phase 4 Step 4 (`inventory-publish.spec.ts` and `scan.spec.ts`, phone and
+iPad). Publication: the admin creates a tagged counted product with stock
+and a price and makes it internal; Publish is disabled with "Still needed:
+A public photo." and the checklist marks the photo missing and the price
+done, the preview reads "Not public. Anonymous scans show nothing." and
+the QR URL ends in `/q/P-…`; a photo through "Choose photos" made Public in
+the viewer (which offers no Customer level on stock) enables Publish; once
+published the pill reads Public and the preview shows the name, $25.00,
+Available and "1 public photo"; Unpublish brings "Not public" back.
+Locations: a tagged location with sort order 900 is added from
+/settings/locations (Shop floor keeps the "Default" pill), is offered in
+the Adjust stock sheet, and once its switch is off it reads Inactive and is
+no longer offered. Split: one of a tagged product's 5 is split off with a
+reason; the new unit page shows its U- number and Available, and the
+source reads 4. Bike link: B-000011's page reads "In stock as U-000001 ·
+Available", archiving it toasts the `bike_in_stock` message, and the link
+opens the unit. Scanning: typing P-000001 opens the product, `b-000001`
+the bike, "hello" gives "Enter a code like P-000123", P-999999 shows "No
+record with P-999999" whose "Scan again" returns to /scan, and
+`/q/U-000001` (also lower case) redirects to the unit. The camera is
+stubbed in an init script with the permission granted:
+`navigator.mediaDevices.getUserMedia` returns `canvas.captureStream(10)` of
+a canvas repainted every 100 ms in alternating colours (so the video
+really plays and `requestVideoFrameCallback` fires), and
+`window.BarcodeDetector` is a fake class whose `getSupportedFormats`
+resolves `['qr_code']` and whose `detect` resolves the chosen
+`rawValue`; `navigator.permissions.query` reports camera granted. With
+`${E2E_PUBLIC_SITE_URL}/q/U-000001` (`tests/fixtures/public-site.ts`, the
+same value `playwright.config.mts` gives the web server) scanning lands on
+the unit; with `https://example.com/phish` the page shows "Not a BICII
+label" with the text, keeps detecting, stays on /scan and links nothing on
+example.com, and typing a code still works. The header search finds
+"shi-l05a-rf" as P-000001 with "N in stock", and `p-000001` + Enter opens
+the product directly (`customers-bikes.spec.ts` and
+`workshop-board.spec.ts` now expect the same jump for a B- or J- number,
+and still check the results page for an exact J- number).
+
 Phase 3 step 4 (`workshop-board.spec.ts`, read-only on the seeded jobs so
 the phone and iPad runs share one database): as mechanic2 (Nur Aisyah, no
 view_costs) My jobs lists J-000002, J-000003 (as additional), J-000005 and
@@ -416,7 +468,8 @@ number box finds J-000004. On J-000002 she sees Total $300.00 and no
 but no cost, no New service, no Edit and no Cult Commons card. mechanic1
 sees Cult Commons $52.80 and BICII yield after Cult Commons $123.20 on
 J-000002 and the 30% rate (without Schedule). The admin's header search
-for "j-000004" lists Jobs first and opens J-000004, which Chloe's Giant's
+for "j-000004" opens J-000004 directly (Phase 4's short-ID jump), /search
+for it lists Jobs first and opens J-000004, which Chloe's Giant's
 Service history also lists. On a tagged service and job: the service
 created in settings is offered in the job's Add service; the lead is
 reassigned from Marcus Tan to Nur Aisyah in the Assign sheet (which says

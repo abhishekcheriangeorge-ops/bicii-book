@@ -1084,9 +1084,23 @@ writes nothing.
     product's, then its linked bike's, each oldest first, the bike's
     limited to those created before `coalesce(unit.sold_at, 'infinity')`,
     so a photo taken after the bike passed to its buyer never appears.
-- The Admin scanner recognises the same URL (or a bare short ID) and routes to
-  the staff detail page: `/products/[id]`, `/units/[id]`, `/bikes/[id]`,
-  `/jobs/[id]`.
+- The Admin also answers `/q/{shortId}` for staff (Phase 4,
+  `src/app/(staff)/q/[shortId]/page.tsx`), its only /q route: after
+  `requireStaff()` it resolves the ID with `resolveShortId`
+  (`src/lib/domain/scan.ts`; the prefix picks the table, read through RLS,
+  archived records included) and redirects to the staff page
+  (`hrefForRecord`: B → `/bikes/[id]`, J → `/jobs/[id]` by `job_number`,
+  P → `/products/[id]`, U → `/units/[id]`); an unknown ID shows "No record
+  with P-999999" with Scan again and Search. C- and S- (Phase 6) and PO-
+  (Phase 7) return nothing until their phases extend `resolveShortId`;
+  Phase 11 verifies every prefix resolves. Later phases extend that
+  function, never add routes.
+- The Admin scanner (`interpretScan`, `src/lib/scan.ts`) recognises the QR
+  URL on every accepted public base (`scanBases()` in `src/lib/qr.ts`:
+  today the environment's `NEXT_PUBLIC_PUBLIC_SITE_URL`, from Phase 8 also
+  the database QR base), a `/q/{shortId}` URL on the Admin's own origin,
+  or a bare short ID in any case, and opens `/q/{shortId}`. Anything else
+  is shown as "Not a BICII label" and never followed.
 - Publication state machine on `products.publication_status` (D26,
   `private.publication_transition_allowed`, mirrored in
   `src/lib/inventory.ts`): draft → internal_only, archived; internal_only →

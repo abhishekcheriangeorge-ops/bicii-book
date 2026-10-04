@@ -350,6 +350,59 @@ bike-page unit card, the scanner and /q, and the header short-ID jump.
 Transfers and adjustments of unique products happen per unit (unit page);
 the product page offers them for counted products only, as the RPCs do.
 
+Shipped (app, Step 4): the publication card on `/products/[id]`
+(`PublicationControls`: status, `publicationActions` over
+`manualPublicationTargets`, the D26 checklist with Publish disabled and
+naming what is missing, the QR URL with Copy, and `PublicPreviewPanel`,
+the `reporting.public_items` row or "Not public. Anonymous scans show
+nothing."; read-only preview and QR URL on `/units/[id]`); actions
+`setPublication` and `splitToUnique` (manage_inventory, plus adjust_stock
+in the handler); `SplitToUniqueSheet` (D28) on counted products for staff
+with both permissions; `/settings/locations` (list for all staff with the
+"Default" pill, `LocationSheet` and the `LocationActiveSwitch` for
+manage_inventory; `location_has_stock` snaps the switch back) and the "No
+active stock location" empty states linking to it; the bike page's
+"In stock as U-… · Available" card (`getBikeStockUnit`); the scanner
+(`src/components/domain/scanner.tsx`: BarcodeDetector or a lazily imported
+`@zxing/browser`, `interpretScan` in `src/lib/scan.ts`, never following a
+foreign code), `resolveShortId` (`src/lib/domain/scan.ts`) behind the only
+Admin /q route `/q/[shortId]`, `hrefForRecord` in `src/lib/ids.ts`, and the
+header short-ID jump (`shortIdJump`). The QR base comes from one server
+helper, `src/lib/qr.ts` (`getQrBase`, `qrUrl`, `scanBases`), which Phase 8
+points at the database QR base.
+
+Shipped (M1.4, Phase 4 as a whole): migrations
+`20261004001800_inventory`, `…1900_inventory_jobs`,
+`…2000_inventory_reporting`, `…2100_inventory_publication` and
+`…2200_inventory_search`; RPCs `adjust_stock`, `transfer_stock`,
+`create_unique_unit`, `write_off_unit`, `add_inventory_line`, the
+`void_line` stock reversal, `set_publication_status`,
+`split_unit_from_stock` and the `product` and `inventory_unit` kinds of
+`staff_search`; trigger `work_orders_sell_held_units` (D25); views
+`public.selling_prices`, `product_costs`, `inventory_unit_costs`,
+`inventory_movement_costs`, `reporting.stock_levels`, `product_stock`,
+`low_stock` and the anonymous `reporting.public_items`. Routes:
+`/inventory`, `/inventory/movements`, `/products/[id]`, `/units/[id]`,
+`/settings/locations`, `/scan` and `/q/[shortId]`, plus Add part on
+`/jobs/[id]`, the stock card on `/bikes/[id]` and Products and Units in
+`/search`. Components: `StockBadge`, `AddPartSheet`, `AdjustStockSheet`,
+`StockTransferSheet`, `ProductSheet`, `UnitSheet` / `WriteOffUnitControl`,
+`MovementList` / `HistoryList`, `PublicationControls`,
+`PublicPreviewPanel`, `CopyText`, `SplitToUniqueSheet`, the location
+controls, `NoActiveLocation`, `CameraPermission` and `Scanner`. Decisions
+D23-D28 (§6; D6 now ends "Refined by SOLD-AT-COMPLETION (D25)"). Tests:
+the database files `inventory-ledger`, `inventory-catalog`,
+`inventory-publication`, `inventory-split` and the Phase 4 cases of
+`staff-search`, `work-order-lines`, `attachments` and `meta`; unit tests
+for `inventory.ts`, `inventory-forms.ts`, `ids.ts` (`hrefForRecord`),
+`scan.ts`, `search.ts` (`shortIdJump`) and the camera states; E2E
+`inventory.spec.ts` (journey 3 without labels, one job per unit, the
+permission boundary), `inventory-publish.spec.ts` (publication,
+locations, split, bike link), `scan.spec.ts` (manual entry, /q, the camera
+stub, foreign codes, the header jump) and journey 1 complete with its part
+line. New dependency: `@zxing/browser` with its `@zxing/library` peer,
+loaded only by the scanner's fallback.
+
 ### Phase 5 — Financial engine
 
 Mostly landed inside Phases 3–4 by design (generated columns, rate table).
@@ -392,6 +445,11 @@ cost update per decision D5; E2E journey 3 receiving step.
   adapters, `PrintJob` lifecycle.
 - UI: Print Label flow (quantity, profile), bulk N identical labels, unique
   label with identity lines, print job history.
+- The QR base: replace the body of `getQrBase()` in `src/lib/qr.ts` with
+  the database QR base (`shop_settings.public_site_url`, as `label_preview`
+  reads it) and add it to `scanBases()`, keeping the environment's base so
+  earlier labels still scan. Every QR shown (publication card, unit page)
+  and every scan goes through that file.
 
 Tests: QR payload equals public URL; N labels same payload; unique label
 distinct; E2E journey 3 labels step.
@@ -514,7 +572,7 @@ build proceeds with; confirm or change before the phase that uses it.
 | D6 | Unique unit added to a job as a part | Unit becomes `held_for_customer` on add, `sold` when the job is completed; voiding before completion returns it to `available`. Interacts with D15 (reopen): the unit follows `completed_at`, with no stock movement — whenever `completed_at` goes from non-null to null (a reopen) every unit on a non-voided inventory line of the job goes sold -> held_for_customer, and whenever it goes from null to non-null (including re-completion after a reopen) they go held_for_customer -> sold. Refined by SOLD-AT-COMPLETION (D25). | Phase 4 |
 | D7 | Refund of an online sale | Financial `sale_refunds` row only; stock and unit status untouched until staff runs `restock_unit`. | Phase 10 |
 | D8 | Customer-visible timeline | Customers (later, public site) see status changes, completion, collection and `customer`/`public` photos; never notes, lines' costs, or assignments. | Phase 11 |
-| D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. | Phase 1 |
+| D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. The Admin also answers `/q/{short_id}` for staff and redirects to the record (`resolveShortId`, Phase 4); it is the only Admin /q route. | Phase 1 |
 | D10 | Staff login method | Supabase email + password for staff; invitations by admin from Staff settings. No magic links in MVP. | Phase 0 |
 | D11 | What a `manage_staff` holder who is not an admin may change (SPEC §4.2 asks for granular permissions but does not say who may grant them) | Delegation ceiling: they may grant or revoke only permissions they hold themselves, never `manage_staff` (admins only), never on their own row and never on an admin's row; they may invite (role staff only) and deactivate/reactivate non-admins. Admins are unrestricted. Residual risk to confirm: an inviter sees the new login's temporary password, so a manager could keep a second login at their own permission level; closing that fully needs invite links or a forced password change on first sign-in (not in MVP). | Phase 0 |
 | D12 | Who sees a bike's customer-visible photos after it changes hands (SPEC §5 "Ownership changes preserve history" does not say what a new or previous owner sees) | The current owner sees every `customer`/`public` photo of the bike, including ones taken before they owned it; a previous owner stops seeing the bike and its photos once it is transferred (`my_bikes`, `my_bike_attachments` read current ownership). Staff history (`bike_ownership_events`) keeps every owner. Alternative to confirm before Phase 11: limit each owner to photos taken during their ownership. | Phase 1 (enforced), Phase 11 (shown) |
