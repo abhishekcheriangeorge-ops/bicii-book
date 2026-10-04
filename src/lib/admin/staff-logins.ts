@@ -1,8 +1,8 @@
 import "server-only";
 
-import { randomInt } from "node:crypto";
-
 import { createServiceClient } from "@/lib/supabase/service";
+
+import { temporaryPassword } from "./temporary-password";
 
 /**
  * Supabase Auth admin operations for Staff settings. Service role: callers
@@ -11,20 +11,20 @@ import { createServiceClient } from "@/lib/supabase/service";
  * checks authorization again in the database.
  */
 
-// No look-alikes (0/O, 1/l/I) so it can be read out loud or copied by hand.
-const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-
-/** 20 characters from a 54-symbol alphabet: about 115 bits. */
-export function temporaryPassword(length = 20): string {
-  let out = "";
-  for (let i = 0; i < length; i++) out += ALPHABET[randomInt(ALPHABET.length)];
-  return out.replace(/(.{5})(?!$)/g, "$1-");
-}
-
 export class LoginExistsError extends Error {
   constructor() {
     super("An account with that email already exists.");
     this.name = "LoginExistsError";
+  }
+}
+
+/** Supabase Auth refused the generated password (the project's password rules). */
+export class WeakPasswordError extends Error {
+  constructor(readonly reasons: string[]) {
+    super(
+      `Supabase Auth rejected the temporary password: ${reasons.join(", ") || "weak_password"}`,
+    );
+    this.name = "WeakPasswordError";
   }
 }
 
@@ -46,7 +46,15 @@ export async function createStaffLogin(input: {
     user_metadata: { display_name: input.displayName },
   });
   if (error || !data.user) {
-    if (error?.code === "email_exists" || error?.status === 422) throw new LoginExistsError();
+    // Match on the code: Auth answers 422 for several unrelated problems
+    // (weak_password among them), so the status alone means nothing.
+    if (error?.code === "email_exists" || error?.code === "user_already_exists") {
+      throw new LoginExistsError();
+    }
+    if (error?.code === "weak_password") {
+      const reasons = (error as { reasons?: unknown }).reasons;
+      throw new WeakPasswordError(Array.isArray(reasons) ? reasons.map(String) : []);
+    }
     throw new Error(
       `auth.admin.createUser failed: ${error?.code ?? "no user"} ${error?.message ?? ""}`,
     );

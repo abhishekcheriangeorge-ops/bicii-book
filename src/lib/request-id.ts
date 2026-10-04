@@ -6,6 +6,13 @@
  */
 export const REQUEST_ID_HEADER = "x-request-id";
 
+/**
+ * The same ID on requests from the server to Supabase. A header name of our
+ * own, so no gateway in between rewrites it; PostgREST hands it to SQL in
+ * `request.headers` (private.current_correlation_id()).
+ */
+export const CORRELATION_HEADER = "x-correlation-id";
+
 const SAFE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 
 export function requestIdFrom(incoming: string | null | undefined): string {

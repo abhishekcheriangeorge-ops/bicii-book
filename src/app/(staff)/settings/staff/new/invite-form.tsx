@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -8,14 +8,40 @@ import { CheckIcon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
 
 import { inviteStaff, type InviteResult } from "../actions";
 
 type State = ActionResult<InviteResult> | null;
 
+type CopyState = "idle" | "copied" | "failed";
+
 function TemporaryPassword({ result, onAnother }: { result: InviteResult; onAnother: () => void }) {
-  const [copied, setCopied] = useState(false);
+  const [copy, setCopy] = useState<CopyState>("idle");
+  const passwordRef = useRef<HTMLParagraphElement>(null);
+
+  // "Copied" only after the clipboard write resolved. In an insecure
+  // context (plain-http LAN URL) navigator.clipboard does not exist, and
+  // the write can be refused; then say so and select the text for a manual
+  // copy, because this password is never shown again.
+  const copyPassword = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(result.temporaryPassword);
+      setCopy("copied");
+    } catch {
+      setCopy("failed");
+      const node = passwordRef.current;
+      const selection = window.getSelection();
+      if (node && selection) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+  };
   return (
     <div className="flex flex-col gap-4">
       <p role="status" className="flex items-center gap-2 font-medium">
@@ -25,6 +51,7 @@ function TemporaryPassword({ result, onAnother }: { result: InviteResult; onAnot
       <div className="flex flex-col gap-2 rounded-xl bg-waiting-soft p-4">
         <p className="eyebrow text-waiting-deep">Temporary password: shown once</p>
         <p
+          ref={passwordRef}
           className="font-mono text-xl font-bold tracking-wide break-all select-all"
           data-testid="temporary-password"
         >
@@ -35,15 +62,14 @@ function TemporaryPassword({ result, onAnother }: { result: InviteResult; onAnot
           it after signing in.
         </p>
       </div>
+      <p role="status" className="text-sm font-medium text-danger-deep empty:hidden">
+        {copy === "failed"
+          ? "Couldn't copy here. The password is selected: copy it by hand before leaving this page."
+          : ""}
+      </p>
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={async () => {
-            await navigator.clipboard?.writeText(result.temporaryPassword);
-            setCopied(true);
-          }}
-        >
-          {copied ? "Copied" : "Copy password"}
+        <Button variant="outline" onClick={copyPassword}>
+          {copy === "copied" ? "Copied" : "Copy password"}
         </Button>
         <Button variant="ghost" onClick={onAnother}>
           Invite another
@@ -59,19 +85,23 @@ function TemporaryPassword({ result, onAnother }: { result: InviteResult; onAnot
 function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () => void }) {
   const [state, formAction] = useActionState<State, FormData>(inviteStaff, null);
   const [role, setRole] = useState<"staff" | "admin">("staff");
+  const formRef = useFocusFirstInvalid(state);
 
   if (state?.ok) return <TemporaryPassword result={state.data} onAnother={onDone} />;
 
   const errors = state && !state.ok ? state.fieldErrors : undefined;
+  // React resets the fields after every submission; render what was typed
+  // as their defaults again (DESIGN.md "Forms").
+  const values = state && !state.ok ? state.values : undefined;
   return (
-    <form action={formAction} className="flex flex-col gap-5" noValidate>
+    <form ref={formRef} action={formAction} className="flex flex-col gap-5" noValidate>
       {state && !state.ok ? (
         <p role="alert" className="text-sm font-medium text-danger-deep">
           {state.error}
         </p>
       ) : null}
       <Field label="Name" error={errors?.displayName?.[0]} required>
-        <Input name="displayName" autoComplete="off" />
+        <Input name="displayName" autoComplete="off" defaultValue={values?.displayName ?? ""} />
       </Field>
       <Field label="Email" hint="They sign in with this" error={errors?.email?.[0]} required>
         <Input
@@ -81,6 +111,7 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
           autoCapitalize="none"
           spellCheck={false}
           autoComplete="off"
+          defaultValue={values?.email ?? ""}
         />
       </Field>
       {canInviteAdmin ? (

@@ -4,10 +4,17 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  PERMISSIONS,
+  accessChangeBlocker,
+  permissionChangeBlocker,
+  type PermissionKey,
+} from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
-import { getStaffMember } from "@/lib/domain/staff";
+import { getStaffMember, listStaffHistory } from "@/lib/domain/staff";
 import { createClient } from "@/lib/supabase/server";
 
+import { StaffHistory } from "./staff-history";
 import { AccessControl, PermissionSwitches } from "./staff-controls";
 
 export const metadata: Metadata = { title: "Staff member" };
@@ -18,13 +25,17 @@ export default async function StaffMemberPage({ params }: PageProps<"/settings/s
   const me = await requireStaff("manage_staff");
   const { staffId } = await params;
   if (!UUID.test(staffId)) notFound();
-  const member = await getStaffMember(await createClient(), staffId);
+  const supabase = await createClient();
+  const member = await getStaffMember(supabase, staffId);
   if (!member) notFound();
+  const history = await listStaffHistory(supabase, staffId);
 
-  const isSelf = member.staffId === me.staffId;
   const isAdmin = member.role === "admin";
-  // Only an admin changes an admin's status (set_staff_active enforces it too).
-  const canChangeAccess = !isSelf && (!isAdmin || me.role === "admin");
+  // The same rules the RPCs enforce (PLAN D11): show why a control is off.
+  const blockers = Object.fromEntries(
+    PERMISSIONS.map((p) => [p, permissionChangeBlocker(me, member, p)]),
+  ) as Record<PermissionKey, string | null>;
+  const accessBlocker = accessChangeBlocker(me, member);
 
   return (
     <>
@@ -47,11 +58,20 @@ export default async function StaffMemberPage({ params }: PageProps<"/settings/s
         {isAdmin ? (
           <p className="text-dust-700">Admins have every permission; there is nothing to grant.</p>
         ) : (
-          <PermissionSwitches
-            staffId={member.staffId}
-            granted={member.grantedPermissions}
-            disabled={!member.active}
-          />
+          <>
+            {me.role !== "admin" ? (
+              <p className="mb-2 text-sm text-dust-500">
+                You can grant or remove the permissions you have yourself. Only an admin changes
+                Manage staff, or your own permissions.
+              </p>
+            ) : null}
+            <PermissionSwitches
+              staffId={member.staffId}
+              granted={member.grantedPermissions}
+              disabled={!member.active}
+              blockers={blockers}
+            />
+          </>
         )}
         {!member.active && !isAdmin ? (
           <p className="mt-3 text-sm text-dust-500">
@@ -65,15 +85,11 @@ export default async function StaffMemberPage({ params }: PageProps<"/settings/s
           staffId={member.staffId}
           name={member.displayName}
           active={member.active}
-          canChange={canChangeAccess}
-          reason={
-            isSelf
-              ? "You can't deactivate yourself."
-              : isAdmin && me.role !== "admin"
-                ? "Only an admin can change an admin's access."
-                : undefined
-          }
+          blocker={accessBlocker}
         />
+      </Card>
+      <Card title="History">
+        <StaffHistory events={history} />
       </Card>
     </>
   );

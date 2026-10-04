@@ -79,3 +79,45 @@ export function hasPermission(
 ): boolean {
   return effectivePermissions(staff.role, staff.active, staff.permissions).includes(permission);
 }
+
+type Actor = Pick<StaffDTO, "staffId" | "role" | "active" | "permissions">;
+type Target = { staffId: string; role: StaffRole };
+
+/**
+ * Why `actor` may not grant or revoke `permission` on `target`, or null when
+ * they may. Mirrors private.authorize_permission_change, the delegation
+ * ceiling of PLAN D11: admins may change anything; a manage_staff holder
+ * only other non-admins, never manage_staff, and only permissions they hold
+ * themselves, so managing staff never escalates anyone past the manager.
+ */
+export function permissionChangeBlocker(
+  actor: Actor,
+  target: Target,
+  permission: PermissionKey,
+): string | null {
+  if (!actor.active) return "Only active staff can change permissions.";
+  if (actor.role === "admin") return null;
+  if (!hasPermission(actor, "manage_staff")) return "You need the Manage staff permission.";
+  if (target.staffId === actor.staffId) return "Only an admin can change your permissions.";
+  if (target.role === "admin") return "Admins have every permission.";
+  if (permission === "manage_staff") return "Only an admin can grant or remove Manage staff.";
+  if (!hasPermission(actor, permission)) return "You can only grant permissions you have yourself.";
+  return null;
+}
+
+/**
+ * Why `actor` may not deactivate or reactivate `target`, or null when they
+ * may. Mirrors set_staff_active: nobody deactivates themselves, and only an
+ * admin changes an admin's access.
+ */
+export function accessChangeBlocker(actor: Actor, target: Target): string | null {
+  if (!actor.active) return "Only active staff can change access.";
+  if (target.staffId === actor.staffId) return "You can't deactivate yourself.";
+  if (target.role === "admin" && actor.role !== "admin") {
+    return "Only an admin can change an admin's access.";
+  }
+  if (actor.role !== "admin" && !hasPermission(actor, "manage_staff")) {
+    return "You need the Manage staff permission.";
+  }
+  return null;
+}

@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import { MORE_ITEMS, TABS, isActive, isMoreActive } from "@/components/shell/nav";
 import {
   PERMISSIONS,
+  accessChangeBlocker,
   effectivePermissions,
   hasPermission,
   isPermissionKey,
+  permissionChangeBlocker,
+  type StaffDTO,
 } from "@/lib/auth/permissions";
 import { isPublicPath } from "@/lib/auth/routes";
 import { greetingFor } from "@/lib/dates";
-import { formDataToObject } from "@/lib/form-data";
+import { echoValues, formDataToObject } from "@/lib/form-data";
 import { requestIdFrom } from "@/lib/request-id";
 
 describe("permission resolution (mirrors private.has_permission)", () => {
@@ -116,5 +119,68 @@ describe("greetingFor", () => {
     expect(greetingFor("2026-10-04T01:00:00Z")).toBe("Good morning"); // 09:00 SGT
     expect(greetingFor("2026-10-04T05:00:00Z")).toBe("Good afternoon"); // 13:00 SGT
     expect(greetingFor("2026-10-04T12:00:00Z")).toBe("Good evening"); // 20:00 SGT
+  });
+});
+
+describe("delegation ceiling (mirrors private.authorize_permission_change, PLAN D11)", () => {
+  const actor = (role: "admin" | "staff", permissions: StaffDTO["permissions"]) => ({
+    staffId: "me",
+    role,
+    active: true,
+    permissions,
+  });
+  const colleague = { staffId: "them", role: "staff" as const };
+
+  it("admins may change anything", () => {
+    for (const p of PERMISSIONS) {
+      expect(permissionChangeBlocker(actor("admin", [...PERMISSIONS]), colleague, p)).toBeNull();
+    }
+  });
+
+  it("a manager grants only what they hold, never manage_staff, never to themselves or admins", () => {
+    const manager = actor("staff", ["manage_staff", "adjust_stock"]);
+    expect(permissionChangeBlocker(manager, colleague, "adjust_stock")).toBeNull();
+    expect(permissionChangeBlocker(manager, colleague, "view_costs")).toMatch(/you have yourself/);
+    expect(permissionChangeBlocker(manager, colleague, "manage_staff")).toMatch(/Only an admin/);
+    expect(
+      permissionChangeBlocker(manager, { staffId: "me", role: "staff" }, "adjust_stock"),
+    ).toMatch(/your permissions/);
+    expect(
+      permissionChangeBlocker(manager, { staffId: "x", role: "admin" }, "adjust_stock"),
+    ).toMatch(/Admins/);
+  });
+
+  it("staff without manage_staff change nothing", () => {
+    expect(
+      permissionChangeBlocker(actor("staff", ["view_costs"]), colleague, "view_costs"),
+    ).toMatch(/Manage staff/);
+  });
+
+  it("access: nobody deactivates themselves; only admins change an admin's access", () => {
+    const manager = actor("staff", ["manage_staff"]);
+    expect(accessChangeBlocker(manager, colleague)).toBeNull();
+    expect(accessChangeBlocker(manager, { staffId: "me", role: "staff" })).toMatch(/yourself/);
+    expect(accessChangeBlocker(manager, { staffId: "x", role: "admin" })).toMatch(/Only an admin/);
+    expect(
+      accessChangeBlocker(actor("admin", [...PERMISSIONS]), { staffId: "x", role: "admin" }),
+    ).toBeNull();
+  });
+});
+
+describe("echoValues", () => {
+  it("returns text fields to refill a form, never secrets or React's action keys", () => {
+    const fd = new FormData();
+    fd.set("displayName", "Priya Ramesh");
+    fd.set("email", "priya-at-bicii");
+    fd.set("password", "hunter2hunter2");
+    fd.set("confirm", "hunter2hunter2");
+    fd.set("currentPassword", "old");
+    fd.set("pin", "1234");
+    fd.set("$ACTION_ID_abc", "");
+    fd.set("photo", new File(["x"], "x.jpg"));
+    expect(echoValues(fd)).toEqual({
+      displayName: "Priya Ramesh",
+      email: "priya-at-bicii",
+    });
   });
 });
