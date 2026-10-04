@@ -13,10 +13,15 @@ import {
 } from "@/lib/domain/lines";
 import { searchServices } from "@/lib/domain/services";
 import {
+  addWorkOrderNote as addNote,
+  assignStaff as assign,
   createWorkOrder as create,
   customerBikesForIntake,
   searchIntakeOptions as searchIntake,
+  setApprovalFlag as setApproval,
   setWorkOrderStatus as setStatus,
+  unassignStaff as unassign,
+  updateWorkOrderDetails as updateDetails,
 } from "@/lib/domain/workshop";
 import { Decimal, parseMoney, toMoneyString } from "@/lib/money";
 import { REASON_MAX_LENGTH } from "@/lib/reasons";
@@ -213,4 +218,103 @@ export const searchServiceOptions = staffAction(
   { name: "jobs.search_services" },
   async ({ q }, { supabase, staff }) =>
     searchServices(supabase, q, { viewCosts: hasPermission(staff, "view_costs") }),
+);
+
+/**
+ * Put someone on a job as lead or additional staff (D22: any active staff,
+ * on a job not collected or cancelled). A new lead replaces the old one,
+ * who leaves the job.
+ */
+export const assignStaff = staffAction(
+  z.object({
+    workOrderId,
+    staffId: z.uuid({ error: "Choose who to assign." }),
+    role: z.enum(Constants.public.Enums.assignment_role, { error: "Choose lead or additional." }),
+  }),
+  { name: "jobs.assign_staff" },
+  async (input, { supabase }) => {
+    const result = await assign(supabase, input);
+    refresh();
+    return result;
+  },
+);
+
+/** Take someone off a job (D22); replaying it changes nothing. */
+export const unassignStaff = staffAction(
+  z.object({ workOrderId, staffId: z.uuid({ error: "Unknown staff member." }) }),
+  { name: "jobs.unassign_staff" },
+  async (input, { supabase }) => {
+    const result = await unassign(supabase, input);
+    refresh();
+    return result;
+  },
+);
+
+/** The internal "customer approved extra work" flag and its note (SPEC §7.1). */
+export const setApprovalFlag = staffAction(
+  z.object({
+    workOrderId,
+    flagged: z.boolean(),
+    note: z
+      .string()
+      .trim()
+      .max(500, { error: "Keep the approval note under 500 characters." })
+      .nullable()
+      .optional()
+      .transform((v) => v || null),
+  }),
+  { name: "jobs.set_approval" },
+  async (input, { supabase }) => {
+    const result = await setApproval(supabase, input);
+    refresh();
+    return result;
+  },
+);
+
+/** Add a note or a diagnosis to the job's timeline; any status. */
+export const addWorkOrderNote = staffAction(
+  z.object({
+    workOrderId,
+    kind: z.enum(Constants.public.Enums.work_order_note_kind),
+    body: z
+      .string({ error: "Write the note first." })
+      .trim()
+      .min(1, { error: "Write the note first." })
+      .max(5_000, { error: "Keep the note under 5,000 characters." }),
+  }),
+  { name: "jobs.add_note" },
+  async (input, { supabase }) => {
+    const result = await addNote(supabase, input);
+    refresh();
+    return result;
+  },
+);
+
+const optionalText = (max: number, what: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, { error: `Keep the ${what} under ${max.toLocaleString("en-SG")} characters.` })
+    .optional()
+    .transform((v) => v ?? "");
+
+/** Edit the requested work and the notes; an emptied note is cleared. */
+export const updateWorkOrderDetails = staffAction(
+  z.object({
+    workOrderId,
+    requestedWork: z
+      .string({ error: "Say what the customer wants done." })
+      .trim()
+      .min(1, { error: "Say what the customer wants done." })
+      .max(2_000, { error: "Keep the requested work under 2,000 characters." }),
+    intakeNotes: optionalText(5_000, "condition notes"),
+    internalNotes: optionalText(10_000, "internal notes"),
+    completionNotes: optionalText(5_000, "completion notes"),
+  }),
+  { name: "jobs.update_details" },
+  async (input, { supabase }) => {
+    const result = await updateDetails(supabase, input);
+    refresh();
+    return result;
+  },
 );
