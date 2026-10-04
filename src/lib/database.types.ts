@@ -77,6 +77,30 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      create_staff: {
+        Args: {
+          auth_user_id: string;
+          display_name: string;
+          email: string;
+          role?: Database["public"]["Enums"]["staff_role"];
+        };
+        Returns: {
+          active: boolean;
+          auth_user_id: string;
+          created_at: string;
+          display_name: string;
+          email: string;
+          id: string;
+          role: Database["public"]["Enums"]["staff_role"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "staff";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       grant_permission: {
         Args: {
           permission: Database["public"]["Enums"]["permission_key"];
@@ -149,6 +173,19 @@ export type Database = {
         Returns: {
           active: boolean;
           display_name: string;
+          id: string;
+          role: Database["public"]["Enums"]["staff_role"];
+        }[];
+      };
+      staff_roster: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          active: boolean;
+          auth_user_id: string;
+          created_at: string;
+          display_name: string;
+          email: string;
+          granted_permissions: Database["public"]["Enums"]["permission_key"][];
           id: string;
           role: Database["public"]["Enums"]["staff_role"];
         }[];

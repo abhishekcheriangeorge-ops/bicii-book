@@ -707,7 +707,7 @@ security-definer function. Blank = no access.
 
 | Table | select | insert | update | delete |
 |---|---|---|---|---|
-| staff | S (own row + names of others); A full | A | A | — |
+| staff | S (own row + names of others); A full; A or P(manage_staff) via `staff_roster()` | A; A or P(manage_staff) via `create_staff()` | A; RPC `set_staff_active` | — |
 | staff_permissions | A, own | A / P(manage_staff) | same | same |
 | customers | S; C own | S; C own on sign-up | S; C own (name/phone only) | — |
 | bikes | S; C own | S; C own | S; C own (non-internal cols) | — |
@@ -747,6 +747,13 @@ as appropriate, runs in a single transaction, locks the rows it mutates, and
 returns the created/affected row. Idempotent ones accept an idempotency key or
 rely on a unique index and return the existing row on replay.
 
+Business errors an RPC raises on purpose use SQLSTATE `P0001` with `MESSAGE`
+set to a stable snake_case code (for example `staff_email_mismatch`) and
+`DETAIL` set to an explanation. `src/lib/db-errors.ts` maps known codes to
+user-facing messages; unknown codes become a generic error. Authorization
+failures are `42501`, missing rows `P0002`, the last-admin guard `55000`.
+Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
+
 | RPC | Guard | Effects |
 |---|---|---|
 | `book_appointment(type_id, starts_at, customer_id, bike_id, note)` | C own / S | Capacity + hours check under advisory lock; insert. |
@@ -772,6 +779,8 @@ rely on a unique index and return the existing row on replay.
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
 | `grant_permission` / `revoke_permission` / `set_staff_active` | A or P(manage_staff) | Permission rows (`granted_by` = caller); grant/revoke are replay-safe. Nobody deactivates themselves; only an admin changes an admin's status. |
 | `my_staff_profile()` | authenticated | Caller's staff row + effective permissions (admin → all; inactive → none); zero rows for non-staff. |
+| `create_staff(auth_user_id, display_name, email, role)` | A or P(manage_staff); only A creates `admin` | Links an existing Auth login (created server-side with the service-role admin API) to a new active staff row. Email must equal the login's email (`P0001 staff_email_mismatch`); duplicate email → 23505 `staff_email_key`. |
+| `staff_roster()` | A or P(manage_staff) | Every staff row with its *granted* permissions, for Staff settings (a manage_staff holder could otherwise grant but not see permissions, §15). |
 | `staff_directory()` | S | `id, display_name, role, active` of every staff member: how staff see colleagues' names (§15) without reading the `staff` table. |
 
 ## 17. Sequences and short IDs
