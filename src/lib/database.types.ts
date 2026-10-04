@@ -3,6 +3,112 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      attachment_events: {
+        Row: {
+          actor_staff_id: string | null;
+          attachment_id: string;
+          correlation_id: string | null;
+          created_at: string;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          event_type: Database["public"]["Enums"]["attachment_event_type"];
+          id: string;
+          payload: NonNullable<Json>;
+          reason: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          attachment_id: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          event_type: Database["public"]["Enums"]["attachment_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          attachment_id?: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity_id?: string;
+          entity_type?: Database["public"]["Enums"]["attachment_entity"];
+          event_type?: Database["public"]["Enums"]["attachment_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attachment_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      attachments: {
+        Row: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        };
+        Insert: {
+          byte_size?: number | null;
+          caption?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height?: number | null;
+          id?: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at?: string;
+          visibility?: Database["public"]["Enums"]["attachment_visibility"];
+          width?: number | null;
+        };
+        Update: {
+          byte_size?: number | null;
+          caption?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          entity_id?: string;
+          entity_type?: Database["public"]["Enums"]["attachment_entity"];
+          height?: number | null;
+          id?: string;
+          media_type?: string;
+          storage_bucket?: string;
+          storage_path?: string;
+          updated_at?: string;
+          visibility?: Database["public"]["Enums"]["attachment_visibility"];
+          width?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attachments_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       bike_ownership_events: {
         Row: {
           actor_staff_id: string | null;
@@ -339,6 +445,31 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      delete_attachment: {
+        Args: { attachment_id: string; reason: string };
+        Returns: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "attachments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       grant_permission: {
         Args: {
           permission: Database["public"]["Enums"]["permission_key"];
@@ -369,6 +500,43 @@ export type Database = {
           role: Database["public"]["Enums"]["staff_role"];
         }[];
       };
+      record_attachment: {
+        Args: {
+          attachment_id: string;
+          byte_size?: number;
+          caption?: string;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height?: number;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          visibility?: Database["public"]["Enums"]["attachment_visibility"];
+          width?: number;
+        };
+        Returns: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "attachments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       revoke_permission: {
         Args: {
           permission: Database["public"]["Enums"]["permission_key"];
@@ -383,6 +551,36 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "staff_permissions";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_attachment_visibility: {
+        Args: {
+          attachment_id: string;
+          new_bucket?: string;
+          new_path?: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+        };
+        Returns: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "attachments";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -496,6 +694,10 @@ export type Database = {
       };
     };
     Enums: {
+      attachment_entity:
+        "bike" | "work_order" | "product" | "inventory_unit" | "customer" | "consignment_item";
+      attachment_event_type: "created" | "visibility_changed" | "caption_changed" | "deleted";
+      attachment_visibility: "internal" | "customer" | "public";
       bike_ownership_event_type: "registered" | "transferred";
       permission_key:
         | "view_costs"
@@ -625,6 +827,16 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      attachment_entity: [
+        "bike",
+        "work_order",
+        "product",
+        "inventory_unit",
+        "customer",
+        "consignment_item",
+      ],
+      attachment_event_type: ["created", "visibility_changed", "caption_changed", "deleted"],
+      attachment_visibility: ["internal", "customer", "public"],
       bike_ownership_event_type: ["registered", "transferred"],
       permission_key: [
         "view_costs",

@@ -34,7 +34,10 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.staff_history(uuid, integer)",
   "public.staff_roster()",
   "public.update_staff(uuid, text, staff_role, text)",
-  // Customers and bikes (Phase 1): active staff
+  // Customers, bikes and attachments (Phase 1): active staff
+  "public.delete_attachment(uuid, text)",
+  "public.record_attachment(uuid, attachment_entity, uuid, text, text, text, integer, integer, integer, text, attachment_visibility)",
+  "public.set_attachment_visibility(uuid, attachment_visibility, text, text)",
   "public.transfer_bike_ownership(uuid, uuid, text)",
 ];
 
@@ -43,9 +46,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
  * also has RLS policies (meta test "RLS is enabled on every table"). The
  * Phase 1 tables' policies admit active staff only; INSERT and UPDATE are
  * column grants (no short_id, customer_id after insert, Auth or Shopify
- * links).
+ * links; attachments: caption only).
  */
 export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>> = {
+  "public.attachment_events": ["SELECT"],
+  "public.attachments": ["SELECT", "UPDATE"],
   "public.bike_ownership_events": ["SELECT"],
   "public.bikes": ["INSERT", "SELECT", "UPDATE"],
   "public.customers": ["INSERT", "SELECT", "UPDATE"],

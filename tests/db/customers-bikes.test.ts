@@ -37,7 +37,13 @@ beforeAll(async () => {
   conn = await connect();
 });
 
-const PHASE1_TABLES = ["customers", "bikes", "bike_ownership_events"] as const;
+const PHASE1_TABLES = [
+  "customers",
+  "bikes",
+  "bike_ownership_events",
+  "attachments",
+  "attachment_events",
+] as const;
 
 // Inserting a bike calls nextval (short IDs are never reused), so tests that
 // create bikes run only on a per-file clone (TESTING.md).

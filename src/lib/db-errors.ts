@@ -57,6 +57,18 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   bike_archived: "That bike is archived. Unarchive it before changing its owner.",
   bike_short_id_immutable: "A bike keeps its ID for life.",
   bike_history_append_only: "Bike ownership history cannot be changed.",
+  // Attachments (Phase 1)
+  attachment_object_missing: "The photo did not finish uploading. Try again.",
+  attachment_path_mismatch: "The photo was uploaded to the wrong place. Try again.",
+  attachment_bucket_mismatch: "The photo was uploaded to the wrong place. Try again.",
+  attachment_media_type_unsupported: "Photos must be JPEG, PNG, WebP or HEIC.",
+  attachment_media_type_mismatch: "That file is not the type of photo it claims to be.",
+  attachment_entity_unsupported: "Photos cannot be added to that kind of record yet.",
+  attachment_conflict: "That photo clashes with another one. Upload it again.",
+  attachment_deleted: "That photo was deleted. Upload it again.",
+  attachment_immutable: "A photo stays on the record it was taken for.",
+  attachment_customer_never_public: "Photos on a customer record cannot be made public.",
+  attachment_history_append_only: "Photo history cannot be changed.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -68,6 +80,8 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   customers_auth_user_id_key: "That login is already linked to a customer.",
   customers_shopify_customer_id_key: "That Shopify customer is already linked to someone else.",
   bikes_pkey: "That bike has already been saved.",
+  attachments_pkey: "That photo has already been saved.",
+  attachments_storage_path_key: "That photo has already been saved.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -89,6 +103,9 @@ export const CHECK_ERRORS: Record<string, string> = {
   bikes_serial_number_check: "Keep the serial number under 100 characters.",
   bikes_description_check: "Keep the description under 2,000 characters.",
   bikes_internal_notes_check: "Keep the notes under 10,000 characters.",
+  attachments_caption_check: "Keep the caption under 500 characters.",
+  attachments_byte_size_check: "Photos must be under 20 MB.",
+  attachments_customer_never_public: "Photos on a customer record cannot be made public.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */

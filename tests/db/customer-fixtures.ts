@@ -1,5 +1,5 @@
 /**
- * Helpers for Phase 1 database tests: customer logins.
+ * Helpers for Phase 1 database tests: customer logins and Storage objects.
  * All of them run as the connection's owner (superuser) inside the caller's
  * transaction; switch identity afterwards with actAs().
  */
@@ -36,4 +36,31 @@ export async function linkCustomerLogin(
 /** Claims of a signed-in customer (or any Auth user) for actAs(). */
 export function customerClaims(authUserId: string) {
   return { role: "authenticated" as const, aud: "authenticated", sub: authUserId };
+}
+
+/** `{entity_type}/{entity_id}/{attachment_id}.{ext}` (DATA-MODEL §2). */
+export function attachmentPath(
+  entityType: string,
+  entityId: string,
+  attachmentId: string,
+  ext = "jpg",
+): string {
+  return `${entityType}/${entityId}/${attachmentId}.${ext}`;
+}
+
+/**
+ * The storage.objects row an upload through the Storage API leaves behind
+ * (metadata as Storage writes it: mimetype and size).
+ */
+export async function putStorageObject(
+  tx: pg.Client,
+  bucket: string,
+  name: string,
+  { mimetype = "image/jpeg", size = 48_213 }: { mimetype?: string; size?: number } = {},
+): Promise<void> {
+  await tx.query(
+    `insert into storage.objects (bucket_id, name, metadata)
+     values ($1, $2, jsonb_build_object('mimetype', $3::text, 'size', $4::int))`,
+    [bucket, name, mimetype, size],
+  );
 }
