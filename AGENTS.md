@@ -1,14 +1,25 @@
 # Agent instructions for bicii-book
 
-## This is NOT the Next.js you know
+<!-- BEGIN:nextjs-agent-rules -->
 
-This project uses Next.js 16, which has breaking changes versus training
-data: `proxy.ts` replaces `middleware.ts`; `cookies()`, `headers()`,
-`params` and `searchParams` are async; Turbopack is the default and a
-webpack config fails the build; `next build` does not lint; `revalidateTag`
-takes a second argument. After the scaffold exists, read the relevant guide
-in `node_modules/next/dist/docs/` before writing any code and heed
-deprecation notices.
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+
+## Next.js 16 specifics for this project
+
+The managed block above is kept verbatim so `next dev` leaves this file
+alone. In this project specifically: `proxy.ts` replaces `middleware.ts`;
+`cookies()`, `headers()`, `params` and `searchParams` are async; Turbopack is
+the default and a webpack config fails the build; `next build` does not lint;
+`revalidateTag` takes a second argument (`updateTag`/`refresh` exist for
+Server Actions). The docs for the installed version are in
+`node_modules/next/dist/docs/`; read the relevant guide before writing
+framework code and heed deprecation notices.
 
 ## Before writing code
 

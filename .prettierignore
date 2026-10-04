@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+build
+coverage
+playwright-report
+test-results
+package-lock.json
+next-env.d.ts
+# Markdown is hand-wrapped prose (and AGENTS.md holds a block Next.js
+# rewrites if it changes); prettier would reflow tables and break code spans.
+*.md
+supabase/.temp
