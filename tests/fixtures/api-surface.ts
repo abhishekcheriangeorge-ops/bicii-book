@@ -34,10 +34,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.staff_history(uuid, integer)",
   "public.staff_roster()",
   "public.update_staff(uuid, text, staff_role, text)",
-  // Customers, bikes and attachments (Phase 1): active staff
+  // Customers, bikes, attachments, search (Phase 1): active staff
   "public.delete_attachment(uuid, text)",
   "public.record_attachment(uuid, attachment_entity, uuid, text, text, text, integer, integer, integer, text, attachment_visibility)",
   "public.set_attachment_visibility(uuid, attachment_visibility, text, text)",
+  "public.staff_search(text, text[], integer)",
   "public.transfer_bike_ownership(uuid, uuid, text)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",

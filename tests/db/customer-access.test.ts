@@ -364,6 +364,7 @@ describe("customer A and customer B", () => {
 
   it("customers cannot call staff RPCs", async () => {
     for (const sql of [
+      "select * from public.staff_search('tan')",
       `select public.transfer_bike_ownership('${BIKE.priyaDomane}', '${CUSTOMER.tan}', 'Mine now')`,
       `select public.delete_attachment('${randomUUID()}', 'Mine')`,
       `select public.set_attachment_visibility('${randomUUID()}', 'public')`,

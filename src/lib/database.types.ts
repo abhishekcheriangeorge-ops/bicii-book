@@ -679,6 +679,17 @@ export type Database = {
           role: Database["public"]["Enums"]["staff_role"];
         }[];
       };
+      staff_search: {
+        Args: { kinds?: string[]; max_results?: number; q: string };
+        Returns: {
+          id: string;
+          kind: string;
+          rank: number;
+          short_id: string;
+          subtitle: string;
+          title: string;
+        }[];
+      };
       transfer_bike_ownership: {
         Args: { bike_id: string; reason: string; to_customer_id: string };
         Returns: {
