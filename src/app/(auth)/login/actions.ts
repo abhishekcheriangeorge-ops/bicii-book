@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { safeNextPath } from "@/lib/auth/redirect";
+import { SIGN_IN_MESSAGES, classifySignInError } from "@/lib/auth/sign-in-errors";
 import { getCorrelationId } from "@/lib/auth/session";
 import { child } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
@@ -21,9 +22,6 @@ const loginSchema = z.object({
   password: z.string().min(1, { error: "Enter your password." }),
   next: z.string().optional(),
 });
-
-/** Same message for every failure: never reveal whether the email exists. */
-const LOGIN_FAILED = "That email and password don't match. Try again.";
 
 /**
  * Staff sign-in (PLAN D10: Supabase email + password). On success the
@@ -55,10 +53,16 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
 
   const log = child(await getCorrelationId(), { action: "auth.login" });
   if (error) {
+    // One message for every credential failure (never reveal whether the
+    // email exists); outages and rate limits say what they are.
+    const failure = classifySignInError(error);
     after(() =>
-      log.warn({ outcome: "failed", status: error.status, code: error.code }, "login failed"),
+      log[failure === "credentials" ? "warn" : "error"](
+        { outcome: "failed", failure, status: error.status, code: error.code },
+        "login failed",
+      ),
     );
-    return { error: LOGIN_FAILED, email: typedEmail };
+    return { error: SIGN_IN_MESSAGES[failure], email: typedEmail };
   }
   after(() => log.info({ outcome: "ok" }, "login"));
   redirect(safeNextPath(parsed.data.next));
