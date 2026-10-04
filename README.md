@@ -24,7 +24,9 @@ Bikes (search-first lists, detail pages, new/edit sheets, archive),
 ownership transfer with a reason, the camera upload (downscaled on the
 phone, uploaded straight to Storage) with a photo viewer (caption,
 internal / customer / public, delete with a reason), and global search
-from the header. Work orders (M1.3) come next.
+from the header. M1.3 (workshop) is in progress: its database layer
+(catalog, Cult Commons rates, jobs, lines, the customer job projection, job
+search) and the seeded jobs are built; the screens come next.
 
 ## Quickstart
 

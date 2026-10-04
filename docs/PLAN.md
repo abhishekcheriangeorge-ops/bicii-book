@@ -199,6 +199,13 @@ Scope notes (no business change; decisions D14–D22 in §6):
 - The anonymous/customer services listing lands with Phase 11 through a
   separate customer-safe projection; until then services are staff-only.
 - `flag_approval` is built as `set_approval_flag`.
+- The customer job projection is built now, in step 2, for Phase 11 to
+  show: `my_work_orders`, `my_work_order_lines`, `my_work_order_timeline`,
+  `my_work_order_attachments` with the `customer_job_status` enum (D8, D17;
+  migration `20261004001600_workshop_customer_access`). Nothing in the
+  staff app calls them. Step 2 also adds the `work_order` kind to
+  `staff_search` (`…1700_workshop_search`; the app shows it from step 4)
+  and the Phase 3 seed (DATA-MODEL §18 "Phase 3 part").
 - Intake photos are taken right after the job is created, because
   `record_attachment` requires the job row to exist.
 

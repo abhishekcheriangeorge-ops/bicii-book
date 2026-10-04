@@ -471,8 +471,11 @@ on a job are `internal` or `customer`, never `public`
 `record_attachment` and `set_attachment_visibility`; CHECK
 `attachments_work_order_never_public` as the backstop).
 
-Customers (D17) never read these tables (staff-only RLS); their projection
-arrives in step 2 of Phase 3.
+Customers (D17) never read these tables (staff-only RLS); they read their
+own jobs through the `my_work_order*` RPCs (§15 "Customer job projection",
+§16; migration `20261004001600_workshop_customer_access`). Staff find a job
+by its number through `staff_search` (`work_order` kind, migration
+`…1700_workshop_search`).
 
 ## 5. Services and line items
 
@@ -974,19 +977,19 @@ security-definer function. Blank = no access.
 | customers | S; C own via `my_customer_profile()` | S (no `auth_user_id`, `shopify_customer_id`); C on sign-up via RPC (Phase 11) | S (same columns, `archived_at`); C own name/phone via `update_my_profile()` | — (archive) |
 | bikes | S; C own current, non-archived via `my_bikes()` | S (no `short_id`: server-assigned) | S (no `short_id`, `customer_id`, `inventory_unit_id`); owner via RPC `transfer_bike_ownership` | — (archive) |
 | bike_ownership_events | S | trigger only | never | never |
-| attachments | S; C `customer`/`public` rows of own bikes via `my_bike_attachments()` | RPC `record_attachment` (S) | S caption only; visibility via RPC `set_attachment_visibility` (S) | RPC `delete_attachment` (S, reason) |
+| attachments | S; C `customer`/`public` rows of own bikes via `my_bike_attachments()` and of own jobs via `my_work_order_attachments()` | RPC `record_attachment` (S) | S caption only; visibility via RPC `set_attachment_visibility` (S) | RPC `delete_attachment` (S, reason) |
 | attachment_events | S | triggers only | never | never |
 | storage `media-internal` | S | S | — | S, only objects no attachment points at |
 | storage `media-public` | S (everyone else only by public URL; nobody lists it) | S | — | S, only objects no attachment points at |
 | shop_hours, closure_overrides, appointment_types | S; anon/C active+public rows | A | A | A |
 | appointments | S; C own | RPC (`book_appointment`) | RPC / S | — |
-| work_orders | S; C own via customer-safe RPCs (Phase 3 step 2, D17) | RPC `create_work_order` | RPC (`set_work_order_status`, `update_work_order`, `set_approval_flag`; `lead_mechanic_id` by the assignments trigger) | — |
+| work_orders | S; C own, not cancelled, via `my_work_orders()` (D17) | RPC `create_work_order` | RPC (`set_work_order_status`, `update_work_order`, `set_approval_flag`; `lead_mechanic_id` by the assignments trigger) | — |
 | work_order_assignments | S | RPC `assign_staff` (S, D22) | RPC `unassign_staff` (closes the row) | — |
-| work_order_events | S; C customer-visible types via RPC (D8, D17) | triggers and `add_work_order_note` only | never | never |
+| work_order_events | S; C own job's check-in, customer-status changes and customer-visible photos via `my_work_order_timeline()` (D8, D17) | triggers and `add_work_order_note` only | never | never |
 | categories | S | P(manage_inventory) (A included) | P(manage_inventory) | — (archive) |
 | services | S, every column except `default_direct_cost`; P(view_costs) everything via `services_staff`; anon/C listing in Phase 11 through a separate projection | RPC `create_service` (P(manage_inventory); a cost needs P(view_costs)) | RPC `update_service`, `set_service_archived` (same) | — (archive) |
 | cult_commons_rates | P(view_costs) | RPC `schedule_cult_commons_rate` (A) | RPC `cancel_cult_commons_rate` (A, future rates only) | never |
-| work_order_line_items | S sale columns only; P(view_costs) everything via `work_order_line_items_staff` | RPC `add_service_line`, `add_manual_line` (cost needs P(view_costs)) | RPC `void_line` (voided_* only) | never |
+| work_order_line_items | S sale columns only; P(view_costs) everything via `work_order_line_items_staff`; C own job's live lines (description, quantity, unit price, total) via `my_work_order_lines()` | RPC `add_service_line`, `add_manual_line` (cost needs P(view_costs)) | RPC `void_line` (voided_* only) | never |
 | work_order_totals / work_order_totals_staff (views) | S sale totals / P(view_costs) cost, yield, Cult Commons | — | — | — |
 | products | S; anon/C via `public_items` only | P(manage_inventory) | P(manage_inventory) | — |
 | inventory_units | S (cost col gated) | RPC | RPC | — |
@@ -1020,6 +1023,23 @@ only; anonymous access is a separate, explicitly public projection
 listed in `tests/fixtures/api-surface.ts` and tested for: own rows only,
 no staff-only column in the result keys, another customer's id returns
 nothing, anon is refused (`customer-access.test.ts` is the template).
+
+**Customer job projection (Phase 3, shown in Phase 11; PLAN D8, D17).**
+The four `my_work_order*` RPCs follow the pattern above. Which jobs: those
+where the caller is `work_orders.customer_id`, whoever owns the bike now (a
+new owner does not see the previous owner's jobs; the previous owner keeps
+theirs) and whether or not the bike was archived since; cancelled jobs are
+hidden everywhere. What of them: a coarse `customer_job_status`
+(`private.customer_job_status`: received/diagnosing/ready_to_start →
+`received`, in_progress/paused → `in_progress`, the rest as they are,
+cancelled → null), the bike's short ID and title, the check-in,
+completion, ready and collection times, and the live lines' sale total;
+lines show description, quantity, unit price and total only; the timeline
+shows check-in, changes of the customer status and customer-visible photos
+that still exist. Requested work, intake/internal/completion notes,
+approval, assignments, actors, event payloads and every cost, yield, rate
+or Cult Commons value are never returned. Job photos follow D17 (the job's
+customer), not the bike-photo rule of D12.
 
 Column-level gating of cost/yield for staff without `view_costs` is done with
 views (`*_staff` views include the columns; base tables revoke `select` on
@@ -1090,11 +1110,15 @@ Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
 | `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Never public for a customer record or an undecoded original (`attachment_original_never_public`). Locks the row; `visibility_changed` event; replay is a no-op. |
 | `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload. Returns a set: the deleted row (the server then removes the object), or no row on replay (PostgREST: `[]`). |
 | `attachment_stray_objects(entity_type, entity_id)` | S | Objects under `{entity_type}/{entity_id}/` in either photo bucket that no attachment points at and that are safe to remove now (older than 10 minutes; in `media-internal`, with history or older than a day), at most 100. The server removes them when it shows the record. |
-| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65) and bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name). Exact short ID or serial rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists; `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
+| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status). Exact short ID, serial or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |
 | `my_bike_attachments(bike_id)` | authenticated (C) | `customer`/`public` attachments of one of the caller's own bikes; empty for anyone else's. |
+| `my_work_orders()` | authenticated (C) | The caller's jobs (not cancelled), newest first: `id, job_number, bike_id, bike_short_id, bike_title, status customer_job_status, checked_in_at, completed_at, ready_for_collection_at, collected_at, currency, sale_total` (live lines). D17: by `work_orders.customer_id`, whatever the bike's owner or archived state now. |
+| `my_work_order_lines(work_order_id)` | authenticated (C) | Live lines of one of the caller's non-cancelled jobs, in `created_at` order: `id, description, quantity, unit_sale_price, sale_total, currency`. Empty for anyone else's job. |
+| `my_work_order_timeline(work_order_id)` | authenticated (C) | Oldest first `id, kind, status, attachment_id, created_at`: `checked_in` (status `received`); `status` for a status_changed/completed/ready_for_collection/collected/reopened event whose customer status differs from the previous entry's; `photo` for a `photo_added` whose attachment still exists and is customer-visible. No actors, notes, payloads, lines, assignments or costs. |
+| `my_work_order_attachments(work_order_id)` | authenticated (C) | `customer`/`public` attachments of one of the caller's non-cancelled jobs (job photos are never public, D19), same columns as `my_bike_attachments`. |
 
 ## 17. Sequences and short IDs
 
@@ -1109,10 +1133,10 @@ humans and QR codes.
 
 Realistic and deterministic (fixed UUIDs so tests can reference them):
 3 staff (1 admin, 2 mechanics with differing permissions), 6 customers with
-10 bikes, shop hours Tue–Sun, 4 appointment types, 8 services, 2 locations,
+10 bikes, shop hours Tue–Sun, 4 appointment types, 9 services, 2 locations,
 12 quantity products with stock, 3 unique shop-owned bikes, 2 consigned bikes
 (one sold, unsettled), 2 suppliers, 1 PO partially received, 9 work orders
-spread across statuses and the last 10 days, settlements. (The Cult Commons
+spread across statuses and the last 9 days, settlements. (The Cult Commons
 base rate is not seed data: the workshop catalog migration ships it, D21.)
 The seed is applied to the local database and to a fresh preview
 project; never to production.
@@ -1122,3 +1146,47 @@ Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
 `b1000000-…-0000000000NN` (`BIKE`, short IDs `B-000001`…`B-000010` in insert
 order, `BIKE_SHORT_ID`), one shop bike without an owner and one bike
 transferred between customers (two ownership events). No attachments.
+
+Phase 3 part (done): service categories `ca000000-…-00000000000N`
+(`CATEGORY`: Servicing, Wheels & tyres, Brakes, Builds, Labour, sort 1–5),
+services `5e000000-…-0000000000NN` (`SERVICE`; SGD price / default direct
+cost): Basic Service 80/0, Full Service 200/0, Wheel True 35/0 (per wheel),
+Tyre Installation 15/0 (per tyre), Brake Bleed 45/8 (per brake),
+Drivetrain Service 90/5, Bike Build 250/0, Custom Labour 60/0 (per hour,
+not public) and Suspension Fork Service 120/25 (inactive, archived 30 days
+ago). Nine jobs `f1000000-…-00000000000N` (`WORK_ORDER`, job numbers
+`J-000001`…`J-000009` in insert order, `JOB_NUMBER`), lines
+`f2000000-…-0000000000NN` (`LINE`, all at rate 0.3000) and assignments
+`f3000000-…-0000000000NN`. Times are offsets from the seed's `now()`
+(d = days, h = hours):
+
+| Job | Customer, bike | Status | What it demonstrates |
+|---|---|---|---|
+| J-000001 | Tan, Tarmac | collected | The full walk: checked in −9d, in progress −8d, completed −7d, ready −7d+1h, collected −6d; lead Marcus; Full Service + Brake Bleed ×2: sale 290.00, cost 16.00, yield 274.00, Cult Commons 82.20; intake and completion notes. |
+| J-000002 | Priya, Domane | ready_for_collection | Money the E2E tests assert: Basic Service, Tyre Installation ×2 and a manual "Continental GP5000 700×28c tyre" ×2 at 95.00 (cost 62.00): sale 300.00, cost 124.00, yield 176.00, CC 52.80, BICII after CC 123.20; approval flag with one `approval_flagged` event (Asha, −5d+1h); lead Nur. |
+| J-000003 | Hafiz, Brompton | completed | Completed two hours ago, not yet ready; lead Marcus with Nur as additional staff; Drivetrain Service. |
+| J-000004 | Chloe, Giant | in_progress | Diagnosing −3d+1h then in progress −1d (a received → diagnosing step the customer never sees); Wheel True ×2. |
+| J-000005 | Chloe, Surly | awaiting_parts | A note (Nur, −5d−1h) before waiting for the customer's part; Custom Labour ×1.5. |
+| J-000006 | Daniel, Cannondale | awaiting_customer | The one overdue job (D20: open, checked in −8d); a diagnosis (Marcus, −8d+2h); no lines. |
+| J-000007 | Nurul, Bianchi | received | Just checked in, unassigned, no lines: checked in at seed time, after the Bianchi's sale from Daniel. |
+| J-000008 | Tan, Brompton | cancelled | Cancelled an hour after check-in with a reason (hidden from the customer, D17). |
+| J-000009 | Priya, Tern | diagnosing | A voided line: Asha quoted a bottom bracket (45.00, cost 28.00), Nur voided it at −1d+3h; live total 80.00. |
+
+So that every seeded timeline reads true (`workshop-seed.test.ts`):
+(a) intake/completion notes and the approval flag are given in the
+`work_orders` INSERT (the insert trigger writes only `checked_in`), and the
+backdated `note_added`, `diagnosis_added` and `approval_flagged` events are
+inserted by hand with their own time and actor; those columns are never
+updated in the seed (that would stamp an event at seed time); (b) before
+each block of writes `request.jwt.claims` names the staff member acting,
+so every trigger-written actor equals the row's own `created_by` /
+`assigned_by` / `voided_by` (Asha checks in and assigns; Marcus and Nur
+walk their own jobs' statuses; lines with a cost are added by Asha or
+Marcus, D14); (c) each job is inserted `received` with an explicit
+`checked_in_at`, gets its assignments and lines while open, then walks its
+statuses one UPDATE at a time with an explicit `status_changed_at`, times
+strictly increasing and no line change after completion; (d) J-000007's
+`checked_in_at` is `clock_timestamp()` at its insert, after the Bianchi's
+`transferred` event. Still no attachments. (The seeded bikes themselves are
+registered at seed time, after the backdated check-ins; only the jobs'
+timelines are backdated.)
