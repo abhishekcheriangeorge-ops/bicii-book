@@ -340,27 +340,44 @@ export async function publish(tx: pg.Client, productId: string): Promise<void> {
   ]);
 }
 
-/** Movements of a product, oldest first (owner view, costs included). */
+/**
+ * Runs `fn` as the connection's owner, then returns to the API role `tx` was
+ * acting as (the JWT claims are untouched), for reads of cost columns.
+ */
+export async function readAsOwner<T>(tx: pg.Client, fn: () => Promise<T>): Promise<T> {
+  const role = await scalar<string>(tx, "select current_user::text");
+  await tx.query("reset role");
+  const owner = await scalar<string>(tx, "select current_user::text");
+  try {
+    return await fn();
+  } finally {
+    if (role !== owner) await tx.query(`set local role ${role}`);
+  }
+}
+
+/** Movements of a product, oldest first (read as the owner, costs included). */
 export async function movements(tx: pg.Client, productId: string) {
-  const { rows } = await tx.query<{
-    id: string;
-    movement_type: string;
-    quantity_delta: number;
-    location_id: string;
-    inventory_unit_id: string | null;
-    reversal_of_id: string | null;
-    work_order_line_item_id: string | null;
-    request_id: string | null;
-    reason: string | null;
-    created_by: string | null;
-    created_at: Date;
-    unit_cost_snapshot: string | null;
-  }>(
-    `select id::text, movement_type::text, quantity_delta, location_id, inventory_unit_id,
+  const { rows } = await readAsOwner(tx, () =>
+    tx.query<{
+      id: string;
+      movement_type: string;
+      quantity_delta: number;
+      location_id: string;
+      inventory_unit_id: string | null;
+      reversal_of_id: string | null;
+      work_order_line_item_id: string | null;
+      request_id: string | null;
+      reason: string | null;
+      created_by: string | null;
+      created_at: Date;
+      unit_cost_snapshot: string | null;
+    }>(
+      `select id::text, movement_type::text, quantity_delta, location_id, inventory_unit_id,
             reversal_of_id::text, work_order_line_item_id, request_id, reason, created_by, created_at,
             unit_cost_snapshot::text
        from public.inventory_movements where product_id = $1 order by id`,
-    [productId],
+      [productId],
+    ),
   );
   return rows;
 }
