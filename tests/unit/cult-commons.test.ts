@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { jobEconomics, lineEconomics } from "@/lib/cult-commons";
+import {
+  classifyRates,
+  formatRate,
+  jobEconomics,
+  lineEconomics,
+  percentToRate,
+} from "@/lib/cult-commons";
 
 import { JOB_FIXTURES, LINE_FIXTURES } from "../fixtures/cult-commons";
 
@@ -45,5 +51,65 @@ describe("a job's Cult Commons is the sum of its lines' shares (D1)", () => {
     expect([e.sale, e.cost, e.yield, e.ccShare, e.yieldAfterCc].map((d) => d.toFixed(2))).toEqual(
       Array(5).fill("0.00"),
     );
+  });
+});
+
+describe("Cult Commons rates as staff type them (D21)", () => {
+  it("converts a percentage with up to two decimals exactly to a 4 dp fraction", () => {
+    expect(percentToRate("30")).toBe("0.3000");
+    expect(percentToRate("12.5")).toBe("0.1250");
+    expect(percentToRate("12.25")).toBe("0.1225");
+    expect(percentToRate(" 33.33 % ")).toBe("0.3333");
+    expect(percentToRate("0")).toBe("0.0000");
+    expect(percentToRate("100")).toBe("1.0000");
+    // 0.1 + 0.2 style floating point never enters: 29.99 % is exactly 0.2999.
+    expect(percentToRate("29.99")).toBe("0.2999");
+  });
+
+  it("refuses anything else", () => {
+    for (const bad of ["", "-1", "100.01", "12.345", "abc", "1e2", "30,5", ".5"]) {
+      expect(percentToRate(bad), bad).toBeNull();
+    }
+  });
+
+  it("shows a fraction as a percentage", () => {
+    expect(formatRate("0.3000")).toBe("30%");
+    expect(formatRate("0.1225")).toBe("12.25%");
+    expect(formatRate(0.125)).toBe("12.5%");
+  });
+
+  it("classifies rates the way private.cult_commons_rate_at reads them", () => {
+    const now = new Date("2026-10-04T04:00:00Z");
+    const rows = [
+      { id: "base", rate: "0.3000", effectiveFrom: "1970-01-01T00:00:00Z", cancelledAt: null },
+      { id: "mid", rate: "0.2500", effectiveFrom: "2026-09-01T00:00:00Z", cancelledAt: null },
+      { id: "next", rate: "0.2000", effectiveFrom: "2026-11-01T00:00:00Z", cancelledAt: null },
+      {
+        id: "withdrawn",
+        rate: "0.1000",
+        effectiveFrom: "2026-10-10T00:00:00Z",
+        cancelledAt: "2026-10-02T00:00:00Z",
+      },
+    ];
+    expect(classifyRates(rows, now).map((r) => [r.id, r.state])).toEqual([
+      ["next", "scheduled"],
+      ["withdrawn", "cancelled"],
+      ["mid", "current"],
+      ["base", "past"],
+    ]);
+  });
+
+  it("a cancelled rate that has started is never current", () => {
+    const now = new Date("2026-10-04T04:00:00Z");
+    const rows = [
+      { id: "base", rate: "0.3000", effectiveFrom: "1970-01-01T00:00:00Z", cancelledAt: null },
+      {
+        id: "x",
+        rate: "0.1000",
+        effectiveFrom: "2026-10-01T00:00:00Z",
+        cancelledAt: "2026-09-30T00:00:00Z",
+      },
+    ];
+    expect(classifyRates(rows, now).find((r) => r.state === "current")?.id).toBe("base");
   });
 });

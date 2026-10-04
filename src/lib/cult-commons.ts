@@ -59,3 +59,66 @@ export function jobEconomics(lines: readonly LineInput[]): Economics {
     { sale: zero, cost: zero, yield: zero, ccShare: zero, yieldAfterCc: zero },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Rates (D21): staff type a percentage; the database stores a fraction with
+// four decimals (rate_fraction, numeric(5,4)).
+// ---------------------------------------------------------------------------
+
+/**
+ * A percentage typed by staff ("30", "12.5", "12.25%") as the stored
+ * fraction with four decimals ("0.3000", "0.1250", "0.1225"), converted
+ * exactly (no floating point). Null unless it is 0–100 with at most two
+ * decimals.
+ */
+export function percentToRate(input: string): string | null {
+  const text = input.trim().replace(/\s*%$/, "");
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(text)) return null;
+  const percent = new Decimal(text);
+  if (percent.gt(100)) return null;
+  return percent.dividedBy(100).toFixed(4);
+}
+
+/** A stored fraction as a percentage for people: "0.3000" -> "30%", "0.1225" -> "12.25%". */
+export function formatRate(rate: MoneyInput): string {
+  return `${toDecimal(rate).times(100).toDecimalPlaces(2).toString()}%`;
+}
+
+export type RateRow = {
+  id: string;
+  /** Fraction, "0.3000". */
+  rate: string;
+  effectiveFrom: string;
+  cancelledAt: string | null;
+};
+
+export type RateState = "current" | "scheduled" | "past" | "cancelled";
+
+/**
+ * Each rate's standing at `now` (mirrors private.cult_commons_rate_at): the
+ * current one is the latest uncancelled rate that has started; uncancelled
+ * rates not started yet are scheduled; earlier ones are past; cancelled ones
+ * never apply. Newest effective date first.
+ */
+export function classifyRates<T extends RateRow>(
+  rates: readonly T[],
+  now: Date = new Date(),
+): (T & { state: RateState })[] {
+  const sorted = [...rates].sort(
+    (a, b) => Date.parse(b.effectiveFrom) - Date.parse(a.effectiveFrom) || b.id.localeCompare(a.id),
+  );
+  const current = sorted.find(
+    (r) => r.cancelledAt === null && Date.parse(r.effectiveFrom) <= now.getTime(),
+  );
+  return sorted.map((r) => ({
+    ...r,
+    state:
+      r.cancelledAt !== null
+        ? "cancelled"
+        : r === current
+          ? "current"
+          : Date.parse(r.effectiveFrom) > now.getTime()
+            ? "scheduled"
+            : "past",
+  }));
+}

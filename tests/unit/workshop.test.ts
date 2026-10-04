@@ -2,17 +2,31 @@ import { describe, expect, it } from "vitest";
 
 import {
   BOARD_GROUPS,
+  CLOSED_MAX,
+  CLOSED_PAGE,
+  DEFAULT_BOARD_FILTERS,
   OVERDUE_AFTER_DAYS,
   STATUS_LABELS,
   WORK_ORDER_STATUSES,
   allowedTransitions,
+  boardGroupOf,
+  boardQuery,
+  checkedInBefore,
+  checkedInSince,
+  formatAge,
+  groupBoardJobs,
+  hasBoardFilters,
   isClosedStatus,
   isOpenStatus,
   isOverdue,
+  matchesAge,
   nextStatuses,
+  normalizeJobNumber,
+  parseBoardFilters,
   primaryActions,
   statusTone,
   transitionRule,
+  visibleGroups,
   type WorkOrderStatus,
 } from "@/lib/workshop";
 
@@ -251,5 +265,171 @@ describe("primaryActions", () => {
     for (const s of WORK_ORDER_STATUSES) {
       for (const a of primaryActions(s)) expect(transitionRule(s, a.to)).toBe("allowed");
     }
+  });
+});
+
+const STAFF = "a0000000-0000-4000-8000-000000000002";
+const CUSTOMER = "c0000000-0000-4000-8000-000000000001";
+
+describe("board filters from the URL (SPEC §7.2)", () => {
+  it("defaults to every job, every open group, no narrowing", () => {
+    expect(parseBoardFilters({})).toEqual({
+      view: "all",
+      group: null,
+      statuses: [],
+      mechanicId: null,
+      customerId: null,
+      bikeId: null,
+      checkedIn: "any",
+      age: "any",
+      q: "",
+      jobNumber: null,
+      closedLimit: CLOSED_PAGE,
+    });
+    expect(hasBoardFilters(DEFAULT_BOARD_FILTERS)).toBe(false);
+  });
+
+  it("reads every filter", () => {
+    const f = parseBoardFilters({
+      view: "mine",
+      group: "waiting",
+      status: ["awaiting_parts", "paused"],
+      mechanic: STAFF.toUpperCase(),
+      customer: CUSTOMER,
+      bike: "not-a-uuid",
+      date: "7d",
+      age: "overdue",
+      q: " j000004 ",
+      limit: "120",
+    });
+    expect(f).toMatchObject({
+      view: "mine",
+      group: "waiting",
+      statuses: ["awaiting_parts", "paused"],
+      mechanicId: STAFF,
+      customerId: CUSTOMER,
+      bikeId: null,
+      checkedIn: "7d",
+      age: "overdue",
+      q: "j000004",
+      jobNumber: "J-000004",
+      closedLimit: 150,
+    });
+    expect(hasBoardFilters(f)).toBe(true);
+  });
+
+  it("drops unknown values instead of failing", () => {
+    const f = parseBoardFilters({
+      view: "everything",
+      group: "bench",
+      status: ["awaiting_parts", "lost", "AWAITING_CUSTOMER"],
+      date: "yesterday",
+      age: "ancient",
+      limit: "-5",
+    });
+    expect(f.view).toBe("all");
+    expect(f.group).toBeNull();
+    expect(f.statuses).toEqual(["awaiting_customer", "awaiting_parts"]);
+    expect(f.checkedIn).toBe("any");
+    expect(f.age).toBe("any");
+    expect(f.closedLimit).toBe(CLOSED_PAGE);
+    expect(parseBoardFilters({ limit: "999999" }).closedLimit).toBe(CLOSED_MAX);
+  });
+
+  it("reads a job number however staff type it", () => {
+    for (const typed of ["J-000123", "j-000123", "J000123", "j 000123", "000123"]) {
+      expect(normalizeJobNumber(typed), typed).toBe("J-000123");
+    }
+    for (const typed of ["123", "J-12345", "J-0001234", "B-000123", "Priya"]) {
+      expect(normalizeJobNumber(typed), typed).toBeNull();
+    }
+  });
+
+  it("writes the query back, leaving defaults out, and round-trips", () => {
+    expect(boardQuery(DEFAULT_BOARD_FILTERS)).toBe("");
+    const f = parseBoardFilters({
+      view: "unassigned",
+      status: ["paused", "awaiting_parts"],
+      q: "J-000004",
+    });
+    const q = boardQuery(f);
+    expect(q).toBe("?view=unassigned&status=awaiting_parts&status=paused&q=J-000004");
+    const back = parseBoardFilters(
+      Object.fromEntries(
+        [...new URLSearchParams(q).keys()].map((k) => [k, new URLSearchParams(q).getAll(k)]),
+      ),
+    );
+    expect(back).toEqual(f);
+    expect(boardQuery(f, { statuses: [], view: "all" })).toBe("?q=J-000004");
+  });
+});
+
+describe("board time windows (D20, Singapore time)", () => {
+  // 4 Oct 2026, 10:00 in Singapore.
+  const now = new Date("2026-10-04T02:00:00Z");
+
+  it("starts the checked-in presets at shop-local midnight", () => {
+    expect(checkedInSince("any", now)).toBeNull();
+    expect(checkedInSince("today", now)?.toISOString()).toBe("2026-10-03T16:00:00.000Z");
+    expect(checkedInSince("7d", now)?.toISOString()).toBe("2026-09-27T16:00:00.000Z");
+    expect(checkedInSince("30d", now)?.toISOString()).toBe("2026-09-04T16:00:00.000Z");
+  });
+
+  it("ages by 24-hour periods, overdue only while open", () => {
+    expect(checkedInBefore("any", now)).toBeNull();
+    expect(checkedInBefore("over3", now)?.toISOString()).toBe("2026-10-01T02:00:00.000Z");
+    expect(checkedInBefore("overdue", now)?.toISOString()).toBe("2026-09-27T02:00:00.000Z");
+    const eightDays = "2026-09-26T02:00:00Z";
+    const fourDays = "2026-09-30T02:00:00Z";
+    expect(
+      matchesAge({ status: "awaiting_customer", checkedInAt: eightDays }, "overdue", now),
+    ).toBe(true);
+    expect(matchesAge({ status: "completed", checkedInAt: eightDays }, "overdue", now)).toBe(false);
+    expect(matchesAge({ status: "in_progress", checkedInAt: fourDays }, "overdue", now)).toBe(
+      false,
+    );
+    expect(matchesAge({ status: "in_progress", checkedInAt: fourDays }, "over3", now)).toBe(true);
+    expect(matchesAge({ status: "in_progress", checkedInAt: now }, "over3", now)).toBe(false);
+    expect(matchesAge({ status: "in_progress", checkedInAt: now }, "any", now)).toBe(true);
+  });
+
+  it("shows age in whole days", () => {
+    expect(formatAge(0)).toBe("Today");
+    expect(formatAge(3)).toBe("3 d");
+  });
+});
+
+describe("board grouping", () => {
+  it("sorts jobs into the groups in board order, keeping their order", () => {
+    const jobs = [
+      { id: "a", status: "awaiting_parts" as const },
+      { id: "b", status: "received" as const },
+      { id: "c", status: "paused" as const },
+      { id: "d", status: "collected" as const },
+      { id: "e", status: "diagnosing" as const },
+    ];
+    const sections = groupBoardJobs(jobs);
+    expect(sections.map((s) => s.id)).toEqual(BOARD_GROUPS.map((g) => g.id));
+    const byId = Object.fromEntries(sections.map((s) => [s.id, s.jobs.map((j) => j.id)]));
+    expect(byId).toMatchObject({
+      received: ["b", "e"],
+      waiting: ["a", "c"],
+      closed: ["d"],
+      ready: [],
+    });
+    expect(boardGroupOf("awaiting_customer").label).toBe("Waiting");
+  });
+
+  it("shows the open groups by default, the chosen one, or Closed for closed statuses", () => {
+    const open = BOARD_GROUPS.filter((g) => g.id !== "closed").map((g) => g.id);
+    expect(visibleGroups({ group: null, statuses: [], jobNumber: null })).toEqual(open);
+    expect(visibleGroups({ group: "closed", statuses: [], jobNumber: null })).toEqual(["closed"]);
+    expect(visibleGroups({ group: null, statuses: ["collected"], jobNumber: null })).toEqual([
+      "closed",
+    ]);
+    expect(
+      visibleGroups({ group: null, statuses: ["collected", "paused"], jobNumber: null }),
+    ).toEqual(open);
+    expect(visibleGroups({ group: null, statuses: [], jobNumber: "J-000001" })).toContain("closed");
   });
 });

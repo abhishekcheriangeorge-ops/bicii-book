@@ -7,6 +7,8 @@
  * offer only the moves the database will accept. Pure.
  */
 import { Constants, type Database } from "@/lib/database.types";
+import { shopDayStart } from "@/lib/dates";
+import { isUuid } from "@/lib/uuid";
 
 export type WorkOrderStatus = Database["public"]["Enums"]["work_order_status"];
 
@@ -230,4 +232,248 @@ const PRIMARY: Readonly<Record<WorkOrderStatus, readonly PrimaryAction[]>> = {
  */
 export function primaryActions(status: WorkOrderStatus): PrimaryAction[] {
   return PRIMARY[status].filter((a) => transitionRule(status, a.to) === "allowed");
+}
+
+// ---------------------------------------------------------------------------
+// The workshop board's filters (SPEC §7.2): all in the URL, parsed here so
+// a shared or reloaded link shows the same board. Unknown values are
+// dropped, never errors.
+// ---------------------------------------------------------------------------
+
+export type BoardGroupId = BoardGroup["id"];
+/** All jobs, jobs I am on (lead or additional), or jobs with no lead. */
+export type BoardView = "all" | "mine" | "unassigned";
+/** Checked in today, in the last 7 or 30 days (shop time), or any time. */
+export type CheckedInPreset = "today" | "7d" | "30d" | "any";
+/** Any age, checked in more than 3 days ago, or overdue (D20). */
+export type AgeFilter = "any" | "over3" | "overdue";
+
+export const BOARD_VIEWS: readonly { value: BoardView; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "mine", label: "My jobs" },
+  { value: "unassigned", label: "Unassigned" },
+];
+
+export const CHECKED_IN_PRESETS: readonly { value: CheckedInPreset; label: string }[] = [
+  { value: "any", label: "Any" },
+  { value: "today", label: "Today" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+];
+
+export const AGE_FILTERS: readonly { value: AgeFilter; label: string }[] = [
+  { value: "any", label: "Any" },
+  { value: "over3", label: "Over 3 days" },
+  { value: "overdue", label: "Overdue" },
+];
+
+/** The age filter "Over 3 days". */
+export const OLD_AFTER_DAYS = 3;
+
+/** Closed jobs shown per page, and the most "Show more" reaches. */
+export const CLOSED_PAGE = 50;
+export const CLOSED_MAX = 500;
+/** Closed jobs are shown for this many days back unless a job number is asked for. */
+export const CLOSED_WINDOW_DAYS = 30;
+
+export type BoardFilters = {
+  view: BoardView;
+  /** One group only; null = every non-closed group as sections. */
+  group: BoardGroupId | null;
+  /** Individual statuses (repeated `status`), in enum order; empty = all. */
+  statuses: WorkOrderStatus[];
+  /** Jobs this staff member is actively assigned to (lead or additional). */
+  mechanicId: string | null;
+  customerId: string | null;
+  bikeId: string | null;
+  checkedIn: CheckedInPreset;
+  age: AgeFilter;
+  /** What was typed in the job-number box (trimmed). */
+  q: string;
+  /** `q` as a job number ("J-000123"), or null when it is not one. */
+  jobNumber: string | null;
+  /** Closed jobs to show (Show more adds CLOSED_PAGE). */
+  closedLimit: number;
+};
+
+type ParamValue = string | string[] | undefined;
+type Params = Record<string, ParamValue>;
+
+const firstOf = (v: ParamValue): string => ((Array.isArray(v) ? v[0] : v) ?? "").trim();
+const allOf = (v: ParamValue): string[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]);
+
+function oneOf<T extends string>(v: ParamValue, allowed: readonly T[], fallback: T): T {
+  const s = firstOf(v).toLowerCase();
+  return (allowed as readonly string[]).includes(s) ? (s as T) : fallback;
+}
+
+/**
+ * A job number as staff type it: "J-000123", "j000123", "J 000123" or the
+ * bare six digits "000123". Null for anything else.
+ */
+export function normalizeJobNumber(value: string): string | null {
+  const m = /^(?:j\s*-?\s*)?(\d{6})$/i.exec(value.trim());
+  return m ? `J-${m[1]}` : null;
+}
+
+/** The board's filters from the URL's search params. */
+export function parseBoardFilters(params: Params): BoardFilters {
+  const uuid = (v: ParamValue) => {
+    const s = firstOf(v);
+    return isUuid(s) ? s.toLowerCase() : null;
+  };
+  const wanted = new Set(
+    allOf(params.status).flatMap((s) => s.split(",").map((x) => x.trim().toLowerCase())),
+  );
+  const q = firstOf(params.q).replace(/\s+/g, " ").slice(0, 40);
+  const limit = Number.parseInt(firstOf(params.limit), 10);
+  return {
+    view: oneOf(
+      params.view,
+      BOARD_VIEWS.map((v) => v.value),
+      "all",
+    ),
+    group: (BOARD_GROUPS.find((g) => g.id === firstOf(params.group).toLowerCase())?.id ??
+      null) as BoardGroupId | null,
+    statuses: WORK_ORDER_STATUSES.filter((s) => wanted.has(s)),
+    mechanicId: uuid(params.mechanic),
+    customerId: uuid(params.customer),
+    bikeId: uuid(params.bike),
+    checkedIn: oneOf(
+      params.date,
+      CHECKED_IN_PRESETS.map((p) => p.value),
+      "any",
+    ),
+    age: oneOf(
+      params.age,
+      AGE_FILTERS.map((a) => a.value),
+      "any",
+    ),
+    q,
+    jobNumber: q ? normalizeJobNumber(q) : null,
+    closedLimit:
+      Number.isFinite(limit) && limit > CLOSED_PAGE
+        ? Math.min(Math.ceil(limit / CLOSED_PAGE) * CLOSED_PAGE, CLOSED_MAX)
+        : CLOSED_PAGE,
+  };
+}
+
+export const DEFAULT_BOARD_FILTERS: BoardFilters = parseBoardFilters({});
+
+/**
+ * The board's query string for `filters` with `patch` applied ("?view=mine"
+ * or "" for the default board). Defaults are left out, so a link is short
+ * and every way of reaching a board reads the same.
+ */
+export function boardQuery(filters: BoardFilters, patch: Partial<BoardFilters> = {}): string {
+  const f = { ...filters, ...patch };
+  const params = new URLSearchParams();
+  if (f.view !== "all") params.set("view", f.view);
+  if (f.group) params.set("group", f.group);
+  for (const s of WORK_ORDER_STATUSES.filter((s) => f.statuses.includes(s))) {
+    params.append("status", s);
+  }
+  if (f.mechanicId) params.set("mechanic", f.mechanicId);
+  if (f.customerId) params.set("customer", f.customerId);
+  if (f.bikeId) params.set("bike", f.bikeId);
+  if (f.checkedIn !== "any") params.set("date", f.checkedIn);
+  if (f.age !== "any") params.set("age", f.age);
+  if (f.q) params.set("q", f.q);
+  if (f.closedLimit > CLOSED_PAGE) params.set("limit", String(f.closedLimit));
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
+/** Whether anything narrows the board beyond the view and the group. */
+export function hasBoardFilters(f: BoardFilters): boolean {
+  return (
+    f.statuses.length > 0 ||
+    f.mechanicId !== null ||
+    f.customerId !== null ||
+    f.bikeId !== null ||
+    f.checkedIn !== "any" ||
+    f.age !== "any" ||
+    f.q !== ""
+  );
+}
+
+/**
+ * The earliest check-in a preset allows, or null for any: shop-local
+ * midnight today, 6 days back (the last 7 days, today included) or 29 days back.
+ */
+export function checkedInSince(preset: CheckedInPreset, now: Date): Date | null {
+  switch (preset) {
+    case "today":
+      return shopDayStart(now);
+    case "7d":
+      return shopDayStart(now, 6);
+    case "30d":
+      return shopDayStart(now, 29);
+    case "any":
+      return null;
+  }
+}
+
+/**
+ * The latest check-in the age filter allows (more than 3 or 7 × 24 hours
+ * before `now`), or null for any age. Overdue also needs an open status
+ * (isOverdue), which the caller applies.
+ */
+export function checkedInBefore(age: AgeFilter, now: Date): Date | null {
+  if (age === "any") return null;
+  const days = age === "overdue" ? OVERDUE_AFTER_DAYS : OLD_AFTER_DAYS;
+  return new Date(now.getTime() - days * DAY_MS);
+}
+
+/** Whether a job passes the age filter at `now` (the same rule the query applies). */
+export function matchesAge(
+  job: { status: WorkOrderStatus; checkedInAt: string | Date },
+  age: AgeFilter,
+  now: Date = new Date(),
+): boolean {
+  if (age === "any") return true;
+  if (age === "overdue") return isOverdue(job, now);
+  const checkedIn =
+    job.checkedInAt instanceof Date ? job.checkedInAt.getTime() : Date.parse(job.checkedInAt);
+  return now.getTime() - checkedIn > OLD_AFTER_DAYS * DAY_MS;
+}
+
+/** The board group a status belongs to. */
+export function boardGroupOf(status: WorkOrderStatus): BoardGroup {
+  return BOARD_GROUPS.find((g) => g.statuses.includes(status))!;
+}
+
+export type BoardSection<T> = BoardGroup & { jobs: T[] };
+
+/**
+ * Jobs sorted into the board's groups, in BOARD_GROUPS order, each keeping
+ * the order it was given. Every group is returned, empty or not.
+ */
+export function groupBoardJobs<T extends { status: WorkOrderStatus }>(
+  jobs: readonly T[],
+): BoardSection<T>[] {
+  return BOARD_GROUPS.map((g) => ({
+    ...g,
+    jobs: jobs.filter((j) => g.statuses.includes(j.status)),
+  }));
+}
+
+/**
+ * The groups the board shows as sections: the chosen one; otherwise the
+ * Closed group when the status filter asks only for closed statuses, every
+ * group when a job number is asked for, and every non-closed group by
+ * default.
+ */
+export function visibleGroups(
+  f: Pick<BoardFilters, "group" | "statuses" | "jobNumber">,
+): BoardGroupId[] {
+  if (f.group) return [f.group];
+  if (f.statuses.length > 0 && f.statuses.every(isClosedStatus)) return ["closed"];
+  const all = BOARD_GROUPS.map((g) => g.id);
+  return f.jobNumber ? all : all.filter((id) => id !== "closed");
+}
+
+/** A job's age on the board: "Today", "1 d", "12 d" (whole shop-local days). */
+export function formatAge(days: number): string {
+  return days <= 0 ? "Today" : `${days} d`;
 }
