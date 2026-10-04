@@ -119,6 +119,7 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   work_order_line_items_pkey: "That line has already been saved.",
   services_pkey: "That service has already been saved.",
   services_active_name_key: "A service with that name already exists.",
+  categories_pkey: "That category has already been saved.",
   categories_active_name_key: "A category with that name already exists.",
   cult_commons_rates_effective_from_key: "Another rate already starts at that time.",
   work_order_assignments_active_staff_key:

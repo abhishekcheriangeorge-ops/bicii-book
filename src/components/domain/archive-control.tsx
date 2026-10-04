@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 
 import { setBikeArchived } from "@/app/(staff)/bikes/actions";
 import { setCustomerArchived } from "@/app/(staff)/customers/actions";
+import { setServiceArchived } from "@/app/(staff)/settings/services/actions";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
@@ -25,13 +26,20 @@ const COPY = {
     active:
       "Archiving hides this bike from search and pickers. Nothing is deleted: it keeps its B- number, photos and history, and you can unarchive it later.",
   },
+  service: {
+    noun: "service",
+    archived:
+      "Archived: not offered on jobs or in the services list. Jobs that used it keep their lines.",
+    active:
+      "Archiving takes this service off the list jobs choose from. Nothing is deleted: jobs that used it keep their lines, and you can unarchive it later.",
+  },
 } as const;
 
 /**
  * Archive (two steps: the first press opens a confirmation in a different
  * place whose button is disabled for 400 ms, DESIGN.md "Forms") or
  * unarchive (one press). Archiving is the
- * only way to retire a customer or bike: rows are never deleted, so every
+ * only way to retire a customer, bike or service: rows are never deleted, so every
  * historical reference keeps working (SPEC §23).
  */
 export function ArchiveControl({
@@ -40,7 +48,7 @@ export function ArchiveControl({
   name,
   archived,
 }: {
-  kind: "customer" | "bike";
+  kind: "customer" | "bike" | "service";
   id: string;
   name: string;
   archived: boolean;
@@ -72,7 +80,9 @@ export function ArchiveControl({
       const result =
         kind === "customer"
           ? await setCustomerArchived({ customerId: id, archived: next })
-          : await setBikeArchived({ bikeId: id, archived: next });
+          : kind === "bike"
+            ? await setBikeArchived({ bikeId: id, archived: next })
+            : await setServiceArchived({ id, archived: next });
       if (!result.ok) {
         toast({
           title: next ? `${name} not archived` : `${name} not unarchived`,
