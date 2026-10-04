@@ -185,7 +185,40 @@ upload itself, below).
 | `ArchiveControl` | Archive (confirmed) / unarchive a customer or bike, with what archiving does in a sentence. |
 | `CaptureButton` | The camera control for every photo (intake reuses it): "Take photo" (`<input type=file accept="image/*" capture="environment">`, opens the rear camera on phones) and "Choose photos" (library, several at once). Each file is decoded with its EXIF orientation (`createImageBitmap(…, { imageOrientation: "from-image" })`, `<img>` fallback), scaled to at most 2048 px on the long edge and re-encoded as JPEG 0.85 (`prepare-photo.ts`, sizing in `src/lib/images.ts`); re-encoding also drops EXIF, GPS included. A file the browser cannot decode (HEIC outside Safari) is uploaded as is when it is an accepted photo type. Then: a signed upload URL from the server, upload with the browser Supabase client straight to Storage with byte progress, record. Optimistic thumbnails with status and progress; up to two photos in flight. The queue lives above the pages (`PhotoUploadsProvider` in the staff layout, `upload-store.ts`), so uploads finish after leaving the record and their tiles are there again on coming back. A failure keeps the photo and its preview on its tile (Retry, Discard); one error toast per record ("3 photos not saved", Retry all) updates in place and is never pushed out; the header shows "N photos not saved" on every screen, linking to the record; closing or reloading the tab while any photo is unsaved asks first. Retry resumes at the failed step: once the object is in Storage only recording is retried (unless the server says it is missing). Photos are labelled "New photo 3", not by file name (iPhone captures are all image.jpg). A file Storage refuses (type, size) is not retried and says to save it as JPEG. The page refreshes once when a record's queue drains, not once per photo (each refresh re-signs every photo). A photo picked before hydration is picked up when React attaches. An undecodable original keeps its metadata, so it is recorded without dimensions and can never be made public. |
 | `PhotoGrid` | A record's photos: thumbnails (visibility badge when not internal) that open `PhotoViewer`, with `CaptureButton` under them (hidden for archived records). |
-| `PhotoViewer` | Sheet: the photo enlarged (tap for full size), who can see it (`SegmentedControl` Internal / Customer / Public, applied immediately with `useOptimistic` and a toast; each level explained; Public disabled on a customer record, PLAN D13), caption, and delete with a reason (two steps; Cancel returns focus to "Delete photo…"). A change that went through but could not remove the old copy from Storage is reported as done, with "Finish" (toast and inline), not as a failure; the next showing of the record finishes it anyway. |
+| `ReasonConfirm` | The two-step destructive pattern with a required reason (below, "Forms"), shared by voiding a line and cancelling or reopening a job: focus in the reason field, the confirm button in a new position with a new key, presses ignored for 400 ms, Cancel returns focus to the first button. |
+| `IntakeWizard` | `/jobs/new` (SPEC §7.1): one step at a time with "Step 2 of 5" and a progress bar, Back/Next as 48px buttons kept above the tab bar, Enter advancing on a keyboard (not in a textarea, a picker or a sheet). Customer (one `SearchPicker` over customers and bikes; a bike selects its owner; "New customer" opens `CustomerSheet` with `onCreated`), Bike (the customer's active bikes as large cards with an "Open job J-…" chip; "Add bike" opens `BikeSheet` with the owner preset and `onCreated`), Work (requested work, condition on arrival), People (lead as single-select chips, "Me" first, Unassigned allowed; additional staff as toggles; active staff only, D22), Services (chips by category, a filter above 12, −/+ quantity, a preview subtotal and, only with view_costs, a Cult Commons preview), then Review with Edit per section. It owns the job's and each service line's `newId()` key, so a double tap or retry makes one job. Draft: `src/lib/intake-draft.ts`, one per device under `bicii.intake-draft.v1` (ids, labels, typed text; guarded like recent searches), offered back as "Continue the intake you started at 10:42?" / Discard, cleared on success. Rendered only in the browser (the draft is in localStorage). |
+| `JobStatusActions` | The usual next steps (`primaryActions`) as large one-tap buttons with a toast, and "Change status": a sheet listing the other allowed moves (`allowedTransitions`) with an optional note, plus Reopen and Cancel as `ReasonConfirm` (D15, D16). Nothing for a collected or cancelled job. |
+| `LineTable` | A job's lines, dense (`text-dense`, `tabular-nums`): description, qty, unit price, total, and with view_costs unit cost, yield and Cult Commons per line. Its layout follows its own width (container queries: 28rem without costs, 42rem with), not the screen's, since the lines card is narrow on an iPad; narrower, each line is a stacked row. Voided lines stay, struck through with who, when and why, behind "Show voided". Each live line of an open job has `VoidLineControl`. |
+| `VoidLineControl` | "Void…" on a line: `ReasonConfirm` calling `voidLine`. |
+| `AddServiceButton` / `AddServiceSheet` | `SearchPicker` over active services (price and category shown), quantity with steppers, the price prefilled and editable by anyone (D14), the cost field only with view_costs, a live line-total preview; the sheet's `newId()` line key makes a repeat submit add one line. Disabled with "Completed jobs are locked. Reopen to change lines." once the job is completed. |
+| `ManualLineButton` / `ManualLineSheet` | Description, quantity, unit price and (view_costs only) cost, with the same preview, key and lock. |
+| `TotalsSummary` (server) | The compact summary row under the lines (SPEC §22, not a modal): the running sale total for everyone; with view_costs also Cost, Yield, Cult Commons (with the rate when every line shares it) and BICII yield after Cult Commons, from `work_order_totals_staff`. |
+| `Timeline` (server, `job-timeline.tsx`) | A job's events newest first: `describeEvent` titles (`src/lib/workshop-timeline.ts`), notes and reasons quoted, the actor ("Recorded outside the app" when none) and the time. Payloads carry no costs. |
+| `PhotoViewer` | Sheet: the photo enlarged (tap for full size), who can see it (`SegmentedControl` Internal / Customer / Public, applied immediately with `useOptimistic` and a toast; each level explained; Public disabled on a customer record, PLAN D13, and on a job, D19), caption, and delete with a reason (two steps; Cancel returns focus to "Delete photo…"). A change that went through but could not remove the old copy from Storage is reported as done, with "Finish" (toast and inline), not as a failure; the next showing of the record finishes it anyway. |
+
+### Workshop
+
+- **Cost visibility.** Cost, yield and Cult Commons figures exist in a
+  job's data only for staff with `view_costs`: the domain reads lines from
+  the base table's cost-free columns (or `work_order_line_items_staff`)
+  and totals from `work_order_totals` (or `work_order_totals_staff`), so
+  a DTO for anyone else has no `costs` key to hide. Screens never filter
+  numbers out of a fuller object; entering a cost (a service override or a
+  manual line's cost) is offered only with `view_costs` and refused by the
+  action and the RPC otherwise (D14). The timeline carries no costs for
+  anyone.
+- **Intake photos follow creation.** `record_attachment` needs the job row
+  to exist, so the wizard creates the job first and lands on
+  `/jobs/{id}?intake=photos`: the "Intake photos" card comes first there,
+  with the camera prominent, the upload tiles and "Done" (which drops
+  `?intake`). The upload queue lives above the pages, so leaving early
+  loses nothing.
+- **Job page order** (phone): header (J- number, status, overdue badge,
+  bike, customer with tap-to-call, check-in date and age), status actions,
+  intake photos (intake only), requested work and condition, lines with
+  totals, photos; then people, dates (each stamp its own row: completed
+  and collected never merge), notes and the timeline, a second column on
+  wide screens.
 
 ### Photos and images
 
@@ -204,8 +237,10 @@ upload itself, below).
 - Who sees what: **Internal**, staff only; **Customer**, staff and the
   bike's current owner (or the customer, for a customer-record photo) on
   the BICII website once customer accounts launch (Phase 11); both live in
-  the private `media-internal` bucket. **Public**, anyone with the link
-  (`media-public`); never for a customer record. Changing to or from
+  the private `media-internal` bucket. A job photo's Customer level means
+  the job's customer. **Public**, anyone with the link (`media-public`);
+  never for a customer record (D13) or a job (D19): the app refuses before
+  copying anything to `media-public`, and the database refuses too. Changing to or from
   Public moves the object between buckets (`src/lib/domain/attachments.ts`
   explains the order of steps and what a failure leaves); whatever a failed
   cleanup leaves is removed the next time the record is shown.

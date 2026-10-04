@@ -26,7 +26,10 @@ phone, uploaded straight to Storage) with a photo viewer (caption,
 internal / customer / public, delete with a reason), and global search
 from the header. M1.3 (workshop) is in progress: its database layer
 (catalog, Cult Commons rates, jobs, lines, the customer job projection, job
-search) and the seeded jobs are built; the screens come next.
+search) and the seeded jobs are built, with the intake wizard (`/jobs/new`),
+the job page (status, lines and totals, photos, people, timeline) and a list
+of open jobs on `/jobs`; the board, assignments, notes and approval editing
+come next.
 
 ## Quickstart
 

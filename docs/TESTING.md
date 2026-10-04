@@ -166,7 +166,16 @@ fixture, in the same PR.
   Cult Commons previews (`cult-commons.test.ts`) over the shared fixture
   table `tests/fixtures/cult-commons.ts` (SPEC §10 examples, loss, half-up
   and per-line rounding, another rate, the D1 job); every new P0001 code,
-  unique index and check mapped in `db-errors.ts`, and 22003.
+  unique index and check mapped in `db-errors.ts`, and 22003. Step 3:
+  status labels, tones, board groups (every status in exactly one),
+  `allowedTransitions` equal to `transitionRule` with reopen/cancel kinds,
+  `primaryActions` only ever allowed no-reason moves (`workshop.test.ts`);
+  `describeEvent` for every `work_order_event_type`
+  (`workshop-timeline.test.ts`); the intake draft (de)serialiser and its
+  guarded storage (`intake-draft.test.ts`); job photos never public, D19
+  (`attachments.test.ts`); `CustomerSheet` / `BikeSheet` hand a new record
+  to `onCreated` instead of navigating, and navigate as before without it
+  (`record-sheets.test.tsx`, actions mocked).
 
 ### Database (SPEC §27.2 and §23)
 
@@ -273,6 +282,25 @@ customer record whose Public option is disabled with the D13 explanation
 with no customer. A search test slows every `/customers` result by 700 ms:
 what is typed while "tan" loads is kept ("tan wei", not "tani"), and opening
 a result while a search is still waiting to be sent keeps the record open.
+
+Phase 3 spec (`workshop.spec.ts`, `tagFor` from `helpers.ts`): SPEC §27.3
+journey 1 without the part line, as the admin: /jobs → New job → a new
+customer and a new bike from the intake's sheets → requested work and
+condition → Marcus Tan lead, Nur Aisyah additional → Full Service →
+Review → Create job; the job opens on its J- number with the Intake photos
+card, the fixture photo uploads and shows, Done drops `?intake`; People
+lists both; Wheel True × 2 gives $270.00, cost $0.00, yield $270.00, Cult
+Commons $81.00, after Cult Commons $189.00; a manual "Valve core" 1 × $5.00
+costing $2.00 gives $275.00 and $81.90; voiding it with "Not needed" (two
+steps, 400 ms guard) brings $270.00 back and the voided line shows its
+reason; Start work → Complete (Add service now disabled with the lock
+explanation) → Ready for collection → Collected, with Completed and
+Collected as separate dated rows; the timeline lists check-in, both
+assignments, the photo, the three lines, the void and its reason, work
+started, completed, ready for collection and collected. A reload mid-intake
+offers the draft back (Continue restores step and customer; Discard starts
+afresh). mechanic2 (no view_costs) opens J-000002 and sees its $300.00 total
+but no cost, yield or Cult Commons, and the page's data holds no cost key.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
