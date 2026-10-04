@@ -1,0 +1,427 @@
+@import "tailwindcss";
+
+/*
+ * BICII Admin design tokens.
+ *
+ * The first @theme block is ported from the public site
+ * (abhishekcheriangeorge-ops/bicii, src/app/globals.css) so the Admin
+ * visually belongs to BICII. Keep it in step with that file; do not invent a
+ * second brand. The second @theme block is the operational layer the public
+ * site does not need: status colours mapped onto the five brand accents,
+ * surface levels, dense table type and the tap-target floor.
+ *
+ * Every contrast ratio quoted below is computed by `npm run tokens:contrast`
+ * (scripts/contrast.mjs). Change a colour, rerun it, update the comment.
+ * See docs/DESIGN.md for how to use the tokens.
+ */
+
+@theme {
+  /* ---- Brand palette, sampled from the BICI. wordmark (public site) ---- */
+  --color-ink: #050707;
+  --color-paper: #fbfaf7;
+  --color-red: #d03731;
+  --color-yellow: #f4c245;
+  --color-sky: #4dabe9;
+  --color-indigo: #2e318d;
+  --color-green: #4aa35a;
+
+  /* Neutral ramp, warmed slightly so large paper fields don't read clinical.
+     dust-500 carries almost all the secondary text on light surfaces, so it is
+     pinned to the lightest value that still clears WCAG AA on the harder of the
+     two: 4.95:1 on paper, 4.54:1 on dust-100 (5.17:1 on card). It was #8a867a,
+     which looked right but measured 3.49:1 and 3.19:1 — under the 4.5:1 floor.
+     dust-300 is for dark surfaces only (11.94:1 on ink); it fails badly on
+     paper and must not be used there. dust-700 is 8.88:1 on paper. */
+  --color-dust-100: #f2f0ea;
+  --color-dust-200: #e4e1d8;
+  --color-dust-300: #cbc7ba;
+  --color-dust-500: #716d61;
+  --color-dust-700: #4a4740;
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* ---- Spring easings, integrated from real stiffness/damping ---- */
+  /* spring(320, 24) — the house curve: a single clean overshoot */
+  --ease-spring: linear(
+    0,
+    0.0209,
+    0.0755,
+    0.1534,
+    0.2454,
+    0.3446,
+    0.445,
+    0.5424,
+    0.6337,
+    0.7168,
+    0.7903,
+    0.8539,
+    0.9073,
+    0.9511,
+    0.9859,
+    1.0125,
+    1.032,
+    1.0453,
+    1.0535,
+    1.0575,
+    1.0582,
+    1.0565,
+    1.0529,
+    1.0481,
+    1.0426,
+    1.0367,
+    1.0309,
+    1.0253,
+    1.0201,
+    1.0154,
+    1.0112,
+    1.0077,
+    1.0047,
+    1.0023,
+    1.0004,
+    0.9989,
+    0.9979,
+    0.9972,
+    0.9968,
+    0.9966,
+    0.9966,
+    0.9968,
+    0.997,
+    0.9973,
+    0.9976,
+    0.9979,
+    0.9983,
+    0.9986,
+    0.9989
+  );
+  /* spring(210, 26) — near-critical, for large surfaces that shouldn't wobble */
+  --ease-soft: linear(
+    0,
+    0.0117,
+    0.0425,
+    0.087,
+    0.1407,
+    0.2002,
+    0.2626,
+    0.3259,
+    0.3884,
+    0.4489,
+    0.5066,
+    0.5608,
+    0.6113,
+    0.6579,
+    0.7004,
+    0.739,
+    0.7737,
+    0.8048,
+    0.8325,
+    0.857,
+    0.8786,
+    0.8975,
+    0.9139,
+    0.9282,
+    0.9405,
+    0.951,
+    0.96,
+    0.9676,
+    0.9741,
+    0.9795,
+    0.984,
+    0.9878,
+    0.9909,
+    0.9934,
+    0.9954,
+    0.997,
+    0.9983,
+    0.9993,
+    1.0001,
+    1.0007,
+    1.0011,
+    1.0014,
+    1.0016,
+    1.0017,
+    1.0017,
+    1.0017,
+    1.0016,
+    1.0016,
+    1.0015
+  );
+  /* spring(420, 20) — loud pop, reserved for deliberate moments */
+  --ease-pop: linear(
+    0,
+    0.0393,
+    0.1409,
+    0.2815,
+    0.4409,
+    0.6024,
+    0.7533,
+    0.885,
+    0.9924,
+    1.0735,
+    1.1288,
+    1.1606,
+    1.1724,
+    1.1683,
+    1.1526,
+    1.1294,
+    1.1023,
+    1.0743,
+    1.0477,
+    1.0242,
+    1.0047,
+    0.9898,
+    0.9794,
+    0.9731,
+    0.9704,
+    0.9706,
+    0.973,
+    0.9768,
+    0.9814,
+    0.9862,
+    0.9909,
+    0.9951,
+    0.9986,
+    1.0013,
+    1.0033,
+    1.0045,
+    1.0051,
+    1.0051,
+    1.0048,
+    1.0042,
+    1.0034,
+    1.0026,
+    1.0017,
+    1.001,
+    1.0004,
+    0.9999,
+    0.9995,
+    0.9993,
+    0.9991
+  );
+  --ease-glide: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --duration-spring: 576ms;
+  --duration-soft: 531ms;
+  --duration-pop: 691ms;
+}
+
+/* ---- Operational layer (Admin only) ---- */
+@theme {
+  /* Surface levels, back to front. Paper is the page; sunken (dust-100) is
+     for wells, table headers and the sheet backdrop on phones; card (white)
+     lifts a panel off paper with a dust-200 hairline. */
+  --color-card: #ffffff;
+  --color-sunken: var(--color-dust-100);
+  --color-hairline: var(--color-dust-200);
+
+  /* Deep and soft accent steps. The brand accents are fills; as text on light
+     surfaces only indigo clears AA, so each accent gets a deep text step and a
+     soft tint for dense rows where a solid fill would shout.
+       red-deep    6.76:1 paper, 7.06:1 card, 5.67:1 on red-soft
+       yellow-deep 6.12:1 paper,              5.62:1 on yellow-soft
+       sky-deep    6.56:1 paper,              5.77:1 on sky-soft
+       green-deep  6.16:1 paper,              5.38:1 on green-soft
+       indigo     10.37:1 paper,              8.53:1 on indigo-soft */
+  --color-red-deep: #a8271f;
+  --color-yellow-deep: #7a5a00;
+  --color-sky-deep: #1c5f8c;
+  --color-green-deep: #2c6b37;
+  --color-red-soft: #f9e1df;
+  --color-yellow-soft: #fcf0cc;
+  --color-sky-soft: #ddeefb;
+  --color-indigo-soft: #e3e3f3;
+  --color-green-soft: #dfefe2;
+
+  /* Status → accent. Each status has four tokens:
+       <status>       solid fill          <status>-fg   text on the solid fill
+       <status>-soft  tinted fill          <status>-deep text on the tint / on paper
+     Text-on-accent pairs (WCAG AA, 4.5:1 for normal text):
+       waiting   ink on yellow   12.16:1
+       progress  ink on sky       8.00:1
+       done      ink on green     6.42:1
+       danger    paper on red     4.71:1  (ink on red is 4.11:1 — never use it)
+       info      paper on indigo 10.37:1 */
+  --color-waiting: var(--color-yellow);
+  --color-waiting-fg: var(--color-ink);
+  --color-waiting-soft: var(--color-yellow-soft);
+  --color-waiting-deep: var(--color-yellow-deep);
+
+  --color-progress: var(--color-sky);
+  --color-progress-fg: var(--color-ink);
+  --color-progress-soft: var(--color-sky-soft);
+  --color-progress-deep: var(--color-sky-deep);
+
+  --color-done: var(--color-green);
+  --color-done-fg: var(--color-ink);
+  --color-done-soft: var(--color-green-soft);
+  --color-done-deep: var(--color-green-deep);
+
+  --color-danger: var(--color-red);
+  --color-danger-fg: var(--color-paper);
+  --color-danger-soft: var(--color-red-soft);
+  --color-danger-deep: var(--color-red-deep);
+
+  --color-info: var(--color-indigo);
+  --color-info-fg: var(--color-paper);
+  --color-info-soft: var(--color-indigo-soft);
+  --color-info-deep: var(--color-indigo);
+
+  /* Dense type for tables and line items: 13px on a 20px line. Pair with
+     `tabular-nums` for money and quantity columns. */
+  --text-dense: 0.8125rem;
+  --text-dense--line-height: 1.25rem;
+
+  /* Tap-target floor. WCAG 2.5.5 / Apple HIG: 44px. Use `min-h-tap`,
+     `min-w-tap` or `size-tap` on every interactive element; the public
+     site's buttons sit at 48px (`min-h-12`), which is above it. */
+  --spacing-tap: 2.75rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* Sticky header clearance for anchor jumps */
+    scroll-padding-top: 5rem;
+    -webkit-text-size-adjust: 100%;
+    /* `clip` rather than `hidden`: hidden on the root/body makes the element a
+       scroll container, which fights the viewport's own scrolling. */
+    overflow-x: clip;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Cuts the 300ms tap delay without disabling pinch-zoom */
+    touch-action: manipulation;
+  }
+
+  ::selection {
+    background-color: var(--color-yellow);
+    color: var(--color-ink);
+  }
+
+  /* Two-tone focus ring. A single colour can't clear WCAG 1.4.11's 3:1 on both
+     surfaces — indigo is 10.37:1 on paper (10.82:1 card, 9.50:1 dust-100) but
+     1.87:1 on ink, and paper is the reverse. The box-shadow fills the
+     outline-offset gap with paper, so on ink the paper ring carries it
+     (19.35:1) and on paper the indigo ring does. */
+  :focus-visible {
+    outline: 3px solid var(--color-indigo);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 3px var(--color-paper);
+    border-radius: 2px;
+  }
+
+  /* On ink surfaces, swap which ring is the bright one */
+  .on-ink :focus-visible,
+  .on-ink:focus-visible {
+    outline-color: var(--color-paper);
+    box-shadow: 0 0 0 3px var(--color-ink);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    /* Heavy grotesk display type needs negative tracking to match the wordmark */
+    letter-spacing: -0.035em;
+    line-height: 0.92;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* iOS zooms the page when a focused input's text is under 16px. Inputs stay
+     at 16px on touch screens; dense tables use text-dense for display only. */
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+
+  /* Number inputs never show spinners: quantities and money are typed or
+     stepped with explicit buttons, and a scroll wheel must not change them. */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* Edge gutters widen with the viewport rather than jumping at breakpoints,
+     and past 90rem the extra space becomes padding so content stops sprawling. */
+  .gutter {
+    padding-inline: max(clamp(1rem, 4vw, 3rem), (100% - 90rem) / 2);
+  }
+
+  .measure {
+    max-width: 62ch;
+  }
+
+  /* Eyebrow label used above every section heading */
+  .eyebrow {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 26px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes sheet-in-right {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Motion is opt-out at the source: every animated primitive keys off this. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
