@@ -58,6 +58,8 @@ permission_key enum:
 Rules:
 
 - `role = admin` implies every permission. `staff` has only the rows granted.
+- An update can never leave the shop without an active admin (trigger
+  `staff_keep_an_active_admin`, serialised with an advisory lock).
 - "Staff" in any policy means `staff.active = true` for the calling
   `auth.uid()`. Deactivating a staff member revokes everything at once.
 - Helpers in `private`, all `security definer`, `stable`, with
@@ -768,12 +770,16 @@ rely on a unique index and return the existing row on replay.
 | `receive_purchase(po_id, idempotency_key, lines[])` | P(manage_purchasing) | §10. |
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
-| `grant_permission` / `revoke_permission` / `set_staff_active` | A or P(manage_staff) | Permission rows. |
+| `grant_permission` / `revoke_permission` / `set_staff_active` | A or P(manage_staff) | Permission rows (`granted_by` = caller); grant/revoke are replay-safe. Nobody deactivates themselves; only an admin changes an admin's status. |
+| `my_staff_profile()` | authenticated | Caller's staff row + effective permissions (admin → all; inactive → none); zero rows for non-staff. |
+| `staff_directory()` | S | `id, display_name, role, active` of every staff member: how staff see colleagues' names (§15) without reading the `staff` table. |
 
 ## 17. Sequences and short IDs
 
 `private.next_short_id(prefix text) returns text` reads a per-prefix sequence
-(`seq_short_id_B`, `seq_short_id_J`, …) and zero-pads to six digits. Sequences
+(`private.seq_short_id_b`, `private.seq_short_id_j`, …, `maxvalue 999999 no
+cycle`, so exhaustion raises rather than truncating) and zero-pads to six
+digits. Unknown prefixes raise SQLSTATE 22023. Sequences
 are never reset. The UUID is the primary key everywhere; short IDs are for
 humans and QR codes.
 

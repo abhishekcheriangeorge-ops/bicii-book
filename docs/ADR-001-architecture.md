@@ -117,12 +117,37 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
   grants, so a table never exists without its policies in the same commit.
 - `supabase/seed.sql` seeds local and preview databases. It is deterministic
   (fixed UUIDs) so tests reference seeded rows by ID.
-- After every migration: `supabase gen types typescript --local >
-  src/lib/database.types.ts` is committed. A CI check regenerates and diffs.
-- Environments: local (`supabase start` on a dev machine, or a plain
-  Postgres 16 with the `supabase/tests/auth-shim.sql` applied where Docker is
-  unavailable), a hosted `bicii-staging` Supabase project for previews, and
-  `bicii-prod`. Branch previews on Vercel point at staging.
+- Migration files use Supabase CLI timestamp names
+  (`20261004000100_foundation.sql`) and are applied in filename order, each
+  in one transaction, and recorded in
+  `supabase_migrations.schema_migrations` exactly as the CLI records them, so
+  the CLI and our devstack scripts agree on what has run.
+- Migrations never rely on Supabase's default privileges (hosted Supabase
+  grants new `public` objects to `anon`/`authenticated`; plain Postgres
+  grants EXECUTE on functions to PUBLIC). Every object is revoked from
+  `public, anon, authenticated, service_role` and granted exactly what it
+  needs, so behaviour is identical on hosted Supabase and locally. Meta tests
+  enforce it (RLS on every `public` table; no function executable by PUBLIC).
+- After every migration: `npm run db:types` regenerates
+  `src/lib/database.types.ts` with the Supabase CLI's own generator
+  (`supabase gen types typescript --db-url`, which needs no Docker) and the
+  file is committed. `npm run db:types -- --fresh` generates from a
+  throwaway database built from the migrations; CI regenerates and diffs.
+- Environments: local, a hosted `bicii-staging` Supabase project for
+  previews, and `bicii-prod`. Branch previews on Vercel point at staging.
+  Local is either `supabase start` (Docker) or the **devstack**
+  (`scripts/devstack/`), which runs the real Supabase services without
+  Docker: Supabase Auth v2.178.0 and PostgREST v12.2.3 as release binaries,
+  Supabase Storage v1.79.31 built from source, against a plain Postgres 16,
+  behind a small Node gateway on `http://127.0.0.1:54321` with Supabase's
+  URL layout (`/auth/v1`, `/rest/v1`, `/storage/v1`). Auth and Storage run
+  their own migrations, so the `auth` and `storage` schemas are the real
+  ones, not a shim. The only devstack-specific SQL is
+  `supabase/devstack/roles.sql`: the platform roles and schemas that hosted
+  Supabase already has (`anon`, `authenticated`, `service_role`,
+  `authenticator`, `supabase_auth_admin`, `supabase_storage_admin`, the
+  `auth`/`storage`/`extensions` schemas). It is never a migration. The same
+  scripts run in CI against a Postgres service container.
 
 ### A5. Client/server boundary with Supabase
 
@@ -132,7 +157,8 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
 | `proxy.ts` | `createServerClient` with request/response cookies | anon key | Refresh only. |
 | Client Components | `createBrowserClient` | anon key | Only for realtime subscriptions (board updates) and Storage uploads from the camera. No business reads. |
 | Integration workers, webhook handlers | `createClient` with service role | service role | Lives in `src/lib/integrations/**`, `import 'server-only'`, never reachable from a component import graph. |
-| Tests | `pg` directly | DB superuser / set role | See TESTING.md. |
+| Tests | `pg` directly | DB superuser + `set local role` and `request.jwt.claims`, as PostgREST does | See TESTING.md. |
+| Local development | Same clients against the devstack gateway `http://127.0.0.1:54321` (or `supabase start`) | local demo anon / service-role keys written to `.env.local` by `npm run devstack:env` | Keys are signed with the well-known local demo secret; never used outside local. |
 
 Image delivery: `next/image` with `images.remotePatterns` for the Supabase
 Storage host. Local development adds `images.dangerouslyAllowLocalIP` only in
@@ -185,7 +211,7 @@ bicii-book/
     config.toml
     migrations/
     seed.sql
-    tests/                   SQL fixtures, auth shim for plain Postgres
+    devstack/roles.sql       platform roles/schemas for plain Postgres (never a migration)
   src/
     app/
       (auth)/login
@@ -229,10 +255,12 @@ bicii-book/
 - Every ledger-affecting feature costs a migration, an RPC, a policy, a DB
   test and a UI. That is the spec's definition of done, so the cost is
   deliberate.
-- Running the test suite needs a Postgres. Developer machines use
-  `supabase start`; the cloud agent container uses the local Postgres 16 with
-  the auth shim; CI uses a Postgres service container plus the shim. The shim
-  is small (auth schema, `auth.uid()`, `auth.jwt()`, the three roles) and is
-  the only place where "not real Supabase" leaks in.
+- Running the test suite needs a Postgres 16 and the devstack cache
+  (`npm run devstack:setup`, once per machine or CI cache). The DB tests
+  build their databases with the real Supabase Auth and Storage migrations,
+  so the only place where "not real Supabase" leaks in is
+  `supabase/devstack/roles.sql` (roles and grants hosted Supabase already
+  has). The test helpers work unchanged against `supabase start` or a hosted
+  database (`BICII_TEST_DATABASE_URL`).
 - Shopify is behind an interface from the first commit, so the first eleven
   phases do not need Shopify credentials.

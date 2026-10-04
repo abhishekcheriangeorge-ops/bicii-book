@@ -6,8 +6,10 @@ reporting and the Shopify boundary. It shares one Supabase backend with the
 public site (`abhishekcheriangeorge-ops/bicii`), which stays the
 customer-facing client.
 
-Status: Phase 0 (foundation) in progress — scaffold, design tokens and UI
-primitives are in; database, auth and the staff shell follow.
+Status: Phase 0 (foundation) in progress — scaffold, design tokens, UI
+primitives, the Docker-free Supabase devstack, the foundation and staff
+migrations and the DB test harness are in; auth screens and the staff shell
+follow.
 
 ## Running it
 
@@ -18,11 +20,35 @@ npm install
 cp .env.example .env.local   # fill in; never commit it
 npm run dev                  # http://localhost:3000, gallery at /dev/ui
 npm run check                # typegen + tsc, eslint, prettier --check
-npm test                     # all Vitest projects (unit today)
+npm test                     # all Vitest projects (unit + db)
 npm run test:unit            # unit project only (jsdom)
+npm run test:db              # db project: Postgres + real Supabase Auth/Storage schemas
 npm run build                # production build (Turbopack)
 npm run tokens:contrast      # recompute WCAG ratios for the colour tokens
 ```
+
+### Local Supabase without Docker (devstack)
+
+Needs Postgres 16 on 127.0.0.1:5432 (user/password `postgres`; override with
+`DATABASE_URL` or `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`), plus curl, tar
+and git. Runs the real Supabase Auth, PostgREST and Storage behind a gateway
+on http://127.0.0.1:54321, like `supabase start` (which also works, with
+Docker).
+
+```sh
+npm run devstack:setup       # once: download/build services into ~/.cache/bicii-devstack
+npm run db:reset             # rebuild bicii_dev: roles, Auth, Storage, migrations, seed
+npm run devstack:start       # Auth :9999, PostgREST :3001, Storage :5000, gateway :54321
+npm run devstack:env         # write .env.local for the app (local demo keys)
+npm run devstack:status      # health table; devstack:stop stops everything
+npm run db:migrate           # apply new migrations without a reset
+npm run db:types             # regenerate src/lib/database.types.ts
+```
+
+Seeded logins (password `bicii-dev-password`): `admin@bicii.test` (admin),
+`mechanic1@bicii.test` (view_costs), `mechanic2@bicii.test` (no
+permissions). Open the app at http://localhost:3000 (not 127.0.0.1: Next 16
+blocks dev resources on other origins).
 
 ## Documents
 

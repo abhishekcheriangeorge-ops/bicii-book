@@ -24,7 +24,8 @@ caching or proxy.
 - Admin repo `abhishekcheriangeorge-ops/bicii-book`: empty, no commits.
 - Toolchain available to the cloud agent: Node 22, npm 10, Supabase CLI via
   `npx supabase`, Postgres 16 locally (no Docker, so no `supabase start`
-  there; see TESTING.md for the shim).
+  there; the Docker-free devstack in `scripts/devstack/` runs the real
+  Supabase Auth, PostgREST and Storage instead; see TESTING.md).
 - Next.js 16 specifics that change how code is written are listed in
   ADR-001 "Context".
 
@@ -67,7 +68,10 @@ Deliverables:
   `money_amount` domain, `set_updated_at()` trigger function,
   `private.next_short_id()` and sequences, `private.current_*()` helpers,
   `private.require_permission()`); migration `0002_staff.sql` (staff,
-  staff_permissions, permission enum, RLS); `supabase/tests/auth-shim.sql`;
+  staff_permissions, permission enum, RLS) — shipped as
+  `20261004000100_foundation.sql` and `20261004000200_staff.sql` (CLI
+  timestamp names); the Docker-free devstack (`scripts/devstack/`,
+  `supabase/devstack/roles.sql`) in place of the auth shim;
   `tests/db/harness.ts` (`asUser`, `asAnon`, `asServiceRole`, rollback per
   test).
 - Design tokens: copy `globals.css` theme from the public site; add
@@ -287,10 +291,11 @@ never sees production keys.
 
 ## 5. Risks and mitigations
 
-- **Docker-less environments cannot run Supabase Auth locally.** Mitigated
-  by the auth shim for DB tests and by E2E against staging. Login E2E in the
-  cloud agent uses staging credentials from secrets, or is skipped with a
-  clear message.
+- **Docker-less environments cannot run `supabase start`.** Mitigated by the
+  devstack (`scripts/devstack/`): the real Supabase Auth, PostgREST and
+  Storage on a plain Postgres 16 behind a local gateway, so DB tests and
+  login E2E run against real Supabase services without Docker or staging
+  credentials.
 - **Turbopack + PWA tooling.** Serwist needs webpack; a hand-written service
   worker avoids it. Offline is out of MVP scope anyway.
 - **RLS and column-level grants are easy to get subtly wrong.** The RLS

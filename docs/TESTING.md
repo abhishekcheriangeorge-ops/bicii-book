@@ -17,35 +17,75 @@ nightly schedule and on PRs labelled `e2e`.
 
 ## Database test harness
 
-Supabase's local stack needs Docker. Where Docker exists (developer laptops)
-`supabase start` provides a real stack and `DATABASE_URL` points at it. Where
-it does not (the cloud agent container, some CI runners) the harness uses any
-Postgres 16:
+The DB tests run against the real Supabase schemas without Docker. Any
+Postgres 16 will do (the cloud agent container's, a CI service container, a
+laptop's); the Supabase parts come from the devstack cache
+(`npm run devstack:setup`, once per machine):
 
-1. `supabase/tests/auth-shim.sql` creates the `auth` schema with a minimal
-   `auth.users` table, the functions `auth.uid()`, `auth.jwt()`,
-   `auth.role()` reading `request.jwt.claims`, and the roles `anon`,
-   `authenticated`, `service_role`. It is idempotent and a no-op on a real
-   Supabase database (guarded by `if not exists`).
-2. Migrations are applied in order with `psql` (the test runner does this, so
-   the CLI is not required to run tests).
-3. `supabase/seed.sql` is applied.
-4. Each test file runs inside a transaction that is rolled back, so tests are
-   independent and the seed is reused.
+1. **Global setup** (`tests/db/global-setup.ts`) builds one template
+   database per run with the same code as `npm run db:reset`
+   (`scripts/devstack/database.mjs`):
+   `supabase/devstack/roles.sql` (the platform roles and schemas hosted
+   Supabase already has; never a migration) → Supabase Auth v2.178.0's own
+   migrations (`auth migrate`: the real `auth.users`, `auth.identities`,
+   `auth.uid()`, `auth.jwt()`) → Supabase Storage v1.79.31's own migrations
+   (the real `storage` schema) → `supabase/migrations/*.sql` in filename
+   order, each in a transaction, recorded in
+   `supabase_migrations.schema_migrations` as the Supabase CLI does →
+   `supabase/seed.sql`. About one second.
+2. **Per file** (`tests/db/setup.ts`): a fresh database is cloned from the
+   template (`create database … template …`) and dropped afterwards, so files
+   are independent and concurrency tests can open several real connections
+   (`openConnections(n)`) and commit.
+3. **Per test**: the `as*` helpers run their body in a transaction that is
+   rolled back unless the test passes `{ commit: true }`.
 
-Acting as a user in a test:
+Files run one at a time (`fileParallelism: false`). Connection: the server
+from `DATABASE_URL` (or `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`), default
+`postgres:postgres@127.0.0.1:5432`; the user must be able to create
+databases and roles.
+
+Acting as a user in a test (`tests/db/harness.ts`):
 
 ```ts
-await asUser(client, { sub: STAFF_MECHANIC_ID, role: 'authenticated' }, async (tx) => {
+await asUser(conn, { sub: AUTH_USER.mechanic1, role: 'authenticated' }, async (tx) => {
   // tx has `set local role authenticated` and
   // `select set_config('request.jwt.claims', '{"sub":"…","role":"authenticated"}', true)`
 });
-await asAnon(client, async (tx) => { … });
-await asServiceRole(client, async (tx) => { … });
+await asStaff(conn, STAFF.mechanic1, async (tx) => { … });  // looks up the auth user
+await asAnon(conn, async (tx) => { … });
+await asServiceRole(conn, async (tx) => { … });
+await withClaims(conn, claims, async (tx) => { … });  // claims, but stay the owner: for private.* helpers
+await actAs(tx, claims);  // switch identity inside an open transaction
 ```
 
-The same helper works unchanged against a real Supabase database, which is
-how the staging smoke run proves the shim is faithful.
+The helpers do exactly what PostgREST does, so they work unchanged against a
+real Supabase database: set `BICII_TEST_DATABASE_URL` to an already migrated
+and seeded database (for example `supabase start`'s) and the harness uses it
+directly instead of cloning; tests that commit or move sequences skip
+themselves in that mode (`isolatedDatabase()`).
+
+`tests/db/stack.smoke.test.ts` goes one step further when the devstack is
+running (`npm run db:reset && npm run devstack:start`): it signs in through
+the gateway with supabase-js as `admin@bicii.test`, calls
+`rpc('my_staff_profile')`, and round-trips an object through Storage with
+the service key. It skips with a message when the gateway is not reachable.
+
+Catalogue meta tests (`tests/db/meta.test.ts`) cover every future migration
+automatically: RLS enabled on every `public` table, no function in
+`public`/`private` executable by PUBLIC, security-definer functions pin
+`search_path`, no money-like column is `real`/`double precision`.
+
+### Devstack commands
+
+| Command | What it does |
+|---|---|
+| `npm run devstack:setup` | Download/build PostgREST, Supabase Auth, Node 24 and Supabase Storage into `~/.cache/bicii-devstack` (`BICII_DEVSTACK_CACHE`). Idempotent. |
+| `npm run db:reset` | Drop and rebuild the dev database (`bicii_dev`): roles → Auth → Storage → migrations → seed. |
+| `npm run db:migrate` | Apply only pending app migrations. |
+| `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
+| `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. |
+| `npm run devstack:env` | Write `.env.local` with the gateway URL, local anon/service keys and `DATABASE_URL`. |
 
 ## What is tested where
 
@@ -120,10 +160,12 @@ UUIDs are exported from `tests/fixtures/ids.ts` so tests never query by name.
 
 GitHub Actions, `ci.yml`:
 
-- `check`: install, `tsc`, `eslint`, `prettier --check`, regenerate types
-  against a migrated Postgres service container and `git diff --exit-code`.
-- `test`: Postgres 16 service container → shim → migrations → seed → Vitest
-  unit + db.
+- `check`: install, `tsc`, `eslint`, `prettier --check`,
+  `npm run db:types -- --fresh` against the Postgres service container and
+  `git diff --exit-code`.
+- `test`: Postgres 16 service container + cached devstack
+  (`npm run devstack:setup`) → Vitest unit + db (the db project builds its
+  own template: roles → Auth → Storage → migrations → seed).
 - `build`: `next build`.
 - `e2e` (label/nightly): `next build && next start` with the service DB and
   Supabase Auth from staging; Playwright with traces on failure.
