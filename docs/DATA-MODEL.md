@@ -354,7 +354,8 @@ work_orders                              -- written only through RPCs (§16)
   cancelled_at timestamptz null, cancellation_reason text null (≤ 500)
   currency char(3) not null default 'SGD'
   created_by uuid -> staff, created_at, updated_at
-  checks (named, mapped in db-errors.ts): collected ⇔ collected_at; cancelled ⇔
+  checks (named; every named check and unique index in the migrations is mapped in
+    db-errors.ts, enforced by tests/unit/db-errors.test.ts): collected ⇔ collected_at; cancelled ⇔
     cancelled_at and cancellation_reason; completed/ready_for_collection/collected ⇔
     completed_at; ready_for_collection_at needs completed_at; ready_for_collection
     needs ready_for_collection_at; completed_at needs started_at; started_at,
@@ -446,7 +447,7 @@ consistent. One event per action:
 | `details_changed` | requested work or notes edited | `{field: {from, to}}` per changed field |
 | `approval_flagged` | flag or note changed | `flagged, note` |
 | `assignment_changed` | assignment inserted / closed, at `assigned_at` / `unassigned_at` | `action (assigned/unassigned), staff_id, role` |
-| `note_added` / `diagnosis_added` | `add_work_order_note` | `body` |
+| `note_added` / `diagnosis_added` | `add_work_order_note` | `note_id, body` (`note_id`, the client's key, unique: `work_order_events_note_id_key`) |
 | `photo_added` / `photo_removed` | job attachment recorded (at its `created_at`) / deleted | `attachment_id, visibility` / `attachment_id, reason` |
 | `line_added` / `line_voided` | line inserted (at `created_at`) / voided (at `voided_at`) | `line_id, line_type, description, quantity, unit_sale_price, sale_total, currency` / `line_id, description, quantity, sale_total, reason` |
 | `stock_consumed` / `stock_reversed` | Phase 4 | — |
@@ -514,6 +515,9 @@ work_order_line_items                    -- immutable except voiding; never dele
   quantity line_quantity not null        -- numeric(10,2), NaN-free domain; 0 < q ≤ 9999
   unit_sale_price_snapshot money_amount not null (≥ 0)
   unit_direct_cost_snapshot money_amount not null (≥ 0)
+  cost_pending boolean not null default false
+                                         -- a manual line added with no cost (D14): the 0
+                                         -- above is a placeholder; check cost_pending_shape
   cult_commons_rate_snapshot rate_fraction not null (0..1)
   currency char(3) not null              -- the job's
   -- generated, stored, typed money_amount (each expression written out:
@@ -550,13 +554,19 @@ otherwise) a rate; for every writer the rows are append-only
 Totals per work order: `work_order_totals` (security invoker: job, currency,
 live `line_count`, `sale_total`) for every staff member;
 `work_order_totals_staff` adds `cost_total`, `yield_total`,
-`cult_commons_share` (Σ line shares, D1) and `bicii_yield_after_cc =
-yield_total − cult_commons_share`; `work_order_line_items_staff` returns
-every line column. Both `_staff` views are security-barrier definer views
+`cult_commons_share` (Σ line shares, D1), `bicii_yield_after_cc =
+yield_total − cult_commons_share` and `cost_pending_count` (live lines with
+no cost entered, D14: while it is above 0 the cost-side figures count those
+lines at 0 and are provisional; the job page says so, and later reports
+must too); `work_order_line_items_staff` returns every line column. Both `_staff` views are security-barrier definer views
 that return rows only when `private.has_permission('view_costs')`;
 `authenticated` holds SELECT on `work_order_line_items` only for the sale
-side (no unit cost, rate, cost, yield or Cult Commons columns) and on
-`services` for every column except `default_direct_cost`.
+side (no unit cost, rate, cost, yield or Cult Commons columns; `cost_pending`
+is granted, since it says only that a cost is missing) and on `services` for
+every column except `default_direct_cost`. The security definer writers to
+those two tables re-raise a check or not-null violation through
+`private.raise_without_row` (§16): Postgres would otherwise put the whole
+row, hidden columns included, in the error's DETAIL.
 
 Cult Commons: `cult_commons_share = max(yield, 0) × rate` per line, where
 `yield = sale − direct cost` and the consignor payout is direct cost.
@@ -583,6 +593,10 @@ Deviations from this document's earlier draft, each for a reason:
 - (d) The anonymous/customer services listing in §15 arrives with Phase 11
   through a separate customer-safe projection.
 - (e) The Cult Commons base rate ships in the migration, not the seed.
+- (f) A manual line added without a cost is stored with cost 0 and
+  `cost_pending` (D14, owner to confirm), rather than a nullable cost, so
+  the generated arithmetic stays one expression; it is corrected by voiding
+  and re-adding it with the cost.
 
 ## 6. Catalog and inventory
 
@@ -1062,6 +1076,13 @@ set to a stable snake_case code (for example `staff_email_mismatch`) and
 user-facing messages; unknown codes become a generic error. Authorization
 failures are `42501`, missing rows `P0002`, the last-admin guard `55000`.
 Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
+A security definer function that writes a table with columns its callers
+may not read (`services`, `work_order_line_items`) catches
+`check_violation` and `not_null_violation` around the write and re-raises
+them with `private.raise_without_row(sqlstate, constraint, table, schema,
+column, message)`: same SQLSTATE, constraint and message, no DETAIL. The
+DETAIL ("Failing row contains (…)") is built with the definer's privileges
+and would print the hidden columns (costs) to any caller through PostgREST.
 
 | RPC | Guard | Effects |
 |---|---|---|
@@ -1070,18 +1091,18 @@ Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
 | `create_work_order(work_order_id, customer_id, bike_id, requested_work, intake_notes = null, lead_mechanic_id = null, additional_staff_ids uuid[] = '{}', services jsonb = '[]')` → `work_orders` | S | Calls `private.create_work_order(actor, …, appointment_id)`. Replay first: an existing id returns the row as it is now when customer and bike match (no check, assignment or line re-run, no number burned), else `work_order_conflict`. Then FOR SHARE on customer and bike (D18 against a concurrent transfer), insert (trigger: J- number, `work_order_customer_archived`, `work_order_bike_archived`, `bike_owner_mismatch`), lead, ≤ 10 distinct additional staff, ≤ 20 services `{line_id, service_id, quantity}` (malformed 22023) through `private.insert_service_line`. One transaction. `requested_work_required`; 22004 for missing ids. |
 | `set_work_order_status(work_order_id, status, note = null)` → `work_orders` | S | Locks the job; same status → row unchanged (no event); `work_order_transition_invalid`; `reason_required` for cancel/reopen; `work_order_has_lines` when cancelling with live lines. Triggers stamp the time and write one event. |
 | `update_work_order(work_order_id, requested_work = null, intake_notes = null, internal_notes = null, completion_notes = null)` → `work_orders` | S | Null keeps, '' clears (requested work cannot be cleared: `requested_work_required`); no-op when unchanged; one `details_changed` event. Any status. |
-| `add_work_order_note(work_order_id, kind work_order_note_kind, body)` → `work_order_events` | S | `note_added` / `diagnosis_added` with `{body}` (1..5000; `note_required`, `note_too_long`). Any status. |
-| `set_approval_flag(work_order_id, flagged, note = null)` → `work_orders` | S | Internal flag (SPEC §7.1); `work_order_closed`; replay no-op; `approval_flagged` event. |
+| `add_work_order_note(note_id, work_order_id, kind work_order_note_kind, body)` → `work_order_events` | S | Locks the job; replay by `note_id` first (same job → that event; else `note_conflict`); `note_added` / `diagnosis_added` with `{note_id, body}` (1..5000; `note_required`, `note_too_long`). Any status. |
+| `set_approval_flag(work_order_id, flagged, note = null)` → `work_orders` | S | Internal flag (SPEC §7.1); note null keeps the stored one, '' clears it; `work_order_closed`; replay no-op; `approval_flagged` event. |
 | `assign_staff(work_order_id, staff_id, role assignment_role = 'additional')` → `work_order_assignments` | S (D22) | Locks the job; `work_order_closed`; P0002 / `staff_inactive`; same role → the active row (no event); other role → close and reopen; a new lead closes the previous lead's row. Trigger syncs `lead_mechanic_id`, writes `assignment_changed`. |
 | `unassign_staff(work_order_id, staff_id)` → `work_order_assignments` | S | Closes the active row and returns it; null when none (no event). `work_order_closed`. |
 | `add_service_line(line_id, work_order_id, service_id, quantity line_quantity = 1, unit_sale_price = null, unit_direct_cost = null, description = null)` → `uuid` | S; a cost needs P(view_costs) (D14) | Locks the job, then `private.insert_service_line`: replay by line id first (same job, type and service → id; else `line_conflict`), then `work_order_locked`, P0002 / `service_unavailable`, snapshots (description, price, cost, `cult_commons_rate_at(now)`), insert. Returns the id only. |
-| `add_manual_line(line_id, work_order_id, description, unit_sale_price, quantity line_quantity = 1, unit_direct_cost = null)` → `uuid` | S; a cost needs P(view_costs) (D14) | Same order (replay, `work_order_locked`); cost null → 0. Returns the id only. |
+| `add_manual_line(line_id, work_order_id, description, unit_sale_price, quantity line_quantity = 1, unit_direct_cost = null)` → `uuid` | S; a cost needs P(view_costs) (D14) | Same order (replay, `work_order_locked`); cost null → 0 with `cost_pending` (D14). Returns the id only. |
 | `void_line(line_id, reason)` → `uuid` | S | `reason_required` / `reason_too_long`; locks the job, then the line; already voided → id (no event); `work_order_locked`; inventory lines `line_type_unsupported` until Phase 4 replaces it with the reversal branch. Sets `voided_*`; never deletes. |
-| `work_order_timeline(work_order_id, max_rows = 200)` | S | Events newest first with actor and (assignment events) subject display names; 1..500 rows. |
+| `work_order_timeline(work_order_id, max_rows = 200)` | S | Events newest first with actor and (assignment events) subject display names; 1..2000 rows (the job page asks one more than it shows, to say older events exist). |
 | `create_service(service_id, name, default_sale_price, description = null, category_id = null, default_direct_cost = null, is_active = true, is_public = false)` → `uuid` | P(manage_inventory); a cost needs P(view_costs) | Replay by id with the same name → id; else `service_conflict`; `category_kind_mismatch`; 23505 `services_active_name_key`. |
 | `update_service(service_id, name, default_sale_price, description = null, category_id = null, is_active = true, is_public = false, default_direct_cost = null)` → `uuid` | same | Replaces every field; cost null keeps it. P0002. |
 | `set_service_archived(service_id, archived)` → `uuid` | P(manage_inventory) | Replay-safe. |
-| `schedule_cult_commons_rate(rate, effective_from = null)` → `cult_commons_rates` | A | Null = now; earlier than now → `rate_backdated` (D21); 23505 on a taken start time. |
+| `schedule_cult_commons_rate(rate_id, rate, effective_from = null)` → `cult_commons_rates` | A | Replay by `rate_id` first (same rate → the row as it is now; else `rate_conflict`). Null = now; earlier than now → `rate_backdated` (D21); 23505 on a taken start time. |
 | `cancel_cult_commons_rate(rate_id)` → `cult_commons_rates` | A | Only before it starts (`cult_commons_rate_in_effect`); replay returns the row. |
 | `add_inventory_line(work_order_id, product_id, unit_id, quantity, location_id)` | S | Phase 4 (reuses `private.require_open_work_order`). Snapshots; locks unit/stock; inserts line + `job_consumption` movement; unit → `held`/`sold` per D6; events. Replay = no-op by unique index. |
 | `void_line(line_id, reason)` inventory branch | S | Phase 4: sets `voided_*`; inserts `reversal` movement linked by `reversal_of_id`; unit back to `available`; events. Replay = no-op. |

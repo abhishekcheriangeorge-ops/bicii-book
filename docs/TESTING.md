@@ -94,10 +94,13 @@ customer has one in the seed), `customerClaims` acts as them, and
 that insert bikes consume `private.seq_short_id_b` and skip in
 existing-database mode, like the short-ID tests.
 
-Phase 3 helpers (`tests/db/workshop-fixtures.ts`): there is no seeded
-workshop data in step 1, so `makeCustomer`, `makeBike`,
+Phase 3 helpers (`tests/db/workshop-fixtures.ts`): tests of the workshop
+rules make their own records, so `makeCustomer`, `makeBike`,
 `makeCustomerWithBike` and `makeService` insert as the owner inside the
-test; `createWorkOrder`, `setStatus`, `walkTo` (drives a received job to
+test. The seed has workshop data too (nine jobs, categories, services: see
+"Seed data" below), so a service or category a test creates needs a name
+the seed does not use (active names are unique), and a count must be
+scoped to the test's own job or customer. `createWorkOrder`, `setStatus`, `walkTo` (drives a received job to
 any status through allowed moves), `addServiceLine`, `addManualLine`,
 `voidLine` and `events` call the RPCs as whoever the transaction is;
 `ownerMode` (`reset role`) returns to the owner mid-transaction and
@@ -165,22 +168,36 @@ fixture, in the same PR.
   `transitionRule`, open/closed statuses, D20 overdue at exactly 7 × 24 h);
   Cult Commons previews (`cult-commons.test.ts`) over the shared fixture
   table `tests/fixtures/cult-commons.ts` (SPEC §10 examples, loss, half-up
-  and per-line rounding, another rate, the D1 job); every new P0001 code,
-  unique index and check mapped in `db-errors.ts`, and 22003. Step 3:
+  and per-line rounding, another rate, the D1 job); every P0001 code, and
+  every named check and unique index in `supabase/migrations`, mapped in
+  `db-errors.ts` (`db-errors.test.ts` reads the migrations), a check
+  re-raised without its row still mapped by constraint, and 22003. Step 3:
   status labels, tones, board groups (every status in exactly one),
   `allowedTransitions` equal to `transitionRule` with reopen/cancel kinds,
   `primaryActions` only ever allowed no-reason moves (`workshop.test.ts`);
   `describeEvent` for every `work_order_event_type`
   (`workshop-timeline.test.ts`); the intake draft (de)serialiser and its
-  guarded storage (`intake-draft.test.ts`); job photos never public, D19
+  guarded storage, and a restored draft pruned of archived services and
+  inactive staff with a sentence saying so (`intake-draft.test.ts`); job
+  photos never public, D19
   (`attachments.test.ts`); `CustomerSheet` / `BikeSheet` hand a new record
   to `onCreated` instead of navigating, and navigate as before without it
-  (`record-sheets.test.tsx`, actions mocked).
+  (`record-sheets.test.tsx`, actions mocked). Review fixes: the status
+  row disabled for 400 ms after each status change, Collected confirmed in
+  a second step (job and customer named, focus on Back, confirm armed after
+  400 ms), the Change status sheet with nothing pre-selected and its submit
+  hidden while a cancel reason is open, "Keep job" beside "Cancel job"
+  (`job-status-actions.test.tsx`, action mocked); the timeline saying when
+  earlier events were left out (`job-timeline.test.tsx`); decimal
+  quantities and fraction-keeping steppers (`number-input.test.tsx`);
+  `ChipRadioGroup`'s single Tab stop and Arrow / Home / End
+  (`chip.test.tsx`).
   Step 4: the board's filters from the URL (`workshop.test.ts`: defaults,
   every filter read, unknown views, groups, statuses, dates, ages and limits
   dropped, job numbers however typed, `boardQuery` round-trips and leaves
   defaults out), the Singapore check-in presets and the Over 3 days /
-  Overdue windows (`checkedInSince`, `checkedInBefore`, `matchesAge`),
+  Overdue windows (`checkedInSince`, `checkedInBefore`, the overdue window
+  agreeing with `isOverdue`),
   `groupBoardJobs` and `visibleGroups`; Cult Commons rates typed as
   percentages (`cult-commons.test.ts`: `percentToRate` exact to 4 dp and
   refusing anything else, `formatRate`, `classifyRates` current / scheduled /
@@ -224,17 +241,17 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Cult Commons rate snapshot | insert a new rate effective tomorrow; lines today use 0.30, lines after use the new rate; old lines unchanged. Phase 3 (`work-order-lines.test.ts`): a rate scheduled for tomorrow leaves today's lines at 0.30; an owner-inserted 0.25 rate effective now gives the next line 0.25 while the earlier line keeps 0.30. |
 | Cult Commons is 30% of positive yield after direct costs (SPEC §10, D1) | every row of `tests/fixtures/cult-commons.ts` through `add_manual_line` equals the generated columns (rates other than 0.30 through an owner-inserted rate row), and both job fixtures equal `work_order_totals_staff` (the D1 job: 180.00, not 171.00); the same table runs through `src/lib/cult-commons.ts` in the unit project. |
 | Cult Commons rates are effective-dated and append-only (D21) | `workshop-catalog.test.ts`: the base 0.3000 row from 1970 ships with the migration; `cult_commons_rate_at` at, just before and before any rate (`cult_commons_rate_missing`); UPDATE/DELETE refused for the owner too; schedule/cancel admin only (view_costs is not enough), never backdated (`rate_backdated`), duplicate start 23505; cancelling a future rate restores the previous one, replays, frees its start time; a rate in effect cannot be cancelled (`cult_commons_rate_in_effect`), not even by the owner, and nobody un-cancels. |
-| Services' costs are gated (SPEC §4.2, D14) | mechanic2: `select default_direct_cost` / `select *` from `services` → 42501, `services_staff` → 0 rows; mechanic1 and admin read costs; create/update/archive need manage_inventory; a cost needs view_costs (null on update keeps it); replay by id, `service_conflict`, `category_kind_mismatch`, active-name uniqueness and reuse after archive; categories: staff read, manage_inventory writes. |
-| Work order status machine (D15, D16) | `work-orders.test.ts`: `private.work_order_transition_rule` equals `transitionRule` (src/lib/workshop.ts) for all 121 pairs; `set_work_order_status` accepts exactly the allowed 110 off-diagonal pairs (a fresh job driven to each from-state, each move tried in a rolled-back savepoint) and refuses the rest with `work_order_transition_invalid`; reason-required moves refuse a blank note; the 11 same-status calls are replay no-ops (row unchanged, no event); reopen needs a reason, clears completed_at/ready_for_collection_at, keeps started_at and the earlier `completed` event; cancel needs a reason and no live line (`work_order_has_lines`, also for the owner); stamps, number, customer, bike, check-in time and lead are immutable without the proper path (`work_order_immutable`); backwards `status_changed_at` is 22023. |
+| Services' costs are gated (SPEC §4.2, D14) | mechanic2: `select default_direct_cost` / `select *` from `services` → 42501, `services_staff` → 0 rows; mechanic1 and admin read costs; create/update/archive need manage_inventory; a cost needs view_costs (null on update keeps it); a manage_inventory holder without view_costs making `update_service` fail a check (negative price, blank or long name, long description) gets 23514 with the constraint and no DETAIL, never the stored cost; replay by id, `service_conflict`, `category_kind_mismatch`, active-name uniqueness and reuse after archive; categories: staff read, manage_inventory writes. |
+| Work order status machine (D15, D16) | `work-orders.test.ts`: `private.work_order_transition_rule` equals `transitionRule` (src/lib/workshop.ts) for all 121 pairs; `set_work_order_status` accepts exactly the allowed 110 off-diagonal pairs (a fresh job driven to each from-state, each move tried in a rolled-back savepoint) and refuses the rest with `work_order_transition_invalid`; reason-required moves refuse a blank note; the trigger alone (the owner's direct UPDATE, which the RPC's own checks never reach) refuses the same 110 pairs the same way and a reopen or cancel without `private.set_change_reason` (`reason_required`); the 11 same-status calls are replay no-ops (row unchanged, no event); reopen needs a reason, clears completed_at/ready_for_collection_at, keeps started_at and the earlier `completed` event; cancel needs a reason and no live line (`work_order_has_lines`, also for the owner); stamps, number, customer, bike, check-in time and lead are immutable without the proper path (`work_order_immutable`); backwards `status_changed_at` is 22023. |
 | Check-in is atomic and replay-safe (SPEC §2, §7.1) | `create_work_order` writes the job (J-######, increasing), `checked_in`, assignment and `line_added` events in that order with actor, auth user and the request's correlation ID; a bad service line rolls everything back and the burned number is never reused; replay by id returns the same row with no new event, line or assignment, even after the bike changed hands, the customer was archived and the job completed (and burns no number); another bike under the same id → `work_order_conflict`; archived customer/bike, D18 `bike_owner_mismatch` (shop bikes accepted), blank requested work, customers and inactive staff refused; no direct writes. |
-| Timeline events carry no costs (SPEC §7.3, §4.2) | one event per action with its documented payload; no-ops write nothing; after a full scenario with a manual line costing 62.00 (sold at 95.00), a recursive walk of every payload finds no key matching /cost\|yield\|cult\|commons\|rate/i and no value equal to 62, while 95 appears; `work_order_events` refuses UPDATE/DELETE for the owner (`work_order_history_append_only`); `work_order_timeline` names actors and assignment subjects, newest first, clamps max_rows. |
+| Timeline events carry no costs (SPEC §7.3, §4.2) | one event per action with its documented payload; no-ops write nothing; `add_work_order_note` replays on its note id (same event back, `note_conflict` on another job); `set_approval_flag` with a null note keeps the stored note, '' clears it; after a full scenario with a manual line costing 62.00 (sold at 95.00), a recursive walk of every payload finds no key matching /cost\|yield\|cult\|commons\|rate/i and no value equal to 62, while 95 appears; `work_order_events` refuses UPDATE/DELETE for the owner (`work_order_history_append_only`); `work_order_timeline` names actors and assignment subjects, newest first, clamps max_rows to 1..2000. |
 | Assignments (D22) | one active lead per job; a new lead closes the previous lead's row (not demoted); additional → lead switch; replay no-op; unassign returns null on replay; `staff_inactive`; `work_order_closed` on collected/cancelled jobs; `lead_mechanic_id` equals the active lead after every operation; rows are immutable except closing once (`assignment_immutable`). |
 | Job photos are never public (D19) | `record_attachment` on a job writes `photo_added`; `delete_attachment` writes `photo_removed` with the reason; unknown job P0002; `product` still unsupported; public via `record_attachment` or `set_attachment_visibility` → `attachment_work_order_never_public`; CHECK `attachments_work_order_never_public` exists. |
-| Lines (D14, D15) | `work-order-lines.test.ts`: sale-price overrides by anyone, cost overrides only with view_costs (42501); inactive/archived service `service_unavailable`; quantity 0/10000/negative price 23514, NaN quantity refused, overflowing totals 22003; lines locked once completed (`work_order_locked` for a new add and for void) and unlocked after reopen; replays of add_* after completion return the original id with no new event; void needs a reason, keeps the row, replays without a second event and leaves the totals; owner edits, un-voids and deletes → `line_immutable`; inventory lines cannot be voided until Phase 4 (`line_type_unsupported`); same line id on another job or type → `line_conflict`; line and service RPCs return ids only. |
-| Workshop concurrency (SPEC §25, D18, D22) | `workshop-concurrency.test.ts` (committed, real connections): same-id check-ins → one job, one `checked_in`; a check-in waiting on a bike being transferred fails with `bike_owner_mismatch`, a transfer waits for a check-in holding the bike, and no job's customer differs from the bike's owner at its check-in; two leads at once → one active lead mirrored on the job; a line racing completion is either before `completed_at` or refused with `work_order_locked` (both orders and a free race); same line id twice → one line, one event; two collections → one `collected`; two voids → one `line_voided`. |
+| Lines (D14, D15) | `work-order-lines.test.ts`: sale-price overrides by anyone, cost overrides only with view_costs (42501); a manual line with no cost (mechanic2's always, an admin's left empty) is `cost_pending` with cost 0 while one with cost 0 entered is not, `work_order_totals_staff.cost_pending_count` counts the live ones and drops a voided one once it is re-added with its cost, the flag is immutable for the owner and the CHECK keeps it to costless manual lines; mechanic2's bad quantity or price on `add_service_line` / `add_manual_line` / `create_work_order` services gets 23514 with the constraint and no DETAIL (the service's cost never appears); inactive/archived service `service_unavailable`; quantity 0/10000/negative price 23514, NaN quantity refused, overflowing totals 22003; lines locked once completed (`work_order_locked` for a new add and for void) and unlocked after reopen; replays of add_* after completion return the original id with no new event; void needs a reason, keeps the row, replays without a second event and leaves the totals; owner edits, un-voids and deletes → `line_immutable`; inventory lines cannot be voided until Phase 4 (`line_type_unsupported`); same line id on another job or type → `line_conflict`; line and service RPCs return ids only. |
+| Workshop concurrency (SPEC §25, D18, D22) | `workshop-concurrency.test.ts` (committed, real connections): same-id check-ins → one job, one `checked_in`; a check-in waiting on a bike being transferred fails with `bike_owner_mismatch`; a transfer is still pending (and waiting on a lock in `pg_stat_activity`) while a check-in holds the bike, and succeeds once it commits; two leads at once → one active lead mirrored on the job; a line racing completion is either before `completed_at` or refused with `work_order_locked` (both orders and a free race); same line id twice → one line, one event; two collections → one `collected`; two voids → one `line_voided`. |
 | Customer job projection (SPEC §4.2, §23; D8, D17, D19) | `workshop-customer-access.test.ts`, on the seeded jobs: a signed-in customer reads 0 rows from `work_orders`, `work_order_assignments`, `work_order_events`, `work_order_line_items`, `services`, `categories`, `cult_commons_rates`, `work_order_totals` and the three `_staff` views; `my_work_orders` returns exactly their non-cancelled jobs newest first (Tan: J-000001, not the cancelled J-000008) with exactly the documented keys and the coarse status (Priya's diagnosing J-000009 reads `received`, its voided line out of the total); `private.customer_job_status` maps all 11 statuses; `my_work_order_lines` has exactly description, quantity, unit price, total, currency and id, live lines only; `my_work_order_timeline` is check-in plus customer-status changes only (received → diagnosing, notes, approvals, assignments, lines and in_progress ↔ paused add nothing; completing and reopening do) plus customer photos still on the job (internal, re-hidden and deleted ones absent); `my_work_order_attachments` never internal; cancelled jobs and another customer's job return nothing; D17: after a transfer the previous owner keeps the job and the new owner does not see it (also on the seeded Bianchi sale), a job on a bike archived afterwards is still listed; staff without a customers row and archived customers get nothing; anon is refused (42501). |
 | Jobs in staff search (SPEC §7.2, §20) | `staff-search.test.ts`: "J-000004", "j000004", "J000004" rank 1.0 with Chloe's Giant as title, "customer · requested work" as subtitle and the job number as short_id; "000004" contains-match at 0.6; at least three characters; cancelled and collected jobs found; the kinds filter keeps jobs in or out; `archived = true` returns no jobs; an unknown kind (`product`) is 22023. |
-| The seed's timelines read true (TESTING "Seed data") | `workshop-seed.test.ts`: J-000001…J-000009 with their customer, bike, status, lead (= the active lead assignment) and stamps at their exact offsets from check-in; J-000001/J-000002 totals exactly as documented through `work_order_totals_staff`; J-000009's voided line out of its total; exactly one D20-overdue job (J-000006, through `isOverdue`); for every job: events in id order strictly increasing in time, exactly the expected events by type, nothing but J-000007 stamped within 30 minutes of the seed, every trigger-written actor equal to the row's `created_by` / `assigned_by` / `voided_by` and every status change by the job's lead, costed lines added by a view_costs holder, no line event after completion; J-000007 checked in after the Bianchi's `transferred` event. |
+| The seed's timelines read true (TESTING "Seed data") | `workshop-seed.test.ts`: J-000001…J-000009 with their customer, bike, status, lead (= the active lead assignment) and stamps at their exact offsets from check-in; J-000001/J-000002 totals exactly as documented through `work_order_totals_staff`; J-000009's voided line out of its total; exactly one D20-overdue job at seed time (J-000006, through `isOverdue` with `now` pinned to J-000007's check-in, so an existing seeded database that has aged still passes); for every job: events in id order strictly increasing in time, exactly the expected events by type, nothing but J-000007 stamped within 30 minutes of the seed, every trigger-written actor equal to the row's `created_by` / `assigned_by` / `voided_by` and every status change by the job's lead, costed lines added by a view_costs holder, no line event after completion; J-000007 checked in after the Bianchi's `transferred` event. |
 
 ### End-to-end (SPEC §27.3)
 
@@ -308,7 +325,8 @@ reason; Start work → Complete (Add service now disabled with the lock
 explanation) → Ready for collection → Collected, with Completed and
 Collected as separate dated rows; the timeline lists check-in, both
 assignments, the photo, the three lines, the void and its reason, work
-started, completed, ready for collection and collected. A reload mid-intake
+started, completed, ready for collection and collected. Collected is the
+second step of "Collected…" (the job named, focus on Back). A reload mid-intake
 offers the draft back (Continue restores step and customer; Discard starts
 afresh). mechanic2 (no view_costs) opens J-000002 and sees its $300.00 total
 but no cost, yield or Cult Commons, and the page's data holds no cost key.
@@ -318,7 +336,8 @@ the phone and iPad runs share one database): as mechanic2 (Nur Aisyah, no
 view_costs) My jobs lists J-000002, J-000003 (as additional), J-000005 and
 J-000009 and not Marcus's J-000004, with group counts and no money on the
 board; Unassigned lists J-000007; the Overdue age filter lists J-000006
-with its Overdue badge (D20); the status filter "Waiting on parts" lists
+with its Overdue badge (D20) and not J-000002 (ready for collection, so
+never overdue however old the seed is, as with `E2E_RESET=0`); the status filter "Waiting on parts" lists
 J-000005 and not J-000006 and its chip removes it; "j000004" in the job
 number box finds J-000004. On J-000002 she sees Total $300.00 and no
 "Cost", "Yield" or "Cult Commons" anywhere; on /settings/services prices
