@@ -26,7 +26,10 @@ export const metadata: Metadata = { title: "Search" };
 export default async function SearchPage({ searchParams }: PageProps<"/search">) {
   await requireStaff();
   const q = readQuery((await searchParams).q);
-  const groups = q ? groupHits(await staffSearch(await createClient(), q)) : [];
+  const { items: hits, more } = q
+    ? await staffSearch(await createClient(), q)
+    : { items: [], more: false };
+  const groups = groupHits(hits);
 
   return (
     <>
@@ -56,6 +59,12 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
         />
       ) : (
         <RememberOnOpen q={q}>
+          {more ? (
+            <p className="text-sm text-dust-700">
+              Showing the {hits.length} best matches; there are more. Add more of the name, phone,
+              serial number or B- number to narrow it down.
+            </p>
+          ) : null}
           {groups.map((group) => (
             <section
               key={group.kind}
@@ -63,7 +72,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
               className="flex flex-col gap-2"
             >
               <h2 id={`results-${group.kind}`} className="eyebrow text-dust-500">
-                {group.label} ({group.hits.length})
+                {/* Cut off: a count would read as the total. */}
+                {more ? group.label : `${group.label} (${group.hits.length})`}
               </h2>
               <RowList label={group.label}>
                 {group.hits.map((hit) => (

@@ -27,12 +27,16 @@ export default async function BikesPage({ searchParams }: PageProps<"/bikes">) {
   const params = await searchParams;
   const q = readQuery(params.q);
   const archived = readFlag(params.archived);
-  const bikes = await listBikes(await createClient(), { q, archived });
+  const { items: bikes, more } = await listBikes(await createClient(), { q, archived });
 
   const heading = q
-    ? `${bikes.length} ${bikes.length === 1 ? "match" : "matches"}`
+    ? more
+      ? `First ${bikes.length} matches`
+      : `${bikes.length} ${bikes.length === 1 ? "match" : "matches"}`
     : archived
-      ? "Archived bikes"
+      ? more
+        ? `Latest ${bikes.length} archived bikes`
+        : "Archived bikes"
       : "Recently updated";
 
   return (
@@ -50,6 +54,12 @@ export default async function BikesPage({ searchParams }: PageProps<"/bikes">) {
         <h2 id="bike-results" className="eyebrow text-dust-500">
           {heading}
         </h2>
+        {more && q ? (
+          <p className="text-sm text-dust-700">
+            There are more. Add more of the B- number, serial number, model or owner to narrow it
+            down.
+          </p>
+        ) : null}
         {bikes.length === 0 ? (
           <EmptyState
             icon={<BikeIcon />}

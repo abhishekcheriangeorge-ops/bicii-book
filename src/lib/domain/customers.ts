@@ -6,7 +6,7 @@ import { customerLabel } from "@/lib/people";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
 import { DomainError } from "./errors";
-import { containsPattern, queryWords } from "./query";
+import type { ListPage } from "./list";
 
 /**
  * Customers (SPEC §4.1, §21; DATA-MODEL §2). Staff read and write the
@@ -72,49 +72,57 @@ const NOT_FOUND = "That customer no longer exists. Refresh and try again.";
 /**
  * Customers matching `q` (staff_search: name words in any order, email,
  * phone digits), or the most recently updated ones when `q` is empty.
- * `archived` lists archived customers instead, filtered on the table.
+ * `archived` lists archived customers instead, matched the same way. At
+ * most `limit`; `more` says the list was cut off, so staff can narrow it.
  */
 export async function listCustomers(
   supabase: ServerSupabase,
   { q, archived = false, limit = 30 }: { q: string; archived?: boolean; limit?: number },
-): Promise<CustomerListItem[]> {
-  if (q && !archived) {
-    const hits = unwrap(
-      await supabase.rpc("staff_search", { q, kinds: ["customer"], max_results: limit }),
-    );
-    return (hits ?? []).map((h) => ({
-      id: h.id,
-      label: h.title,
-      detail: h.subtitle,
-      archived: false,
-    }));
+): Promise<ListPage<CustomerListItem>> {
+  if (q) {
+    const hits =
+      unwrap(
+        await supabase.rpc("staff_search", {
+          q,
+          kinds: ["customer"],
+          max_results: limit + 1,
+          archived,
+        }),
+      ) ?? [];
+    return {
+      items: hits.slice(0, limit).map((h) => ({
+        id: h.id,
+        label: h.title,
+        detail: h.subtitle,
+        archived,
+      })),
+      more: hits.length > limit,
+    };
   }
 
   let query = supabase.from("customers").select(LIST_COLUMNS);
   query = archived ? query.not("archived_at", "is", null) : query.is("archived_at", null);
-  if (q) {
-    const digits = q.replace(/\D/g, "");
-    if (/^[-+0-9 ().]+$/.test(q) && digits.length >= 3) {
-      query = query.ilike("phone_digits", containsPattern(digits));
-    } else {
-      for (const word of queryWords(q)) query = query.ilike("search_text", containsPattern(word));
-    }
-  }
-  const rows = unwrap(
-    await query.order(archived ? "archived_at" : "updated_at", { ascending: false }).limit(limit),
-  );
-  return (rows ?? []).map((r) => ({
-    id: r.id,
-    label: customerLabel({
-      firstName: r.first_name,
-      lastName: r.last_name,
-      displayName: r.display_name,
-      email: r.email,
-      phone: r.phone,
-    }),
-    detail: contactLine(r.email, r.phone),
-    archived: r.archived_at !== null,
-  }));
+  const rows =
+    unwrap(
+      await query
+        .order(archived ? "archived_at" : "updated_at", { ascending: false })
+        .limit(limit + 1),
+    ) ?? [];
+  return {
+    items: rows.slice(0, limit).map((r) => ({
+      id: r.id,
+      label: customerLabel({
+        firstName: r.first_name,
+        lastName: r.last_name,
+        displayName: r.display_name,
+        email: r.email,
+        phone: r.phone,
+      }),
+      detail: contactLine(r.email, r.phone),
+      archived: r.archived_at !== null,
+    })),
+    more: rows.length > limit,
+  };
 }
 
 /** A customer with the bikes they own now, or null when there is no such customer. */

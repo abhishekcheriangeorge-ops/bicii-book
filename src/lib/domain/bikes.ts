@@ -7,7 +7,7 @@ import { customerLabel } from "@/lib/people";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
 import { DomainError } from "./errors";
-import { containsPattern, orValue, queryWords } from "./query";
+import type { ListPage } from "./list";
 
 /**
  * Bikes (SPEC §5; DATA-MODEL §2). A bike is permanent: its B- short ID is
@@ -105,23 +105,33 @@ const labelOf = (c: NameColumns) =>
  * Bikes matching `q` (staff_search: short ID or serial number ignoring
  * case, spaces and dashes; brand, model, variant and colour words with the
  * owner's name), or the most recently updated ones when `q` is empty.
- * `archived` lists archived bikes instead, filtered on the table.
+ * `archived` lists archived bikes instead, matched the same way. At most
+ * `limit`; `more` says the list was cut off, so staff can narrow it.
  */
 export async function listBikes(
   supabase: ServerSupabase,
   { q, archived = false, limit = 30 }: { q: string; archived?: boolean; limit?: number },
-): Promise<BikeListItem[]> {
-  if (q && !archived) {
-    const hits = unwrap(
-      await supabase.rpc("staff_search", { q, kinds: ["bike"], max_results: limit }),
-    );
-    return (hits ?? []).map((h) => ({
-      id: h.id,
-      shortId: h.short_id,
-      title: h.title,
-      detail: h.subtitle,
-      archived: false,
-    }));
+): Promise<ListPage<BikeListItem>> {
+  if (q) {
+    const hits =
+      unwrap(
+        await supabase.rpc("staff_search", {
+          q,
+          kinds: ["bike"],
+          max_results: limit + 1,
+          archived,
+        }),
+      ) ?? [];
+    return {
+      items: hits.slice(0, limit).map((h) => ({
+        id: h.id,
+        shortId: h.short_id,
+        title: h.title,
+        detail: h.subtitle,
+        archived,
+      })),
+      more: hits.length > limit,
+    };
   }
 
   let query = supabase
@@ -130,36 +140,26 @@ export async function listBikes(
       "id, short_id, brand, model, variant, colour, serial_number, archived_at, owner:customers(first_name, last_name, display_name, email, phone)",
     );
   query = archived ? query.not("archived_at", "is", null) : query.is("archived_at", null);
-  if (q) {
-    const key = q.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const words = queryWords(q);
-    const clauses = [
-      ...(key.length >= 3
-        ? [
-            `serial_key.ilike.${orValue(containsPattern(key))}`,
-            `short_id.ilike.${orValue(containsPattern(q.trim()))}`,
-          ]
-        : []),
-      ...(words.length > 0
-        ? [`and(${words.map((w) => `search_text.ilike.${orValue(containsPattern(w))}`).join(",")})`]
-        : []),
-    ];
-    if (clauses.length > 0) query = query.or(clauses.join(","));
-  }
-  const rows = unwrap(
-    await query.order(archived ? "archived_at" : "updated_at", { ascending: false }).limit(limit),
-  );
-  return (rows ?? []).map((r) => ({
-    id: r.id,
-    shortId: r.short_id,
-    title: bikeTitle(r),
-    detail: bikeSubtitle({
-      ownerLabel: r.owner ? labelOf(r.owner) : null,
-      colour: r.colour,
-      serialNumber: r.serial_number,
-    }),
-    archived: r.archived_at !== null,
-  }));
+  const rows =
+    unwrap(
+      await query
+        .order(archived ? "archived_at" : "updated_at", { ascending: false })
+        .limit(limit + 1),
+    ) ?? [];
+  return {
+    items: rows.slice(0, limit).map((r) => ({
+      id: r.id,
+      shortId: r.short_id,
+      title: bikeTitle(r),
+      detail: bikeSubtitle({
+        ownerLabel: r.owner ? labelOf(r.owner) : null,
+        colour: r.colour,
+        serialNumber: r.serial_number,
+      }),
+      archived: r.archived_at !== null,
+    })),
+    more: rows.length > limit,
+  };
 }
 
 /** A bike with its current owner and ownership history, or null. */

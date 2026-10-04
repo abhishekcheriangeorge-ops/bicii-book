@@ -25,12 +25,16 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
   const params = await searchParams;
   const q = readQuery(params.q);
   const archived = readFlag(params.archived);
-  const customers = await listCustomers(await createClient(), { q, archived });
+  const { items: customers, more } = await listCustomers(await createClient(), { q, archived });
 
   const heading = q
-    ? `${customers.length} ${customers.length === 1 ? "match" : "matches"}`
+    ? more
+      ? `First ${customers.length} matches`
+      : `${customers.length} ${customers.length === 1 ? "match" : "matches"}`
     : archived
-      ? "Archived customers"
+      ? more
+        ? `Latest ${customers.length} archived customers`
+        : "Archived customers"
       : "Recently updated";
 
   return (
@@ -48,6 +52,11 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
         <h2 id="customer-results" className="eyebrow text-dust-500">
           {heading}
         </h2>
+        {more && q ? (
+          <p className="text-sm text-dust-700">
+            There are more. Add more of the name, phone number or email to narrow it down.
+          </p>
+        ) : null}
         {customers.length === 0 ? (
           <EmptyState
             icon={<UsersIcon />}
