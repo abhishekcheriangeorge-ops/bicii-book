@@ -20,6 +20,9 @@
 --     Reopening (completed or ready_for_collection -> in_progress) clears
 --     completed_at and ready_for_collection_at (D15 DEVIATION, owner to
 --     confirm before Phase 5). The stamps change only with a status change.
+--     Phase 4 extends the reopen rule (D6): sold units go back to
+--     held_for_customer when completed_at is cleared and are sold again when
+--     it is stamped again (see the EXTENSION POINT in the function below).
 --   * One lead mechanic plus any number of additional staff per job, in
 --     work_order_assignments (history kept: rows are closed, never edited
 --     or deleted). work_orders.lead_mechanic_id is kept equal to the active
@@ -35,7 +38,10 @@
 --   * Customer access boundary: base tables are staff-only; customers see
 --     their own jobs through customer-safe RPCs (step 2, D17).
 --   * work_orders.appointment_id has no foreign key yet: Phase 2 adds it
---     together with check_in_appointment, built on private.create_work_order.
+--     together with check_in_appointment, built on private.create_work_order
+--     (a new job) or on the link-once rule (an existing open job): the
+--     column may go from null to a value exactly once on UPDATE and never
+--     changes or clears afterwards (work_order_immutable).
 
 create type public.work_order_status as enum (
   'received',
@@ -217,7 +223,8 @@ create index work_orders_created_by_idx on public.work_orders (created_by);
 comment on table public.work_orders is
   'Workshop jobs. Written only by the workshop RPCs; status rules, stamps and the timeline are enforced by triggers.';
 comment on column public.work_orders.job_number is 'J-######, server-assigned from private.next_short_id(''J''); immutable.';
-comment on column public.work_orders.appointment_id is 'Foreign key to appointments added in Phase 2.';
+comment on column public.work_orders.appointment_id is
+  'Set once (on insert, or null -> value on update) and never changed or cleared; foreign key to appointments added in Phase 2.';
 comment on column public.work_orders.lead_mechanic_id is
   'The active lead assignment''s staff member; maintained by the work_order_assignments trigger.';
 comment on column public.work_orders.internal_notes is 'Staff only; never returned by a customer RPC.';
@@ -410,15 +417,21 @@ begin
      or new.job_number is distinct from old.job_number
      or new.customer_id is distinct from old.customer_id
      or new.bike_id is distinct from old.bike_id
-     or new.appointment_id is distinct from old.appointment_id
      or new.currency is distinct from old.currency
      or new.created_by is distinct from old.created_by
      or new.created_at is distinct from old.created_at
-     or new.checked_in_at is distinct from old.checked_in_at then
+     or new.checked_in_at is distinct from old.checked_in_at
+     -- EXTENSION POINT (Phase 2): appointment_id is linked at most once.
+     -- It may go from null to a value exactly once (Phase 2's
+     -- check_in_appointment links an existing open, unlinked job this way;
+     -- Phase 2 checks the job is open and the appointment is valid, and adds
+     -- the foreign key); once set it never changes and is never cleared.
+     -- Phase 3 records no timeline event for the link.
+     or (old.appointment_id is not null and new.appointment_id is distinct from old.appointment_id) then
     raise exception using
       errcode = 'P0001',
       message = 'work_order_immutable',
-      detail = 'A job keeps its number, customer, bike, appointment and check-in time.';
+      detail = 'A job keeps its number, customer, bike and check-in time, and its appointment once linked.';
   end if;
 
   if new.lead_mechanic_id is distinct from old.lead_mechanic_id then
@@ -478,9 +491,15 @@ begin
     -- Reopen (D15 DEVIATION, owner to confirm before Phase 5): the completion
     -- stamps are cleared and stamped again on the final completion, so D3
     -- recognises the job then. started_at is kept; the timeline keeps the
-    -- earlier `completed` event. Phase 4 replaces this function (create or
-    -- replace) to handle unique units per D6: block the reopen while a
-    -- unique-unit line is sold, or move the unit back to held_for_customer.
+    -- earlier `completed` event.
+    -- EXTENSION POINT (Phase 4, D6): Phase 4 returns sold units to
+    -- held_for_customer on reopen, with no stock movement: whenever
+    -- completed_at goes from non-null to null, every unit on a non-voided
+    -- inventory line of the job goes sold -> held_for_customer; whenever
+    -- completed_at goes from null to non-null (including re-completion after
+    -- a reopen) they go held_for_customer -> sold. Phase 4 may create or
+    -- replace this function starting from this body, or add its own
+    -- work_orders trigger keyed on that completed_at change.
     new.completed_at := null;
     new.ready_for_collection_at := null;
   end if;

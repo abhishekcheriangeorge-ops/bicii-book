@@ -647,6 +647,77 @@ describe.skipIf(!isolatedDatabase())("status machine (D15, D16)", () => {
       expect(rows[0].status).toBe("paused");
     });
   });
+
+  it("an appointment is linked to a job at most once (Phase 2 extension point)", async () => {
+    await scenario(ADMIN, async (tx, ids) => {
+      const job = await createWorkOrder(tx, { ...ids, leadId: STAFF.mechanic1 });
+      await setStatus(tx, job.id, "in_progress");
+      await ownerMode(tx);
+      /** The whole row bar updated_at (set_updated_at moves it on every write). */
+      const row = async () => {
+        const { rows } = await tx.query("select * from public.work_orders where id = $1", [job.id]);
+        delete rows[0].updated_at;
+        return rows[0];
+      };
+      const before = await row();
+      const eventsBefore = await events(tx, job.id);
+      const appointmentId = randomUUID();
+      const setAppointment = (value: string | null) =>
+        tx.query("update public.work_orders set appointment_id = $2 where id = $1", [
+          job.id,
+          value,
+        ]);
+
+      // null -> a value: once, with no event and nothing else changed.
+      await setAppointment(appointmentId);
+      expect(await row()).toEqual({ ...before, appointment_id: appointmentId });
+      expect(await events(tx, job.id)).toEqual(eventsBefore);
+
+      // Leaving it as it is changes nothing.
+      await setAppointment(appointmentId);
+      await tx.query(
+        "update public.work_orders set internal_notes = 'Linked to the booking' where id = $1",
+        [job.id],
+      );
+      expect((await workOrder(tx, job.id)).appointment_id).toBe(appointmentId);
+
+      // Once linked it never changes and is never cleared.
+      for (const value of [randomUUID(), null]) {
+        await failsWith(tx, () => setAppointment(value), {
+          code: "P0001",
+          message: "work_order_immutable",
+          detail:
+            "A job keeps its number, customer, bike and check-in time, and its appointment once linked.",
+        });
+      }
+      expect((await workOrder(tx, job.id)).appointment_id).toBe(appointmentId);
+
+      // private.create_work_order (Phase 2's new-job path) stores it at
+      // check-in; it is just as fixed afterwards.
+      const other = await makeCustomerWithBike(tx);
+      const booked = randomUUID();
+      const { rows } = await tx.query<{ id: string; appointment_id: string }>(
+        `select (w).id, (w).appointment_id from (
+           select private.create_work_order(
+             $1, $2, $3, $4, 'Booked service', null, null, '{}'::uuid[], '[]'::jsonb, $5
+           ) w
+         ) s`,
+        [STAFF.admin, randomUUID(), other.customerId, other.bikeId, booked],
+      );
+      expect(rows[0].appointment_id).toBe(booked);
+      for (const value of [randomUUID(), null]) {
+        await failsWith(
+          tx,
+          () =>
+            tx.query("update public.work_orders set appointment_id = $2 where id = $1", [
+              rows[0].id,
+              value,
+            ]),
+          { code: "P0001", message: "work_order_immutable" },
+        );
+      }
+    });
+  });
 });
 
 describe.skipIf(!isolatedDatabase())("timeline events", () => {

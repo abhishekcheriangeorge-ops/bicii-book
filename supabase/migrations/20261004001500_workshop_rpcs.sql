@@ -18,16 +18,27 @@
 -- For the same reason every write to a line re-raises a check or not-null
 -- violation without its row DETAIL (private.raise_without_row).
 --
+-- Lock order (DATA-MODEL §4, §5; Phase 4 extends it in §7): every RPC that
+-- touches a work order and its lines locks the work_orders row FOR UPDATE
+-- (private.lock_work_order) before any of its line rows FOR UPDATE.
+--
 -- Extension points: Phase 2's check_in_appointment calls
--- private.create_work_order with an appointment id; Phase 4 adds
--- add_inventory_line (reusing private.require_open_work_order) and replaces
--- void_line with the stock-reversal branch for inventory lines.
+-- private.create_work_order with an appointment id for a new job, or links
+-- an existing open, unlinked job by setting work_orders.appointment_id once
+-- (the link-once rule in private.work_orders_enforce_rules). Phase 4 adds
+-- add_inventory_line and replaces void_line with the stock-reversal branch
+-- for inventory lines; both call private.lock_work_order, then the replay
+-- lookup, then private.require_open_work_order, so a replay after
+-- completion returns the original and a new change on a completed job is
+-- refused with work_order_locked.
 
 -- ---------------------------------------------------------------------------
 -- Shared helpers
 -- ---------------------------------------------------------------------------
 
--- The work order, locked for update; P0002 when absent. No status check.
+-- The work order, locked FOR UPDATE; P0002 when absent. No status check.
+-- Lock-order contract: callers take this lock before locking any of the
+-- job's line rows (Phase 4: before stock, units and products too).
 create function private.lock_work_order(work_order_id uuid)
 returns public.work_orders
 language plpgsql
@@ -47,7 +58,8 @@ end;
 $$;
 
 -- The work order, locked; work_order_locked unless it is open (lines may
--- change only before completion, D15).
+-- change only before completion, D15). Phase 4's add_inventory_line and
+-- void_line call it after private.lock_work_order and their replay lookup.
 create function private.require_open_work_order(work_order_id uuid)
 returns public.work_orders
 language plpgsql

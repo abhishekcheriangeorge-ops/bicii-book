@@ -336,7 +336,8 @@ work_orders                              -- written only through RPCs (§16)
                                          --   whatever the caller sent (D9); immutable
   customer_id uuid not null -> customers
   bike_id uuid not null -> bikes
-  appointment_id uuid null               -- no FK yet: Phase 2 adds it with check_in_appointment
+  appointment_id uuid null               -- no FK yet: Phase 2 adds it with check_in_appointment;
+                                         --   set once (insert, or null -> value), never changed or cleared
   lead_mechanic_id uuid null -> staff    -- = the active lead assignment's staff_id (trigger-kept)
   status work_order_status not null default 'received'
      -- enum: received | diagnosing | awaiting_customer | awaiting_parts |
@@ -418,15 +419,26 @@ A reopen (completed or ready_for_collection → in_progress) clears
 `completed_at` and `ready_for_collection_at`. DEVIATION, owner to confirm
 before Phase 5: reopen clears completion stamps, which deviates from
 DATA-MODEL §4's original "stamps exactly once, never clearing an earlier
-stamp" and moves D3 recognition to the final completion. Phase 4 must either
-block reopen while the job has a unique-unit line in `sold` state, or move
-the unit back to held_for_customer as part of the reopen (D6); Phase 3 keeps
-the reopen rule in `private.work_orders_enforce_rules` so Phase 4 can replace
-it with create or replace. Stamps never change without a status change, and
-`job_number`, `customer_id`, `bike_id`, `appointment_id`, `currency`,
-`created_by`, `created_at` and `checked_in_at` never change
-(`work_order_immutable`); `lead_mechanic_id` may only become the active lead
-(so only the assignments trigger moves it). An insert must be `received`
+stamp" and moves D3 recognition to the final completion. Phase 4 returns
+sold units to held_for_customer on reopen (whenever `completed_at` goes from
+non-null to null every unit on a non-voided inventory line of the job goes
+sold → held_for_customer; whenever `completed_at` goes from null to
+non-null, including re-completion after a reopen, they go
+held_for_customer → sold), with no stock movement (D6). Phase 3 keeps the
+reopen rule in `private.work_orders_enforce_rules`, commented as the Phase 4
+extension point, so Phase 4 can create or replace it starting from Phase 3's
+body or add its own `work_orders` trigger keyed on that `completed_at`
+change. Stamps never change without a status change, and `job_number`,
+`customer_id`, `bike_id`, `currency`, `created_by`, `created_at` and
+`checked_in_at` never change (`work_order_immutable`); `lead_mechanic_id`
+may only become the active lead (so only the assignments trigger moves it).
+`appointment_id` is linked at most once: it is set on insert
+(`private.create_work_order`) or may go from null to a value exactly once on
+update, and once set it never changes and is never cleared
+(`work_order_immutable`); the link writes no timeline event. This is the
+Phase 2 extension point: `check_in_appointment` links an existing open,
+unlinked job this way (Phase 2 checks that the job is open and the
+appointment valid, and adds the foreign key). An insert must be `received`
 with no lead and no stamps; the customer and the bike must exist and not be
 archived (`work_order_customer_archived`, `work_order_bike_archived`), and
 the customer must own the bike or the bike must have no owner (D18,
@@ -471,6 +483,18 @@ on a job are `internal` or `customer`, never `public`
 (`attachment_work_order_never_public` from a trigger for
 `record_attachment` and `set_attachment_visibility`; CHECK
 `attachments_work_order_never_public` as the backstop).
+
+Lock order. Every RPC that touches a work order and its lines locks the
+`work_orders` row FOR UPDATE (`private.lock_work_order`, which raises P0002
+when the job is absent and checks no status) before any of its line rows
+FOR UPDATE, so concurrent calls on one job serialise in one order;
+`private.require_open_work_order` takes the same lock and then refuses a job
+that is not open (`work_order_locked`). The line triggers' FOR SHARE on the
+job follows the same order for direct writers. Phase 4's
+`add_inventory_line` and `void_line` replacement call
+`private.lock_work_order`, then the replay lookup (so a replay after
+completion returns the original), then `private.require_open_work_order`;
+§7 extends the order to stock, units and products.
 
 Customers (D17) never read these tables (staff-only RLS); they read their
 own jobs through the `my_work_order*` RPCs (§15 "Customer job projection",
@@ -577,7 +601,11 @@ Lines change only while the job is open (D15, `work_order_locked`), checked
 by the BEFORE trigger for every writer (it locks the job `for share`), and
 are voided with a reason (`void_line`); a job is not cancelled while it has
 a live line (D16, `work_order_has_lines`, trigger
-`private.work_orders_cancel_requires_no_lines`).
+`private.work_orders_cancel_requires_no_lines`). That is the single
+cancel-with-lines rule; it covers Phase 4's inventory lines too, so Phase 4
+adds no separate parts rule or code. The line RPCs follow the lock order in
+§4: the `work_orders` row FOR UPDATE (`private.lock_work_order`) before any
+line row FOR UPDATE.
 
 Deviations from this document's earlier draft, each for a reason:
 
@@ -704,6 +732,10 @@ compares the two and is the reconciliation tool from the spec.
 Unique-unit invariant: `inventory_units.status` is only changed by RPCs that
 also write the movement, inside one transaction, after `select … for update` on
 the unit. A `sold` unit cannot be consumed, sold or transferred; the RPC raises.
+The one exception is D6/D15's reopen rule (Phase 4, §4): when a job's
+`completed_at` is cleared its sold units go back to `held_for_customer`, and
+when it is stamped again they go back to `sold`, with no stock movement (the
+unit never left the job).
 
 ## 8. Sales (non-workshop revenue)
 
@@ -1087,7 +1119,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | RPC | Guard | Effects |
 |---|---|---|
 | `book_appointment(type_id, starts_at, customer_id, bike_id, note)` | C own / S | Capacity + hours check under advisory lock; insert. |
-| `check_in_appointment(appointment_id, bike_id)` | S | Phase 2, built on `private.create_work_order` (with the appointment id). Status → checked_in; creates the work order; links. |
+| `check_in_appointment(appointment_id, bike_id)` | S | Phase 2, built on `private.create_work_order` (with the appointment id) for a new job, or linking an existing open, unlinked job by setting `work_orders.appointment_id` once (null → value; never changed or cleared afterwards, `work_order_immutable`, §4). Status → checked_in; creates or links the work order. |
 | `create_work_order(work_order_id, customer_id, bike_id, requested_work, intake_notes = null, lead_mechanic_id = null, additional_staff_ids uuid[] = '{}', services jsonb = '[]')` → `work_orders` | S | Calls `private.create_work_order(actor, …, appointment_id)`. Replay first: an existing id returns the row as it is now when customer and bike match (no check, assignment or line re-run, no number burned), else `work_order_conflict`. Then FOR SHARE on customer and bike (D18 against a concurrent transfer), insert (trigger: J- number, `work_order_customer_archived`, `work_order_bike_archived`, `bike_owner_mismatch`), lead, ≤ 10 distinct additional staff, ≤ 20 services `{line_id, service_id, quantity}` (malformed 22023) through `private.insert_service_line`. One transaction. `requested_work_required`; 22004 for missing ids. |
 | `set_work_order_status(work_order_id, status, note = null)` → `work_orders` | S | Locks the job; same status → row unchanged (no event); `work_order_transition_invalid`; `reason_required` for cancel/reopen; `work_order_has_lines` when cancelling with live lines. Triggers stamp the time and write one event. |
 | `update_work_order(work_order_id, requested_work = null, intake_notes = null, internal_notes = null, completion_notes = null)` → `work_orders` | S | Null keeps, '' clears (requested work cannot be cleared: `requested_work_required`); no-op when unchanged; one `details_changed` event. Any status. |
@@ -1104,8 +1136,8 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `set_service_archived(service_id, archived)` → `uuid` | P(manage_inventory) | Replay-safe. |
 | `schedule_cult_commons_rate(rate_id, rate, effective_from = null)` → `cult_commons_rates` | A | Replay by `rate_id` first (same rate → the row as it is now; else `rate_conflict`). Null = now; earlier than now → `rate_backdated` (D21); 23505 on a taken start time. |
 | `cancel_cult_commons_rate(rate_id)` → `cult_commons_rates` | A | Only before it starts (`cult_commons_rate_in_effect`); replay returns the row. |
-| `add_inventory_line(work_order_id, product_id, unit_id, quantity, location_id)` | S | Phase 4 (reuses `private.require_open_work_order`). Snapshots; locks unit/stock; inserts line + `job_consumption` movement; unit → `held`/`sold` per D6; events. Replay = no-op by unique index. |
-| `void_line(line_id, reason)` inventory branch | S | Phase 4: sets `voided_*`; inserts `reversal` movement linked by `reversal_of_id`; unit back to `available`; events. Replay = no-op. |
+| `add_inventory_line(work_order_id, product_id, unit_id, quantity, location_id)` | S | Phase 4: `private.lock_work_order`, then the replay lookup, then `private.require_open_work_order` (lock order §4, §7). Snapshots; locks unit/stock; inserts line + `job_consumption` movement; unit → `held`/`sold` per D6; events. Replay = no-op by unique index. |
+| `void_line(line_id, reason)` inventory branch | S | Phase 4 (create or replace, keeping the lock order and the open check: `private.lock_work_order`, then the line and the replay check, then the open check): sets `voided_*`; inserts `reversal` movement linked by `reversal_of_id`; unit back to `available`; events. Replay = no-op. |
 | `adjust_stock(product_id, location_id, delta, movement_type, reason, unit_cost)` | P(adjust_stock) | Manual movement with mandatory reason. |
 | `transfer_stock(product_id, from, to, qty, reason)` | P(manage_inventory) | Paired movements with `transfer_group_id`. |
 | `create_unique_unit(product_id, location_id, ownership, cost, consignment)` | P(manage_inventory) | Unit + `consignment_received`/`stock_adjustment` movement. |

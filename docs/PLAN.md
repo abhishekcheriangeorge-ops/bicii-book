@@ -190,12 +190,18 @@ Scope notes (no business change; decisions D14–D22 in §6):
   Services settings; assignments, approval, notes and details editing in
   step 4).
 - `check_in_appointment` moves to Phase 2, built on
-  `private.create_work_order` (the single creation path; Phase 2 adds the
-  `work_orders.appointment_id` foreign key).
+  `private.create_work_order` (the single creation path) for a new job, or
+  linking an existing open, unlinked job by setting
+  `work_orders.appointment_id` once: the column may go from null to a value
+  exactly once and never changes or clears afterwards
+  (`work_order_immutable`, enforced in `private.work_orders_enforce_rules`;
+  Phase 2 adds the foreign key).
 - `add_inventory_line` and the `void_line` reversal branch land in Phase 4
   (`work_order_line_items.source_product_id` / `source_inventory_unit_id`
   have no foreign keys until then; `void_line` refuses inventory lines with
-  `line_type_unsupported`).
+  `line_type_unsupported`). Both call `private.lock_work_order` (FOR
+  UPDATE), then the replay lookup, then `private.require_open_work_order`,
+  keeping the lock order: the `work_orders` row before any of its line rows.
 - The anonymous/customer services listing lands with Phase 11 through a
   separate customer-safe projection; until then services are staff-only.
 - `flag_approval` is built as `set_approval_flag`.
@@ -237,9 +243,19 @@ Scope notes (no business change; decisions D14–D22 in §6):
   line, the intake draft) and `workshop-board.spec.ts` (board filters,
   mechanic cost boundary, search and service history, reassignment and
   notes). `check_in_appointment` moves to Phase 2 (built on
-  `private.create_work_order`); `add_inventory_line` and the `void_line`
-  reversal branch land in Phase 4. The board's group for `ready_to_start`
-  is labelled "Ready", as SPEC §7.2 names it.
+  `private.create_work_order`, or linking an existing open job by setting
+  `appointment_id` once); `add_inventory_line` and the `void_line`
+  reversal branch land in Phase 4 (via `private.lock_work_order`, the replay
+  lookup, then `private.require_open_work_order`), and Phase 4 returns sold
+  units to held_for_customer on reopen and sells them again on
+  re-completion (D6, D15). The board's group for `ready_to_start`
+  is labelled "Ready", as SPEC §7.2 names it. Shared helpers for later
+  phases to extend, not recreate: `tests/e2e/helpers.ts`
+  (`createJobViaIntake`, `nextIntakeStep`, `section`, `tagFor`),
+  `tests/db/workshop-fixtures.ts` (Phase 5's `reporting-fixtures.ts` builds
+  on it), `src/lib/cult-commons.ts` with the fixture table
+  `tests/fixtures/cult-commons.ts`, and `OVERDUE_AFTER_DAYS` / `isOverdue`
+  in `src/lib/workshop.ts` (D20).
 
 ### Phase 4 — Inventory
 
@@ -421,7 +437,7 @@ build proceeds with; confirm or change before the phase that uses it.
 | D3 | Recognition date for workshop revenue in reports | `work_orders.completed_at` (not collected_at, not check-in). Reports also offer check-in and collection as alternative bases. | Phase 5 |
 | D4 | Consignment charges (services done on a consigned bike before sale) | Entered per charge with an explicit bearer: `consignor` (deducted at settlement) or `shop` (added to direct cost). No default bearer; the UI requires a choice. | Phase 6 |
 | D5 | What a purchase receipt does to `products.default_direct_cost` | Sets it to the latest actual unit cost received (last-cost). No averaging. | Phase 7 |
-| D6 | Unique unit added to a job as a part | Unit becomes `held_for_customer` on add, `sold` when the job is completed; voiding before completion returns it to `available`. | Phase 4 |
+| D6 | Unique unit added to a job as a part | Unit becomes `held_for_customer` on add, `sold` when the job is completed; voiding before completion returns it to `available`. Interacts with D15 (reopen): the unit follows `completed_at`, with no stock movement — whenever `completed_at` goes from non-null to null (a reopen) every unit on a non-voided inventory line of the job goes sold -> held_for_customer, and whenever it goes from null to non-null (including re-completion after a reopen) they go held_for_customer -> sold. | Phase 4 |
 | D7 | Refund of an online sale | Financial `sale_refunds` row only; stock and unit status untouched until staff runs `restock_unit`. | Phase 10 |
 | D8 | Customer-visible timeline | Customers (later, public site) see status changes, completion, collection and `customer`/`public` photos; never notes, lines' costs, or assignments. | Phase 11 |
 | D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. | Phase 1 |
@@ -430,12 +446,12 @@ build proceeds with; confirm or change before the phase that uses it.
 | D12 | Who sees a bike's customer-visible photos after it changes hands (SPEC §5 "Ownership changes preserve history" does not say what a new or previous owner sees) | The current owner sees every `customer`/`public` photo of the bike, including ones taken before they owned it; a previous owner stops seeing the bike and its photos once it is transferred (`my_bikes`, `my_bike_attachments` read current ownership). Staff history (`bike_ownership_events`) keeps every owner. Alternative to confirm before Phase 11: limit each owner to photos taken during their ownership. | Phase 1 (enforced), Phase 11 (shown) |
 | D13 | Can a photo on a customer record be public? (SPEC §8 allows `public` visibility without saying for which records) | Never: attachments whose `entity_type = customer` may be `internal` or `customer` only (check constraint and RPC error `attachment_customer_never_public`). Bike photos may be public (shop and consigned bikes for sale need them); staff choose per photo. | Phase 1 |
 | D14 | Line pricing | Any active staff member may set or override a line's unit sale price (>= 0) when adding it; entering or overriding a unit direct cost (service-line override or manual-line cost) requires `view_costs` (42501 otherwise); no negative-price or discount lines in MVP (a discount is a lower unit price on the line). A manual line added without a cost (always, for staff without `view_costs`) is stored with unit cost 0 and marked `cost_pending`. **Consequence for Cult Commons, owner to confirm:** until it is corrected, that line's yield is its whole sale and its Cult Commons share is 30% of the whole sale, so the job's cost is understated and its yield and Cult Commons overstated (SPEC §10 deducts direct cost first). Safe default: the line shows "Cost pending" to every staff member, `work_order_totals_staff.cost_pending_count` counts such live lines and the job's totals are labelled provisional for `view_costs` holders; the correction is that a `view_costs` holder voids the line and adds it again with the cost (snapshots stay immutable; reopen first if the job is completed). Nothing blocks completion. Labour belongs on a service line (which snapshots the service's cost); parts become inventory lines in Phase 4. Options for the owner: block completing a job with a pending cost, let a `view_costs` holder enter a pending cost once, or have Phase 5 reports exclude or flag pending lines. | Phase 3 |
-| D15 | Work order status machine | Transitions follow the table in DATA-MODEL §4; completed only from in_progress or paused; collected only from completed or ready_for_collection; collected and cancelled are final; nothing returns to received; reopening (completed or ready_for_collection -> in_progress) requires a reason and clears completed_at and ready_for_collection_at (started_at is kept; the timeline keeps the earlier `completed` event); lines can be added or voided only while the job is open (before completed). DEVIATION, owner to confirm before Phase 5: reopen clears completion stamps, which deviates from DATA-MODEL §4's original "stamps exactly once, never clearing an earlier stamp" and moves D3 recognition to the final completion. Phase 4 must either block reopen while the job has a unique-unit line in `sold` state, or move the unit back to held_for_customer as part of the reopen (D6); Phase 3 keeps the reopen rule in `private.work_orders_enforce_rules` so Phase 4 can replace it with create or replace. | Phase 3 |
-| D16 | Cancelling a job | Only from an open status, reason required, refused while any non-voided line exists (void lines first, which in Phase 4 writes the stock reversals). | Phase 3 |
+| D15 | Work order status machine | Transitions follow the table in DATA-MODEL §4; completed only from in_progress or paused; collected only from completed or ready_for_collection; collected and cancelled are final; nothing returns to received; reopening (completed or ready_for_collection -> in_progress) requires a reason and clears completed_at and ready_for_collection_at (started_at is kept; the timeline keeps the earlier `completed` event); lines can be added or voided only while the job is open (before completed). DEVIATION, owner to confirm before Phase 5: reopen clears completion stamps, which deviates from DATA-MODEL §4's original "stamps exactly once, never clearing an earlier stamp" and moves D3 recognition to the final completion. Phase 4 returns sold units to held_for_customer on reopen (whenever completed_at goes from non-null to null every unit on a non-voided inventory line of the job goes sold -> held_for_customer; whenever completed_at goes from null to non-null, including re-completion after a reopen, they go held_for_customer -> sold), with no stock movement (D6). Phase 3 keeps the reopen rule in `private.work_orders_enforce_rules` (commented as the Phase 4 extension point) so Phase 4 can create or replace it starting from Phase 3's body, or add its own `work_orders` trigger. | Phase 3 |
+| D16 | Cancelling a job | Only from an open status, reason required, refused while any non-voided line exists with P0001 `work_order_has_lines` (void lines first, which in Phase 4 writes the stock reversals). This is the single cancel-with-lines rule: it already covers inventory lines, so Phase 4 adds no separate parts rule or code. | Phase 3 |
 | D17 | Which jobs a customer sees | The jobs where they are `work_orders.customer_id`, regardless of who owns the bike now (a new owner does not see the previous owner's jobs) and regardless of whether the bike is archived (the job is the customer's history); cancelled jobs are hidden; status is shown as a coarse customer status (received, awaiting_customer, awaiting_parts, in_progress, completed, ready_for_collection, collected); lines show description, quantity, unit price and total only; requested work, notes, approval, assignments, actors and all costs are never shown. Enforced by Phase 3 RPCs (built in step 2), shown in Phase 11. | Phase 3 |
 | D18 | A job's customer and the bike's owner | A job's customer must be the bike's current owner, or the bike must have no owner (shop bike); otherwise staff transfer the bike first (P0001 `bike_owner_mismatch`). Checked under FOR SHARE locks on the customer and bike, so it holds against a concurrent transfer. | Phase 3 |
 | D19 | Can a photo on a work order be public? | Photos on a work order may be internal or customer, never public (P0001 `attachment_work_order_never_public`, CHECK `attachments_work_order_never_public` as backstop; the app refuses before copying anything to media-public), mirroring D13. | Phase 3 |
-| D20 | Overdue | A job still open (before completed) more than 7 days after check-in is overdue (board badge and age filter; `OVERDUE_AFTER_DAYS = 7` in `src/lib/workshop.ts`; Phase 5/9 reporting reuse the same rule). | Phase 3 |
+| D20 | Overdue | A job is overdue while it is open (before completed: received … paused) and `now() - checked_in_at > interval '7 days'` (7 × 24 hours) (board badge and age filter; `OVERDUE_AFTER_DAYS = 7` and `isOverdue` exported from `src/lib/workshop.ts`; Phase 5's overdue_job exception and Today tile and Phase 9 reporting import or reuse exactly this rule). | Phase 3 |
 | D21 | Cult Commons rate changes | Admin only, effective now or in the future (never backdated); rate rows are append-only except that an admin may cancel a rate whose effective_from is still in the future (`cancel_cult_commons_rate` sets cancelled_at/cancelled_by; cancelled rows are ignored by `private.cult_commons_rate_at`); every line snapshots the rate in force when it is added, so history never changes. The base 0.30 row (effective 1970-01-01) ships in the migration, not the seed. | Phase 3 |
 | D22 | Assignments | Any active staff member may assign or unassign anyone on a job that is not collected or cancelled; making someone lead removes the previous lead from the job (not demoted to additional); only active staff can be assigned. | Phase 3 |
 
