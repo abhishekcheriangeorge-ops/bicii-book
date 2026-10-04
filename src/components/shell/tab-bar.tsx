@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/cn";
 
+import { LinkPending } from "./link-pending";
 import { TABS, isActive, isMoreActive } from "./nav";
 
 /**
@@ -33,14 +34,15 @@ export function TabBar() {
                   aria-current={active ? "page" : undefined}
                   className="-mt-5 flex flex-col items-center gap-1 pb-2"
                 >
-                  <span
+                  <LinkPending
                     className={cn(
                       "flex size-16 items-center justify-center rounded-full border-4 border-paper bg-yellow text-ink shadow-[0_6px_16px_-6px_rgb(5_7_7/0.45)]",
                       "transition-transform duration-200 ease-[var(--ease-spring)] active:scale-[0.92] motion-reduce:active:scale-100",
                     )}
+                    pendingClassName="animate-pulse"
                   >
                     <Icon className="size-7" />
-                  </span>
+                  </LinkPending>
                   <span className="font-display text-[0.6875rem] font-bold tracking-wide uppercase">
                     {tab.label}
                   </span>
@@ -58,14 +60,15 @@ export function TabBar() {
                   active ? "text-ink" : "text-dust-500 hover:text-ink",
                 )}
               >
-                <span
+                <LinkPending
                   className={cn(
                     "flex h-7 w-12 items-center justify-center rounded-full transition-colors",
                     active && "bg-ink text-paper",
                   )}
+                  pendingClassName="animate-pulse bg-dust-200 text-ink"
                 >
                   <Icon className="size-5" />
-                </span>
+                </LinkPending>
                 <span className="font-display text-[0.6875rem] font-bold tracking-wide uppercase">
                   {tab.label}
                 </span>

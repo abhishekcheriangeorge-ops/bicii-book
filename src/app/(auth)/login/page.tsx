@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           width={2016}
           height={952}
           unoptimized
-          priority
+          loading="eager"
           className="h-9 w-auto self-start"
         />
         <div className="flex flex-col gap-2">

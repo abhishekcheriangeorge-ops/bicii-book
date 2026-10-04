@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/cn";
 
+import { LinkPending } from "./link-pending";
 import { MORE_ITEMS, TABS, isActive, type NavItem } from "./nav";
 
 function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
@@ -26,7 +27,9 @@ function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
               : "text-dust-700 hover:bg-dust-100 hover:text-ink",
         )}
       >
-        <Icon className="size-5 shrink-0" />
+        <LinkPending className="flex items-center" pendingClassName="animate-pulse">
+          <Icon className="size-5 shrink-0" />
+        </LinkPending>
         <span>{item.label}</span>
       </Link>
     </li>
@@ -49,7 +52,7 @@ export function SideRail() {
           width={2016}
           height={952}
           unoptimized
-          priority
+          loading="eager"
           className="h-7 w-auto"
         />
       </Link>

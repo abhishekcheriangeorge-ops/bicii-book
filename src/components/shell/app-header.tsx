@@ -24,7 +24,7 @@ export function AppHeader({ profile }: { profile: ReactNode }) {
             width={2016}
             height={952}
             unoptimized
-            priority
+            loading="eager"
             className="h-6 w-auto"
           />
         </Link>
