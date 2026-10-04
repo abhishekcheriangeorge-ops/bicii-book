@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect } from "react";
 
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { useToast } from "@/components/ui/toast";
+import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
 
 import { changePassword } from "./actions";
@@ -16,14 +17,16 @@ export function PasswordForm() {
     null,
   );
   const { toast } = useToast();
-  const formRef = useRef<HTMLFormElement>(null);
+  // Passwords are never echoed back, so a failed attempt clears them; focus
+  // goes to the first field that needs attention.
+  const formRef = useFocusFirstInvalid(state);
 
   useEffect(() => {
     if (state?.ok) {
       formRef.current?.reset();
       toast({ title: "Password changed", tone: "success" });
     }
-  }, [state, toast]);
+  }, [state, toast, formRef]);
 
   const errors = state && !state.ok ? state.fieldErrors : undefined;
   return (
@@ -33,6 +36,9 @@ export function PasswordForm() {
           {state.error}
         </p>
       ) : null}
+      <Field label="Current password" error={errors?.currentPassword?.[0]} required>
+        <Input type="password" name="currentPassword" autoComplete="current-password" />
+      </Field>
       <Field
         label="New password"
         hint="At least 12 characters"

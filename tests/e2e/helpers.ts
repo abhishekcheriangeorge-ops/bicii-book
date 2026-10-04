@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { SEED_PASSWORD, STAFF_EMAIL, type SeedStaff } from "../fixtures/ids";
 
@@ -18,4 +18,12 @@ export async function signInOnForm(page: Page, who: SeedStaff) {
 
 export function isPhone(page: Page): boolean {
   return (page.viewportSize()?.width ?? 1024) < 768;
+}
+
+/** A toast with this text (polite confirmations or errors), not the same words elsewhere on the page. */
+export function toast(page: Page, text: string): Locator {
+  return page
+    .getByRole("list", { name: "Notifications" })
+    .or(page.getByRole("alert", { name: "Errors" }))
+    .getByText(text);
 }
