@@ -20,7 +20,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { AUTH_USER, BIKE, CUSTOMER, STAFF } from "../fixtures/ids";
+import { AUTH_USER, BIKE, CUSTOMER, PRODUCT, STAFF, UNIT } from "../fixtures/ids";
 import {
   attachmentPath,
   customerClaims,
@@ -320,10 +320,20 @@ describe("record_attachment", () => {
         (tx) => record(tx, { id, entityId: nowhere }),
       ),
     ).rejects.toMatchObject({ code: "P0002" });
+    // Products and units are attachable from Phase 4: an unknown one is P0002.
+    for (const entityType of ["product", "inventory_unit"]) {
+      await expect(
+        asMechanic(
+          (tx) => upload(tx, { id, entityType, entityId: nowhere }),
+          (tx) => record(tx, { id, entityType, entityId: nowhere }),
+        ),
+      ).rejects.toMatchObject({ code: "P0002" });
+    }
+    // Consignment items arrive with Phase 6.
     await expect(
       asMechanic(
-        (tx) => upload(tx, { id, entityType: "product", entityId: nowhere }),
-        (tx) => record(tx, { id, entityType: "product", entityId: nowhere }),
+        (tx) => upload(tx, { id, entityType: "consignment_item", entityId: nowhere }),
+        (tx) => record(tx, { id, entityType: "consignment_item", entityId: nowhere }),
       ),
     ).rejects.toMatchObject({ code: "P0001", message: "attachment_entity_unsupported" });
   });
@@ -409,6 +419,66 @@ describe("record_attachment", () => {
         return record(tx, { id });
       }),
     ).rejects.toMatchObject({ code: "42501" });
+  });
+});
+
+describe("photos on stock (D13 extended, D19's pattern)", () => {
+  it("accepts internal and public photos of a product and of a unit", async () => {
+    for (const [entityType, entityId] of [
+      ["product", PRODUCT.brakePads],
+      ["inventory_unit", UNIT.colnago],
+    ] as const) {
+      for (const visibility of ["internal", "public"]) {
+        const id = randomUUID();
+        const args = { id, entityType, entityId, visibility, width: 1600, height: 1200 };
+        await asMechanic(
+          (tx) => upload(tx, args),
+          async (tx) => {
+            expect(await record(tx, args)).toMatchObject({ entity_type: entityType, visibility });
+          },
+        );
+      }
+    }
+  });
+
+  it("never records or moves a stock photo to customer visibility", async () => {
+    for (const [entityType, entityId] of [
+      ["product", PRODUCT.brakePads],
+      ["inventory_unit", UNIT.colnago],
+    ] as const) {
+      const id = randomUUID();
+      await expect(
+        asMechanic(
+          (tx) => upload(tx, { id, entityType, entityId, visibility: "customer" }),
+          (tx) => record(tx, { id, entityType, entityId, visibility: "customer" }),
+        ),
+      ).rejects.toMatchObject({ code: "P0001", message: "attachment_stock_never_customer" });
+      await expect(
+        asMechanic(
+          (tx) => upload(tx, { id, entityType, entityId }),
+          async (tx) => {
+            await record(tx, { id, entityType, entityId });
+            return setVisibility(tx, id, "customer");
+          },
+        ),
+      ).rejects.toMatchObject({ code: "P0001", message: "attachment_stock_never_customer" });
+    }
+  });
+
+  it("the CHECK attachments_stock_never_customer backs it up for a writer past the trigger", async () => {
+    const id = randomUUID();
+    await expect(
+      inTransaction(conn, async (tx) => {
+        // Triggers off (the owner, replica mode): only the table's CHECKs run.
+        await tx.query("set local session_replication_role = replica");
+        await tx.query(
+          `insert into public.attachments
+             (id, entity_type, entity_id, storage_bucket, storage_path, media_type, visibility)
+           values ($1, 'product', $2, 'media-internal', $3, 'image/jpeg', 'customer')`,
+          [id, PRODUCT.brakePads, attachmentPath("product", PRODUCT.brakePads, id)],
+        );
+      }),
+    ).rejects.toMatchObject({ code: "23514", constraint: "attachments_stock_never_customer" });
   });
 });
 

@@ -47,6 +47,8 @@ export type SeedCustomer = keyof typeof CUSTOMER;
 /**
  * public.bikes.id (Phase 1). Owner in the key; shopCervelo has no owner.
  * nurulBianchi was registered to daniel and then transferred to nurul.
+ * Phase 4 adds three shop bikes without an owner, each in stock as a unique
+ * unit (UNIT): shopColnago, shopBrompton, shopSurly.
  */
 export const BIKE = {
   tanTarmac: "b1000000-0000-4000-8000-000000000001",
@@ -59,6 +61,9 @@ export const BIKE = {
   danielCannondale: "b1000000-0000-4000-8000-000000000008",
   nurulBianchi: "b1000000-0000-4000-8000-000000000009",
   shopCervelo: "b1000000-0000-4000-8000-000000000010",
+  shopColnago: "b1000000-0000-4000-8000-000000000011",
+  shopBrompton: "b1000000-0000-4000-8000-000000000012",
+  shopSurly: "b1000000-0000-4000-8000-000000000013",
 } as const;
 
 export type SeedBike = keyof typeof BIKE;
@@ -78,6 +83,9 @@ export const BIKE_SHORT_ID: Record<SeedBike, string> = {
   danielCannondale: "B-000008",
   nurulBianchi: "B-000009",
   shopCervelo: "B-000010",
+  shopColnago: "B-000011",
+  shopBrompton: "B-000012",
+  shopSurly: "B-000013",
 };
 
 /** Serial numbers as entered in the seed (chloeSurly has none). */
@@ -86,6 +94,9 @@ export const BIKE_SERIAL = {
   priyaDomane: "WTU291C1234K",
   priyaTern: "TRN-19-0045821",
   shopCervelo: "CV-CAL5-0921",
+  shopColnago: "COL-C64-11873",
+  shopBrompton: "2209183344",
+  shopSurly: "SRY-BC-55102",
 } as const;
 
 /**
@@ -176,4 +187,121 @@ export const LINE = {
   chloeSurlyLabour: "f2000000-0000-4000-8000-000000000008",
   priyaTernBasicService: "f2000000-0000-4000-8000-000000000009",
   priyaTernBottomBracket: "f2000000-0000-4000-8000-000000000010",
+} as const;
+
+/**
+ * public.locations.id (Phase 4). shopFloor is the inventory migration's
+ * one-shop bootstrap (sort 10, so the default location); workshopStore is
+ * seeded (sort 20).
+ */
+export const LOCATION = {
+  shopFloor: "1c000000-0000-4000-8000-000000000001",
+  workshopStore: "1c000000-0000-4000-8000-000000000002",
+} as const;
+
+/** public.categories.id (Phase 4): the seven product categories, sort_order 1..7. */
+export const PRODUCT_CATEGORY = {
+  brakes: "ca000000-0000-4000-8000-000000000006",
+  tyresAndTubes: "ca000000-0000-4000-8000-000000000007",
+  drivetrain: "ca000000-0000-4000-8000-000000000008",
+  cablesAndHoses: "ca000000-0000-4000-8000-000000000009",
+  care: "ca000000-0000-4000-8000-000000000010",
+  cockpit: "ca000000-0000-4000-8000-000000000011",
+  bikes: "ca000000-0000-4000-8000-000000000012",
+} as const;
+
+/**
+ * public.products.id (Phase 4), inserted in this order (PRODUCT_SHORT_ID).
+ * SGD price / default direct cost, reorder point; internal_only except
+ * cassette (draft); chainX10Archived is archived with no stock. colnago,
+ * brompton and surly are unique-tracked (one unit each, UNIT); the rest are
+ * counted.
+ *
+ * On-hand after the seed (reporting.stock_levels; SF = Shop floor, WS =
+ * Workshop store):
+ *   brakePads 34 SF; gp5000Tyre 12 SF; roadTube 40 SF + 20 WS;
+ *   marathonRacer 6 SF (one consumed by INVENTORY_JOB, then reversed);
+ *   bromptonTube 14 SF (15 opening, one on INVENTORY_JOB); chainX11 8 SF;
+ *   cassette 3 SF; cableKit 2 SF (low, reorder 4); hydraulicHose 1 SF (low,
+ *   reorder 5); chainLube 18 SF; barTape 7 SF; sealant 1 SF + 1 WS (low,
+ *   reorder 3); colnago, brompton, surly 1 SF each (their units);
+ *   chainX10Archived none.
+ * reporting.low_stock lists exactly cableKit, hydraulicHose and sealant.
+ */
+export const PRODUCT = {
+  brakePads: "9a000000-0000-4000-8000-000000000001",
+  gp5000Tyre: "9a000000-0000-4000-8000-000000000002",
+  roadTube: "9a000000-0000-4000-8000-000000000003",
+  marathonRacer: "9a000000-0000-4000-8000-000000000004",
+  bromptonTube: "9a000000-0000-4000-8000-000000000005",
+  chainX11: "9a000000-0000-4000-8000-000000000006",
+  cassette: "9a000000-0000-4000-8000-000000000007",
+  cableKit: "9a000000-0000-4000-8000-000000000008",
+  hydraulicHose: "9a000000-0000-4000-8000-000000000009",
+  chainLube: "9a000000-0000-4000-8000-000000000010",
+  barTape: "9a000000-0000-4000-8000-000000000011",
+  sealant: "9a000000-0000-4000-8000-000000000012",
+  colnago: "9a000000-0000-4000-8000-000000000013",
+  brompton: "9a000000-0000-4000-8000-000000000014",
+  surly: "9a000000-0000-4000-8000-000000000015",
+  chainX10Archived: "9a000000-0000-4000-8000-000000000016",
+} as const;
+
+export type SeedProduct = keyof typeof PRODUCT;
+
+/** Short IDs the database assigned to the seeded products, in insert order. */
+export const PRODUCT_SHORT_ID: Record<SeedProduct, string> = {
+  brakePads: "P-000001",
+  gp5000Tyre: "P-000002",
+  roadTube: "P-000003",
+  marathonRacer: "P-000004",
+  bromptonTube: "P-000005",
+  chainX11: "P-000006",
+  cassette: "P-000007",
+  cableKit: "P-000008",
+  hydraulicHose: "P-000009",
+  chainLube: "P-000010",
+  barTape: "P-000011",
+  sealant: "P-000012",
+  colnago: "P-000013",
+  brompton: "P-000014",
+  surly: "P-000015",
+  chainX10Archived: "P-000016",
+};
+
+/**
+ * public.inventory_units.id (Phase 4): one available unit per unique
+ * product, at the Shop floor, linked to its shop bike (BIKE.shopColnago,
+ * shopBrompton, shopSurly); direct costs 4200.00 / 1400.00 / 1100.00.
+ */
+export const UNIT = {
+  colnago: "9b000000-0000-4000-8000-000000000001",
+  brompton: "9b000000-0000-4000-8000-000000000002",
+  surly: "9b000000-0000-4000-8000-000000000003",
+} as const;
+
+export const UNIT_SHORT_ID: Record<keyof typeof UNIT, string> = {
+  colnago: "U-000001",
+  brompton: "U-000002",
+  surly: "U-000003",
+};
+
+/**
+ * The open inventory job (Phase 4): Hafiz's Brompton (BIKE.hafizBrompton),
+ * lead Asha Admin, status received. Kept out of WORK_ORDER / JOB_NUMBER,
+ * which list Phase 3's nine jobs exactly.
+ */
+export const INVENTORY_JOB = {
+  id: "9e000000-0000-4000-8000-000000000001",
+  jobNumber: "J-000010",
+} as const;
+
+/**
+ * Its lines: bromptonTube is live (1 x 14.00 from the Shop floor);
+ * marathonRacerVoided was voided ("Customer brought their own tyre"), so
+ * its job_consumption movement has a linked reversal.
+ */
+export const SEED_LINE = {
+  bromptonTube: "9d000000-0000-4000-8000-000000000001",
+  marathonRacerVoided: "9d000000-0000-4000-8000-000000000002",
 } as const;

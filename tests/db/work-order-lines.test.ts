@@ -48,6 +48,7 @@ import {
   voidLine,
   walkTo,
 } from "./workshop-fixtures";
+import { addPart, addStock, makeProduct, movements, onHand } from "./inventory-fixtures";
 
 let conn: pg.Client;
 
@@ -715,22 +716,31 @@ describe.skipIf(!isolatedDatabase())("voiding and replays", () => {
     });
   });
 
-  it("an inventory line cannot be voided yet (Phase 4 adds the stock reversal)", async () => {
+  it("voiding an inventory line writes its linked stock reversal (Phase 4)", async () => {
     await withJob(ADMIN, async (tx, jobId) => {
       await ownerMode(tx);
-      const id = randomUUID();
-      await tx.query(
-        `insert into public.work_order_line_items
-           (id, work_order_id, line_type, source_product_id, description_snapshot, quantity,
-            unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency)
-         values ($1, $2, 'inventory', $3, 'Brake pads', 2, 25, 12, 0.3, 'SGD')`,
-        [id, jobId, randomUUID()],
-      );
-      await actAs(tx, ADMIN);
-      await failsWith(tx, () => voidLine(tx, id, "Wrong pads"), {
-        code: "P0001",
-        message: "line_type_unsupported",
+      const productId = await makeProduct(tx, {
+        name: "Brake pads",
+        price: "25.00",
+        cost: "12.00",
       });
+      await actAs(tx, ADMIN);
+      await addStock(tx, productId, 5);
+      const part = await addPart(tx, { workOrderId: jobId, productId, quantity: 2 });
+      expect(part).toMatchObject({ on_hand_after: 3, replayed: false });
+      expect(await voidLine(tx, part.line_id, "Wrong pads")).toBe(part.line_id);
+      await ownerMode(tx);
+      const rows = await movements(tx, productId);
+      expect(rows.map((m) => [m.movement_type, m.quantity_delta])).toEqual([
+        ["stock_adjustment", 5],
+        ["job_consumption", -2],
+        ["reversal", 2],
+      ]);
+      expect(rows[2].reversal_of_id).toBe(rows[1].id);
+      expect(await onHand(tx, productId)).toBe(5);
+      expect(await eventTypes(tx, jobId)).toEqual(
+        expect.arrayContaining(["line_added", "stock_consumed", "line_voided", "stock_reversed"]),
+      );
     });
   });
 

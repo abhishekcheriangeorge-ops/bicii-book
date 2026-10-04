@@ -156,8 +156,9 @@ describe("customers by name, email and phone", () => {
 
 describe("bikes by brand, model and owner", () => {
   it("finds bikes by brand or model", async () => {
+    // Phase 4's seed adds the shop's ex-demo Brompton (no owner).
     expect(ids(await find("brompton")).sort()).toEqual(
-      [BIKE.tanBrompton, BIKE.hafizBrompton].sort(),
+      [BIKE.tanBrompton, BIKE.hafizBrompton, BIKE.shopBrompton].sort(),
     );
     expect(ids(await find("long haul"))).toEqual([BIKE.chloeSurly]);
   });
