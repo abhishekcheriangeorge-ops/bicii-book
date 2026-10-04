@@ -113,8 +113,10 @@ Rules:
   - `private.is_staff() returns boolean`
   - `private.is_admin() returns boolean`
   - `private.has_permission(permission_key) returns boolean`
-  - `private.current_customer_id() returns uuid` (Phase 1, with the
-    `customers` table it reads; PLAN Phase 1)
+  - `private.current_customer_id() returns uuid`: the caller's
+    non-archived `customers` row (Phase 1); null for anonymous callers,
+    staff without a customers row and archived customers. EXECUTE for
+    `authenticated` only.
   - `private.require_permission(permission_key)` raises
     `insufficient_privilege` when the caller lacks it. Every privileged RPC
     calls this first.
@@ -125,64 +127,119 @@ having a `staff` row and a `customers` row pointing at the same
 
 ## 2. Customers, bikes, attachments
 
+Phase 1 migrations: `…0600_customers`, `…0700_bikes`, `…0800_media_storage`,
+`…0900_attachments`, `…1000_customer_access`, `…1100_staff_search`.
+
 ```
 customers
   id uuid PK
-  short_id text unique                 -- optional, for search; not printed
-  auth_user_id uuid null unique         -> auth.users(id)
-  first_name, last_name text null
-  display_name text null                -- fallback: first + last, else email
+  short_id text null unique             -- optional, for search; not printed, not assigned yet
+  auth_user_id uuid null unique         -> auth.users on delete set null
+  first_name, last_name text null       -- ≤ 100
+  display_name text null                -- fallback: first + last, else email (private.customer_label)
   email citext null                     -- NOT a key; duplicates allowed
   phone text null
   internal_notes text null              -- staff only
   shopify_customer_id text null unique  -- durable Shopify link
+  search_text text generated            -- lower(names + email), trigram GIN
+  phone_digits text generated           -- digits of phone, trigram GIN
   created_at, updated_at, archived_at
+  check customers_identifies_someone    -- a name, an email or a phone
+  -- trigger: text trimmed, blanks stored as NULL
 
 bikes
   id uuid PK
-  short_id text not null unique         -- B-000123, printed on QR for bikes
-  customer_id uuid null -> customers
-  inventory_unit_id uuid null -> inventory_units   -- set when shop-owned/consigned
-  brand text, model text, variant text, frame_size text, colour text
-  serial_number text null               -- indexed, not unique (duplicates exist)
-  description text, internal_notes text
+  short_id text not null unique         -- B-000123, printed on QR for bikes;
+                                        -- assigned by trigger from next_short_id('B'), immutable
+  customer_id uuid null -> customers    -- CURRENT owner; null = shop / unknown
+  inventory_unit_id uuid null           -- set when shop-owned/consigned; FK -> inventory_units in Phase 4
+  brand text not null, model text not null
+  variant, frame_size, colour text null
+  serial_number text null               -- not unique (duplicates exist)
+  description text null, internal_notes text null
+  serial_key text generated             -- upper(serial) without punctuation; btree + trigram
+  search_text text generated            -- lower(brand model variant colour); trigram
   created_at, updated_at, archived_at
 
-bike_ownership_events
-  id, bike_id, from_customer_id null, to_customer_id null,
-  reason text, actor_staff_id, created_at
-  -- ownership changes append here; bikes.customer_id is the current owner
+bike_ownership_events                   -- append-only
+  id, bike_id
+  event_type bike_ownership_event_type  -- registered (created with an owner) | transferred
+  from_customer_id null, to_customer_id null
+  reason text                           -- required for transferred; ≤ 500
+  actor_staff_id null, correlation_id, created_at (clock_timestamp)
+  -- written by the bikes trigger; bikes.customer_id is the current owner
 
 attachments
-  id uuid PK
+  id uuid PK                            -- chosen by the server before upload (it is in the path)
   entity_type attachment_entity not null  -- enum: bike | work_order | product |
                                           --   inventory_unit | customer | consignment_item
-  entity_id uuid not null
-  storage_bucket text not null            -- 'media-internal' | 'media-public'
-  storage_path text not null unique
-  media_type text not null
-  byte_size integer
+  entity_id uuid not null               -- validated by private.attachment_entity_exists
+  storage_bucket text not null          -- 'media-public' iff visibility = public, else 'media-internal'
+  storage_path text not null unique     -- {entity_type}/{entity_id}/{id}.{ext}, ext matches media_type
+  media_type text not null              -- image/jpeg | png | webp | heic | heif
+  byte_size integer                     -- from Storage's object metadata when present
   width, height integer null
-  caption text null
+  caption text null                     -- ≤ 500
   visibility attachment_visibility not null default 'internal'
                                           -- enum: internal | customer | public
   created_by uuid -> staff
-  created_at
-  index (entity_type, entity_id)
+  created_at, updated_at
+  index (entity_type, entity_id, created_at)
+  check: a `customer` entity's attachment is never `public` (PLAN D13)
+
+attachment_events                       -- append-only; outlives deleted attachments
+  id, attachment_id (no FK), entity_type, entity_id
+  event_type attachment_event_type      -- created | visibility_changed | caption_changed | deleted
+  actor_staff_id null, payload jsonb, reason (required for deleted), correlation_id, created_at
 ```
 
-Attachment storage: two Supabase Storage buckets. `media-internal` is private;
-staff read it directly and customers get short-lived signed URLs minted on the
-server for `visibility = customer` rows they are entitled to. `media-public` is
-public-read and holds only rows with `visibility = public`. Changing visibility
-to or from `public` moves the object between buckets inside the same service
-call that updates the row. Storage policies:
+Rules:
+
+- History over overwrites. Every owner change of a bike appends a
+  `bike_ownership_events` row from a trigger, so no writer skips it; an
+  owner change without a reason raises `reason_required` for every writer
+  (RPCs pass the reason through the transaction-local
+  `private.set_change_reason`). `authenticated` has no column grant on
+  `bikes.customer_id` after insert: transfers go through
+  `transfer_bike_ownership`. Archived customers receive no bikes
+  (`customer_archived`); archived bikes are not transferred
+  (`bike_archived`).
+- Attachments are created only by `record_attachment`, which checks the
+  object is in `storage.objects` at the canonical path (it reads the table
+  as the function owner, which bypasses RLS on hosted Supabase and
+  locally), moved only by `set_attachment_visibility`, deleted only by
+  `delete_attachment` (reason required, the deleted row is kept in the
+  `deleted` event's payload; ids are never reused). Staff may edit a
+  caption directly (recorded as `caption_changed`).
+- Entity types grow by phase. `private.attachment_entity_exists` knows
+  `customer` and `bike`, returns null for the rest (`record_attachment`
+  raises `attachment_entity_unsupported`); the migration that creates
+  `work_orders`, `products`, `inventory_units` or `consignment_items` adds
+  its branch with `create or replace`.
+- Search: `pg_trgm` lives in `extensions` (as on hosted Supabase). The
+  generated search columns use built-in immutable functions only, so the
+  trigram indexes need no helper function.
+
+Attachment storage: two Supabase Storage buckets, created by migration
+(`insert … on conflict do nothing`), photos only (JPEG, PNG, WebP,
+HEIC/HEIF) up to 20 MiB. `media-internal` is private; staff read it directly
+and customers get short-lived signed URLs minted on a server for
+`visibility = customer` rows they are entitled to (`my_bike_attachments`).
+`media-public` is public-read and holds only rows with `visibility =
+public`. Changing visibility to or from `public` moves the object between
+buckets: the server copies it to the other bucket (same path), calls
+`set_attachment_visibility` with the new location (which must exist), then
+removes the old object. Storage policies on `storage.objects`:
 
 - `media-internal`: insert/update/delete for active staff; select for active
-  staff. Nobody else, ever. Customer access is only through signed URLs.
+  staff. Nobody else, ever: not anon, not signed-in customers, not inactive
+  staff. Customer access is only through signed URLs.
 - `media-public`: select for all; insert/update/delete for active staff.
 
-Object path: `{entity_type}/{entity_id}/{attachment_id}.{ext}`.
+Object path: `{entity_type}/{entity_id}/{attachment_id}.{ext}`. Upload flow
+(ADR-001 A7): the server picks the attachment id, mints a signed upload URL
+for that exact path as the signed-in staff member, the phone uploads to it,
+the server calls `record_attachment`.
 
 ## 3. Shop hours and appointments
 
@@ -756,9 +813,13 @@ security-definer function. Blank = no access.
 | staff | S (own row + names of others); A full; A or P(manage_staff) via `staff_roster()` | RPC `create_staff` (A or P(manage_staff); only A creates A) | RPC `update_staff`, `set_staff_active` | — |
 | staff_permissions | A, own | RPC `grant_permission` (A, or P(manage_staff) within D11) | — | RPC `revoke_permission` (same) |
 | staff_events | A or P(manage_staff) via `staff_history()` | triggers only | never | never |
-| customers | S; C own | S; C own on sign-up | S; C own (name/phone only) | — |
-| bikes | S; C own | S; C own | S; C own (non-internal cols) | — |
-| attachments | S; C where visibility ≠ internal and entity is own | S | S | S |
+| customers | S; C own via `my_customer_profile()` | S (no `auth_user_id`, `shopify_customer_id`); C on sign-up via RPC (Phase 11) | S (same columns, `archived_at`); C own name/phone via `update_my_profile()` | — (archive) |
+| bikes | S; C own current, non-archived via `my_bikes()` | S (no `short_id`: server-assigned) | S (no `short_id`, `customer_id`, `inventory_unit_id`); owner via RPC `transfer_bike_ownership` | — (archive) |
+| bike_ownership_events | S | trigger only | never | never |
+| attachments | S; C `customer`/`public` rows of own bikes via `my_bike_attachments()` | RPC `record_attachment` (S) | S caption only; visibility via RPC `set_attachment_visibility` (S) | RPC `delete_attachment` (S, reason) |
+| attachment_events | S | triggers only | never | never |
+| storage `media-internal` | S | S | S | S |
+| storage `media-public` | everyone | S | S | S |
 | shop_hours, closure_overrides, appointment_types | S; anon/C active+public rows | A | A | A |
 | appointments | S; C own | RPC (`book_appointment`) | RPC / S | — |
 | work_orders | S; C own (customer projection view) | S | S | — |
@@ -780,6 +841,25 @@ security-definer function. Blank = no access.
 | integration_events, retry queue, sync | A | service role only | service role / RPC | — |
 | reporting.* financial views | P(view_financial_reports) | — | — | — |
 | reporting.public_items | everyone | — | — | — |
+
+**Customer access pattern (Phase 1, binding for every later phase).** Staff
+and signed-in customers share the `authenticated` role, so a column grant
+cannot show `internal_notes` to staff and hide it from customers, and RLS
+can only hide whole rows. Therefore "C own" never means a customer policy on
+a base table. Base tables that hold anything staff-only (customers, bikes,
+attachments, and later appointments, work orders, events, line items) have
+RLS policies for active staff only (`private.is_staff()`); a customer
+selecting them gets zero rows. Customers read and write through
+`security definer` RPCs named `my_*` (or verbs on "my" data) that resolve
+the caller with `private.current_customer_id()`, never accept a customer id
+from the caller, and return an explicit list of customer-safe columns (a
+named composite type or `returns table`). Asking for a record that is not
+theirs returns nothing rather than an error. EXECUTE goes to `authenticated`
+only; anonymous access is a separate, explicitly public projection
+(`reporting.public_items`, public appointment types). Each such RPC is
+listed in `tests/fixtures/api-surface.ts` and tested for: own rows only,
+no staff-only column in the result keys, another customer's id returns
+nothing, anon is refused (`customer-access.test.ts` is the template).
 
 Column-level gating of cost/yield for staff without `view_costs` is done with
 views (`*_staff` views include the columns; base tables revoke `select` on
@@ -832,6 +912,15 @@ Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
 | `create_staff(auth_user_id, display_name, email, role)` | A or P(manage_staff); only A creates `admin` | Links an existing Auth login (created server-side with the service-role admin API) to a new active staff row. Email must equal the login's email (`P0001 staff_email_mismatch`); duplicate email → 23505 `staff_email_key`. |
 | `staff_roster()` | A or P(manage_staff) | Every staff row with its *granted* permissions, for Staff settings (a manage_staff holder could otherwise grant but not see permissions, §15). |
 | `staff_directory()` | S | `id, display_name, role, active` of every staff member: how staff see colleagues' names (§15) without reading the `staff` table. |
+| `transfer_bike_ownership(bike_id, to_customer_id, reason)` | S | `to_customer_id` null = the shop. Reason required (P0001 `reason_required`, `reason_too_long` over 500). Locks the bike; one `transferred` event with actor and reason (by trigger); replaying the current owner is a no-op. P0002 unknown bike/customer; `customer_archived`, `bike_archived`. Returns the bike. |
+| `record_attachment(attachment_id, entity_type, entity_id, storage_bucket, storage_path, media_type, byte_size, width, height, caption, visibility)` | S | Entity must exist (P0002; `attachment_entity_unsupported` for types without a table yet); bucket must match visibility (`attachment_bucket_mismatch`); path must be `{entity_type}/{entity_id}/{attachment_id}.{ext}` with ext matching the type (`attachment_path_mismatch`); photo types only (`attachment_media_type_unsupported`); the object must be in `storage.objects` (`attachment_object_missing`) with a matching mimetype (`attachment_media_type_mismatch`); Storage's size wins. Replay returns the same row; an id used for another file (`attachment_conflict`) or deleted (`attachment_deleted`) is refused; customer records are never public (`attachment_customer_never_public`). `created` event. |
+| `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Locks the row; `visibility_changed` event; replay is a no-op. |
+| `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload; returns the deleted row (the server then removes the object), or null on replay. |
+| `staff_search(q, kinds, max_results)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65) and bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name). Exact short ID or serial rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded; `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100. Later phases add a `private.search_<kind>` function and a branch. |
+| `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
+| `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
+| `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |
+| `my_bike_attachments(bike_id)` | authenticated (C) | `customer`/`public` attachments of one of the caller's own bikes; empty for anyone else's. |
 
 ## 17. Sequences and short IDs
 
@@ -852,3 +941,9 @@ Realistic and deterministic (fixed UUIDs so tests can reference them):
 spread across statuses and the last 10 days, settlements, and a Cult Commons
 rate row. The seed is applied to the local database and to a fresh preview
 project; never to production.
+
+Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
+`tests/fixtures/ids.ts`; none has a login yet) and bikes
+`b1000000-…-0000000000NN` (`BIKE`, short IDs `B-000001`…`B-000010` in insert
+order, `BIKE_SHORT_ID`), one shop bike without an owner and one bike
+transferred between customers (two ownership events). No attachments.

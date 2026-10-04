@@ -78,6 +78,13 @@ the gateway with supabase-js as `admin@bicii.test`, calls
 the service key. It skips with a message when the gateway is not reachable,
 unless `BICII_REQUIRE_STACK=1` (CI), where that fails the file.
 
+Phase 1 helpers (`tests/db/customer-fixtures.ts`): `linkCustomerLogin`
+gives a seeded customer an Auth login inside the test's transaction (no
+customer has one in the seed), `customerClaims` acts as them, and
+`putStorageObject` leaves the `storage.objects` row an upload would. Tests
+that insert bikes consume `private.seq_short_id_b` and skip in
+existing-database mode, like the short-ID tests.
+
 Catalogue meta tests (`tests/db/meta.test.ts`) cover every future migration
 automatically: RLS enabled on every `public` table, no function in
 `public`/`private` executable by PUBLIC, security-definer functions pin
@@ -149,7 +156,11 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
-| RLS: customer A cannot read B | bikes, appointments, work orders, attachments. |
+| RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing. |
+| Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
+| Stable physical identity | bike short IDs are server-assigned `B-######`, increasing, unique, never client-supplied (42501) and immutable (`bike_short_id_immutable`). |
+| Storage enforces visibility (SPEC §8) | `media-internal`: anon, customers and inactive staff read/write nothing, active staff everything; `media-public`: everyone reads, only staff write (`media-storage.test.ts`); live signed-upload round trip with anon download refused (`stack.smoke.test.ts`). |
+| Attachments describe real objects | `record_attachment` rejects a path that is not `{entity_type}/{entity_id}/{id}.{ext}`, a missing object, the wrong bucket, a non-photo, an unknown entity; replay-safe; delete needs a reason and is kept in `attachment_events` (`attachments.test.ts`). |
 | Anonymous cannot read costs/notes | every table in the RLS matrix: anon select returns 0 rows or is denied. |
 | Mechanic permission boundaries | staff without `view_costs` cannot select cost columns; without `adjust_stock` cannot call `adjust_stock`; admin can. |
 | Consignment sale yields correctly | $1,000 sale, $500 owed → yield 500, CC 150. |

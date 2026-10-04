@@ -15,8 +15,11 @@ scaffold, design tokens and UI primitives, the Docker-free Supabase devstack,
 the foundation, staff and staff-management migrations, the DB test harness,
 email + password sign-in, the staff shell (phone tab bar / iPad rail), Staff
 settings (invite, permissions, deactivate), the PWA manifest and service
-worker, Playwright E2E, and CI. Next: M1.2 customers and bikes
-([PLAN §3](docs/PLAN.md)).
+worker, Playwright E2E, and CI. M1.2 customers and bikes
+([PLAN §3](docs/PLAN.md)) is in progress: its database layer is in
+(customers, bikes with ownership history, attachments, the photo buckets,
+customer self-service RPCs, staff search, seed and tests); the domain
+modules and screens come next.
 
 ## Quickstart
 
