@@ -6,7 +6,7 @@ import type { HistoryEntry, Movement } from "@/lib/domain/inventory";
 import { movementLabel, signedQuantity } from "@/lib/inventory";
 import { formatMoney } from "@/lib/money";
 
-import { ShortId } from "./short-id";
+import { ShortId, ShortIdLink } from "./short-id";
 
 /**
  * Stock movements, newest first (SPEC §12, §23): when (Singapore time),
@@ -53,11 +53,7 @@ export function MovementList({
             <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="text-base font-medium">{label}</span>
-                {m.job ? (
-                  <Link href={`/jobs/${m.job.id}`} className="underline-offset-2 hover:underline">
-                    <ShortId value={m.job.jobNumber} />
-                  </Link>
-                ) : null}
+                {m.job ? <ShortIdLink href={`/jobs/${m.job.id}`} value={m.job.jobNumber} /> : null}
                 <span className="text-dust-500">#{m.id}</span>
               </span>
               {showProduct ? (
@@ -67,19 +63,12 @@ export function MovementList({
                   </Link>
                   <ShortId value={m.product.shortId} />
                   {m.unit ? (
-                    <Link
-                      href={`/units/${m.unit.id}`}
-                      className="underline-offset-2 hover:underline"
-                    >
-                      <ShortId value={m.unit.shortId} />
-                    </Link>
+                    <ShortIdLink href={`/units/${m.unit.id}`} value={m.unit.shortId} />
                   ) : null}
                 </span>
               ) : m.unit ? (
                 <span>
-                  <Link href={`/units/${m.unit.id}`} className="underline-offset-2 hover:underline">
-                    <ShortId value={m.unit.shortId} />
-                  </Link>
+                  <ShortIdLink href={`/units/${m.unit.id}`} value={m.unit.shortId} />
                 </span>
               ) : null}
               <span className="text-dust-700">

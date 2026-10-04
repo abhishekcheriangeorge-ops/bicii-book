@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { IconButton } from "./icon-button";
 import { CloseIcon } from "./icons";
+import { InSheetBodyContext } from "./sheet-context";
 
 /** CSS variable the toast viewport uses as its bottom inset while a sheet is open. */
 export const TOAST_INSET_VAR = "--toast-inset-bottom";
@@ -216,7 +217,7 @@ export function Sheet({
             footer ? "pb-5" : "pb-[max(1.25rem,env(safe-area-inset-bottom))]",
           )}
         >
-          {children}
+          <InSheetBodyContext value={true}>{children}</InSheetBodyContext>
         </div>
         {footer ? (
           <footer

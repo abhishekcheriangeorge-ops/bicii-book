@@ -261,6 +261,11 @@ function ProductSheetBody({
   const values = state && !state.ok ? state.values : undefined;
   const value = (key: string, stored: string | number | null | undefined) =>
     values?.[key] ?? (stored === null || stored === undefined ? "" : String(stored));
+  // A new unique item needs somewhere to keep its unit; with no active
+  // location the unit fields show an empty state instead, so the save could
+  // never succeed (AddUnitSheet hides its footer for the same reason).
+  // Quantity stays available.
+  const cannotPlaceUnit = !product && tracking === "unique" && !locations.some((l) => l.active);
 
   return (
     <Sheet
@@ -278,7 +283,13 @@ function ProductSheetBody({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" form={formId} pending={pending} pendingLabel="Saving…">
+          <Button
+            type="submit"
+            form={formId}
+            pending={pending}
+            pendingLabel="Saving…"
+            disabled={cannotPlaceUnit}
+          >
             {product ? "Save" : "Add product"}
           </Button>
         </>

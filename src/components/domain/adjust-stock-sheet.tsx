@@ -106,6 +106,7 @@ function AdjustStockSheet({
   }, null);
   const formRef = useFocusFirstInvalid(state);
   const errors = state && !state.ok ? state.fieldErrors : undefined;
+  const belowZeroId = useId();
 
   const qty = /^\d+$/.test(quantity.trim()) ? Number(quantity) : null;
   const preview =
@@ -199,8 +200,31 @@ function AdjustStockSheet({
               maxValue={100000}
               value={quantity}
               onValueChange={setQuantity}
+              aria-invalid={preview?.wouldGoNegative === true || undefined}
+              aria-describedby={preview?.wouldGoNegative ? belowZeroId : undefined}
             />
           </Field>
+          {/* Right under Quantity: Save is disabled while the count would go
+              below zero, so the reason sits next to its cause, in view. */}
+          {preview && location ? (
+            preview.wouldGoNegative ? (
+              <p
+                id={belowZeroId}
+                role="alert"
+                className="rounded-xl bg-danger-soft p-3 text-sm text-danger-deep"
+              >
+                {location.name} has {plain(location.onHand)}. A count can&apos;t go below zero by
+                hand; check the number.
+              </p>
+            ) : (
+              <p className="flex items-baseline justify-between rounded-xl bg-sunken px-4 py-3 tabular-nums">
+                <span className="text-sm text-dust-700">After saving</span>
+                <output className="text-lg font-bold">
+                  {location.name}: {plain(location.onHand)} → {plain(preview.after)}
+                </output>
+              </p>
+            )
+          ) : null}
           <div className="flex flex-col gap-2">
             <span className="font-display text-xs font-bold tracking-wide uppercase">Type</span>
             <SegmentedControl
@@ -251,21 +275,6 @@ function AdjustStockSheet({
             >
               <NumberInput kind="money" name="unitCost" value={cost} onValueChange={setCost} />
             </Field>
-          ) : null}
-          {preview && location ? (
-            preview.wouldGoNegative ? (
-              <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger-deep">
-                {location.name} has {plain(location.onHand)}. A count can&apos;t go below zero by
-                hand; check the number.
-              </p>
-            ) : (
-              <p className="flex items-baseline justify-between rounded-xl bg-sunken px-4 py-3 tabular-nums">
-                <span className="text-sm text-dust-700">After saving</span>
-                <output className="text-lg font-bold">
-                  {location.name}: {plain(location.onHand)} → {plain(preview.after)}
-                </output>
-              </p>
-            )
           ) : null}
         </form>
       )}

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +9,7 @@ import type { Line } from "@/lib/domain/lines";
 import { signedQuantity } from "@/lib/inventory";
 import { formatMoney, formatQuantity } from "@/lib/money";
 
-import { ShortId } from "./short-id";
+import { ShortIdLink } from "./short-id";
 import { StockBadge } from "./stock-badge";
 import { VoidLineControl } from "./void-line-control";
 
@@ -220,9 +219,7 @@ function PartInfo({ part, voided }: { part: NonNullable<Line["part"]>; voided: b
   const href = part.unitId ? `/units/${part.unitId}` : `/products/${part.productId}`;
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <Link href={href} className="rounded-md underline-offset-2 hover:underline">
-        <ShortId value={part.shortId} />
-      </Link>
+      <ShortIdLink href={href} value={part.shortId} />
       {!voided && !part.unitId && part.onHandAtLocation !== null ? (
         <StockBadge
           onHand={part.onHandAtLocation}

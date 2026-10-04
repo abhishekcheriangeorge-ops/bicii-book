@@ -48,6 +48,19 @@ async function pickPart(page: Page, query: string, option: RegExp) {
   await sheet.getByRole("combobox").fill(query);
   const choice = sheet.getByRole("option", { name: option });
   await expect(choice).toBeVisible();
+  // Really on screen before any click scrolls it there: not clipped into the
+  // sheet body's hidden scroll space, and not under the sheet footer (a
+  // short sheet on a phone used to hide the results behind it).
+  await expect(choice).toBeInViewport({ ratio: 1 });
+  await expect
+    .poll(() =>
+      choice.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return hit !== null && el.contains(hit);
+      }),
+    )
+    .toBe(true);
   return { sheet, choice };
 }
 
