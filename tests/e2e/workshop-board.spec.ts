@@ -121,10 +121,15 @@ test("a mechanic with cost access sees the job's Cult Commons", async ({ page })
 test("search finds a job by number; a bike lists its jobs", async ({ page }) => {
   await signIn(page, "admin");
   await page.goto("/");
-  const header = page.getByRole("searchbox", { name: "Search customers, bikes and jobs" });
+  // An exact J- number in the header opens the job straight away (via /q).
+  const header = page.getByRole("searchbox", { name: "Search customers, bikes, jobs and stock" });
   await header.fill("j-000004");
   await header.press("Enter");
-  await expect(page).toHaveURL(/\/search\?q=j-000004/);
+  await expect(page).toHaveURL(new RegExp(`/jobs/${WORK_ORDER.chloeGiantInProgress}$`));
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("J-000004");
+
+  // The results page puts Jobs first for the same number.
+  await page.goto("/search?q=j-000004");
   const jobs = page.getByRole("list", { name: "Jobs", exact: true });
   await expect(page.getByRole("main").getByRole("heading", { level: 2 }).first()).toHaveText(
     /^Jobs/,

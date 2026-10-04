@@ -2,6 +2,7 @@
  * Global staff search results (SPEC §20; RPC staff_search, DATA-MODEL §16).
  * Pure: the grouping and links are shared by the /search page and tests.
  */
+import { hrefForRecord, parseShortId } from "@/lib/ids";
 
 /**
  * Kinds staff_search knows: customers and bikes (Phase 1), jobs (Phase 3),
@@ -39,20 +40,25 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
   inventory_unit: "Units",
 };
 
-/** Where a hit opens in the staff app. */
+/**
+ * Where a hit opens in the staff app: a customer's page, or for records
+ * with a short ID the same page the /q resolver opens (hrefForRecord).
+ */
 export function hrefForHit(hit: Pick<SearchHit, "kind" | "id">): string {
-  switch (hit.kind) {
-    case "customer":
-      return `/customers/${hit.id}`;
-    case "bike":
-      return `/bikes/${hit.id}`;
-    case "work_order":
-      return `/jobs/${hit.id}`;
-    case "product":
-      return `/products/${hit.id}`;
-    case "inventory_unit":
-      return `/units/${hit.id}`;
-  }
+  if (hit.kind === "customer") return `/customers/${hit.id}`;
+  // Every other search kind has an Admin page (hrefForRecord is null only
+  // for kinds staff_search does not return yet).
+  return hrefForRecord(hit.kind, hit.id) ?? "/search";
+}
+
+/**
+ * The header search's shortcut: a query that is exactly a short ID (any
+ * case, PLAN D9) opens the record through the /q resolver instead of the
+ * results page. Null for anything else.
+ */
+export function shortIdJump(q: string): string | null {
+  const parsed = parseShortId(q);
+  return parsed ? `/q/${parsed.shortId}` : null;
 }
 
 export type SearchGroup = { kind: SearchKind; label: string; hits: SearchHit[] };

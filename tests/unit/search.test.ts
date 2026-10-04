@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { bikeDetails, bikeSubtitle, bikeTitle } from "@/lib/bikes";
-import { groupHits, hrefForHit, isSearchKind, type SearchHit } from "@/lib/search";
+import { groupHits, hrefForHit, isSearchKind, shortIdJump, type SearchHit } from "@/lib/search";
 
 const hit = (kind: SearchHit["kind"], id: string, rank: number): SearchHit => ({
   kind,
@@ -83,5 +83,19 @@ describe("bike naming (mirrors private.search_bikes)", () => {
     ).toBe("Tan Wei Ming · Gloss Red Tint · S/N WSB1");
     expect(bikeSubtitle({ ownerLabel: null, colour: null, serialNumber: null })).toBe("Shop bike");
     expect(bikeDetails({ colour: " ", serialNumber: null })).toBeNull();
+  });
+});
+
+describe("shortIdJump", () => {
+  it("opens an exact short ID through /q, in any case", () => {
+    expect(shortIdJump("P-000001")).toBe("/q/P-000001");
+    expect(shortIdJump(" b-000011 ")).toBe("/q/B-000011");
+    expect(shortIdJump("j-000004")).toBe("/q/J-000004");
+  });
+
+  it("leaves everything else to the results page", () => {
+    for (const q of ["", "brompton", "P-0001", "J000004", "TT-123", "P-000001 tube"]) {
+      expect(shortIdJump(q), q).toBeNull();
+    }
   });
 });

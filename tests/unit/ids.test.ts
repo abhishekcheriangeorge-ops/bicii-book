@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatShortId,
+  hrefForRecord,
   isShortId,
   parseScan,
   parseShortId,
@@ -118,6 +119,27 @@ describe("parseScan", () => {
       "https://bicii.sg/q/%E0%A4%A",
     ]) {
       expect(parseScan(bad), bad).toBeNull();
+    }
+  });
+});
+
+describe("hrefForRecord", () => {
+  it("opens bikes, jobs, products and units on their Admin pages", () => {
+    expect(hrefForRecord("bike", "b1")).toBe("/bikes/b1");
+    expect(hrefForRecord("work_order", "w1")).toBe("/jobs/w1");
+    expect(hrefForRecord("product", "p1")).toBe("/products/p1");
+    expect(hrefForRecord("inventory_unit", "u1")).toBe("/units/u1");
+  });
+
+  it("has no page yet for consignment items, purchase orders and sales (Phases 6 and 7)", () => {
+    expect(hrefForRecord("consignment_item", "c1")).toBeNull();
+    expect(hrefForRecord("purchase_order", "po1")).toBeNull();
+    expect(hrefForRecord("sale", "s1")).toBeNull();
+  });
+
+  it("covers every short-ID kind", () => {
+    for (const kind of Object.values(SHORT_ID_KINDS)) {
+      expect(() => hrefForRecord(kind, "x")).not.toThrow();
     }
   });
 });

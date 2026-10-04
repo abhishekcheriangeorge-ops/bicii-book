@@ -28,7 +28,7 @@ async function createCustomer(page: Page, first: string, last: string, phone?: s
 
 /** Searches from the header field (Enter opens /search) and opens the bike result. */
 async function searchFromHeader(page: Page, query: string, bikeTitle: string) {
-  const header = page.getByRole("searchbox", { name: "Search customers, bikes and jobs" });
+  const header = page.getByRole("searchbox", { name: "Search customers, bikes, jobs and stock" });
   await header.fill(query);
   await header.press("Enter");
   await expect(page).toHaveURL(/\/search\?q=/);
@@ -141,10 +141,14 @@ test("staff register a customer's bike with a photo, share it, find it, hand it 
   expect((await fetch(internalUrl)).status).not.toBe(200);
 
   // Found from the header search by serial number (case, spaces and dashes
-  // don't matter) and by its B- number.
+  // don't matter); its B- number, typed in lower case, opens it straight away.
   await searchFromHeader(page, serial.toLowerCase().replaceAll("-", " "), bikeTitle);
-  await searchFromHeader(page, shortId, bikeTitle);
   expect(page.url()).toBe(bikeUrl);
+  await page.goto("/");
+  const header = page.getByRole("searchbox", { name: "Search customers, bikes, jobs and stock" });
+  await header.fill(shortId.toLowerCase());
+  await header.press("Enter");
+  await expect(page).toHaveURL(bikeUrl);
 
   // Hand it over, with a reason that stays in its history.
   await page.getByRole("button", { name: "Transfer ownership" }).click();
