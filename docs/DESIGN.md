@@ -66,16 +66,67 @@ Server components unless they need state or browser APIs.
 | `Field` (client) | Label, hint, error, required marker. Provides context so the control inside gets `id`, `aria-describedby` (error, hint), `aria-invalid`, `required`. |
 | `Input`, `Textarea`, `NumberInput` (client) | `NumberInput` is `type="text"` + `inputMode` (decimal for money, numeric for quantity); values stay strings — parse with `lib/money`. Optional −/+ steppers. |
 | `Checkbox`, `Switch` (client) | Checkbox is native and styled; Switch is `role="switch"` for settings that apply immediately. |
-| `Sheet` (client) | Modal dialog: bottom sheet on phones, right panel at `md`+. Inerts the rest of the page, traps Tab, Escape closes, focus returns to the opener. `dismissible={false}` while a commit is pending. |
-| `ToastProvider`, `useToast` (client) | Polite live region for confirmations, `role="alert"` for errors (errors persist until dismissed). Mounted in the root layout. |
+| `Sheet` (client) | Modal dialog: bottom sheet on phones, right panel at `md`+. Inerts the rest of the page, traps Tab, Escape closes, focus returns to the opener. `dismissible={false}` while a commit is pending. Without a footer the body pads for the iPhone home indicator. While open it moves toasts above its footer (`--toast-inset-bottom`). |
+| `ToastProvider`, `useToast` (client) | Polite live region for confirmations, `role="alert"` for errors (errors persist until dismissed). Mounted in the root layout. On phones it sits above the tab bar (never over Scan); an open Sheet lifts it above its Save/Cancel row. |
 | `Badge`, `StatusPill` | Tone = the status tokens; pills always carry text. |
-| `Card`, `EmptyState`, `Skeleton`, `Spinner`, `PageHeader` | Layout and feedback. |
-| `SearchPicker` (client) | ARIA 1.2 combobox + listbox; async `search(query)` (may be a Server Action), debounce, stale-response guard, ↑/↓/Enter/Escape, hidden input for forms. SPEC §22: use it instead of any large `<select>`. |
+| `Card`, `EmptyState`, `Skeleton`, `Spinner`, `PageHeader` | Layout and feedback. `Card` never clips (no `overflow-hidden`), so pickers, menus and focus rings inside it can extend past its edge; flush content rounds its own corners. |
+| `RowList`, `RowLink` | Edge-to-edge list of tappable rows (More, Settings, Staff; later jobs, products, customers). Rows use the inset focus ring and round their own first/last corners; the list does not clip. |
+| `SearchPicker` (client) | ARIA 1.2 combobox + listbox; async `search(query)` (may be a Server Action), debounce, stale-response guard, ↑/↓/Enter/Escape, hidden input for forms. `action` adds a last option ("Create new customer") reached with the arrows and Enter like any result. Optional pickers (`clearable`, default `!required`) can go back to nothing: a 44px clear button, emptying the field and leaving it, or Escape on an empty field; `onSelect(null)` reports it. SPEC §22: use it instead of any large `<select>`. |
 | `SegmentedControl`, `Tabs` (client) | Radiogroup and tablist with roving tabindex and arrow keys. |
 
 Class strings are joined with `cn()` (`src/lib/cn.ts`), which does not merge
 conflicting utilities; prefer a variant prop over overriding colours with
 `className`.
+
+## Focus
+
+The global ring (`:focus-visible`: 3px indigo outline, 3px offset, paper
+halo) is drawn outside the element. Anything full-bleed inside a clipping
+or edge-to-edge container uses the **inset** variant, the `focus-inset`
+utility (`globals.css`): the same two tones drawn inside the element, so no
+ancestor's `overflow` can cut it. Used by `RowLink`, `Tabs` and
+`SegmentedControl` (both scroll horizontally, which clips vertically too).
+Never add `overflow-hidden` to a container of focusable rows to get rounded
+corners; round the first and last rows instead.
+
+## Forms
+
+The pattern every Server Action form follows (`staffAction` +
+`useActionState`, `src/lib/actions.ts`):
+
+- React resets uncontrolled fields after every form action, success or
+  not. A failed action returns `values` (the submitted text fields, never
+  passwords or other secrets, `src/lib/form-data.ts`); render them back as
+  `defaultValue={values?.field ?? ""}` so nothing typed is lost. Passwords
+  are re-entered.
+- Errors: `error` above the form (`role="alert"`), `fieldErrors` on each
+  `Field`. `useFocusFirstInvalid(state)` (ref on the `<form>`) moves focus to
+  the first invalid control after a failed submit.
+- Controls that apply immediately (switches) use the action directly with
+  `useOptimistic` and a toast, not a form.
+- Destructive or commit steps (deactivate staff; later stock, payment and
+  settlement reversals) are two steps: the first button opens a confirm
+  block that asks for the reason (SPEC §22), puts focus in the reason field,
+  places the confirm button in a different position with a different React
+  `key` (so the first button's DOM node and focus are not reused), and
+  ignores clicks for 400 ms after opening (a double tap). See
+  `AccessControl` in `settings/staff/[staffId]/staff-controls.tsx`.
+
+## Loading
+
+- Sections whose pages need nothing beyond `requireStaff()` have a
+  `loading.tsx` rendering `RouteLoading` (skeletons in an `aria-busy`
+  region): it is prefetched, so a tap shows the new screen's skeleton at
+  once.
+- A loading boundary makes the response stream, which commits it to HTTP
+  200 before the page runs (Next docs, `loading.js` "Status Codes"): a page
+  under it that calls `forbidden()` or `notFound()` shows the right UI with
+  a 200. So permission-gated subtrees (`/settings/staff`, later `/reports`)
+  have none, nor do the group root (`/`) and `/settings` (whose subtree
+  includes `/settings/staff`), keeping their real 403s.
+- Every nav link (tab bar, rail) marks its icon while its navigation is
+  pending (`LinkPending`, `useLinkStatus`), which also covers the sections
+  without a `loading.tsx`.
 
 ## App shell (`src/components/shell/`)
 

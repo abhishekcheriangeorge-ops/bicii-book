@@ -10,10 +10,12 @@ its row of PLAN.md pass in CI.
 | Unit (pure TS) | Vitest | nothing | `npm run test:unit` |
 | Database (invariants, RLS, RPCs) | Vitest + `pg` | Postgres with migrations + seed | `npm run test:db` |
 | End-to-end | Playwright | `next start` + the devstack (or `supabase start` with `E2E_EXTERNAL_STACK=1`) | `npm run test:e2e` |
-| Static | `tsc --noEmit`, `eslint`, `prettier --check`, type-gen diff | — | `npm run check` |
+| Static | `next typegen` + `tsc --noEmit`, `eslint`, `prettier --check` | — | `npm run check` |
+| Generated DB types | `supabase gen types` from a throwaway database built from the migrations, then `git diff --exit-code -- src/lib/database.types.ts` | Postgres (devstack cache) | `npm run check:types` |
 
-`npm test` = unit + db. CI runs `check`, `test`, then `build`; E2E runs on a
-nightly schedule and on PRs labelled `e2e`.
+`npm test` = unit + db. CI runs `check` (with `check:types`), `test`, then
+`build` (`ci.yml`); E2E runs on a nightly schedule and on PRs labelled
+`e2e` (`e2e.yml`).
 
 ## Database test harness
 
@@ -41,7 +43,8 @@ laptop's); the Supabase parts come from the devstack cache
    rolled back unless the test passes `{ commit: true }`.
 
 Files run one at a time (`fileParallelism: false`). Connection: the server
-from `DATABASE_URL` (or `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`), default
+from `DATABASE_URL` (or `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`), taken from
+the shell environment (no `.env` file is loaded), default
 `postgres:postgres@127.0.0.1:5432`; the user must be able to create
 databases and roles.
 
@@ -63,7 +66,10 @@ The helpers do exactly what PostgREST does, so they work unchanged against a
 real Supabase database: set `BICII_TEST_DATABASE_URL` to an already migrated
 and seeded database (for example `supabase start`'s) and the harness uses it
 directly instead of cloning; tests that commit or move sequences skip
-themselves in that mode (`isolatedDatabase()`).
+themselves in that mode (`isolatedDatabase()`): the staff concurrency file,
+and every short-ID test that calls `nextval` or `setval` (sequence values
+are consumed even inside a rolled-back transaction, and short IDs are never
+reused, so they would burn IDs in a database you keep).
 
 `tests/db/stack.smoke.test.ts` goes one step further when the devstack is
 running (`npm run db:reset && npm run devstack:start`): it signs in through
@@ -75,7 +81,22 @@ unless `BICII_REQUIRE_STACK=1` (CI), where that fails the file.
 Catalogue meta tests (`tests/db/meta.test.ts`) cover every future migration
 automatically: RLS enabled on every `public` table, no function in
 `public`/`private` executable by PUBLIC, security-definer functions pin
-`search_path`, no money-like column is `real`/`double precision`.
+`search_path`, no money-like column is `real`/`double precision`, every
+numeric table column uses a domain and every numeric domain rejects `NaN`
+(`money_amount`, `rate_fraction`).
+
+**API surface** (the RLS-matrix fixture, PLAN §5): hosted Supabase grants
+ALL on every new `public` table, sequence and function to `anon`,
+`authenticated` and `service_role`, and the devstack's `roles.sql`
+recreates those default privileges, so a migration that forgets its
+explicit revoke is exposed locally exactly as it would be in production.
+The meta tests then compare, for `anon` and for `authenticated`, every
+function they can EXECUTE and every privilege they hold on a table, view,
+materialized view or sequence in `public`/`reporting` with the allow-lists
+in `tests/fixtures/api-surface.ts` (anon: empty in Phase 0), and require
+every view an API role can read to be `security_invoker` unless it is
+listed as a definer view. A new RPC or table means a new line in that
+fixture, in the same PR.
 
 ### Devstack commands
 
@@ -86,7 +107,7 @@ automatically: RLS enabled on every `public` table, no function in
 | `npm run db:migrate` | Apply only pending app migrations. |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
 | `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, and restarts services that were started against a different database. |
-| `npm run devstack:env` | Write `.env.local` with the gateway URL, local anon/service keys and `DATABASE_URL`. |
+| `npm run devstack:env` | Write `.env.local` with the gateway URL and the local anon/service keys (what the app reads). The scripts and tests never read `.env.local`: `DATABASE_URL` / `PG*` come from the shell. |
 
 ## What is tested where
 
@@ -125,7 +146,9 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Manual adjustment records actor/time/reason | `adjust_stock` without reason → raises; with reason → row has `created_by`, `reason`. |
 | Public QR exposes only published | `public_items` as anon: draft/internal rows absent; public row shows no cost; sold unique shows `sold`. |
 | Archived entities stay referenceable | archive a service used on a historical job → job line still joins. |
-| Money is numeric | information_schema check that no money column is `real`/`double precision`. |
+| Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
+| Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
+| Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
 | RLS: customer A cannot read B | bikes, appointments, work orders, attachments. |
 | Anonymous cannot read costs/notes | every table in the RLS matrix: anon select returns 0 rows or is denied. |
 | Mechanic permission boundaries | staff without `view_costs` cannot select cost columns; without `adjust_stock` cannot call `adjust_stock`; admin can. |
@@ -153,11 +176,18 @@ E2E_RESET=0 npm run test:e2e           # keep bicii_dev as it is
 
 Phase 0 specs (`auth.spec.ts`, `staff.spec.ts`): signed-out `/` redirects to
 `/login`; `?next=` deep links survive sign-in and cannot leave the origin
-(absolute, `//host`, `/\host`); wrong password gives one generic error; the
-admin lands on Today with the tab bar (phone) or rail (iPad); sign-out ends
-the session; mechanic2 gets a real 403 on `/settings/staff`; a permission the
-admin grants shows on mechanic2's profile (then is revoked); an invited
-colleague signs in with the one-time password and has no staff access.
+(absolute, `//host`, `/\host`, dot segments such as `/.//host`, including
+the server-side redirect a signed-in visit to `/login` makes); wrong
+password gives one generic error; the admin lands on Today with the tab
+bar (phone) or rail (iPad); sign-out ends the session; mechanic2 gets a
+real 403 on `/settings/staff`; a permission the admin grants shows on
+mechanic2's profile and in the staff history (then is revoked), and on a
+phone the confirmation toast leaves the Scan tab tappable; a rejected
+invite keeps the typed name and email; an invited colleague signs in with
+the temporary password as active staff with no granted permissions (Today
+opens; `/settings/staff` is 403), must give the current password to change
+it, and when the admin deactivates them (a reason is required and shows in
+their history) their open session loses access.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
@@ -195,16 +225,17 @@ fine).
 
 - `check` (every PR and push to `main`): `npm run check` (typegen + `tsc`,
   `eslint`, `prettier --check`), `npm run tokens:contrast`, then
-  `npm run db:types -- --fresh` (a throwaway database built from the
-  migrations) and `git diff --exit-code -- src/lib/database.types.ts`.
+  `npm run check:types` (`db:types --fresh` from a throwaway database built
+  from the migrations, and `git diff --exit-code -- src/lib/database.types.ts`).
 - `test` (every PR and push): `npm run db:reset` and `npm run
   devstack:start`, then `npm test` (unit + db; the db project builds its own
   template: roles → Auth → Storage → migrations → seed). With
   `BICII_REQUIRE_STACK=1` the live-stack smoke test fails instead of
   skipping if the gateway is down.
 - `build` (every PR and push): `next build` with placeholder public env.
-- `e2e` (manual dispatch, nightly at 02:23 Singapore time, and PRs labelled
-  `e2e`): `npx playwright install --with-deps chromium`, the devstack on the
+- `e2e` (its own workflow, `e2e.yml`: manual dispatch, nightly at 02:23
+  Singapore time, and PRs labelled `e2e`; `ci.yml` never runs on `labeled`,
+  so a label can never post skipped required checks): `npx playwright install --with-deps chromium`, the devstack on the
   service database, then `npm run test:e2e` (production build on :3100,
   phone + iPad projects, one retry in CI). On failure the HTML report,
   traces and devstack logs are uploaded as an artifact.

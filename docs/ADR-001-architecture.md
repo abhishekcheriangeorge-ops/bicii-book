@@ -78,9 +78,13 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
 
 - Components never import `@supabase/supabase-js` directly and never contain
   business rules. They render DTOs and call actions.
-- Every Server Action starts with `const ctx = await requireStaff()` (or
-  `requireCustomer()`), parses input with zod, and delegates to one domain
-  function. Actions are thin.
+- Every Server Action is built with `staffAction()` (`src/lib/actions.ts`):
+  it authorizes on one Supabase client (`authorizeStaff(client, …)`, the
+  action-side twin of `requireStaff()`), parses input with zod, and the
+  handler delegates to one domain function with that same client. Actions
+  are thin: workflows (e.g. inviting staff: Auth login, `create_staff`,
+  compensation) live in the domain module, which throws `DomainError` for a
+  refused business rule; the action maps it to a safe message.
 - Domain services are `import 'server-only'` modules. They compose reads
   (through the RLS-scoped client) and writes (through RPCs). They return plain
   DTOs with only the fields the caller needs; cost and yield fields are only
@@ -96,7 +100,8 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
   requests under `/(staff)` to `/login`. That is all it does. It is an
   optimisation, not a guard.
 - The guard is the data access layer: `src/lib/auth/session.ts` exports
-  `getSession()` (React `cache`d per request), `requireStaff(permission?)`,
+  `getSession()` (React `cache`d per render; `cache()` does not memoise
+  inside a Server Action, hence `authorizeStaff` there), `requireStaff(permission?)`,
   `requireCustomer()`. They read the session from cookies and the `staff` row
   through RLS, and throw `redirect('/login')` or `forbidden()` as appropriate.
   `experimental.authInterrupts` is on so `forbidden.tsx` / `unauthorized.tsx`
@@ -195,10 +200,11 @@ repo and may cache; this app does not.
 ### A8. Observability
 
 - `instrumentation.ts` with `onRequestError` forwarding to the log sink.
-- `proxy.ts` sets `x-request-id` on the upstream request; the DAL reads it
-  through `headers()` and attaches it to every RPC call as
-  `correlation_id` (a `set_config('app.correlation_id', …, true)` at the start
-  of each RPC, stored on events and integration rows).
+- `proxy.ts` sets `x-request-id` on the upstream request; the server
+  Supabase client sends it on every PostgREST call as `x-correlation-id`,
+  and `private.current_correlation_id()` reads it from PostgREST's
+  `request.headers` (or from `set_config('app.correlation_id', …, true)`
+  when an RPC sets one), so event and integration rows store it.
 - Structured JSON logs (`pino`) from actions and integration code, emitted in
   `after()` so they never delay the response. Critical mutations log
   `{correlationId, actor, rpc, entityId, outcome}`.

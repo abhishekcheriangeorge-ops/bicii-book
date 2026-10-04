@@ -36,9 +36,13 @@ Point the app at it with `.env.local` (copy from `.env.example`):
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<ANON_KEY from status>
 SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY from status>
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 NEXT_PUBLIC_PUBLIC_SITE_URL=http://localhost:4000
 ```
+
+The scripts and tests do not read `.env.local`: give them the database in
+the shell (`DATABASE_URL=…` or `BICII_TEST_DATABASE_URL=…` before the
+command, as below), or they use the devstack default
+(`postgres:postgres@127.0.0.1:5432/bicii_dev`).
 
 Differences from the devstack:
 
@@ -47,7 +51,8 @@ Differences from the devstack:
   expect a real superuser. Use `supabase db reset` and `supabase migration
   up` instead.
 - **DB tests** run in existing-database mode, inside rolled-back
-  transactions; the few tests that must commit skip themselves:
+  transactions; the tests that must commit or that consume sequence values
+  (short IDs are never reused) skip themselves:
   `BICII_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run test:db`.
 - **Types:** `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run db:types`
   (or `npx supabase@2.119.0 gen types typescript --local --schema public`,
@@ -75,15 +80,25 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    up" until the public site's customer sign-in ships (Phase 11); staff
    logins are created by admins through the Auth admin API, which works with
    sign-ups off. Minimum password length: 12 (what the Admin's password
-   form requires; invites generate 20-character temporary passwords).
+   form requires; invites generate 20-character temporary passwords that
+   always contain upper and lower case, digits and symbols, so any
+   "Password requirements" setting accepts them). Leave "Secure password
+   change" as it is: the Admin itself requires the current password before
+   a change (Settings → Profile), which also covers sessions signed in
+   less than a day ago, where Supabase's reauthentication would not ask.
 3. Authentication → URL Configuration: Site URL is the Admin's URL on that
    environment (production domain, or the staging alias). Add redirect URLs
    for Vercel previews on staging, e.g. `https://*-<vercel-team>.vercel.app/**`.
 4. Data API: exposed schemas `public` only (plus the default
-   `graphql_public`). Do not expose `private` or `reporting`. Our migrations
-   revoke and grant explicitly on every object, so hosted Supabase's default
-   grants to `anon`/`authenticated` never apply (the meta DB tests enforce
-   this).
+   `graphql_public`). Do not expose `private` or `reporting`. Hosted Supabase
+   grants ALL on every new `public` table, sequence and function to
+   `anon`/`authenticated`/`service_role`; our migrations revoke and grant
+   explicitly on every object so those defaults never reach the API. The
+   devstack recreates the same defaults (`supabase/devstack/roles.sql`), and
+   the meta DB tests ("API surface", `tests/db/meta.test.ts`) compare what
+   `anon` and `authenticated` can reach with the allow-list in
+   `tests/fixtures/api-surface.ts`, so a forgotten revoke fails CI instead of
+   reaching production.
 5. Do **not** run `supabase/seed.sql` on a hosted project: its logins have a
    published password. Create the first admin as below.
 
@@ -133,7 +148,9 @@ very first admin has to be created by hand:
 
    One row must come back. Zero rows means the email does not match an
    Auth user; a unique violation means that login or email is already
-   staff.
+   staff. The staff email must be the login's email (a trigger refuses
+   anything else, `staff_email_mismatch`). The insert is recorded in staff
+   history as "created" with no actor ("set up outside the app").
 3. Sign in to the Admin, change the password (Settings → Profile), and
    invite everyone else from Settings → Staff.
 
@@ -193,14 +210,22 @@ One Vercel project for the Admin, connected to this repository.
 ## CI
 
 `.github/workflows/ci.yml` runs `check`, `test` and `build` on every pull
-request and every push to `main`, and `e2e` on manual dispatch, nightly, and
-on pull requests labelled `e2e`. It needs no secrets: every job runs
-against a Postgres 16 service container and the devstack with its local
-demo keys. See TESTING.md "CI" for what each job checks.
+request and every push to `main`. `.github/workflows/e2e.yml` runs `e2e`
+on manual dispatch, nightly, and on pull requests labelled `e2e`. Neither
+needs secrets: every job runs against a Postgres 16 service container and
+the devstack with its local demo keys. See TESTING.md "CI" for what each
+job checks.
 
 - Create the label once: `gh label create e2e --description "Run Playwright in CI"`.
 - Branch protection on `main`: require `check`, `test (unit + db)` and
-  `build`.
+  `build`. They live in `ci.yml`, which never runs on `labeled`: a
+  label-triggered run would post *skipped* check runs under those names on
+  the head commit, and GitHub treats a skipped required check as passing.
+  Keep it that way; anything label-driven goes in its own workflow with its
+  own job names.
+- Adding other labels while `e2e` runs does not cancel it (they get their
+  own concurrency group); a new push, or removing and re-adding `e2e`,
+  restarts it.
 - The devstack components (about 1 GB, mostly Storage's `node_modules`) are
   cached under a key made of their pinned versions
   (`scripts/devstack/cache-key.mjs`) and a hash of `setup.mjs`. Bumping a
