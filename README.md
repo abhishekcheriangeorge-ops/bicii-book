@@ -6,10 +6,11 @@ reporting and the Shopify boundary. It shares one Supabase backend with the
 public site (`abhishekcheriangeorge-ops/bicii`), which stays the
 customer-facing client.
 
-Status: Phase 0 (foundation) in progress — scaffold, design tokens, UI
-primitives, the Docker-free Supabase devstack, the foundation and staff
-migrations and the DB test harness are in; auth screens and the staff shell
-follow.
+Status: Phase 0 (foundation) — scaffold, design tokens, UI primitives, the
+Docker-free Supabase devstack, the foundation and staff migrations, the DB
+test harness, sign-in, the staff shell (phone tab bar / iPad rail), Staff
+settings (invite, permissions, deactivate), the PWA manifest and service
+worker, and Playwright E2E are in. CI follows.
 
 ## Running it
 
@@ -24,7 +25,9 @@ npm test                     # all Vitest projects (unit + db)
 npm run test:unit            # unit project only (jsdom)
 npm run test:db              # db project: Postgres + real Supabase Auth/Storage schemas
 npm run build                # production build (Turbopack)
+npm run test:e2e             # Playwright (phone + iPad): build, start :3100, reset bicii_dev
 npm run tokens:contrast      # recompute WCAG ratios for the colour tokens
+npm run icons                # regenerate PWA icons from brand/logo-source.png
 ```
 
 ### Local Supabase without Docker (devstack)

@@ -133,8 +133,33 @@ Each invariant from SPEC §23 has at least one test, named after it:
 
 ### End-to-end (SPEC §27.3)
 
-Playwright, mobile viewport (iPhone 13) and iPad, against the seeded database,
-signed in as the seeded admin and mechanic:
+Harness (`playwright.config.mts`, `tests/e2e/`): Chromium only, two projects
+— `phone` (iPhone 13, 390 px: bottom tab bar) and `tablet` (iPad gen 7,
+810 px: side rail). `webServer` runs `npm run build && next start -p 3100`
+with the devstack URL and local demo keys passed explicitly (so `.env.local`
+does not matter). `tests/e2e/global-setup.mts` resets and seeds `bicii_dev`
+(`E2E_RESET=0` skips), starts the devstack if needed, and waits until the
+seeded admin can sign in through the gateway and call `my_staff_profile`.
+Tests run serially (one shared database). In this container the preinstalled
+`/opt/pw-browsers/chromium` is used via `launchOptions.executablePath`
+(`PLAYWRIGHT_CHROMIUM_EXECUTABLE` overrides); never `playwright install` here.
+
+```sh
+npm run test:e2e                       # build + start on :3100, reset bicii_dev, run
+E2E_REUSE_SERVER=1 npm run test:e2e    # reuse an app already on E2E_PORT (3100)
+E2E_RESET=0 npm run test:e2e           # keep bicii_dev as it is
+```
+
+Phase 0 specs (`auth.spec.ts`, `staff.spec.ts`): signed-out `/` redirects to
+`/login`; `?next=` deep links survive sign-in and cannot leave the origin
+(absolute, `//host`, `/\host`); wrong password gives one generic error; the
+admin lands on Today with the tab bar (phone) or rail (iPad); sign-out ends
+the session; mechanic2 gets a real 403 on `/settings/staff`; a permission the
+admin grants shows on mechanic2's profile (then is revoked); an invited
+colleague signs in with the one-time password and has no staff access.
+
+Critical journeys, added with the phases that build them, against the seeded
+database, signed in as the seeded admin and mechanic:
 
 1. Walk-in: new customer + bike → intake photo (fixture image upload) → job →
    add service + part → stock badge decrements → complete → ready → collected;
