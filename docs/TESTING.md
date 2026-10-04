@@ -176,6 +176,17 @@ fixture, in the same PR.
   (`attachments.test.ts`); `CustomerSheet` / `BikeSheet` hand a new record
   to `onCreated` instead of navigating, and navigate as before without it
   (`record-sheets.test.tsx`, actions mocked).
+  Step 4: the board's filters from the URL (`workshop.test.ts`: defaults,
+  every filter read, unknown views, groups, statuses, dates, ages and limits
+  dropped, job numbers however typed, `boardQuery` round-trips and leaves
+  defaults out), the Singapore check-in presets and the Over 3 days /
+  Overdue windows (`checkedInSince`, `checkedInBefore`, `matchesAge`),
+  `groupBoardJobs` and `visibleGroups`; Cult Commons rates typed as
+  percentages (`cult-commons.test.ts`: `percentToRate` exact to 4 dp and
+  refusing anything else, `formatRate`, `classifyRates` current / scheduled /
+  past / cancelled as `private.cult_commons_rate_at` reads them);
+  `shopDayStart`, `fromShopLocal`, `toShopLocal` (`dates.test.ts`); jobs in
+  search (`search.test.ts`: an exact J- number puts Jobs first, `/jobs/{id}`).
 
 ### Database (SPEC §27.2 and §23)
 
@@ -301,6 +312,28 @@ started, completed, ready for collection and collected. A reload mid-intake
 offers the draft back (Continue restores step and customer; Discard starts
 afresh). mechanic2 (no view_costs) opens J-000002 and sees its $300.00 total
 but no cost, yield or Cult Commons, and the page's data holds no cost key.
+
+Phase 3 step 4 (`workshop-board.spec.ts`, read-only on the seeded jobs so
+the phone and iPad runs share one database): as mechanic2 (Nur Aisyah, no
+view_costs) My jobs lists J-000002, J-000003 (as additional), J-000005 and
+J-000009 and not Marcus's J-000004, with group counts and no money on the
+board; Unassigned lists J-000007; the Overdue age filter lists J-000006
+with its Overdue badge (D20); the status filter "Waiting on parts" lists
+J-000005 and not J-000006 and its chip removes it; "j000004" in the job
+number box finds J-000004. On J-000002 she sees Total $300.00 and no
+"Cost", "Yield" or "Cult Commons" anywhere; on /settings/services prices
+but no cost, no New service, no Edit and no Cult Commons card. mechanic1
+sees Cult Commons $52.80 and BICII yield after Cult Commons $123.20 on
+J-000002 and the 30% rate (without Schedule). The admin's header search
+for "j-000004" lists Jobs first and opens J-000004, which Chloe's Giant's
+Service history also lists. On a tagged service and job: the service
+created in settings is offered in the job's Add service; the lead is
+reassigned from Marcus Tan to Nur Aisyah in the Assign sheet (which says
+Marcus leaves the job); a note, the approval switch and a details edit
+(a blank requested work refused with the typed internal note kept); the
+timeline shows both lead assignments, "Marcus Tan removed from the job",
+the note, "Marked customer-approved" and the details change; the board
+finds the job by number with Nur as lead.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:

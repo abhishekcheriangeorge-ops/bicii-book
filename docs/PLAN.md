@@ -208,6 +208,38 @@ Scope notes (no business change; decisions D14–D22 in §6):
   and the Phase 3 seed (DATA-MODEL §18 "Phase 3 part").
 - Intake photos are taken right after the job is created, because
   `record_attachment` requires the job row to exist.
+- Shipped (M1.3): migrations `20261004001200_workshop_catalog`,
+  `…1300_work_orders`, `…1400_work_order_lines`, `…1500_workshop_rpcs`,
+  `…1600_workshop_customer_access` and `…1700_workshop_search`; RPCs
+  `create_service`, `update_service`, `set_service_archived`,
+  `schedule_cult_commons_rate`, `cancel_cult_commons_rate`,
+  `create_work_order`, `set_work_order_status`, `update_work_order`,
+  `add_work_order_note`, `set_approval_flag`, `assign_staff`,
+  `unassign_staff`, `add_service_line`, `add_manual_line`, `void_line`,
+  `work_order_timeline`, the customer projection `my_work_orders`,
+  `my_work_order_lines`, `my_work_order_timeline`,
+  `my_work_order_attachments`, and the `work_order` kind of `staff_search`;
+  views `work_order_totals`, `work_order_totals_staff`,
+  `work_order_line_items_staff`, `services_staff`. Routes: `/jobs` (the
+  board and My Jobs: All / My jobs / Unassigned, group chips with counts,
+  status multi-select, mechanic, customer, bike, check-in date, age and job
+  number in the URL; open jobs oldest first, the newest 300 with a
+  partial-counts notice past that; Closed = the last 30 days, 50 at a time),
+  `/jobs/new` (intake), `/jobs/[id]` (status actions, lines and totals,
+  photos, assignments, approval, notes, details editing, timeline),
+  `/settings/services` (services, categories, the Cult Commons rate card),
+  plus service history on `/bikes/[id]` and `/customers/[id]` and Jobs in
+  `/search`. Decisions D14–D22 (§6); D15's reopen deviation (clearing
+  completion stamps) awaits owner confirmation before Phase 5. Tests: the
+  database files listed in TESTING.md, unit tests for `workshop.ts` (incl.
+  the board filters), `workshop-timeline.ts`, `cult-commons.ts` and the
+  intake draft, and E2E `workshop.spec.ts` (journey 1 without the part
+  line, the intake draft) and `workshop-board.spec.ts` (board filters,
+  mechanic cost boundary, search and service history, reassignment and
+  notes). `check_in_appointment` moves to Phase 2 (built on
+  `private.create_work_order`); `add_inventory_line` and the `void_line`
+  reversal branch land in Phase 4. The board's group for `ready_to_start`
+  is labelled "Ready", as SPEC §7.2 names it.
 
 ### Phase 4 — Inventory
 

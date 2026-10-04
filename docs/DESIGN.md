@@ -72,6 +72,8 @@ Server components unless they need state or browser APIs.
 | `Card`, `EmptyState`, `Skeleton`, `Spinner`, `PageHeader` | Layout and feedback. `Card` never clips (no `overflow-hidden`), so pickers, menus and focus rings inside it can extend past its edge; flush content rounds its own corners. Its header wraps: an action too wide to sit beside the title (a half-width card on iPad) moves under it rather than squeezing it. |
 | `RowList`, `RowLink` | Edge-to-edge list of tappable rows (More, Settings, Staff; later jobs, products, customers). Rows use the inset focus ring and round their own first/last corners; the list does not clip. |
 | `SearchPicker` (client) | ARIA 1.2 combobox + listbox; async `search(query)` (may be a Server Action), debounce, stale-response guard, ↑/↓/Enter/Escape, hidden input for forms. `action` adds a last option ("Create new customer") reached with the arrows and Enter like any result. Optional pickers (`clearable`, default `!required`) can go back to nothing: a 44px clear button, emptying the field and leaving it, or Escape on an empty field; `onSelect(null)` reports it. SPEC §22: use it instead of any large `<select>`. |
+| `Chip` (client) | A 48px choice chip: a toggle button (`aria-pressed`) for several choices, or `role="radio"` inside a `role="radiogroup"` for one (the intake's lead, Assign's who, the board's mechanic filter). |
+| `Select` (client) | A native select styled like `Input`, wired by `Field`. Only for short fixed lists (fewer than 15 options: a service's category); anything that grows uses `SearchPicker`. |
 | `SegmentedControl`, `Tabs` (client) | Radiogroup and tablist with roving tabindex and arrow keys. A segment can be `disabled` (`aria-disabled`, skipped by the arrow keys, ignores clicks, muted text and a not-allowed cursor); say why next to the control (photo visibility: never public on a customer record, or for an undecoded original). Each state has its own class branch: `cn()` does not resolve conflicting utilities. |
 
 Class strings are joined with `cn()` (`src/lib/cn.ts`), which does not merge
@@ -195,6 +197,16 @@ upload itself, below).
 | `TotalsSummary` (server) | The compact summary row under the lines (SPEC §22, not a modal): the running sale total for everyone; with view_costs also Cost, Yield, Cult Commons (with the rate when every line shares it) and BICII yield after Cult Commons, from `work_order_totals_staff`. |
 | `Timeline` (server, `job-timeline.tsx`) | A job's events newest first: `describeEvent` titles (`src/lib/workshop-timeline.ts`), notes and reasons quoted, the actor ("Recorded outside the app" when none) and the time. Payloads carry no costs. |
 | `PhotoViewer` | Sheet: the photo enlarged (tap for full size), who can see it (`SegmentedControl` Internal / Customer / Public, applied immediately with `useOptimistic` and a toast; each level explained; Public disabled on a customer record, PLAN D13, and on a job, D19), caption, and delete with a reason (two steps; Cancel returns focus to "Delete photo…"). A change that went through but could not remove the old copy from Storage is reported as done, with "Finish" (toast and inline), not as a failure; the next showing of the record finishes it anyway. |
+| `LinkSegments`, `GroupChips`, `ActiveFilterChips`, `JobRow` (server, `workshop-board.tsx`) | The board's pieces as links, so every view is a URL and works before hydration: the All / My jobs / Unassigned switch (styled like `SegmentedControl`, `aria-current` on the current one); the groups as a horizontally scrolling chip row with counts ("All open" first; wraps from `sm`); the active filters as removable chips (`Remove filter: …`) and "Clear"; and the job row (whole row tappable, ≥ 64px): J- number, `StatusPill` (text + tone), bike, customer, lead or "Unassigned" (waiting tone), age ("3 d") and, for D20, a solid danger "Overdue" badge with its word. No money on the board. |
+| `BoardFiltersButton` / `BoardFilterSheet` | "Filters (n)": a Sheet with statuses as checkboxes under their board group (several at once, e.g. only "Waiting on parts", which the Waiting group otherwise merges with the customer and paused), mechanic chips ("Anyone" first; jobs they are on as lead or additional), customer and bike `SearchPicker`s (the intake search action), checked in (Any, Today, Last 7 days, Last 30 days; Singapore time) and age (Any, Over 3 days, Overdue). "Show jobs" writes them to the URL (`boardQuery`); Reset clears the sheet. |
+| `AssignmentsCard` | The job's "People": the lead and "Also on the job", each with Remove (toast "… removed from the job"), and "Assign": a Sheet with active staff as radio chips (their current role noted) and Lead / Additional; choosing Lead says "Replaces <lead> as lead; they leave the job." (D22), moving the lead to Additional says the job will have no lead. Read-only on collected and cancelled jobs. |
+| `ApprovalSwitch` | "Customer approved extra work": a `Switch` applied at once (`useOptimistic`, toast; it snaps back if refused), with an optional approval note saved by its own button (shown only when changed). Hidden on collected and cancelled jobs, where the flag shows as a badge. |
+| `NoteButtons` / `NoteSheet` | "Add note" and "Add diagnosis" (any status): a Sheet with one textarea (1–5,000 characters) that keeps what was typed when refused; the note is append-only, in the timeline. |
+| `EditDetailsButton` / `DetailsSheet` | "Edit" on Requested work: requested work (required), condition on arrival, internal notes and completion notes; an emptied note is cleared; a failed save shows what was typed (`values`). One "… updated" timeline entry names what changed. |
+| `JobHistoryList` (server) | A bike's service history and a customer's jobs, newest first: J- number, status, the first line of the requested work (with the bike on a customer's page), checked-in / completed / collected dates and the lead; each row opens the job. |
+| `ServiceSheet`, `NewServiceButton`, `EditServiceButton` | manage_inventory: name, category (`Select`, "No category (Other)"), price, the cost only with view_costs (on edit, empty keeps the current cost), description, Active and Public switches; `newId()` key; values kept on failure (controlled state); the snapshot note; editing also offers `ArchiveControl` (kind `service`). |
+| `CategoriesEditor` (`categories-card.tsx`) | manage_inventory: service categories with Rename (in place) and Archive, "New category", and archived ones with Unarchive. Written through the RLS client; never deleted. |
+| `ScheduleRateButton` / `CancelRateButton` | Admin, D21. Schedule: a percentage (up to 2 decimals, converted exactly to the 4 dp fraction, `percentToRate`) starting Now or Later (a Singapore `datetime-local`, never past), then a second step in place saying it applies to lines added from then on and never changes existing lines; its confirm button is disabled for 400 ms and focus starts on Back. Cancel (a future rate only): "Cancel…" opens a confirmation with focus on "Keep it" and "Cancel rate" disabled for 400 ms. |
 
 ### Workshop
 
@@ -213,12 +225,36 @@ upload itself, below).
   with the camera prominent, the upload tiles and "Done" (which drops
   `?intake`). The upload queue lives above the pages, so leaving early
   loses nothing.
+- **The board** (`/jobs`, SPEC §7.2): a list of rows by group rather than
+  columns, so it works one-handed on a phone (Kanban is optional). Order:
+  title with "New job" (on phones a full-width button at the top instead),
+  the view switch, the job number box (`SearchField`, exact number however
+  typed) and Filters, the active filter chips, the group chips with counts,
+  then one section per non-empty group, oldest check-in first (the
+  longest-waiting bike on top). "All open" shows every group but Closed;
+  a group chip shows that group alone; Closed lists jobs collected or
+  cancelled in the last 30 days (any time when a job number is typed),
+  newest first, 50 at a time with "Show more". Counts follow every filter
+  but the group. The board reads at most the newest 300 open jobs; past
+  that it shows the usual truncation notice and says "Counts cover the
+  newest 300 open jobs." Empty states differ per view ("No jobs assigned
+  to you — pick one from Unassigned", with a link there).
+- **Services settings** (`/settings/services`, every staff member): the
+  services by category with price and Inactive / Not public badges, the
+  cost only with view_costs, Active / Archived (`ArchivedFilter`), and the
+  note "Changing a price or cost affects new job lines only; existing lines
+  keep their snapshot." The Cult Commons card (view_costs only) shows the
+  rate in force large, scheduled rates (admins: Cancel) and earlier ones
+  with who set them and when, cancelled ones marked "Cancelled". It has a
+  `loading.tsx` (no permission gate below it).
 - **Job page order** (phone): header (J- number, status, overdue badge,
   bike, customer with tap-to-call, check-in date and age), status actions,
   intake photos (intake only), requested work and condition, lines with
-  totals, photos; then people, dates (each stamp its own row: completed
-  and collected never merge), notes and the timeline, a second column on
-  wide screens.
+  totals, photos; then people (`AssignmentsCard`), dates (each stamp its
+  own row: completed and collected never merge), notes (always shown:
+  `ApprovalSwitch`, internal and completion notes, Add note / Add
+  diagnosis) and the timeline, a second column on wide screens. "Edit" on
+  Requested work opens the details sheet.
 
 ### Photos and images
 
@@ -250,7 +286,10 @@ upload itself, below).
 - Lists are search-first: an empty query shows recently updated records,
   a query shows `staff_search` hits (exact B- numbers and serial numbers
   first; serials ignore case, spaces and dashes).
-- `/search` groups hits by kind, the group with the best hit first.
+- `/search` groups hits by kind (Customers, Bikes, Jobs), the group with
+  the best hit first: an exact J- number ("j-000004", "J000004") puts Jobs
+  first. The search fields are labelled "Search customers, bikes and
+  jobs". Archived search returns no jobs.
   Recent searches are kept per device in `localStorage`
   (`src/lib/recent-searches.ts`: every access in try/catch, at most eight,
   newest first) when a query is submitted or a result opened, and shown
