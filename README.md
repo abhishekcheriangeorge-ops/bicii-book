@@ -46,8 +46,8 @@ them is `bicii-dev-password`:
 | `mechanic2@bicii.test` | staff | none |
 
 Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
-`PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), before any
-of the commands. `npm run devstack:stop` stops the services.
+`PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
+shell before any of the commands (they do not read `.env.local`). `npm run devstack:stop` stops the services.
 
 ## Scripts
 
@@ -56,6 +56,7 @@ of the commands. `npm run devstack:stop` stops the services.
 | `npm run dev` | Next dev server (Turbopack) on :3000. Primitives gallery at `/dev/ui`. |
 | `npm run build` / `npm start` | Production build / serve it. |
 | `npm run check` | `next typegen` + `tsc --noEmit`, ESLint, `prettier --check`. |
+| `npm run check:types` | Regenerate the database types from a throwaway database and fail if `src/lib/database.types.ts` differs (CI runs it). |
 | `npm test` | Every Vitest project (unit + db). |
 | `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. |
 | `npm run test:db` | DB project: invariants, RLS and RPCs on clones of a template built with the real Supabase Auth and Storage migrations. Includes a live-stack smoke test when the devstack is running. |

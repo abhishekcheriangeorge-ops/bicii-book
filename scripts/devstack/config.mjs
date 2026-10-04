@@ -61,7 +61,9 @@ export const SERVICE_ROLE_PASSWORD = process.env.BICII_SERVICE_ROLE_PASSWORD ?? 
 // ---------------------------------------------------------------------------
 // Database connection. DATABASE_URL wins; otherwise the libpq variables
 // (PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE) override the defaults, so
-// CI can point everything at its own Postgres service.
+// CI can point everything at its own Postgres service. Read from the
+// process environment only: no .env file is loaded here (on purpose, so a
+// .env.local pointing the app somewhere never redirects db:reset).
 // ---------------------------------------------------------------------------
 export const DEFAULT_DB_NAME = "bicii_dev";
 

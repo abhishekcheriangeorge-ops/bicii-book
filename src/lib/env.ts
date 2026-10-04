@@ -22,7 +22,11 @@ export const publicEnvSchema = z.object({
 
 /** Server only. Never import the result into a Client Component. */
 export const serverEnvSchema = z.object({
-  /** Postgres connection for DB tests and type generation. */
+  /**
+   * Not used by the app (it never connects to Postgres directly). Listed so
+   * a malformed value is reported; the scripts and tests read it from the
+   * shell, not from .env.local (.env.example "Tooling").
+   */
   DATABASE_URL: z
     .string()
     .regex(/^postgres(ql)?:\/\//, { error: "must be a postgres:// connection string" })

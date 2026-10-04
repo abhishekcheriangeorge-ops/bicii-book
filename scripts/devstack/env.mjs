@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Writes the devstack connection settings into .env.local (git-ignored),
-// keeping any other variables already there.
+// keeping any other variables already there. Only what the APP reads: the
+// scripts and tests take DATABASE_URL / PG* from the shell, never from
+// .env.local, so writing them here would only suggest otherwise.
 //
 //   npm run devstack:env
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { ANON_KEY, GATEWAY_URL, ROOT, SERVICE_ROLE_KEY, databaseUrl, log } from "./config.mjs";
+import { ANON_KEY, GATEWAY_URL, ROOT, SERVICE_ROLE_KEY, log } from "./config.mjs";
 
 const FILE = path.join(ROOT, ".env.local");
 
@@ -15,7 +17,6 @@ const values = {
   NEXT_PUBLIC_SUPABASE_URL: GATEWAY_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
-  DATABASE_URL: databaseUrl(),
   // Placeholder for the public website (QR base, PLAN D9) when running both
   // locally; replace with the public site's dev URL if you run it.
   NEXT_PUBLIC_PUBLIC_SITE_URL: "http://localhost:4000",
