@@ -1,7 +1,7 @@
 import "server-only";
 
 import { unwrap } from "@/lib/db-errors";
-import { isSearchKind, type SearchHit, type SearchKind } from "@/lib/search";
+import { isSearchKind, SEARCH_KINDS, type SearchHit, type SearchKind } from "@/lib/search";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
 import type { ListPage } from "./list";
@@ -12,6 +12,9 @@ import type { ListPage } from "./list";
  * phases add them. Exact short IDs
  * and serial numbers rank first; archived records are left out. At most
  * `limit` hits over every kind together; `more` says there were more.
+ * Without `kinds` it asks for SEARCH_KINDS only, so a kind the database
+ * already knows but the app cannot open yet (Phase 4's product and
+ * inventory_unit until their pages land) never takes a result slot.
  */
 export async function staffSearch(
   supabase: ServerSupabase,
@@ -20,7 +23,13 @@ export async function staffSearch(
 ): Promise<ListPage<SearchHit>> {
   if (!q.trim()) return { items: [], more: false };
   const rows =
-    unwrap(await supabase.rpc("staff_search", { q, kinds, max_results: limit + 1 })) ?? [];
+    unwrap(
+      await supabase.rpc("staff_search", {
+        q,
+        kinds: kinds ?? [...SEARCH_KINDS],
+        max_results: limit + 1,
+      }),
+    ) ?? [];
   return {
     items: rows
       .slice(0, limit)
