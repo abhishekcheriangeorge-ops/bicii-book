@@ -1,7 +1,11 @@
 /**
- * Helpers for the Phase 3 workshop database tests. There is no seeded
- * workshop data: each test creates its own customers, bikes, services and
- * jobs inside its transaction.
+ * Helpers for the Phase 3 workshop database tests. Tests of the rules
+ * create their own customers, bikes, services and jobs inside their
+ * transaction; the seeded workshop data (WORK_ORDER, SERVICE, ... in
+ * tests/fixtures/ids.ts) is for the seed, customer-access and search tests.
+ * A service a test creates needs a name the seed does not use (active
+ * service names are unique), and a count must be scoped to the test's own
+ * job or customer.
  *
  *   * The `make*` helpers insert as the connection's owner (superuser): call
  *     them before actAs(), or after ownerMode().

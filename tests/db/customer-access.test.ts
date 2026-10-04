@@ -128,8 +128,8 @@ async function addBikePhotos(
   return ids;
 }
 
-/** A job of Tan's created inside one test (no workshop seed in Phase 3 step 1). */
-const TAN_JOB = "f1000000-0000-4000-8000-000000000001";
+/** A job of Tan's created inside one test (the seeded jobs are in workshop-customer-access). */
+const TAN_JOB = randomUUID();
 
 const rowsOf = (tx: pg.Client, sql: string, params: unknown[] = []) =>
   tx.query(sql, params).then((r) => r.rows);
@@ -254,9 +254,11 @@ describe("a signed-in customer and the base tables", () => {
           }
         },
         async (tx) => {
-          await tx.query("insert into public.categories (kind, name) values ('service', 'Labour')");
           await tx.query(
-            "insert into public.services (name, default_sale_price, default_direct_cost) values ('Full Service', 180, 20)",
+            "insert into public.categories (kind, name) values ('service', 'Fitting')",
+          );
+          await tx.query(
+            "insert into public.services (name, default_sale_price, default_direct_cost) values ('Race Prep', 180, 20)",
           );
           await tx.query(
             `insert into public.work_orders (id, customer_id, bike_id, requested_work, internal_notes)

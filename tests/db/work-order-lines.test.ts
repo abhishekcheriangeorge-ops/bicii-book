@@ -174,15 +174,15 @@ const createService = (tx: pg.Client, name: string, price: string, cost: string)
 describe.skipIf(!isolatedDatabase())("snapshots", () => {
   it("historical line price/cost/yield snapshots do not change with catalog edits", async () => {
     await withJob(ADMIN, async (tx, jobId) => {
-      const serviceId = await createService(tx, "Full Service", "180.00", "20.00");
+      const serviceId = await createService(tx, "Race Prep", "180.00", "20.00");
       const before = await addServiceLine(tx, { workOrderId: jobId, serviceId });
       await tx.query(
-        "select public.update_service($1, 'Full Service Plus', 220, null, null, true, false, 35)",
+        "select public.update_service($1, 'Race Prep Plus', 220, null, null, true, false, 35)",
         [serviceId],
       );
       const after = await addServiceLine(tx, { workOrderId: jobId, serviceId });
       expect(await line(tx, before)).toMatchObject({
-        description: "Full Service",
+        description: "Race Prep",
         price: "180.00",
         cost: "20.00",
         sale: "180.00",
@@ -190,7 +190,7 @@ describe.skipIf(!isolatedDatabase())("snapshots", () => {
         cc: "48.00",
       });
       expect(await line(tx, after)).toMatchObject({
-        description: "Full Service Plus",
+        description: "Race Prep Plus",
         price: "220.00",
         cost: "35.00",
         yield: "185.00",
@@ -201,7 +201,7 @@ describe.skipIf(!isolatedDatabase())("snapshots", () => {
 
   it("archived entities remain available to historical references", async () => {
     await withJob(ADMIN, async (tx, jobId, ids) => {
-      const serviceId = await createService(tx, "Brake Bleed", "60.00", "8.00");
+      const serviceId = await createService(tx, "Headset Service", "60.00", "8.00");
       const lineId = await addServiceLine(tx, { workOrderId: jobId, serviceId });
       await tx.query("select public.set_service_archived($1, true)", [serviceId]);
       await ownerMode(tx);
@@ -223,7 +223,7 @@ describe.skipIf(!isolatedDatabase())("snapshots", () => {
       );
       expect(rows).toEqual([
         {
-          service: "Brake Bleed",
+          service: "Headset Service",
           service_archived: true,
           bike_archived: true,
           customer_archived: true,
@@ -258,7 +258,7 @@ describe.skipIf(!isolatedDatabase())("snapshots", () => {
 
 describe.skipIf(!isolatedDatabase())("line pricing (D14)", () => {
   const setup = async (tx: pg.Client) => ({
-    serviceId: await makeService(tx, { name: "Wheel True", price: "35.00", cost: "5.00" }),
+    serviceId: await makeService(tx, { name: "Hub Overhaul", price: "35.00", cost: "5.00" }),
   });
 
   it("any staff member overrides the sale price; a cost needs view_costs", async () => {
@@ -377,7 +377,8 @@ describe.skipIf(!isolatedDatabase())("mechanic permission boundaries (SPEC §4.2
       expect(
         (
           await tx.query(
-            "select description_snapshot, sale_total from public.work_order_line_items",
+            "select description_snapshot, sale_total from public.work_order_line_items where work_order_id = $1",
+            [jobId],
           )
         ).rows,
       ).toEqual([{ description_snapshot: "Labour", sale_total: "95.00" }]);
@@ -397,7 +398,8 @@ describe.skipIf(!isolatedDatabase())("mechanic permission boundaries (SPEC §4.2
       expect(
         (
           await tx.query(
-            "select cost_total, cult_commons_share from public.work_order_line_items_staff",
+            "select cost_total, cult_commons_share from public.work_order_line_items_staff where work_order_id = $1",
+            [jobId],
           )
         ).rows,
       ).toEqual([{ cost_total: "62.00", cult_commons_share: "9.90" }]);

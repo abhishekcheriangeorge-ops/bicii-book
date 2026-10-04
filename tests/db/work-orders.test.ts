@@ -88,7 +88,7 @@ describe.skipIf(!isolatedDatabase())("check-in: create_work_order", () => {
   it("creates the job, its J- number, staff, services and timeline in that order", async () => {
     await inTransaction(conn, async (tx) => {
       const { customerId, bikeId } = await makeCustomerWithBike(tx);
-      const serviceId = await makeService(tx, { name: "Basic Service", price: "80.00" });
+      const serviceId = await makeService(tx, { name: "Puncture Repair", price: "80.00" });
       await actAs(tx, ADMIN);
       await tx.query("select set_config('request.headers', $1, true)", [
         JSON.stringify({ "x-correlation-id": "req-checkin-0001" }),
@@ -182,7 +182,11 @@ describe.skipIf(!isolatedDatabase())("check-in: create_work_order", () => {
           }),
         { code: "22023" },
       );
-      expect(await count(tx, "select 1 from public.work_orders")).toBe(0);
+      expect(
+        await count(tx, "select 1 from public.work_orders where customer_id = $1", [
+          ids.customerId,
+        ]),
+      ).toBe(0);
     });
   });
 
@@ -319,7 +323,11 @@ describe.skipIf(!isolatedDatabase())("check-in: create_work_order", () => {
         code: "P0001",
         message: "staff_inactive",
       });
-      expect(await count(tx, "select 1 from public.work_orders")).toBe(0);
+      expect(
+        await count(tx, "select 1 from public.work_orders where customer_id = $1", [
+          ids.customerId,
+        ]),
+      ).toBe(0);
     });
   });
 
@@ -674,7 +682,11 @@ describe.skipIf(!isolatedDatabase())("timeline events", () => {
   it("no payload carries a cost, yield, rate or Cult Commons value", async () => {
     await inTransaction(conn, async (tx) => {
       const ids = await makeCustomerWithBike(tx);
-      const serviceId = await makeService(tx, { name: "Wheel True", price: "35.00", cost: "7.00" });
+      const serviceId = await makeService(tx, {
+        name: "Hub Overhaul",
+        price: "35.00",
+        cost: "7.00",
+      });
       await actAs(tx, ADMIN);
       const job = await createWorkOrder(tx, {
         ...ids,

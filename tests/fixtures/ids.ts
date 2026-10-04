@@ -93,3 +93,87 @@ export const BIKE_SERIAL = {
  * workshop catalog migration rather than the seed: production needs it.
  */
 export const CULT_COMMONS_BASE_RATE = "cc000000-0000-4000-8000-000000000001";
+
+/** public.categories.id (Phase 3): the five service categories, sort_order 1..5. */
+export const CATEGORY = {
+  servicing: "ca000000-0000-4000-8000-000000000001",
+  wheelsAndTyres: "ca000000-0000-4000-8000-000000000002",
+  brakes: "ca000000-0000-4000-8000-000000000003",
+  builds: "ca000000-0000-4000-8000-000000000004",
+  labour: "ca000000-0000-4000-8000-000000000005",
+} as const;
+
+/**
+ * public.services.id (Phase 3), SGD, price / default direct cost:
+ * basicService 80/0, fullService 200/0, wheelTrue 35/0 (per wheel),
+ * tyreInstallation 15/0 (per tyre), brakeBleed 45/8 (per brake),
+ * drivetrainService 90/5, bikeBuild 250/0, customLabour 60/0 (per hour,
+ * not public), forkServiceArchived 120/25 (inactive, archived 30 days ago).
+ */
+export const SERVICE = {
+  basicService: "5e000000-0000-4000-8000-000000000001",
+  fullService: "5e000000-0000-4000-8000-000000000002",
+  wheelTrue: "5e000000-0000-4000-8000-000000000003",
+  tyreInstallation: "5e000000-0000-4000-8000-000000000004",
+  brakeBleed: "5e000000-0000-4000-8000-000000000005",
+  drivetrainService: "5e000000-0000-4000-8000-000000000006",
+  bikeBuild: "5e000000-0000-4000-8000-000000000007",
+  customLabour: "5e000000-0000-4000-8000-000000000008",
+  forkServiceArchived: "5e000000-0000-4000-8000-000000000009",
+} as const;
+
+/**
+ * public.work_orders.id (Phase 3): bike and status in the key, inserted in
+ * this order (JOB_NUMBER). Every timeline is backdated to read true
+ * (DATA-MODEL §18 "Phase 3 part"). danielCannondaleAwaitingCustomer is the
+ * one overdue job (D20: open, checked in 8 days ago); nurulBianchiReceived
+ * was checked in at seed time, after the Bianchi's sale to Nurul.
+ */
+export const WORK_ORDER = {
+  tanTarmacCollected: "f1000000-0000-4000-8000-000000000001",
+  priyaDomaneReady: "f1000000-0000-4000-8000-000000000002",
+  hafizBromptonCompleted: "f1000000-0000-4000-8000-000000000003",
+  chloeGiantInProgress: "f1000000-0000-4000-8000-000000000004",
+  chloeSurlyAwaitingParts: "f1000000-0000-4000-8000-000000000005",
+  danielCannondaleAwaitingCustomer: "f1000000-0000-4000-8000-000000000006",
+  nurulBianchiReceived: "f1000000-0000-4000-8000-000000000007",
+  tanBromptonCancelled: "f1000000-0000-4000-8000-000000000008",
+  priyaTernDiagnosing: "f1000000-0000-4000-8000-000000000009",
+} as const;
+
+export type SeedWorkOrder = keyof typeof WORK_ORDER;
+
+/**
+ * Job numbers the database assigned to the seeded jobs, in insert order on
+ * a freshly built database (private.next_short_id('J')).
+ */
+export const JOB_NUMBER: Record<SeedWorkOrder, string> = {
+  tanTarmacCollected: "J-000001",
+  priyaDomaneReady: "J-000002",
+  hafizBromptonCompleted: "J-000003",
+  chloeGiantInProgress: "J-000004",
+  chloeSurlyAwaitingParts: "J-000005",
+  danielCannondaleAwaitingCustomer: "J-000006",
+  nurulBianchiReceived: "J-000007",
+  tanBromptonCancelled: "J-000008",
+  priyaTernDiagnosing: "J-000009",
+};
+
+/**
+ * public.work_order_line_items.id (Phase 3), job in the key. All at the
+ * 0.3000 Cult Commons rate. priyaTernBottomBracket (manual, 45.00, cost
+ * 28.00) is voided; priyaDomaneTyres is the manual GP5000 line (2 x 95.00,
+ * cost 62.00 each).
+ */
+export const LINE = {
+  tanTarmacFullService: "f2000000-0000-4000-8000-000000000001",
+  tanTarmacBrakeBleed: "f2000000-0000-4000-8000-000000000002",
+  priyaDomaneBasicService: "f2000000-0000-4000-8000-000000000003",
+  priyaDomaneTyreInstallation: "f2000000-0000-4000-8000-000000000004",
+  priyaDomaneTyres: "f2000000-0000-4000-8000-000000000005",
+  hafizBromptonDrivetrain: "f2000000-0000-4000-8000-000000000006",
+  chloeGiantWheelTrue: "f2000000-0000-4000-8000-000000000007",
+  chloeSurlyLabour: "f2000000-0000-4000-8000-000000000008",
+  priyaTernBasicService: "f2000000-0000-4000-8000-000000000009",
+  priyaTernBottomBracket: "f2000000-0000-4000-8000-000000000010",
+} as const;

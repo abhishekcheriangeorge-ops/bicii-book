@@ -220,15 +220,16 @@ describe("Cult Commons rates (SPEC §10, D21)", () => {
 describe("services: the default direct cost is gated by view_costs (SPEC §4.2)", () => {
   it("staff without view_costs cannot select the cost column and see no services_staff rows", async () => {
     await inTransaction(conn, async (tx) => {
-      await makeService(tx, { name: "Brake Bleed", price: "60.00", cost: "12.00" });
+      const id = await makeService(tx, { name: "Headset Service", price: "60.00", cost: "12.00" });
       await actAs(tx, staffClaims(AUTH_USER.mechanic2));
       await failsWith(tx, () => tx.query("select default_direct_cost from public.services"), {
         code: "42501",
       });
       await failsWith(tx, () => tx.query("select * from public.services"), { code: "42501" });
-      expect((await tx.query("select name, default_sale_price from public.services")).rows).toEqual(
-        [{ name: "Brake Bleed", default_sale_price: "60.00" }],
-      );
+      expect(
+        (await tx.query("select name, default_sale_price from public.services where id = $1", [id]))
+          .rows,
+      ).toEqual([{ name: "Headset Service", default_sale_price: "60.00" }]);
       expect(await scalar(tx, "select count(*)::int from public.services_staff")).toBe(0);
     });
   });
@@ -300,12 +301,12 @@ const costOf = (tx: pg.Client, id: string) =>
 describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => {
   it("view_costs alone cannot create, update or archive a service; admins can", async () => {
     await expect(
-      asStaff(conn, STAFF.mechanic1, (tx) => createService(tx, { name: "Wheel True" })),
+      asStaff(conn, STAFF.mechanic1, (tx) => createService(tx, { name: "Hub Overhaul" })),
     ).rejects.toMatchObject({ code: "42501" });
     await asStaff(conn, STAFF.admin, async (tx) => {
-      const id = await createService(tx, { name: "Wheel True", price: "35.00", cost: "5.00" });
+      const id = await createService(tx, { name: "Hub Overhaul", price: "35.00", cost: "5.00" });
       await actAs(tx, staffClaims(AUTH_USER.mechanic1));
-      await failsWith(tx, () => updateService(tx, id, { name: "Wheel True", price: "40.00" }), {
+      await failsWith(tx, () => updateService(tx, id, { name: "Hub Overhaul", price: "40.00" }), {
         code: "42501",
       });
       await failsWith(tx, () => tx.query("select public.set_service_archived($1, true)", [id]), {
@@ -321,13 +322,13 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
         [STAFF.mechanic2],
       );
       await actAs(tx, staffClaims(AUTH_USER.mechanic2));
-      const id = await createService(tx, { name: "Tyre Installation", price: "15.00" });
-      await failsWith(tx, () => createService(tx, { name: "Bike Build", cost: "10.00" }), {
+      const id = await createService(tx, { name: "Tubeless Conversion", price: "15.00" });
+      await failsWith(tx, () => createService(tx, { name: "Wheel Build", cost: "10.00" }), {
         code: "42501",
       });
       await failsWith(
         tx,
-        () => updateService(tx, id, { name: "Tyre Installation", price: "18.00", cost: "3.00" }),
+        () => updateService(tx, id, { name: "Tubeless Conversion", price: "18.00", cost: "3.00" }),
         { code: "42501" },
       );
 
@@ -336,7 +337,7 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
       await tx.query("update public.services set default_direct_cost = 4 where id = $1", [id]);
       await actAs(tx, staffClaims(AUTH_USER.mechanic2));
       expect(
-        await updateService(tx, id, { name: "Tyre Install", price: "18.00", active: false }),
+        await updateService(tx, id, { name: "Tubeless Convert", price: "18.00", active: false }),
       ).toBe(id);
       await ownerMode(tx);
       expect(
@@ -347,7 +348,7 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
           )
         ).rows[0],
       ).toEqual({
-        name: "Tyre Install",
+        name: "Tubeless Convert",
         default_sale_price: "18.00",
         default_direct_cost: "4.00",
         active: false,
@@ -357,11 +358,11 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
 
   it("an admin sets and changes the cost; null on update keeps it", async () => {
     await withClaims(conn, staffClaims(AUTH_USER.admin), async (tx) => {
-      const id = await createService(tx, { name: "Full Service", price: "180.00", cost: "20.00" });
+      const id = await createService(tx, { name: "Race Prep", price: "180.00", cost: "20.00" });
       expect(await costOf(tx, id)).toBe("20.00");
-      await updateService(tx, id, { name: "Full Service", price: "190.00", cost: "25.00" });
+      await updateService(tx, id, { name: "Race Prep", price: "190.00", cost: "25.00" });
       expect(await costOf(tx, id)).toBe("25.00");
-      await updateService(tx, id, { name: "Full Service", price: "195.00" });
+      await updateService(tx, id, { name: "Race Prep", price: "195.00" });
       expect(await costOf(tx, id)).toBe("25.00");
     });
   });
@@ -369,9 +370,14 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
   it("create_service is replay-safe by id; another name under the same id is a conflict", async () => {
     await asStaff(conn, STAFF.admin, async (tx) => {
       const id = randomUUID();
-      expect(await createService(tx, { id, name: "Drivetrain Service" })).toBe(id);
-      expect(await createService(tx, { id, name: "  Drivetrain Service " })).toBe(id);
-      expect(await scalar(tx, "select count(*)::int from public.services")).toBe(1);
+      expect(await createService(tx, { id, name: "Chain Replacement" })).toBe(id);
+      expect(await createService(tx, { id, name: "  Chain Replacement " })).toBe(id);
+      expect(
+        await scalar(
+          tx,
+          "select count(*)::int from public.services where lower(name) = 'chain replacement'",
+        ),
+      ).toBe(1);
       await failsWith(tx, () => createService(tx, { id, name: "Something else" }), {
         code: "P0001",
         message: "service_conflict",
@@ -382,7 +388,7 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
   it("refuses a product category for a service (category_kind_mismatch)", async () => {
     await inTransaction(conn, async (tx) => {
       const { rows } = await tx.query(
-        "insert into public.categories (kind, name) values ('product', 'Tyres'), ('service', 'Labour') returning id, kind",
+        "insert into public.categories (kind, name) values ('product', 'Tyres'), ('service', 'Fitting') returning id, kind",
       );
       const product = rows.find((r) => r.kind === "product").id;
       const service = rows.find((r) => r.kind === "service").id;
@@ -403,8 +409,8 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
 
   it("active names are unique ignoring case; an archived name can be reused", async () => {
     await asStaff(conn, STAFF.admin, async (tx) => {
-      const first = await createService(tx, { name: "Basic Service" });
-      await failsWith(tx, () => createService(tx, { name: "basic service" }), {
+      const first = await createService(tx, { name: "Puncture Repair" });
+      await failsWith(tx, () => createService(tx, { name: "puncture repair" }), {
         code: "23505",
         constraint: "services_active_name_key",
       });
@@ -419,7 +425,7 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
       expect(
         await scalar(tx, "select archived_at::text from public.services where id = $1", [first]),
       ).toBe(archivedAt);
-      expect(await createService(tx, { name: "Basic Service" })).not.toBe(first);
+      expect(await createService(tx, { name: "Puncture Repair" })).not.toBe(first);
       // Unarchiving the old one would now clash.
       await failsWith(
         tx,
@@ -454,12 +460,14 @@ describe("categories (staff read; manage_inventory writes)", () => {
     await inTransaction(conn, async (tx) => {
       await tx.query("insert into public.categories (kind, name) values ('service', '  Wheels ')");
       await actAs(tx, staffClaims(AUTH_USER.mechanic2));
-      expect((await tx.query("select name from public.categories")).rows).toEqual([
-        { name: "Wheels" },
-      ]);
+      // The seeded categories plus the new one, trimmed.
+      expect((await tx.query("select name from public.categories")).rows).toContainEqual({
+        name: "Wheels",
+      });
       await failsWith(
         tx,
-        () => tx.query("insert into public.categories (kind, name) values ('service', 'Brakes')"),
+        () =>
+          tx.query("insert into public.categories (kind, name) values ('service', 'Suspension')"),
         { code: "42501" },
       );
       await ownerMode(tx);
@@ -468,10 +476,11 @@ describe("categories (staff read; manage_inventory writes)", () => {
         [STAFF.mechanic2],
       );
       await actAs(tx, staffClaims(AUTH_USER.mechanic2));
-      await tx.query("insert into public.categories (kind, name) values ('service', 'Brakes')");
+      await tx.query("insert into public.categories (kind, name) values ('service', 'Suspension')");
       await failsWith(
         tx,
-        () => tx.query("insert into public.categories (kind, name) values ('service', 'brakes')"),
+        () =>
+          tx.query("insert into public.categories (kind, name) values ('service', 'suspension')"),
         { code: "23505", constraint: "categories_active_name_key" },
       );
       await failsWith(tx, () => tx.query("delete from public.categories"), { code: "42501" });
