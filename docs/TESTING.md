@@ -9,7 +9,7 @@ its row of PLAN.md pass in CI.
 |---|---|---|---|
 | Unit (pure TS) | Vitest | nothing | `npm run test:unit` |
 | Database (invariants, RLS, RPCs) | Vitest + `pg` | Postgres with migrations + seed | `npm run test:db` |
-| End-to-end | Playwright | `next start` + Postgres + Supabase Auth (local stack or staging) | `npm run test:e2e` |
+| End-to-end | Playwright | `next start` + the devstack (or `supabase start` with `E2E_EXTERNAL_STACK=1`) | `npm run test:e2e` |
 | Static | `tsc --noEmit`, `eslint`, `prettier --check`, type-gen diff | — | `npm run check` |
 
 `npm test` = unit + db. CI runs `check`, `test`, then `build`; E2E runs on a
@@ -69,7 +69,8 @@ themselves in that mode (`isolatedDatabase()`).
 running (`npm run db:reset && npm run devstack:start`): it signs in through
 the gateway with supabase-js as `admin@bicii.test`, calls
 `rpc('my_staff_profile')`, and round-trips an object through Storage with
-the service key. It skips with a message when the gateway is not reachable.
+the service key. It skips with a message when the gateway is not reachable,
+unless `BICII_REQUIRE_STACK=1` (CI), where that fails the file.
 
 Catalogue meta tests (`tests/db/meta.test.ts`) cover every future migration
 automatically: RLS enabled on every `public` table, no function in
@@ -84,7 +85,7 @@ automatically: RLS enabled on every `public` table, no function in
 | `npm run db:reset` | Drop and rebuild the dev database (`bicii_dev`): roles → Auth → Storage → migrations → seed. |
 | `npm run db:migrate` | Apply only pending app migrations. |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
-| `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. |
+| `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, and restarts services that were started against a different database. |
 | `npm run devstack:env` | Write `.env.local` with the gateway URL, local anon/service keys and `DATABASE_URL`. |
 
 ## What is tested where
@@ -183,17 +184,31 @@ UUIDs are exported from `tests/fixtures/ids.ts` so tests never query by name.
 
 ## CI
 
-GitHub Actions, `ci.yml`:
+GitHub Actions, `.github/workflows/ci.yml` (setup shared through
+`.github/actions/prepare`: Node from `.nvmrc` with the npm cache, `npm ci`,
+and the devstack components restored from `actions/cache`, keyed on their
+pinned versions, or built by `npm run devstack:setup`). Every job that needs
+a database gets a `postgres:16` service container and reaches it through
+`PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`; the scripts need only a superuser
+login (no sudo, no `pg_ctlcluster`, no particular superuser name, SSL off is
+fine).
 
-- `check`: install, `tsc`, `eslint`, `prettier --check`,
-  `npm run db:types -- --fresh` against the Postgres service container and
-  `git diff --exit-code`.
-- `test`: Postgres 16 service container + cached devstack
-  (`npm run devstack:setup`) → Vitest unit + db (the db project builds its
-  own template: roles → Auth → Storage → migrations → seed).
-- `build`: `next build`.
-- `e2e` (label/nightly): `next build && next start` with the service DB and
-  Supabase Auth from staging; Playwright with traces on failure.
+- `check` (every PR and push to `main`): `npm run check` (typegen + `tsc`,
+  `eslint`, `prettier --check`), `npm run tokens:contrast`, then
+  `npm run db:types -- --fresh` (a throwaway database built from the
+  migrations) and `git diff --exit-code -- src/lib/database.types.ts`.
+- `test` (every PR and push): `npm run db:reset` and `npm run
+  devstack:start`, then `npm test` (unit + db; the db project builds its own
+  template: roles → Auth → Storage → migrations → seed). With
+  `BICII_REQUIRE_STACK=1` the live-stack smoke test fails instead of
+  skipping if the gateway is down.
+- `build` (every PR and push): `next build` with placeholder public env.
+- `e2e` (manual dispatch, nightly at 02:23 Singapore time, and PRs labelled
+  `e2e`): `npx playwright install --with-deps chromium`, the devstack on the
+  service database, then `npm run test:e2e` (production build on :3100,
+  phone + iPad projects, one retry in CI). On failure the HTML report,
+  traces and devstack logs are uploaded as an artifact.
 
-Secrets in CI: none for `check`/`test`/`build`. Staging keys for `e2e`
-only, from repository secrets.
+Secrets in CI: none. E2E runs against the devstack (real Supabase Auth,
+PostgREST and Storage with the local demo keys), not staging, so it works
+on forks and needs no staging credentials.

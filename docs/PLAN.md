@@ -61,7 +61,7 @@ Deliverables:
 
 - Next.js 16 scaffold: `create-next-app@latest --ts --tailwind --eslint --app
   --src-dir --import-alias "@/*"`, then prettier, `vitest.config.mts`,
-  `playwright.config.ts`, `.github/workflows/ci.yml`, `.env.example`,
+  `playwright.config.mts`, `.github/workflows/ci.yml`, `.env.example`,
   `.nvmrc` (22).
 - `supabase init`; `supabase/config.toml`; migration `0001_extensions_and_
   helpers.sql` (pgcrypto, citext, `private` and `reporting` schemas,
