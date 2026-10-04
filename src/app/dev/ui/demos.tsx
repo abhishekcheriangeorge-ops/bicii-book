@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
+import { Card } from "@/components/ui/card";
 import { SearchPicker, type PickerOption } from "@/components/ui/search-picker";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Sheet } from "@/components/ui/sheet";
@@ -86,6 +87,7 @@ export function FormDemo() {
 
 export function PickerDemo() {
   const [picked, setPicked] = useState<PickerOption | null>(null);
+  const [created, setCreated] = useState<string | null>(null);
   return (
     <div className="flex max-w-xl flex-col gap-2">
       <Field label="Add a part" hint="Type a name, SKU or short ID">
@@ -94,14 +96,22 @@ export function PickerDemo() {
           value={picked}
           onSelect={setPicked}
           placeholder="Search parts…"
-          footer={(q) => (
-            <Button variant="ghost" size="sm" fullWidth>
-              {q ? `Create “${q}”` : "Create a new product"}
-            </Button>
-          )}
+          action={{
+            label: (q) => (q ? `Create “${q}”` : "Create a new product"),
+            onSelect: (q) => setCreated(q || "(new product)"),
+          }}
         />
       </Field>
-      <p className="text-sm text-dust-500">Selected: {picked ? picked.label : "nothing"}</p>
+      <p className="text-sm text-dust-500">
+        Selected: {picked ? picked.label : "nothing"}
+        {created ? ` · would create “${created}”` : ""}
+      </p>
+      {/* Pickers usually live in a Card (forms); its results must not be cut off at the Card's edge. */}
+      <Card title="Inside a Card">
+        <Field label="Customer">
+          <SearchPicker search={fakeSearch} placeholder="Search customers…" />
+        </Field>
+      </Card>
     </div>
   );
 }

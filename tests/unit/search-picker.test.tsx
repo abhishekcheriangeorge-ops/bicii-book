@@ -183,4 +183,72 @@ describe("SearchPicker", () => {
     await type(input, "chain");
     expect(screen.getByText("Search is unavailable")).toBeInTheDocument();
   });
+
+  it("reaches the action row with the arrow keys and runs it with Enter", async () => {
+    const create = vi.fn();
+    const { input, onSelect } = setup({
+      action: { label: (q) => `Create “${q}”`, onSelect: create },
+    });
+    await type(input, "lube");
+    const options = screen.getAllByRole("option");
+    expect(options.at(-1)).toHaveTextContent("Create “lube”");
+    key(input, "ArrowDown"); // past "Chain lube" to the action row
+    expect(input).toHaveAttribute("aria-activedescendant", options.at(-1)!.id);
+    key(input, "Enter");
+    expect(create).toHaveBeenCalledWith("lube");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("offers the action row when nothing matches", async () => {
+    const create = vi.fn();
+    const { input } = setup({ action: { label: () => "Create new", onSelect: create } });
+    await type(input, "zzz");
+    key(input, "ArrowDown");
+    key(input, "Enter");
+    expect(create).toHaveBeenCalledWith("zzz");
+  });
+
+  async function selectLube(input: HTMLElement) {
+    await type(input, "lube");
+    key(input, "Enter");
+    expect(input).toHaveValue("Chain lube");
+  }
+
+  it("clears an optional selection with the clear button", async () => {
+    const { input, onSelect } = setup();
+    await selectLube(input);
+    fireEvent.click(screen.getByRole("button", { name: "Clear Chain lube" }));
+    expect(onSelect).toHaveBeenLastCalledWith(null);
+    expect(input).toHaveValue("");
+    const form = screen.getByTestId("form") as HTMLFormElement;
+    expect(new FormData(form).get("product_id")).toBe("");
+  });
+
+  it("clears an optional selection when the field is emptied and left", async () => {
+    const { input, onSelect } = setup();
+    await selectLube(input);
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(onSelect).toHaveBeenLastCalledWith(null);
+    expect(input).toHaveValue("");
+  });
+
+  it("clears an optional selection with Escape on an empty, closed field", async () => {
+    const { input, onSelect } = setup();
+    await selectLube(input);
+    key(input, "Escape");
+    expect(onSelect).toHaveBeenLastCalledWith(null);
+    expect(input).toHaveValue("");
+  });
+
+  it("keeps a required selection: no clear button, and leaving an empty field restores it", async () => {
+    const { input, onSelect } = setup({ required: true });
+    await selectLube(input);
+    expect(screen.queryByRole("button", { name: /Clear/ })).toBeNull();
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(onSelect).not.toHaveBeenCalledWith(null);
+    expect(input).toHaveValue("Chain lube");
+  });
 });

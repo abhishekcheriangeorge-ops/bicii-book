@@ -3,7 +3,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { useFieldControlProps } from "./field";
-import { SearchIcon } from "./icons";
+import { IconButton } from "./icon-button";
+import { CloseIcon, SearchIcon } from "./icons";
 import { controlClasses } from "./input";
 import { Spinner } from "./spinner";
 
@@ -24,7 +25,8 @@ export type SearchPickerProps<T extends PickerOption = PickerOption> = {
    * stale query are discarded, so slow responses never overwrite newer ones.
    */
   search: (query: string) => Promise<T[]>;
-  onSelect?: (option: T) => void;
+  /** A choice was made, or (null) the selection was cleared. */
+  onSelect?: (option: T | null) => void;
   /** Controlled selection, shown in the input when not editing. */
   value?: T | null;
   /** Hidden input name: submits the selected option's id with the form. */
@@ -36,8 +38,19 @@ export type SearchPickerProps<T extends PickerOption = PickerOption> = {
   emptyMessage?: ReactNode;
   /** Custom row; defaults to label / description / meta. */
   renderOption?: (option: T) => ReactNode;
-  /** Shown as the last row, e.g. "Create new customer". Receives the query. */
-  footer?: (query: string) => ReactNode;
+  /**
+   * The last option of the list, e.g. "Create new customer": reached with
+   * the arrow keys and Enter like any result, or tapped. Receives the query.
+   */
+  action?: {
+    label: (query: string) => ReactNode;
+    onSelect: (query: string) => void;
+  };
+  /**
+   * Whether the selection can be removed (clear button, emptying the
+   * field, Escape on an empty field). Defaults to `!required`.
+   */
+  clearable?: boolean;
   disabled?: boolean;
   id?: string;
   "aria-describedby"?: string;
@@ -56,8 +69,10 @@ type State<T> =
  *
  * WAI-ARIA 1.2 combobox with a listbox popup and list autocomplete: focus
  * stays in the input, `aria-activedescendant` points at the highlighted
- * option. Keys: ↓/↑ move (wrapping), Enter selects, Escape closes (and
- * clears when already closed), Tab closes. Wrap in <Field> for a label.
+ * option. Keys: ↓/↑ move (wrapping, through the results and then the
+ * `action` row), Enter selects, Escape closes, then clears the query, then
+ * (clearable) the selection; Tab closes. Emptying the field and leaving it
+ * also clears a clearable selection. Wrap in <Field> for a label.
  */
 export function SearchPicker<T extends PickerOption = PickerOption>({
   search,
@@ -69,12 +84,15 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
   minChars = 1,
   emptyMessage = "No matches",
   renderOption,
-  footer,
+  action,
+  clearable,
   disabled = false,
   className,
   ...rest
 }: SearchPickerProps<T>) {
   const wiring = useFieldControlProps(rest);
+  const canClear = clearable ?? !wiring.required;
+  const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(false);
@@ -140,25 +158,48 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
   const items = state.kind === "results" ? state.items : [];
   const expanded = open && state.kind !== "idle";
   const optionId = (i: number) => `${listId}-opt-${i}`;
+  // The action row is the option after the last result.
+  const showAction = Boolean(action) && (state.kind === "results" || state.kind === "error");
+  const actionIndex = showAction ? items.length : -1;
+  const optionCount = items.length + (showAction ? 1 : 0);
+  const isEnabled = (i: number) =>
+    i === actionIndex || (items[i] !== undefined && !items[i].disabled);
 
-  const choose = (option: T) => {
-    if (option.disabled) return;
+  const close = () => {
     cancelSearch();
-    setInnerSelected(option);
     setEditing(false);
     setOpen(false);
     setQuery("");
     setState({ kind: "idle" });
     setActive(-1);
+  };
+
+  const clear = () => {
+    if (!selected) return;
+    setInnerSelected(null);
+    onSelect?.(null);
+  };
+
+  const choose = (option: T) => {
+    if (option.disabled) return;
+    setInnerSelected(option);
+    close();
     onSelect?.(option);
   };
 
+  const runAction = () => {
+    if (!action) return;
+    const q = query.trim();
+    close();
+    action.onSelect(q);
+  };
+
   const move = (delta: 1 | -1) => {
-    if (items.length === 0) return;
+    if (optionCount === 0) return;
     let i = active;
-    for (let n = 0; n < items.length; n++) {
-      i = (i + delta + items.length) % items.length;
-      if (!items[i].disabled) {
+    for (let n = 0; n < optionCount; n++) {
+      i = (i + delta + optionCount) % optionCount;
+      if (isEnabled(i)) {
         setActive(i);
         // Keep the highlighted option in view in a long list
         document.getElementById(optionId(i))?.scrollIntoView?.({ block: "nearest" });
@@ -192,7 +233,10 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
         move(-1);
         return;
       case "Enter":
-        if (expanded && active >= 0 && items[active]) {
+        if (expanded && active >= 0 && active === actionIndex) {
+          e.preventDefault();
+          runAction();
+        } else if (expanded && active >= 0 && items[active]) {
           e.preventDefault();
           choose(items[active]);
         }
@@ -205,6 +249,9 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
           e.preventDefault();
           setQuery("");
           runSearch("");
+        } else if (canClear && selected) {
+          e.preventDefault();
+          clear();
         }
         return;
       case "Tab":
@@ -225,6 +272,7 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
       </span>
       <input
         {...wiring}
+        ref={inputRef}
         type="text"
         role="combobox"
         aria-autocomplete="list"
@@ -249,11 +297,9 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
           if (!editing && selected) e.currentTarget.select();
         }}
         onBlur={() => {
-          cancelSearch();
-          setState({ kind: "idle" });
-          setOpen(false);
-          setEditing(false);
-          setQuery("");
+          // Emptying the field and leaving it removes the choice.
+          if (editing && query.trim() === "" && canClear) clear();
+          close();
         }}
         onKeyDown={onKeyDown}
         className={cn(controlClasses, "min-h-12 pr-12 pl-12")}
@@ -261,6 +307,17 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
       {state.kind === "loading" ? (
         <span className="pointer-events-none absolute top-0 right-4 flex h-12 items-center text-dust-500">
           <Spinner className="size-4" />
+        </span>
+      ) : canClear && selected && !editing && !disabled ? (
+        <span className="absolute top-0 right-0.5 flex h-12 items-center">
+          <IconButton
+            aria-label={`Clear ${selected.label}`}
+            icon={<CloseIcon className="size-4" />}
+            onClick={() => {
+              clear();
+              inputRef.current?.focus();
+            }}
+          />
         </span>
       ) : null}
       {name ? <input type="hidden" name={name} value={selected?.id ?? ""} /> : null}
@@ -311,6 +368,21 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
               )}
             </li>
           ))}
+          {showAction && action ? (
+            <li
+              id={optionId(actionIndex)}
+              role="option"
+              aria-selected={active === actionIndex}
+              onClick={runAction}
+              onMouseMove={() => active !== actionIndex && setActive(actionIndex)}
+              className={cn(
+                "mt-1 flex min-h-tap cursor-pointer items-center gap-2 rounded-xl border-t border-hairline px-3 py-2 font-display text-sm font-bold tracking-wide uppercase",
+                active === actionIndex && "bg-dust-100",
+              )}
+            >
+              {action.label(query.trim())}
+            </li>
+          ) : null}
         </ul>
         {state.kind === "results" && items.length === 0 ? (
           <p className="px-4 py-3 text-sm text-dust-500">{emptyMessage}</p>
@@ -320,9 +392,6 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
         ) : null}
         {state.kind === "error" ? (
           <p className="px-4 py-3 text-sm font-medium text-danger-deep">{state.message}</p>
-        ) : null}
-        {footer && state.kind !== "loading" ? (
-          <div className="border-t border-hairline p-1">{footer(query.trim())}</div>
         ) : null}
       </div>
       <span className="sr-only" aria-live="polite">
