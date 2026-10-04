@@ -210,6 +210,28 @@ same PR.
   past / cancelled as `private.cult_commons_rate_at` reads them);
   `shopDayStart`, `fromShopLocal`, `toShopLocal` (`dates.test.ts`); jobs in
   search (`search.test.ts`: an exact J- number puts Jobs first, `/jobs/{id}`).
+- Phase 4 (M1.4) app: the stock display helpers (`inventory.test.ts`:
+  `stockTone` danger at 0 or with a location below zero, waiting at the
+  reorder point; `stockLabel` and `signedQuantity` with a real minus sign;
+  unit status and publication labels and tones; `movementLabel` incl.
+  transfer in/out and "Returned from job"; the movement filters;
+  `defaultLocation` = active, sort order, then name, like
+  `add_inventory_line`; `adjustmentPreview`; the D23 `overdrawWarning`);
+  the action schemas and history wording (`inventory-forms.test.ts`:
+  part quantities 1..999, adjustments never 0 and within ±100,000,
+  Damaged only removing, a cost only on stock added, money parsed to
+  fixed-point strings, required and capped reasons, transfers between two
+  locations, blank optional fields to null; product and unit events read
+  without ever a cost, "Sold when J-… was completed" / "Back on hold: J-…
+  was reopened"; the D25 reopen note); products and units in search
+  (`search.test.ts`: `/products/{id}`, `/units/{id}`, an exact SKU puts
+  Products first); stock photos offer Internal and Public only
+  (`attachments.test.ts`); the Inventory tab active on `/products` and
+  `/units` (`auth-helpers.test.ts`); stock events in the timeline
+  (`workshop-timeline.test.ts`: "Used 2 × Road inner tube (P-000003) from
+  Shop floor", "Returned … to Shop floor", no cost). No product or unit
+  subtitle is rebuilt in TypeScript, so `display-parity.test.ts` is
+  unchanged.
 
 ### Database (SPEC §27.2 and §23)
 
@@ -338,24 +360,48 @@ the wizard walked to Create job, intake photos skipped; signs nobody in).
 `workshop-board.spec.ts` creates its job with it.
 
 Phase 3 spec (`workshop.spec.ts`, `tagFor` from `helpers.ts`): SPEC §27.3
-journey 1 without the part line, as the admin: /jobs → New job → a new
+journey 1 (its part line came with Phase 4, below), as the admin: /jobs → New job → a new
 customer and a new bike from the intake's sheets → requested work and
 condition → Marcus Tan lead, Nur Aisyah additional → Full Service →
 Review → Create job; the job opens on its J- number with the Intake photos
 card, the fixture photo uploads and shows, Done drops `?intake`; People
 lists both; Wheel True × 2 gives $270.00, cost $0.00, yield $270.00, Cult
 Commons $81.00, after Cult Commons $189.00; a manual "Valve core" 1 × $5.00
-costing $2.00 gives $275.00 and $81.90; voiding it with "Not needed" (two
-steps, 400 ms guard) brings $270.00 back and the voided line shows its
+costing $2.00 (after Phase 4's part line) gives $284.00 and $83.46; voiding
+it with "Not needed" (two steps, 400 ms guard) brings $279.00 back and the voided line shows its
 reason; Start work → Complete (Add service now disabled with the lock
 explanation) → Ready for collection → Collected, with Completed and
 Collected as separate dated rows; the timeline lists check-in, both
-assignments, the photo, the three lines, the void and its reason, work
+assignments, the photo, the four lines, the part's stock use, the void and its reason, work
 started, completed, ready for collection and collected. Collected is the
 second step of "Collected…" (the job named, focus on Back). A reload mid-intake
 offers the draft back (Continue restores step and customer; Discard starts
 afresh). mechanic2 (no view_costs) opens J-000002 and sees its $300.00 total
 but no cost, yield or Cult Commons, and the page's data holds no cost key.
+
+Phase 4 (`inventory.spec.ts`, phone and iPad, every record tagged and
+stock asserted on the test's own product): journey 3 without labels and
+receiving: the admin creates a counted product (tag in name and SKU,
+$12.00, cost $5.00, reorder point 3), records 10 opening stock at the Shop
+floor with the "Opening stock count" chip (preview "Shop floor: 0 → 10"),
+finds it by SKU on /inventory with "10 in stock", adds 1 to a walk-in job
+from Add part (the option reads "10 at Shop floor · 10 total"; toast
+"Added 1 × …. 9 left at Shop floor."), the line shows the P- number and
+"9 left at Shop floor", the product 9, the movements list "Used on job"
+with the J- link; voiding the line (the confirmation says it returns 1 to
+the Shop floor) toasts "Returned to stock", the timeline shows "Used 1 × …
+(P-…) from Shop floor" and "Returned 1 × … to Shop floor", stock is 10
+again and "Returned from job" links "Reverses #n" to the original's
+"Reversed by #m"; adding it again gives 9. A tagged unique item with its
+first unit goes on job A ("It is on hold for this job"), the unit page
+says "On job J-…" and job B's picker offers nothing. mechanic2 sees the
+road tube's stock with no Adjust stock, Transfer, Edit details, Add unit,
+Archive, cost, yield or Cult Commons (and no "3.80" in the page), and still
+adds 1 to a job. Journey 1 (`workshop.spec.ts`) now adds 1 × the seeded
+road tube (P-000003) after Wheel True: the toast's count is the picker's
+Shop floor count minus 1 (relative, the database is shared), totals
+$279.00 / cost $3.80 / yield $275.20 / Cult Commons $82.56 / after $192.64,
+and the timeline shows the line and its `stock_consumed` entry.
 
 Phase 3 step 4 (`workshop-board.spec.ts`, read-only on the seeded jobs so
 the phone and iPad runs share one database): as mechanic2 (Nur Aisyah, no

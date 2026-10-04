@@ -333,6 +333,23 @@ stays `public` and shows `unavailable` on its page until staff unpublish it
 (write-offs do not change publication; D26 has no automatic exit except
 the sale).
 
+Shipped (app core, Step 3): products and units in search
+(`SEARCH_KINDS`, `/products/[id]`, `/units/[id]`); stock photos Internal or
+Public only; `src/lib/domain/inventory.ts` (DTOs over RLS reads, the cost
+views for view_costs only, `public.selling_prices` for every displayed
+price) with the actions in `src/app/(staff)/inventory/actions.ts` and
+`addPartToJob` in `jobs/actions.ts` (schemas in `src/lib/inventory-forms.ts`);
+the screens `/inventory`, `/products/[id]`, `/units/[id]`,
+`/inventory/movements`; the Adjust stock, Transfer, New product / Edit
+details, Add unit / Edit unit and Write off sheets; Add part on the job
+page with the D23 warning, part lines with their P-/U- number and stock
+left, the void and D25 reopen wording, and the stock events in the
+timeline; `tests/e2e/inventory.spec.ts` and journey 1's part line. Step 4
+adds locations settings, the publication card, the split sheet, the
+bike-page unit card, the scanner and /q, and the header short-ID jump.
+Transfers and adjustments of unique products happen per unit (unit page);
+the product page offers them for counted products only, as the RPCs do.
+
 ### Phase 5 — Financial engine
 
 Mostly landed inside Phases 3–4 by design (generated columns, rate table).
