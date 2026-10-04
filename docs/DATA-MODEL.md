@@ -882,7 +882,7 @@ Private extension points (security definer, no grants):
 | `private.selling_price(product_id, unit_id)` | THE single selling-price source: unit.sale_price, else product.default_sale_price. Phase 6 replaces it to return the consignment asking price; Phase 8 labels and Phase 10 Shopify use it unchanged. EXECUTE for authenticated and anon, because the cost views and `reporting.public_items` call it as the caller (`create or replace` keeps the grants) |
 | `private.lock_stock(product_id)` | the per-product stock lock |
 | `private.stock_on_hand(product_id, location_id)` | ledger on-hand |
-| `private.refresh_unique_publication(product_id)` | public → sold when no unit is in stock and one is sold; sold → public when a unit is available again (skips requirements) |
+| `private.refresh_unique_publication(product_id)` | public → sold when no unit is in stock and one is sold; sold → public when a unit is available again (skips requirements). Every path that makes a unit available calls it after the unit change: `void_line`, `create_unique_unit` (a new unit on a sold product), and later restock paths |
 | `private.publication_transition_allowed`, `private.unit_status_transition_allowed`, `private.publication_requirements_met` | the state machines and publication requirements |
 | `private.set_event_context(jsonb)`, `private.event_context()` | transaction-local extra keys for unit history |
 

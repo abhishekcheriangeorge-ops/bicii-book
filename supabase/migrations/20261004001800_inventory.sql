@@ -2199,6 +2199,10 @@ begin
     created.id, null, null, null
   );
   perform private.set_change_reason(null);
+  -- A new available unit on a sold product restores it to public (D26's
+  -- system restore, as a void does); lock order step 6, after the stock,
+  -- the bike and the unit.
+  perform private.refresh_unique_publication(prod.id);
   result := row(created.id, created.short_id);
   return result;
 end;

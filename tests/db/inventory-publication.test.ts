@@ -408,6 +408,8 @@ type Tracking = "quantity" | "unique";
 /**
  * A priced product with a public photo, in publication state `from`, with
  * `available` available units (unique only; quantity products have none).
+ * 'sold' with an available unit is unreachable (a unit that becomes
+ * available restores public, D26), so `from` 'sold' ignores `available`.
  * Leaves `tx` acting as the admin.
  */
 async function productIn(
@@ -432,8 +434,6 @@ async function productIn(
     const job = await newJob(tx);
     await addPart(tx, { workOrderId: job.id, productId, unitId: first.unit_id });
     await completeJob(tx, job.id);
-    // A unit registered after the sale stays available; the product stays sold.
-    if (available === 1) await makeUnit(tx, productId);
   }
   if (from === "public" && first && available === 0) {
     const job = await newJob(tx);
@@ -479,6 +479,9 @@ describe.skipIf(!isolatedDatabase())("set_publication_status (PUBLICATION-MACHIN
       for (const { tracking, available } of CASES) {
         for (const from of PUBLICATION_STATUSES) {
           if (tracking === "quantity" && from === "sold") continue;
+          // Unreachable: an available unit on a sold product restores public
+          // (refresh_unique_publication; tested below).
+          if (from === "sold" && available === 1) continue;
           const productId = await productIn(tx, from, tracking, available);
           const accepted: PublicationStatus[] = [];
           for (const to of PUBLICATION_STATUSES) {
@@ -530,6 +533,30 @@ describe.skipIf(!isolatedDatabase())("set_publication_status (PUBLICATION-MACHIN
         product_id: sold,
         publication_status: "archived",
       });
+      await ownerMode(tx);
+      await assertLedgerConsistent(tx);
+    });
+  });
+
+  it("a unit registered on a sold product restores it to public (the system restore)", async () => {
+    await inTx(async (tx) => {
+      const productId = await productIn(tx, "sold", "unique", 0);
+      const added = await makeUnit(tx, productId);
+      expect(await publication(tx, productId)).toBe("public");
+      const last = await scalar<Record<string, unknown>>(
+        tx,
+        `select payload from public.product_events
+          where product_id = $1 and event_type = 'publication_changed'
+          order by created_at desc, id desc limit 1`,
+        [productId],
+      );
+      expect(last).toEqual({ from: "sold", to: "public" });
+
+      await actAs(tx, ANON);
+      const items = await publicItems(tx);
+      const sid = await readAsOwner(tx, () => shortIdOf(tx, "products", productId));
+      expect(bySid(items, sid)?.availability).toBe("available");
+      expect(bySid(items, added.short_id)?.availability).toBe("available");
       await ownerMode(tx);
       await assertLedgerConsistent(tx);
     });
