@@ -36,6 +36,57 @@ export type Database = {
         };
         Relationships: [];
       };
+      staff_events: {
+        Row: {
+          actor_staff_id: string | null;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["staff_event_type"];
+          id: string;
+          payload: NonNullable<Json>;
+          permission: Database["public"]["Enums"]["permission_key"] | null;
+          reason: string | null;
+          staff_id: string;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["staff_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          permission?: Database["public"]["Enums"]["permission_key"] | null;
+          reason?: string | null;
+          staff_id: string;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["staff_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          permission?: Database["public"]["Enums"]["permission_key"] | null;
+          reason?: string | null;
+          staff_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "staff_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "staff_events_staff_id_fkey";
+            columns: ["staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       staff_permissions: {
         Row: {
           granted_at: string;
@@ -150,7 +201,7 @@ export type Database = {
         };
       };
       set_staff_active: {
-        Args: { active: boolean; target_staff_id: string };
+        Args: { active: boolean; reason?: string; target_staff_id: string };
         Returns: {
           active: boolean;
           auth_user_id: string;
@@ -177,6 +228,20 @@ export type Database = {
           role: Database["public"]["Enums"]["staff_role"];
         }[];
       };
+      staff_history: {
+        Args: { max_rows?: number; target_staff_id: string };
+        Returns: {
+          actor_display_name: string;
+          actor_staff_id: string;
+          correlation_id: string;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["staff_event_type"];
+          id: string;
+          payload: Json;
+          permission: Database["public"]["Enums"]["permission_key"];
+          reason: string;
+        }[];
+      };
       staff_roster: {
         Args: Record<PropertyKey, never>;
         Returns: {
@@ -190,6 +255,30 @@ export type Database = {
           role: Database["public"]["Enums"]["staff_role"];
         }[];
       };
+      update_staff: {
+        Args: {
+          display_name?: string;
+          reason?: string;
+          role?: Database["public"]["Enums"]["staff_role"];
+          target_staff_id: string;
+        };
+        Returns: {
+          active: boolean;
+          auth_user_id: string;
+          created_at: string;
+          display_name: string;
+          email: string;
+          id: string;
+          role: Database["public"]["Enums"]["staff_role"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "staff";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
     };
     Enums: {
       permission_key:
@@ -200,6 +289,14 @@ export type Database = {
         | "manage_purchasing"
         | "manage_staff"
         | "view_financial_reports";
+      staff_event_type:
+        | "created"
+        | "details_changed"
+        | "role_changed"
+        | "deactivated"
+        | "reactivated"
+        | "permission_granted"
+        | "permission_revoked";
       staff_role: "admin" | "staff";
     };
     CompositeTypes: {
@@ -320,6 +417,15 @@ export const Constants = {
         "manage_purchasing",
         "manage_staff",
         "view_financial_reports",
+      ],
+      staff_event_type: [
+        "created",
+        "details_changed",
+        "role_changed",
+        "deactivated",
+        "reactivated",
+        "permission_granted",
+        "permission_revoked",
       ],
       staff_role: ["admin", "staff"],
     },

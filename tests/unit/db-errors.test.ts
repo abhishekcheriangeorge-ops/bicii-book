@@ -143,3 +143,18 @@ describe("unwrap / DbError", () => {
     expect(mapDbError(thrown).kind).toBe("forbidden");
   });
 });
+
+describe("BUSINESS_ERRORS covers every code the migrations raise", () => {
+  it("has a message for each P0001 MESSAGE code in supabase/migrations", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const path = await import("node:path");
+    const dir = path.join(process.cwd(), "supabase", "migrations");
+    const codes = new Set<string>();
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql"))) {
+      const sql = readFileSync(path.join(dir, file), "utf8");
+      for (const m of sql.matchAll(/message\s*=\s*'([a-z0-9_]+)'/g)) codes.add(m[1]);
+    }
+    expect(codes.size).toBeGreaterThan(0);
+    expect([...codes].filter((c) => !(c in BUSINESS_ERRORS))).toEqual([]);
+  });
+});

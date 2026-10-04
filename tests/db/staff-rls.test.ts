@@ -2,8 +2,12 @@
  * Staff tables under RLS and the staff RPCs (DATA-MODEL §1, §15, §16).
  *
  *   staff:             S own row + names of others (staff_directory); A full.
+ *                      Writes only via RPCs (create_staff, update_staff, set_staff_active).
  *   staff_permissions: A, own. Writes only via grant/revoke RPCs (A or manage_staff).
  *   anon:              nothing.
+ *
+ * History, the delegation ceiling and the write rules every writer obeys are
+ * in staff-history.test.ts.
  */
 import type pg from "pg";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -116,16 +120,14 @@ describe("select", () => {
 
 describe("writes by non-admins", () => {
   it("cannot update any staff row, including their own", async () => {
-    await asStaff(conn, STAFF.mechanic1, async (tx) => {
-      const own = await tx.query("update public.staff set display_name = 'Hacked' where id = $1", [
-        STAFF.mechanic1,
-      ]);
-      const other = await tx.query("update public.staff set role = 'admin' where id = $1", [
-        STAFF.mechanic2,
-      ]);
-      expect(own.rowCount).toBe(0);
-      expect(other.rowCount).toBe(0);
-    });
+    for (const sql of [
+      `update public.staff set display_name = 'Hacked' where id = '${STAFF.mechanic1}'`,
+      `update public.staff set role = 'admin' where id = '${STAFF.mechanic2}'`,
+    ]) {
+      await expect(asStaff(conn, STAFF.mechanic1, (tx) => tx.query(sql))).rejects.toMatchObject({
+        code: "42501",
+      });
+    }
     const names = await conn.query("select display_name, role from public.staff where id = $1", [
       STAFF.mechanic1,
     ]);
@@ -162,7 +164,8 @@ describe("writes by non-admins", () => {
       `select public.grant_permission('${STAFF.mechanic1}', 'adjust_stock')`,
       `select public.grant_permission('${STAFF.mechanic2}', 'manage_staff')`,
       `select public.revoke_permission('${STAFF.mechanic1}', 'view_costs')`,
-      `select public.set_staff_active('${STAFF.mechanic2}', false)`,
+      `select public.set_staff_active('${STAFF.mechanic2}', false, 'No reason')`,
+      `select public.update_staff('${STAFF.mechanic2}', 'Renamed')`,
     ]) {
       await expect(asStaff(conn, STAFF.mechanic1, (tx) => tx.query(sql))).rejects.toMatchObject({
         code: "42501",
@@ -172,14 +175,21 @@ describe("writes by non-admins", () => {
 });
 
 describe("admin writes", () => {
-  it("can update staff rows directly", async () => {
+  it("rename and change roles through update_staff, not by writing the table", async () => {
     await asStaff(conn, STAFF.admin, async (tx) => {
       const r = await tx.query(
-        "update public.staff set display_name = 'Marcus T.' where id = $1 returning display_name",
+        "select (s).display_name, (s).role from (select public.update_staff($1, 'Marcus T.', 'admin') s) x",
         [STAFF.mechanic1],
       );
-      expect(r.rows).toEqual([{ display_name: "Marcus T." }]);
+      expect(r.rows).toEqual([{ display_name: "Marcus T.", role: "admin" }]);
     });
+    await expect(
+      asStaff(conn, STAFF.admin, (tx) =>
+        tx.query("update public.staff set display_name = 'Marcus T.' where id = $1", [
+          STAFF.mechanic1,
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
   });
 
   it("grant_permission records the grantor and is idempotent", async () => {
@@ -235,7 +245,7 @@ describe("admin writes", () => {
     await inTransaction(conn, async (tx) => {
       await actAs(tx, staffClaims(AUTH_USER.admin));
       const r = await tx.query(
-        "select (s).active from (select public.set_staff_active($1, false) s) x",
+        "select (s).active from (select public.set_staff_active($1, false, 'Left the shop') s) x",
         [STAFF.mechanic1],
       );
       expect(r.rows[0].active).toBe(false);
@@ -250,7 +260,7 @@ describe("admin writes", () => {
   it("nobody can deactivate themselves", async () => {
     await expect(
       asStaff(conn, STAFF.admin, (tx) =>
-        tx.query("select public.set_staff_active($1, false)", [STAFF.admin]),
+        tx.query("select public.set_staff_active($1, false, 'Testing')", [STAFF.admin]),
       ),
     ).rejects.toMatchObject({ code: "42501" });
   });
@@ -270,10 +280,12 @@ describe("admin writes", () => {
 });
 
 describe("manage_staff holders", () => {
+  /** mechanic2 holds manage_staff and manage_inventory (the delegation ceiling allows granting it). */
   async function withManageStaff<T>(fn: (tx: pg.Client) => Promise<T>): Promise<T> {
     return inTransaction(conn, async (tx) => {
       await tx.query(
-        "insert into public.staff_permissions (staff_id, permission) values ($1, 'manage_staff')",
+        `insert into public.staff_permissions (staff_id, permission)
+         values ($1, 'manage_staff'), ($1, 'manage_inventory')`,
         [STAFF.mechanic2],
       );
       await actAs(tx, staffClaims(AUTH_USER.mechanic2));
@@ -281,7 +293,7 @@ describe("manage_staff holders", () => {
     });
   }
 
-  it("can grant and revoke permissions, recorded as the grantor", async () => {
+  it("can grant and revoke permissions they hold, recorded as the grantor", async () => {
     await withManageStaff(async (tx) => {
       const g = await tx.query(
         "select (g).granted_by from (select public.grant_permission($1, 'manage_inventory') g) s",
@@ -299,22 +311,21 @@ describe("manage_staff holders", () => {
   it("can deactivate staff but not an admin", async () => {
     await withManageStaff(async (tx) => {
       const r = await tx.query(
-        "select (s).active from (select public.set_staff_active($1, false) s) x",
+        "select (s).active from (select public.set_staff_active($1, false, 'Left the shop') s) x",
         [STAFF.mechanic1],
       );
       expect(r.rows[0].active).toBe(false);
       await expect(
-        tx.query("select public.set_staff_active($1, false)", [STAFF.admin]),
+        tx.query("select public.set_staff_active($1, false, 'Testing')", [STAFF.admin]),
       ).rejects.toMatchObject({ code: "42501" });
     });
   });
 
-  it("still cannot update staff rows directly (admin only)", async () => {
-    await withManageStaff(async (tx) => {
-      const r = await tx.query("update public.staff set display_name = 'X' where id = $1", [
-        STAFF.mechanic1,
-      ]);
-      expect(r.rowCount).toBe(0);
-    });
+  it("still cannot update staff rows directly", async () => {
+    await expect(
+      withManageStaff((tx) =>
+        tx.query("update public.staff set display_name = 'X' where id = $1", [STAFF.mechanic1]),
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
   });
 });

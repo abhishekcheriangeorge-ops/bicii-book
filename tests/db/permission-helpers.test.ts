@@ -30,8 +30,19 @@ async function permissionsOf(tx: pg.Client): Promise<string[]> {
   return rows.map((r) => r.permission);
 }
 
+/**
+ * Setup step: deactivate as the owner with no session (a signed-in user may
+ * never deactivate their own row, staff_enforce_rules), then restore the
+ * test's claims.
+ */
 async function deactivate(tx: pg.Client, staffId: string) {
+  const claims = await scalar<string | null>(
+    tx,
+    "select current_setting('request.jwt.claims', true)",
+  );
+  await tx.query("select set_config('request.jwt.claims', '', true)");
   await tx.query("update public.staff set active = false where id = $1", [staffId]);
+  await tx.query("select set_config('request.jwt.claims', $1, true)", [claims ?? ""]);
 }
 
 describe("permission_key enum", () => {

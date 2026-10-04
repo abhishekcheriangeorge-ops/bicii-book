@@ -30,18 +30,16 @@ describe.skipIf(!isolatedDatabase())("last active admin guard under concurrency"
 
     await a.query("begin");
     await actAs(a, staffClaims(AUTH_USER.admin));
-    await a.query("update public.staff set role = 'staff' where id = $1", [STAFF.mechanic2]);
+    await a.query("select public.update_staff($1, role => 'staff')", [STAFF.mechanic2]);
 
     await b.query("begin");
     await actAs(b, staffClaims(AUTH_USER.mechanic2));
     // Blocks on the guard's advisory lock until A commits, then sees that
     // A's demotion left Asha as the only admin.
-    const bResult = b
-      .query("update public.staff set role = 'staff' where id = $1", [STAFF.admin])
-      .then(
-        () => "updated",
-        (err: { code?: string }) => err.code,
-      );
+    const bResult = b.query("select public.update_staff($1, role => 'staff')", [STAFF.admin]).then(
+      () => "updated",
+      (err: { code?: string }) => err.code,
+    );
 
     // Give B time to reach the lock before A commits.
     await new Promise((resolve) => setTimeout(resolve, 300));

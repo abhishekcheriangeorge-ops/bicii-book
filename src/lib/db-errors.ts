@@ -48,6 +48,10 @@ export const FORBIDDEN_ERROR = "You don't have permission to do that.";
  */
 export const BUSINESS_ERRORS: Record<string, string> = {
   staff_email_mismatch: "That email does not match the login it belongs to.",
+  reason_required: "Give a reason for this change.",
+  reason_too_long: "Keep the reason under 500 characters.",
+  staff_history_append_only: "Staff history cannot be changed.",
+  staff_permission_immutable: "Remove the permission and grant the new one instead.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -60,6 +64,7 @@ export const UNIQUE_ERRORS: Record<string, string> = {
 /** 23514 check violations by constraint name. */
 export const CHECK_ERRORS: Record<string, string> = {
   staff_display_name_check: "Enter a name.",
+  staff_events_reason_check: "Keep the reason under 500 characters.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */
