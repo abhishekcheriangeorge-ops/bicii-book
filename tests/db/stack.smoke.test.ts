@@ -7,13 +7,21 @@
  * the gateway is not reachable, unless BICII_REQUIRE_STACK=1 (CI), where an
  * unreachable gateway fails the file instead.
  */
+import { randomUUID } from "node:crypto";
+
 import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
 import { ANON_KEY, GATEWAY_URL, SERVICE_ROLE_KEY } from "../../scripts/devstack/config.mjs";
 import type { Database } from "@/lib/database.types";
 
-import { SEED_PASSWORD, STAFF, STAFF_EMAIL } from "../fixtures/ids";
+import { BIKE, SEED_PASSWORD, STAFF, STAFF_EMAIL } from "../fixtures/ids";
+
+/** A real 2x2 JPEG (269 bytes), so Storage sees a genuine photo. */
+const TINY_JPEG = Buffer.from(
+  "/9j/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABAb/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCOACqH/9k=",
+  "base64",
+);
 
 const url = process.env.BICII_STACK_URL ?? GATEWAY_URL;
 
@@ -65,6 +73,60 @@ describe.skipIf(!reachable)("devstack through the gateway", () => {
     const { data, error } = await anon.from("staff").select("id");
     expect(data).toBeNull();
     expect(error?.code).toBe("42501");
+  });
+
+  it("staff upload a photo to media-internal through a signed URL and record it; anonymous visitors cannot fetch it", async () => {
+    const staff = createClient<Database>(url, ANON_KEY, options);
+    const { error: signInError } = await staff.auth.signInWithPassword({
+      email: STAFF_EMAIL.mechanic2,
+      password: SEED_PASSWORD,
+    });
+    expect(signInError).toBeNull();
+
+    // The app's flow (ADR-001 A7): the server mints a signed upload URL for
+    // the exact path, the phone uploads to it, the server records the row.
+    const id = randomUUID();
+    const path = `bike/${BIKE.shopCervelo}/${id}.jpg`;
+    const bucket = staff.storage.from("media-internal");
+    const { data: signed, error: signError } = await bucket.createSignedUploadUrl(path);
+    expect(signError).toBeNull();
+    const { error: uploadError } = await bucket.uploadToSignedUrl(
+      path,
+      signed!.token,
+      new Blob([TINY_JPEG], { type: "image/jpeg" }),
+    );
+    expect(uploadError).toBeNull();
+
+    const { data: row, error: recordError } = await staff.rpc("record_attachment", {
+      attachment_id: id,
+      entity_type: "bike",
+      entity_id: BIKE.shopCervelo,
+      storage_bucket: "media-internal",
+      storage_path: path,
+      media_type: "image/jpeg",
+    });
+    expect(recordError).toBeNull();
+    expect(row).toMatchObject({ id, byte_size: TINY_JPEG.length, created_by: STAFF.mechanic2 });
+
+    const anon = createClient<Database>(url, ANON_KEY, options);
+    const { data: anonFile, error: anonError } = await anon.storage
+      .from("media-internal")
+      .download(path);
+    expect(anonFile).toBeNull();
+    expect(anonError).not.toBeNull();
+    const { data: staffFile, error: staffError } = await bucket.download(path);
+    expect(staffError).toBeNull();
+    expect(staffFile?.size).toBe(TINY_JPEG.length);
+
+    // Clean up the way the app deletes: RPC with a reason, then the object.
+    const { error: deleteError } = await staff.rpc("delete_attachment", {
+      attachment_id: id,
+      reason: "Stack smoke test cleanup",
+    });
+    expect(deleteError).toBeNull();
+    const { error: removeError } = await bucket.remove([path]);
+    expect(removeError).toBeNull();
+    await staff.auth.signOut();
   });
 
   it("uploads and downloads an object through Storage with the service key", async () => {
