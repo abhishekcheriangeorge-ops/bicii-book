@@ -37,13 +37,15 @@ export default async function TodayPage() {
           {TILES.map((tile) => (
             <li key={tile.label}>
               <Card className="h-full">
-                <p className="eyebrow text-dust-500">{tile.label}</p>
-                <p
-                  className="mt-2 font-display text-4xl font-extrabold text-dust-300"
-                  aria-label="Not available yet"
-                >
-                  —
-                </p>
+                {/* Label and value read together: dt/dd, so M1.5 drops the
+                    real count into the dd and screen readers say both. */}
+                <dl>
+                  <dt className="eyebrow text-dust-500">{tile.label}</dt>
+                  <dd className="mt-2 font-display text-4xl font-extrabold text-dust-300">
+                    <span aria-hidden="true">—</span>
+                    <span className="sr-only">Not available yet</span>
+                  </dd>
+                </dl>
                 <p className="mt-1 text-sm text-dust-500">{tile.hint}</p>
               </Card>
             </li>
