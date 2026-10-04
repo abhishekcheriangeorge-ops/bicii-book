@@ -52,9 +52,15 @@ export function ArchiveControl({
   // so a double tap cannot archive by itself.
   const [armed, setArmed] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
   const copy = COPY[kind];
 
   useEffect(() => {
+    const cancelled = wasConfirming.current && !confirming;
+    wasConfirming.current = confirming;
+    // Cancel removed the focused button: put focus back on "Archive …".
+    if (cancelled) startRef.current?.focus();
     if (!confirming) return;
     boxRef.current?.querySelector<HTMLButtonElement>("[data-cancel]")?.focus();
     const timer = window.setTimeout(() => setArmed(true), CONFIRM_GUARD_MS);
@@ -126,6 +132,7 @@ export function ArchiveControl({
         <div key="start">
           <Button
             key="archive"
+            ref={startRef}
             variant="outline"
             onClick={() => {
               setArmed(false);

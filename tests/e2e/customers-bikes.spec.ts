@@ -108,10 +108,41 @@ test("staff register a customer's bike with a photo, share it, find it, hand it 
   await expect(
     page.getByRole("dialog", { name: "Photo 1" }).getByRole("radio", { name: "Customer" }),
   ).toHaveAttribute("aria-checked", "true");
-  await page
-    .getByRole("dialog", { name: "Photo 1" })
-    .getByRole("button", { name: "Close" })
-    .click();
+
+  // Public, and back: the file moves between buckets, and a stranger (no
+  // session, no key) can fetch it only while it is public.
+  const shared = page.getByRole("dialog", { name: "Photo 1" });
+  const image = shared.locator("img").first();
+  const privateUrl = (await image.getAttribute("src"))!;
+  expect(privateUrl).toContain("/object/sign/media-internal/");
+  await shared.getByRole("radio", { name: "Public" }).click();
+  await expect(toast(page, "Photo is now public")).toBeVisible();
+  await expect(image).toHaveAttribute("src", /\/object\/public\/media-public\//);
+  const publicUrl = (await image.getAttribute("src"))!;
+  expect((await fetch(publicUrl)).status).toBe(200);
+  // The private original is gone: its signed link no longer serves anything.
+  expect((await fetch(privateUrl)).status).not.toBe(200);
+  await shared.getByRole("radio", { name: "Internal" }).click();
+  await expect(toast(page, "Photo is now internal")).toBeVisible();
+  await expect(image).toHaveAttribute("src", /\/object\/sign\/media-internal\//);
+  expect((await fetch(publicUrl)).status).not.toBe(200);
+  const internalUrl = (await image.getAttribute("src"))!;
+  expect((await fetch(internalUrl)).status).toBe(200);
+
+  // Deleted with a reason: gone from the page and from Storage.
+  await shared.getByRole("button", { name: "Delete photo…" }).click();
+  await shared.getByRole("button", { name: "Cancel" }).click();
+  // Cancel hands focus back to the button that opened the confirmation.
+  await expect(shared.getByRole("button", { name: "Delete photo…" })).toBeFocused();
+  await shared.getByRole("button", { name: "Delete photo…" }).click();
+  await shared.getByLabel("Why are you deleting this photo?").fill("Test photo");
+  // The confirm button ignores presses for 400 ms after it appears (a double tap).
+  await page.waitForTimeout(500);
+  await shared.getByRole("button", { name: "Delete photo", exact: true }).click();
+  await expect(toast(page, "Photo deleted")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Photo 1" })).toBeHidden();
+  await expect(grid).toBeHidden();
+  expect((await fetch(internalUrl)).status).not.toBe(200);
 
   // Found from the header search by serial number (case, spaces and dashes
   // don't matter) and by its B- number.
@@ -169,6 +200,16 @@ test("mechanic2, with no permissions, adds customers and shop bikes; a customer-
     "true",
   );
   await expect(viewer).toContainText("Photos on a customer record can never be public.");
+  // ... and looks it: muted, with a not-allowed cursor, unlike the others.
+  await expect(viewer.getByRole("radio", { name: "Public" })).toHaveCSS("cursor", "not-allowed");
+  await expect(viewer.getByRole("radio", { name: "Customer" })).toHaveCSS("cursor", "pointer");
+  const muted = await viewer
+    .getByRole("radio", { name: "Public" })
+    .evaluate((el) => getComputedStyle(el).color);
+  const normal = await viewer
+    .getByRole("radio", { name: "Customer" })
+    .evaluate((el) => getComputedStyle(el).color);
+  expect(muted).not.toBe(normal);
   await viewer.getByRole("button", { name: "Close" }).click();
 
   // A shop bike: no customer.
@@ -182,4 +223,38 @@ test("mechanic2, with no permissions, adds customers and shop bikes; a customer-
   await expect(page.getByRole("heading", { level: 1, name: `Brompton Shop ${tag}` })).toBeVisible();
   await expect(page.getByText("Shop bike · no customer")).toBeVisible();
   await expect(page.getByText(/^B-\d{6}$/).first()).toBeVisible();
+});
+
+test("search keeps what is typed while a slow search loads, and a pending search never undoes opening a result", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await signIn(page, "mechanic2");
+  // A slow shop-floor connection: every search result takes 700 ms.
+  await page.route(/\/customers\?/, async (route) => {
+    if (route.request().headers()["rsc"]) await new Promise((r) => setTimeout(r, 700));
+    await route.continue();
+  });
+  await page.goto("/customers");
+  const field = page.getByRole("searchbox", { name: "Search customers", exact: true });
+
+  // "tan" is sent after the pause; " wei" is typed while it loads, its
+  // answer arriving between two keystrokes.
+  await field.pressSequentially("tan", { delay: 30 });
+  await page.waitForTimeout(350);
+  await field.pressSequentially(" wei", { delay: 250 });
+  await expect(page).toHaveURL(/[?&]q=tan(\+|%20)wei/);
+  await expect(field).toHaveValue("tan wei");
+  await page.waitForTimeout(1_000);
+  await expect(field).toHaveValue("tan wei");
+  const results = page.getByRole("list", { name: "Customers" });
+  await expect(results.getByRole("link", { name: /Tan Wei Ming/ })).toBeVisible();
+
+  // Type more and open the result at once, before that search is sent:
+  // the record stays open.
+  await field.pressSequentially(" m", { delay: 20 });
+  await results.getByRole("link", { name: /Tan Wei Ming/ }).click();
+  await expect(page).toHaveURL(/\/customers\/[0-9a-f-]{36}$/);
+  await page.waitForTimeout(1_000);
+  await expect(page).toHaveURL(/\/customers\/[0-9a-f-]{36}$/);
 });

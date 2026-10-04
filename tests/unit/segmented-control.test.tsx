@@ -43,3 +43,20 @@ describe("SegmentedControl disabled options", () => {
     expect(onValueChange).toHaveBeenLastCalledWith("customer");
   });
 });
+
+describe("SegmentedControl looks", () => {
+  // cn() does not merge conflicting utilities, so a disabled segment must
+  // not carry the enabled look at all (CSS order would decide otherwise).
+  it("gives a disabled segment only the disabled look: muted text, not-allowed cursor", () => {
+    render(<SegmentedControl label="Who" options={options} defaultValue="internal" />);
+    const classes = screen.getByRole("radio", { name: "Public" }).className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(["text-dust-500", "cursor-not-allowed"]));
+    expect(classes).not.toContain("text-ink");
+    expect(classes).not.toContain("cursor-pointer");
+    expect(classes).not.toContain("hover:bg-dust-100");
+
+    const enabled = screen.getByRole("radio", { name: "Customer" }).className.split(/\s+/);
+    expect(enabled).toEqual(expect.arrayContaining(["text-ink", "cursor-pointer"]));
+    expect(enabled).not.toContain("cursor-not-allowed");
+  });
+});
