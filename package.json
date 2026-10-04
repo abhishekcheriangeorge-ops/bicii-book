@@ -14,6 +14,7 @@
     "test:unit": "vitest run --project unit",
     "test": "vitest run",
     "tokens:contrast": "node scripts/contrast.mjs",
+    "test:db": "vitest run --project db",
     "devstack:setup": "node scripts/devstack/setup.mjs",
     "devstack:start": "node scripts/devstack/start.mjs",
     "devstack:stop": "node scripts/devstack/stop.mjs",
