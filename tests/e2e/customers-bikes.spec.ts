@@ -1,8 +1,8 @@
 import path from "node:path";
 
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-import { signIn, toast } from "./helpers";
+import { signIn, tagFor, toast } from "./helpers";
 
 /**
  * M1.2 customers, bikes and photos, on a phone and an iPad. Every record
@@ -12,10 +12,6 @@ import { signIn, toast } from "./helpers";
  */
 
 const PHOTO = path.join(__dirname, "fixtures", "bike-photo.jpg");
-
-function tagFor(testInfo: TestInfo): string {
-  return `${testInfo.project.name}${Date.now().toString(36)}`.toUpperCase();
-}
 
 async function createCustomer(page: Page, first: string, last: string, phone?: string) {
   await page.goto("/customers");
