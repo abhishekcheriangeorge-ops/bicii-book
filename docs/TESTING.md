@@ -132,6 +132,16 @@ fixture, in the same PR.
 - Label template rendering (QR payload is exactly the public URL).
 - Shopify payload mapping (variant → product; unmapped → structured error).
 - Short ID formatting and scanner URL parsing.
+- Phase 1 (M1.2): photo downscale sizing (`fitWithin`: longest edge 2048,
+  never upscaled, never 0px) and photo type detection by MIME type or
+  extension (`images.test.ts`); list search params (`readQuery`,
+  `readFlag`, `withParam`); customer naming (mirror of
+  `private.customer_label`), `tel:`/`mailto:` links; search grouping and
+  bike naming; recent searches in `localStorage` (dedupe, cap, malformed
+  data, storage that throws); photo bucket/path/visibility rules incl.
+  PLAN D13 (`attachments.test.ts`); client UUIDs without
+  `crypto.randomUUID`; the upload-progress fetch (`upload-progress.test.ts`,
+  fake XHR); `SegmentedControl` disabled segments and the toast action.
 
 ### Database (SPEC §27.2 and §23)
 
@@ -160,6 +170,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
 | Stable physical identity | bike short IDs are server-assigned `B-######`, increasing, unique, never client-supplied (42501) and immutable (`bike_short_id_immutable`). |
 | Storage enforces visibility (SPEC §8) | `media-internal`: anon, customers and inactive staff read/write nothing, active staff everything; `media-public`: everyone reads, only staff write (`media-storage.test.ts`); live signed-upload round trip with anon download refused (`stack.smoke.test.ts`). |
+| Lists and search name records alike | `customerLabel` (TypeScript, used by table-backed lists) equals `private.customer_label` for every fallback case, and `bikeTitle`/`bikeSubtitle` equal `staff_search`'s title and subtitle for every seeded bike (`display-parity.test.ts`). |
 | Attachments describe real objects | `record_attachment` rejects a path that is not `{entity_type}/{entity_id}/{id}.{ext}`, a missing object, the wrong bucket, a non-photo, an unknown entity; replay-safe; delete needs a reason and is kept in `attachment_events` (`attachments.test.ts`). |
 | Anonymous cannot read costs/notes | every table in the RLS matrix: anon select returns 0 rows or is denied. |
 | Mechanic permission boundaries | staff without `view_costs` cannot select cost columns; without `adjust_stock` cannot call `adjust_stock`; admin can. |
@@ -199,6 +210,23 @@ the temporary password as active staff with no granted permissions (Today
 opens; `/settings/staff` is 403), must give the current password to change
 it, and when the admin deactivates them (a reason is required and shows in
 their history) their open session loses access.
+
+Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
+tag made of the project name and a timestamp, so the phone and iPad runs and
+repeated runs never see each other's data): the admin creates two
+customers in sheets (the contact card dials `tel:`), adds a bike from one
+customer's page (owner preset; it gets a B- number and a `registered`
+history entry), uploads the fixture JPEG (`tests/e2e/fixtures/bike-photo.jpg`)
+with `setInputFiles` and sees the thumbnail load (640px wide: downscaling
+leaves small photos alone), opens it and shares it with the customer
+(badge on the tile, still set after a reload), finds the bike from the
+header search by its serial number typed lower-case with spaces for dashes
+and by its B- number, transfers it to the other customer with a reason (the
+history shows both names, the reason and the actor), archives the first
+customer (Add bike disabled; gone from search, listed under Archived);
+mechanic2, with no permissions, creates a customer, adds a photo to the
+customer record whose Public option is disabled with the D13 explanation,
+and registers a shop bike with no customer.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:

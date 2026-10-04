@@ -119,13 +119,20 @@ tests with their allow-list fixture; env schema; login E2E smoke.
 - UI: Customers list + detail; Bike detail with photo grid and (empty)
   service history; new-customer and new-bike sheets reachable from intake;
   camera capture component (`CaptureButton`) used everywhere photos are taken.
+  Shipped (M1.2): domain modules `customers.ts`, `bikes.ts`,
+  `attachments.ts`, `search.ts`; Server Actions per section; `/customers`,
+  `/customers/[id]`, `/bikes`, `/bikes/[id]`, `/search` and the header
+  search; the sheets open from customer and bike pages (intake reuses them
+  in Phase 3). DESIGN.md "Domain components" describes the screens.
 
 Tests: RLS customer A/B; anon denied; attachment visibility move; serial
 search; ownership change preserves history; `current_customer_id()` is null
 for anonymous callers and for staff without a customers row. Database side
 in `customers-bikes`, `customer-access`, `attachments`, `media-storage` and
 `staff-search` `.test.ts`, plus a live signed-upload round trip in
-`stack.smoke.test.ts`.
+`stack.smoke.test.ts`. App side: unit tests for the pure helpers
+(downscale sizing, search params, naming, recent searches, photo rules),
+`display-parity.test.ts`, and E2E `customers-bikes.spec.ts` (phone + iPad).
 
 ### Phase 2 — Appointments, shop hours, capacity, check-in
 
