@@ -73,3 +73,17 @@ export function shopDaysBetween(from: DateInput, to: DateInput, zone?: ZoneOptio
   const b = Date.parse(`${shopDateKey(to, zone)}T00:00:00Z`);
   return Math.round((b - a) / 86_400_000);
 }
+
+/** "Good morning" / "Good afternoon" / "Good evening" for the shop's local time. */
+export function greetingFor(value: DateInput, zone?: ZoneOptions): string {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      hourCycle: "h23",
+      timeZone: zone?.timeZone ?? SHOP_TIME_ZONE,
+    }).format(toDate(value)),
+  );
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}

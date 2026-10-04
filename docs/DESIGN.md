@@ -76,3 +76,15 @@ Server components unless they need state or browser APIs.
 Class strings are joined with `cn()` (`src/lib/cn.ts`), which does not merge
 conflicting utilities; prefer a variant prop over overriding colours with
 `className`.
+
+## App shell (`src/components/shell/`)
+
+| Piece | Notes |
+|---|---|
+| `TabBar` (client) | Phones (< md): fixed bottom bar, Today · Jobs · **Scan** · Inventory · More. Scan is a raised 64px yellow disc. Pads for `env(safe-area-inset-bottom)`; pages pad their bottom to clear it. |
+| `SideRail` (client) | md and up: sticky labelled rail with the mark, the four primary sections (Scan in yellow) and every More destination. |
+| `AppHeader` | Sticky; mark (phones only), the global search entry (links to `/search`), and `ProfileChip` (initials → `/settings/profile`) streamed in `<Suspense>`. Clears `env(safe-area-inset-top)`. |
+| `nav.ts` | Single source for tabs, More items and active-state matching. |
+| `ComingSoon` | `PageHeader` + `EmptyState` naming the phase that builds a section. |
+| `StatusScreen` | 401/403/404/500 pages. |
+| `ServiceWorkerRegistration` | Registers `public/sw.js` in production builds only. |

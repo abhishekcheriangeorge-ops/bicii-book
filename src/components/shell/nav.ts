@@ -1,0 +1,82 @@
+import type { ComponentType, SVGProps } from "react";
+
+import {
+  BikeIcon,
+  BoxIcon,
+  CalendarIcon,
+  ChartIcon,
+  HomeIcon,
+  MoreIcon,
+  PrinterIcon,
+  ScanIcon,
+  SettingsIcon,
+  TagIcon,
+  TruckIcon,
+  UsersIcon,
+  WrenchIcon,
+} from "@/components/ui/icons";
+
+export type NavItem = {
+  href: string;
+  label: string;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  /** One line for the More list. */
+  description?: string;
+};
+
+/** Bottom tab bar on phones; Scan sits in the middle, raised. */
+export const TABS: readonly NavItem[] = [
+  { href: "/", label: "Today", icon: HomeIcon },
+  { href: "/jobs", label: "Jobs", icon: WrenchIcon },
+  { href: "/scan", label: "Scan", icon: ScanIcon },
+  { href: "/inventory", label: "Inventory", icon: BoxIcon },
+  { href: "/more", label: "More", icon: MoreIcon },
+];
+
+/** Everything else, listed on /more and in the iPad rail. */
+export const MORE_ITEMS: readonly NavItem[] = [
+  {
+    href: "/customers",
+    label: "Customers",
+    icon: UsersIcon,
+    description: "People and contact details",
+  },
+  { href: "/bikes", label: "Bikes", icon: BikeIcon, description: "Bikes and service history" },
+  {
+    href: "/appointments",
+    label: "Appointments",
+    icon: CalendarIcon,
+    description: "Bookings, shop hours and capacity",
+  },
+  {
+    href: "/consignment",
+    label: "Consignment",
+    icon: TagIcon,
+    description: "Consignors, items and settlements",
+  },
+  {
+    href: "/purchasing",
+    label: "Purchasing",
+    icon: TruckIcon,
+    description: "Suppliers, orders and receiving",
+  },
+  { href: "/labels", label: "Labels", icon: PrinterIcon, description: "QR labels and print jobs" },
+  { href: "/reports", label: "Reports", icon: ChartIcon, description: "Daily and period reports" },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: SettingsIcon,
+    description: "Profile, staff and app",
+  },
+];
+
+/** True when `pathname` is `href` or below it ("/" only matches itself). */
+export function isActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** The More tab is active for every destination it lists. */
+export function isMoreActive(pathname: string): boolean {
+  return isActive(pathname, "/more") || MORE_ITEMS.some((item) => isActive(pathname, item.href));
+}

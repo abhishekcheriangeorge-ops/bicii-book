@@ -12,7 +12,7 @@ export const controlClasses = cn(
   "aria-invalid:border-danger aria-invalid:shadow-[0_0_0_1px_var(--color-danger)]",
 );
 
-export type InputProps = Omit<ComponentPropsWithRef<"input">, "size"> & {
+export type InputProps = Omit<ComponentPropsWithRef<"input">, "size" | "prefix"> & {
   /** Fixed text before the value (e.g. "$"), not part of the value. */
   prefix?: ReactNode;
   /** Fixed text after the value (e.g. "pcs"). */
