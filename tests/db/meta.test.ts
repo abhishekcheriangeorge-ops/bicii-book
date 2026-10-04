@@ -306,10 +306,11 @@ describe("schemas", () => {
   it("extensions live in the extensions schema", async () => {
     const { rows } = await conn.query(
       `select e.extname, n.nspname from pg_extension e join pg_namespace n on n.oid = e.extnamespace
-        where e.extname in ('pgcrypto', 'citext') order by 1`,
+        where e.extname in ('pgcrypto', 'citext', 'pg_trgm') order by 1`,
     );
     expect(rows).toEqual([
       { extname: "citext", nspname: "extensions" },
+      { extname: "pg_trgm", nspname: "extensions" },
       { extname: "pgcrypto", nspname: "extensions" },
     ]);
   });

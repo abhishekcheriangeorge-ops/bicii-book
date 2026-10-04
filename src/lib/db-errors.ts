@@ -52,6 +52,11 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   reason_too_long: "Keep the reason under 500 characters.",
   staff_history_append_only: "Staff history cannot be changed.",
   staff_permission_immutable: "Remove the permission and grant the new one instead.",
+  // Customers and bikes (Phase 1)
+  customer_archived: "That customer is archived. Unarchive them first.",
+  bike_archived: "That bike is archived. Unarchive it before changing its owner.",
+  bike_short_id_immutable: "A bike keeps its ID for life.",
+  bike_history_append_only: "Bike ownership history cannot be changed.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -59,12 +64,31 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   staff_email_key: "A staff member with that email already exists.",
   staff_auth_user_id_key: "That login is already linked to a staff member.",
   staff_permissions_pkey: "That permission is already granted.",
+  customers_pkey: "That customer has already been saved.",
+  customers_auth_user_id_key: "That login is already linked to a customer.",
+  customers_shopify_customer_id_key: "That Shopify customer is already linked to someone else.",
+  bikes_pkey: "That bike has already been saved.",
 };
 
 /** 23514 check violations by constraint name. */
 export const CHECK_ERRORS: Record<string, string> = {
   staff_display_name_check: "Enter a name.",
   staff_events_reason_check: "Keep the reason under 500 characters.",
+  customers_identifies_someone: "Enter a name, an email or a phone number.",
+  customers_email_check: "Enter a valid email address.",
+  customers_first_name_check: "Keep the first name under 100 characters.",
+  customers_last_name_check: "Keep the last name under 100 characters.",
+  customers_display_name_check: "Keep the name under 200 characters.",
+  customers_phone_check: "Keep the phone number under 40 characters.",
+  customers_internal_notes_check: "Keep the notes under 10,000 characters.",
+  bikes_brand_check: "Keep the brand under 100 characters.",
+  bikes_model_check: "Keep the model under 100 characters.",
+  bikes_variant_check: "Keep the variant under 100 characters.",
+  bikes_frame_size_check: "Keep the frame size under 40 characters.",
+  bikes_colour_check: "Keep the colour under 60 characters.",
+  bikes_serial_number_check: "Keep the serial number under 100 characters.",
+  bikes_description_check: "Keep the description under 2,000 characters.",
+  bikes_internal_notes_check: "Keep the notes under 10,000 characters.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */

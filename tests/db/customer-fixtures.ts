@@ -1,0 +1,39 @@
+/**
+ * Helpers for Phase 1 database tests: customer logins.
+ * All of them run as the connection's owner (superuser) inside the caller's
+ * transaction; switch identity afterwards with actAs().
+ */
+import { randomUUID } from "node:crypto";
+
+import type pg from "pg";
+
+/** A new Supabase Auth login (auth.users row); returns its id. */
+export async function createAuthUser(tx: pg.Client, email: string): Promise<string> {
+  const id = randomUUID();
+  await tx.query(
+    `insert into auth.users (instance_id, id, aud, role, email, created_at, updated_at)
+     values ('00000000-0000-0000-0000-000000000000', $1, 'authenticated', 'authenticated', $2, now(), now())`,
+    [id, email],
+  );
+  return id;
+}
+
+/** Gives an existing customers row a login (what Phase 11 sign-up will do); returns the Auth id. */
+export async function linkCustomerLogin(
+  tx: pg.Client,
+  customerId: string,
+  email = `customer-${customerId.slice(-4)}-${randomUUID().slice(0, 8)}@example.com`,
+): Promise<string> {
+  const authUserId = await createAuthUser(tx, email);
+  const { rowCount } = await tx.query(
+    "update public.customers set auth_user_id = $1 where id = $2",
+    [authUserId, customerId],
+  );
+  if (rowCount !== 1) throw new Error(`No customers row ${customerId}`);
+  return authUserId;
+}
+
+/** Claims of a signed-in customer (or any Auth user) for actAs(). */
+export function customerClaims(authUserId: string) {
+  return { role: "authenticated" as const, aud: "authenticated", sub: authUserId };
+}

@@ -3,6 +3,193 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      bike_ownership_events: {
+        Row: {
+          actor_staff_id: string | null;
+          bike_id: string;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["bike_ownership_event_type"];
+          from_customer_id: string | null;
+          id: string;
+          reason: string | null;
+          to_customer_id: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          bike_id: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["bike_ownership_event_type"];
+          from_customer_id?: string | null;
+          id?: string;
+          reason?: string | null;
+          to_customer_id?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          bike_id?: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["bike_ownership_event_type"];
+          from_customer_id?: string | null;
+          id?: string;
+          reason?: string | null;
+          to_customer_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "bike_ownership_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bike_ownership_events_bike_id_fkey";
+            columns: ["bike_id"];
+            isOneToOne: false;
+            referencedRelation: "bikes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bike_ownership_events_from_customer_id_fkey";
+            columns: ["from_customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bike_ownership_events_to_customer_id_fkey";
+            columns: ["to_customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      bikes: {
+        Row: {
+          archived_at: string | null;
+          brand: string;
+          colour: string | null;
+          created_at: string;
+          customer_id: string | null;
+          description: string | null;
+          frame_size: string | null;
+          id: string;
+          internal_notes: string | null;
+          inventory_unit_id: string | null;
+          model: string;
+          search_text: string | null;
+          serial_key: string | null;
+          serial_number: string | null;
+          short_id: string;
+          updated_at: string;
+          variant: string | null;
+        };
+        Insert: {
+          archived_at?: string | null;
+          brand: string;
+          colour?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          description?: string | null;
+          frame_size?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          inventory_unit_id?: string | null;
+          model: string;
+          search_text?: never;
+          serial_key?: never;
+          serial_number?: string | null;
+          short_id?: string;
+          updated_at?: string;
+          variant?: string | null;
+        };
+        Update: {
+          archived_at?: string | null;
+          brand?: string;
+          colour?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          description?: string | null;
+          frame_size?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          inventory_unit_id?: string | null;
+          model?: string;
+          search_text?: never;
+          serial_key?: never;
+          serial_number?: string | null;
+          short_id?: string;
+          updated_at?: string;
+          variant?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "bikes_customer_id_fkey";
+            columns: ["customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      customers: {
+        Row: {
+          archived_at: string | null;
+          auth_user_id: string | null;
+          created_at: string;
+          display_name: string | null;
+          email: string | null;
+          first_name: string | null;
+          id: string;
+          internal_notes: string | null;
+          last_name: string | null;
+          phone: string | null;
+          phone_digits: string | null;
+          search_text: string | null;
+          shopify_customer_id: string | null;
+          short_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          auth_user_id?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string | null;
+          first_name?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          last_name?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          shopify_customer_id?: string | null;
+          short_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          auth_user_id?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string | null;
+          first_name?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          last_name?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          shopify_customer_id?: string | null;
+          short_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       staff: {
         Row: {
           active: boolean;
@@ -255,6 +442,34 @@ export type Database = {
           role: Database["public"]["Enums"]["staff_role"];
         }[];
       };
+      transfer_bike_ownership: {
+        Args: { bike_id: string; reason: string; to_customer_id: string };
+        Returns: {
+          archived_at: string | null;
+          brand: string;
+          colour: string | null;
+          created_at: string;
+          customer_id: string | null;
+          description: string | null;
+          frame_size: string | null;
+          id: string;
+          internal_notes: string | null;
+          inventory_unit_id: string | null;
+          model: string;
+          search_text: string | null;
+          serial_key: string | null;
+          serial_number: string | null;
+          short_id: string;
+          updated_at: string;
+          variant: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "bikes";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_staff: {
         Args: {
           display_name?: string;
@@ -281,6 +496,7 @@ export type Database = {
       };
     };
     Enums: {
+      bike_ownership_event_type: "registered" | "transferred";
       permission_key:
         | "view_costs"
         | "manage_inventory"
@@ -409,6 +625,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      bike_ownership_event_type: ["registered", "transferred"],
       permission_key: [
         "view_costs",
         "manage_inventory",
