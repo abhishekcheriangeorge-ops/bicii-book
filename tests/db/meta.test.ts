@@ -1,17 +1,28 @@
 /**
  * Catalogue-wide invariants. These query the system catalogs, so they cover
  * every future migration automatically: a new table without RLS, a function
- * left executable by PUBLIC, or a float money column fails here.
+ * left executable by PUBLIC, an object anon or authenticated can reach that
+ * the API surface fixture does not list, or a float or NaN-capable money
+ * column fails here.
  */
 import type pg from "pg";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import {
+  ANON_FUNCTIONS,
+  ANON_RELATIONS,
+  AUTHENTICATED_FUNCTIONS,
+  AUTHENTICATED_RELATIONS,
+  DEFINER_VIEWS,
+} from "../fixtures/api-surface";
 import { connect } from "./harness";
 
 let conn: pg.Client;
 
 beforeAll(async () => {
   conn = await connect();
+  // Function signatures below print type names relative to this path.
+  await conn.query("set search_path to public");
 });
 
 const APP_SCHEMAS = ["public", "private", "reporting"];
@@ -41,6 +52,102 @@ describe("RLS", () => {
           and grantee in ('PUBLIC', 'anon', 'authenticated')`,
     );
     expect(rows).toEqual([]);
+  });
+});
+
+/** Schemas an API role can reach at all: exposed (`public`) and the view schema. */
+const API_SCHEMAS = ["public", "reporting"];
+const API_ROLES = ["anon", "authenticated"] as const;
+
+async function reachableFunctions(role: string): Promise<string[]> {
+  const { rows } = await conn.query<{ fn: string }>(
+    `select n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' as fn
+       from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = any($2)
+        and not exists (
+          select 1 from pg_depend d
+           where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
+        )
+        and has_function_privilege($1, p.oid, 'EXECUTE')
+      order by 1`,
+    [role, API_SCHEMAS],
+  );
+  return rows.map((r) => r.fn);
+}
+
+/** Every privilege `role` holds on every relation (table, view, sequence...) in the API schemas. */
+async function reachableRelations(role: string): Promise<Record<string, string[]>> {
+  const { rows } = await conn.query<{ rel: string; privileges: string[] }>(
+    `select n.nspname || '.' || c.relname as rel,
+            array(
+              select p from unnest(
+                case when c.relkind = 'S'
+                  then array['USAGE', 'SELECT', 'UPDATE']
+                  else array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']
+                end) p
+               where case
+                 when c.relkind = 'S' then has_sequence_privilege($1, c.oid, p)
+                 when p in ('SELECT', 'INSERT', 'UPDATE', 'REFERENCES')
+                   then has_any_column_privilege($1, c.oid, p)
+                 else has_table_privilege($1, c.oid, p)
+               end
+               order by p
+            ) as privileges
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = any($2) and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+      order by 1`,
+    [role, API_SCHEMAS],
+  );
+  return Object.fromEntries(
+    rows.filter((r) => r.privileges.length > 0).map((r) => [r.rel, r.privileges]),
+  );
+}
+
+const sorted = (record: Readonly<Record<string, readonly string[]>>) =>
+  Object.fromEntries(
+    Object.entries(record)
+      .map(([k, v]) => [k, [...v].sort()] as const)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+
+describe("API surface (tests/fixtures/api-surface.ts)", () => {
+  // The devstack recreates hosted Supabase's default grants on `public`
+  // (supabase/devstack/roles.sql), so anything a migration forgot to revoke
+  // shows up here exactly as it would be exposed in production.
+  it("anon can execute exactly the allow-listed functions", async () => {
+    expect(await reachableFunctions("anon")).toEqual([...ANON_FUNCTIONS].sort());
+  });
+
+  it("authenticated can execute exactly the allow-listed functions", async () => {
+    expect(await reachableFunctions("authenticated")).toEqual([...AUTHENTICATED_FUNCTIONS].sort());
+  });
+
+  it("anon holds exactly the allow-listed privileges on tables, views and sequences", async () => {
+    expect(await reachableRelations("anon")).toEqual(sorted(ANON_RELATIONS));
+  });
+
+  it("authenticated holds exactly the allow-listed privileges on tables, views and sequences", async () => {
+    expect(await reachableRelations("authenticated")).toEqual(sorted(AUTHENTICATED_RELATIONS));
+  });
+
+  it("every view an API role can read runs as the caller (security_invoker) or is allow-listed", async () => {
+    const { rows } = await conn.query<{ view: string }>(
+      `select n.nspname || '.' || c.relname as view
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = any($1) and c.relkind in ('v', 'm')
+          and exists (
+            select 1 from unnest($2::text[]) r(role)
+             where has_any_column_privilege(r.role, c.oid, 'SELECT')
+          )
+          and not coalesce('security_invoker=true' = any(c.reloptions), false)
+          and not coalesce('security_invoker=on' = any(c.reloptions), false)
+        order by 1`,
+      [API_SCHEMAS, API_ROLES],
+    );
+    expect(rows.map((r) => r.view)).toEqual([...DEFINER_VIEWS].sort());
   });
 });
 
@@ -107,13 +214,73 @@ describe("money", () => {
     expect(rows).toEqual([]);
   });
 
-  it("money_amount is numeric(12,2)", async () => {
+  it("money_amount is numeric(12,2) and rate_fraction numeric(5,4)", async () => {
     const { rows } = await conn.query(
-      `select data_type, numeric_precision, numeric_scale
+      `select domain_name, data_type, numeric_precision, numeric_scale
          from information_schema.domains
-        where domain_schema = 'public' and domain_name = 'money_amount'`,
+        where domain_schema = 'public' and domain_name in ('money_amount', 'rate_fraction')
+        order by domain_name`,
     );
-    expect(rows).toEqual([{ data_type: "numeric", numeric_precision: 12, numeric_scale: 2 }]);
+    expect(rows).toEqual([
+      {
+        domain_name: "money_amount",
+        data_type: "numeric",
+        numeric_precision: 12,
+        numeric_scale: 2,
+      },
+      {
+        domain_name: "rate_fraction",
+        data_type: "numeric",
+        numeric_precision: 5,
+        numeric_scale: 4,
+      },
+    ]);
+  });
+
+  it("money and rate domains reject NaN (23514) and still accept NULL", async () => {
+    for (const domain of ["public.money_amount", "public.rate_fraction"]) {
+      await expect(conn.query(`select 'NaN'::${domain}`)).rejects.toMatchObject({
+        code: "23514",
+      });
+      const { rows } = await conn.query(`select null::${domain} as v, '0.3'::${domain} as ok`);
+      expect(rows[0].v).toBeNull();
+      expect(Number(rows[0].ok)).toBe(0.3);
+    }
+  });
+
+  it("every numeric column of a table uses a domain, and every numeric domain rejects NaN", async () => {
+    // A bare numeric column would accept 'NaN', which poisons sums and
+    // passes range checks (NaN sorts above every number).
+    const bare = await conn.query<{ col: string }>(
+      `select c.table_schema || '.' || c.table_name || '.' || c.column_name as col
+         from information_schema.columns c
+         join information_schema.tables t
+           on t.table_schema = c.table_schema and t.table_name = c.table_name
+        where c.table_schema = any($1)
+          and t.table_type = 'BASE TABLE'
+          and c.data_type = 'numeric'
+          and c.domain_name is null
+        order by 1`,
+      [APP_SCHEMAS],
+    );
+    expect(bare.rows.map((r) => r.col)).toEqual([]);
+
+    const unchecked = await conn.query<{ domain: string }>(
+      `select n.nspname || '.' || t.typname as domain
+         from pg_type t
+         join pg_namespace n on n.oid = t.typnamespace
+        where t.typtype = 'd'
+          and t.typbasetype = 'numeric'::regtype
+          and n.nspname = any($1)
+          and not exists (
+            select 1 from pg_constraint k
+             where k.contypid = t.oid and k.contype = 'c'
+               and pg_get_constraintdef(k.oid) ilike '%NaN%'
+          )
+        order by 1`,
+      [APP_SCHEMAS],
+    );
+    expect(unchecked.rows.map((r) => r.domain)).toEqual([]);
   });
 });
 

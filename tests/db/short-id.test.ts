@@ -28,34 +28,46 @@ const next = (c: pg.Client, prefix: string | null) =>
 
 const seq = (id: string) => Number(id.split("-")[1]);
 
+// nextval and setval are not transactional: every call below consumes
+// sequence values for good, even inside a rolled-back transaction. Short IDs
+// are never reused, so these run only on a per-file clone, never against a
+// database someone keeps (BICII_TEST_DATABASE_URL, TESTING.md).
+const consumesSequences = it.skipIf(!isolatedDatabase());
+
 describe("private.next_short_id", () => {
-  it("formats every prefix as PREFIX-000000 and agrees with src/lib/ids.ts", async () => {
-    for (const prefix of Object.keys(SHORT_ID_KINDS)) {
-      const id = await next(conn, prefix);
-      expect(id).toMatch(new RegExp(`^${prefix}-\\d{6}$`));
-      expect(parseShortId(id)).toEqual({
-        kind: SHORT_ID_KINDS[prefix as keyof typeof SHORT_ID_KINDS],
-        shortId: id,
-      });
-    }
-  });
+  consumesSequences(
+    "formats every prefix as PREFIX-000000 and agrees with src/lib/ids.ts",
+    async () => {
+      for (const prefix of Object.keys(SHORT_ID_KINDS)) {
+        const id = await next(conn, prefix);
+        expect(id).toMatch(new RegExp(`^${prefix}-\\d{6}$`));
+        expect(parseShortId(id)).toEqual({
+          kind: SHORT_ID_KINDS[prefix as keyof typeof SHORT_ID_KINDS],
+          shortId: id,
+        });
+      }
+    },
+  );
 
-  it("is strictly increasing per prefix and independent across prefixes", async () => {
-    const b = [];
-    for (let i = 0; i < 25; i++) b.push(seq(await next(conn, "B")));
-    for (let i = 1; i < b.length; i++) expect(b[i]).toBeGreaterThan(b[i - 1]);
-    const po1 = seq(await next(conn, "PO"));
-    const po2 = seq(await next(conn, "PO"));
-    expect(po2).toBe(po1 + 1);
-  });
+  consumesSequences(
+    "is strictly increasing per prefix and independent across prefixes",
+    async () => {
+      const b = [];
+      for (let i = 0; i < 25; i++) b.push(seq(await next(conn, "B")));
+      for (let i = 1; i < b.length; i++) expect(b[i]).toBeGreaterThan(b[i - 1]);
+      const po1 = seq(await next(conn, "PO"));
+      const po2 = seq(await next(conn, "PO"));
+      expect(po2).toBe(po1 + 1);
+    },
+  );
 
-  it("never reuses a value, even when the transaction rolls back", async () => {
+  consumesSequences("never reuses a value, even when the transaction rolls back", async () => {
     const rolledBack = await inTransaction(conn, (tx) => next(tx, "J"));
     const after = await next(conn, "J");
     expect(seq(after)).toBeGreaterThan(seq(rolledBack));
   });
 
-  it("hands out unique values to concurrent connections", async () => {
+  consumesSequences("hands out unique values to concurrent connections", async () => {
     const conns = await openConnections(4);
     const results = await Promise.all(
       conns.map(async (c) => {
@@ -76,17 +88,13 @@ describe("private.next_short_id", () => {
     }
   });
 
-  // setval is not transactional: only on a per-file clone.
-  it.skipIf(!isolatedDatabase())(
-    "raises instead of truncating or wrapping past 999999",
-    async () => {
-      await inTransaction(conn, async (tx) => {
-        await tx.query("select setval('private.seq_short_id_s', 999998)");
-        expect(await next(tx, "S")).toBe("S-999999");
-        await expect(next(tx, "S")).rejects.toMatchObject({ code: "2200H" });
-      });
-    },
-  );
+  consumesSequences("raises instead of truncating or wrapping past 999999", async () => {
+    await inTransaction(conn, async (tx) => {
+      await tx.query("select setval('private.seq_short_id_s', 999998)");
+      expect(await next(tx, "S")).toBe("S-999999");
+      await expect(next(tx, "S")).rejects.toMatchObject({ code: "2200H" });
+    });
+  });
 
   it("is not callable by API roles", async () => {
     await expect(asStaff(conn, STAFF.admin, (tx) => next(tx, "B"))).rejects.toMatchObject({

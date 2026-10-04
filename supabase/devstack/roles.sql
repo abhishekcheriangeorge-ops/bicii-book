@@ -6,8 +6,13 @@
 -- stock Postgres 16. It must NEVER be copied into supabase/migrations.
 --
 -- Our own migrations do not rely on anything here beyond the existence of
--- the roles: every migration revokes and grants per object explicitly, so
--- behaviour is identical here and on hosted Supabase.
+-- the roles: every migration revokes and grants per object explicitly. To
+-- prove that, this file also recreates hosted Supabase's DEFAULT PRIVILEGES
+-- on `public` (new tables, sequences and functions are granted to anon,
+-- authenticated and service_role), so a migration that forgets its
+-- explicit revoke exposes the object here exactly as it would on hosted
+-- Supabase, and the meta DB tests (tests/db/meta.test.ts, "API surface")
+-- fail.
 --
 -- Run as a superuser against the target database. Idempotent. Roles are
 -- cluster-wide; schemas and grants are per database.
@@ -97,3 +102,33 @@ grant usage on schema auth to anon, authenticated, service_role;
 grant usage on schema storage to anon, authenticated, service_role;
 grant all on schema auth to supabase_auth_admin;
 grant all on schema storage to supabase_storage_admin;
+
+-- ---------------------------------------------------------------------------
+-- Hosted Supabase's default privileges on `public`, for the role that runs
+-- the migrations. Hosted (and `supabase start`) run
+--   alter default privileges [for role postgres] in schema public
+--     grant all on tables|functions|sequences to anon, authenticated, service_role;
+-- Migrations here run as whichever superuser runs the scripts (postgres
+-- locally, another name on some CI images), so grant for that role, and for
+-- `postgres` too when it is a different role.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  migration_role text;
+begin
+  foreach migration_role in array array[current_user::text, 'postgres'] loop
+    execute format(
+      'alter default privileges for role %I in schema public grant all on tables to anon, authenticated, service_role',
+      migration_role
+    );
+    execute format(
+      'alter default privileges for role %I in schema public grant all on sequences to anon, authenticated, service_role',
+      migration_role
+    );
+    execute format(
+      'alter default privileges for role %I in schema public grant all on functions to anon, authenticated, service_role',
+      migration_role
+    );
+  end loop;
+end
+$$;
