@@ -9,6 +9,8 @@
  *      (Auth issues a JWT, PostgREST answers my_staff_profile with it).
  *
  * Needs Postgres 16 and the devstack cache (`npm run devstack:setup`, once).
+ * E2E_EXTERNAL_STACK=1 skips steps 1 and 2 for a stack this script does not
+ * manage (`supabase start`, already reset and seeded); step 3 still runs.
  */
 import { execFileSync } from "node:child_process";
 
@@ -59,11 +61,17 @@ async function stackWorks(): Promise<boolean> {
 export default async function globalSetup() {
   const env = { DATABASE_URL: withDatabase(databaseUrl(), DEFAULT_DB_NAME) };
 
-  if (process.env.E2E_RESET !== "0") {
-    console.info("[e2e] resetting bicii_dev (set E2E_RESET=0 to skip)");
-    run("db.mjs", ["reset"], env);
+  if (process.env.E2E_EXTERNAL_STACK === "1") {
+    // `supabase start` (Docker) or another stack on the same URL and demo
+    // keys: the caller resets and seeds it (`supabase db reset`).
+    console.info(`[e2e] using the external stack at ${GATEWAY_URL} as it is`);
+  } else {
+    if (process.env.E2E_RESET !== "0") {
+      console.info("[e2e] resetting bicii_dev (set E2E_RESET=0 to skip)");
+      run("db.mjs", ["reset"], env);
+    }
+    run("start.mjs", [], env);
   }
-  run("start.mjs", [], env);
 
   // After a reset the services reconnect and PostgREST reloads its schema
   // cache; give them a moment.

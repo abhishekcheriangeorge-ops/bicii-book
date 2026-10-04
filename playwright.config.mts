@@ -20,6 +20,7 @@ import {
  *   npm run test:e2e
  *   E2E_REUSE_SERVER=1 npm run test:e2e   # use an app already on E2E_PORT
  *   E2E_RESET=0 npm run test:e2e          # keep bicii_dev as it is
+ *   E2E_EXTERNAL_STACK=1 npm run test:e2e # `supabase start` instead of the devstack
  */
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = `http://localhost:${PORT}`;
