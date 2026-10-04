@@ -13,17 +13,36 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
+import pg from "pg";
+
 import { ROOT, databaseUrl, fail, log, redact, withDatabase } from "./config.mjs";
 import { applyMigrations, buildDatabase, dropDatabase } from "./database.mjs";
 
 const SUPABASE_CLI = "supabase@2.119.0";
 const TYPES_FILE = path.join(ROOT, "src", "lib", "database.types.ts");
 
+/**
+ * A running PostgREST reconnects to a recreated database as soon as it
+ * exists, which can be before the migrations ran, and then serves an empty
+ * schema cache. NOTIFY makes it reload (it LISTENs on "pgrst"); harmless
+ * when PostgREST is not running.
+ */
+async function reloadPostgrest(url) {
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  try {
+    await client.query("notify pgrst, 'reload schema'");
+  } finally {
+    await client.end();
+  }
+}
+
 async function reset() {
   const url = databaseUrl();
   log(`resetting ${redact(url)}`);
   const started = Date.now();
   await buildDatabase(url, { onStep: (s) => log(s) });
+  await reloadPostgrest(url);
   log(`database ready in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   log("seeded logins (password bicii-dev-password): admin@, mechanic1@, mechanic2@bicii.test");
 }
@@ -34,6 +53,7 @@ async function migrate() {
   const applied = await applyMigrations(url, {
     onApply: (m) => log(`applied ${m.version}_${m.name}`),
   });
+  if (applied.length > 0) await reloadPostgrest(url);
   log(applied.length === 0 ? "already up to date" : `${applied.length} migration(s) applied`);
 }
 

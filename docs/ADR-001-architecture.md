@@ -47,7 +47,8 @@ memory):
   `src/lib/database.types.ts`.
 - `@supabase/ssr` for cookie-based sessions in Server Components, Server
   Actions, Route Handlers and `proxy.ts`. `@supabase/supabase-js` with the
-  service-role key only inside `src/lib/integrations/` and never in anything a
+  service-role key only inside `src/lib/admin/` (Supabase Auth admin API, e.g.
+  creating a staff login) and `src/lib/integrations/`, and never in anything a
   browser can import.
 - Validation: `zod` at every trust boundary (Server Action inputs, webhook
   payloads, env vars via a `src/lib/env.ts` parsed once at startup).
@@ -156,7 +157,7 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
 | Server Components, Actions, Route Handlers | `createServerClient` from `@supabase/ssr` with the `cookies()` store | anon key | RLS applies. The only way the UI reads data. |
 | `proxy.ts` | `createServerClient` with request/response cookies | anon key | Refresh only. |
 | Client Components | `createBrowserClient` | anon key | Only for realtime subscriptions (board updates) and Storage uploads from the camera. No business reads. |
-| Integration workers, webhook handlers | `createClient` with service role | service role | Lives in `src/lib/integrations/**`, `import 'server-only'`, never reachable from a component import graph. |
+| Auth admin, integration workers, webhook handlers | `createServiceClient()` (`src/lib/supabase/service.ts`) | service role | Imported only from `src/lib/admin/**` and `src/lib/integrations/**` (ESLint `no-restricted-imports`), `import 'server-only'`, never reachable from a component import graph. Staff rows are still created through `create_staff` as the inviting user, so the database checks authorization. |
 | Tests | `pg` directly | DB superuser + `set local role` and `request.jwt.claims`, as PostgREST does | See TESTING.md. |
 | Local development | Same clients against the devstack gateway `http://127.0.0.1:54321` (or `supabase start`) | local demo anon / service-role keys written to `.env.local` by `npm run devstack:env` | Keys are signed with the well-known local demo secret; never used outside local. |
 
@@ -243,8 +244,8 @@ bicii-book/
     unit/                    vitest
     db/                      vitest over pg
     e2e/                     playwright
-  proxy.ts
-  instrumentation.ts
+    proxy.ts                 in src/ (next to app/), as the Next 16 docs require with a src dir
+    instrumentation.ts       likewise
 ```
 
 ## Consequences

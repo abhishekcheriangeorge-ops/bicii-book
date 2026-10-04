@@ -22,7 +22,9 @@
     "devstack:env": "node scripts/devstack/env.mjs",
     "db:reset": "node scripts/devstack/db.mjs reset",
     "db:migrate": "node scripts/devstack/db.mjs migrate",
-    "db:types": "node scripts/devstack/db.mjs types"
+    "db:types": "node scripts/devstack/db.mjs types",
+    "icons": "node scripts/icons.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -32,9 +34,11 @@
     "pino": "^10.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
@@ -51,6 +55,7 @@
     "pg": "^8.23.1",
     "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.3"
