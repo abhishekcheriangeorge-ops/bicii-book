@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { HistoryList, MovementList } from "@/components/domain/movement-list";
+import { CopyText } from "@/components/domain/copy-text";
 import { PhotoGrid } from "@/components/domain/photo-grid";
+import { PublicPreviewPanel } from "@/components/domain/public-preview";
 import { ShortId } from "@/components/domain/short-id";
 import { StockTransferButton } from "@/components/domain/stock-transfer-sheet";
 import { EditUnitButton, WriteOffUnitControl } from "@/components/domain/unit-sheet";
@@ -17,6 +19,7 @@ import { getUnit, listLocations } from "@/lib/domain/inventory";
 import { unitStatusLabel, unitStatusTone } from "@/lib/inventory";
 import { describeUnitEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
+import { qrUrl } from "@/lib/qr";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -36,7 +39,8 @@ const OWNERSHIP_LABELS: Record<string, string> = {
  * the selling price and, only for view_costs holders, cost, yield and Cult
  * Commons; photos (internal or public), movements and history. Edit
  * details and Transfer need manage_inventory (Transfer only while in
- * stock: available or reserved); Write off needs adjust_stock.
+ * stock: available or reserved); Write off needs adjust_stock. Its QR URL
+ * and what the public sees (read-only: publication is the product's).
  */
 export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
   const staff = await requireStaff();
@@ -51,6 +55,7 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
     listLocations(supabase),
   ]);
   if (!unit) notFound();
+  const qr = await qrUrl(unit.shortId);
 
   const inStock = unit.status === "available" || unit.status === "reserved";
   const archived = unit.archivedAt !== null;
@@ -209,6 +214,23 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
           ) : null}
         </Card>
       </div>
+
+      <Card title="Public listing">
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-dust-700">
+            Published with its product.{" "}
+            <Link href={`/products/${unit.product.id}`} className="font-medium underline">
+              Change it on {unit.product.shortId}
+            </Link>
+            .
+          </p>
+          <div className="flex flex-col gap-1">
+            <h3 className="font-display text-xs font-bold tracking-wide uppercase">QR label URL</h3>
+            <CopyText value={qr} label="QR label URL" />
+          </div>
+          <PublicPreviewPanel preview={unit.publicPreview} />
+        </div>
+      </Card>
 
       <Card title="Photos">
         <PhotoGrid

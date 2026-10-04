@@ -19,7 +19,7 @@ import { adjustmentPreview, signedQuantity } from "@/lib/inventory";
 import { REASON_MAX_LENGTH } from "@/lib/reasons";
 import { newId } from "@/lib/uuid";
 
-import { NO_ACTIVE_LOCATION } from "./add-part-sheet";
+import { NoActiveLocation } from "./no-active-location";
 
 type State = ActionResult<{ movementId: number; onHand: number }> | null;
 
@@ -143,7 +143,7 @@ function AdjustStockSheet({
         <EmptyState
           icon={<BoxIcon />}
           title="Nowhere to count stock"
-          description={NO_ACTIVE_LOCATION}
+          description={<NoActiveLocation />}
         />
       ) : (
         <form

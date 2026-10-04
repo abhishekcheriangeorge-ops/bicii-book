@@ -27,7 +27,7 @@ import type { ActionResult } from "@/lib/actions";
 import type { TrackingType } from "@/lib/inventory";
 import { newId } from "@/lib/uuid";
 
-import { NO_ACTIVE_LOCATION } from "./add-part-sheet";
+import { NoActiveLocation } from "./no-active-location";
 
 type State = ActionResult<unknown> | null;
 type Errors = Record<string, string[]> | undefined;
@@ -90,7 +90,11 @@ export function UnitFields({
   };
   if (active.length === 0) {
     return (
-      <EmptyState icon={<BoxIcon />} title="Nowhere to keep it" description={NO_ACTIVE_LOCATION} />
+      <EmptyState
+        icon={<BoxIcon />}
+        title="Nowhere to keep it"
+        description={<NoActiveLocation />}
+      />
     );
   }
   return (

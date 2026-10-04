@@ -8,6 +8,10 @@ import {
   canChangePublication,
   canChangeUnitStatus,
   manualPublicationTargets,
+  missingRequirements,
+  publicAvailabilityLabel,
+  publicationActions,
+  publicationChecklist,
   MOVEMENT_FILTERS,
   adjustmentPreview,
   defaultLocation,
@@ -177,5 +181,71 @@ describe("stock display (Phase 4 screens)", () => {
     );
     expect(overdrawWarning(1, 0, "Shop floor")).toMatch(/^None counted at Shop floor\./);
     expect(overdrawWarning(1, 1, "Shop floor")).toBeNull();
+  });
+});
+
+describe("publicationActions (the publication card's buttons, D26)", () => {
+  type Options = Parameters<typeof publicationActions>[1];
+  const counted: Options = { trackingType: "quantity", availableUnits: 0 };
+  const labels = (from: Parameters<typeof publicationActions>[0], o: Options = counted) =>
+    publicationActions(from, o).map((a) => `${a.label}:${a.to}`);
+
+  it("names every manual move", () => {
+    expect(labels("draft")).toEqual(["Make internal:internal_only", "Archive listing:archived"]);
+    expect(labels("internal_only")).toEqual(["Publish:public", "Archive listing:archived"]);
+    expect(labels("public")).toEqual(["Unpublish:internal_only", "Archive listing:archived"]);
+    expect(labels("archived")).toEqual(["Restore:internal_only"]);
+  });
+
+  it("offers a sold product only Archive listing, and never Sold", () => {
+    expect(labels("sold")).toEqual(["Archive listing:archived"]);
+    for (const from of PUBLICATION_STATUSES) {
+      expect(publicationActions(from, counted).some((a) => a.to === "sold")).toBe(false);
+    }
+  });
+
+  it("has no Publish for a unique product without an available unit", () => {
+    expect(labels("internal_only", { trackingType: "unique", availableUnits: 0 })).toEqual([
+      "Archive listing:archived",
+    ]);
+    expect(labels("internal_only", { trackingType: "unique", availableUnits: 1 })).toContain(
+      "Publish:public",
+    );
+  });
+});
+
+describe("publicationChecklist and missingRequirements", () => {
+  it("lists name, price and a public photo, plus an available unit for unique products", () => {
+    expect(
+      publicationChecklist({ name: true, price: true, publicPhoto: false }).map((r) => r.label),
+    ).toEqual(["A name", "A sale price", "A public photo"]);
+    expect(
+      publicationChecklist({ name: true, price: true, publicPhoto: true, availableUnit: false }),
+    ).toEqual([
+      { key: "name", label: "A name", met: true },
+      { key: "price", label: "A sale price", met: true },
+      { key: "publicPhoto", label: "A public photo", met: true },
+      { key: "availableUnit", label: "An available unit", met: false },
+    ]);
+  });
+
+  it("names what is missing, or nothing when all is met", () => {
+    expect(missingRequirements({ name: true, price: true, publicPhoto: false })).toBe(
+      "Still needed: A public photo.",
+    );
+    expect(
+      missingRequirements({ name: true, price: false, publicPhoto: false, availableUnit: false }),
+    ).toBe("Still needed: A sale price, A public photo, An available unit.");
+    expect(missingRequirements({ name: true, price: true, publicPhoto: true })).toBeNull();
+  });
+});
+
+describe("publicAvailabilityLabel", () => {
+  it("names reporting.public_items availability", () => {
+    expect(publicAvailabilityLabel("available")).toBe("Available");
+    expect(publicAvailabilityLabel("sold_out")).toBe("Sold out");
+    expect(publicAvailabilityLabel("sold")).toBe("Sold");
+    expect(publicAvailabilityLabel("unavailable")).toBe("Unavailable");
+    expect(publicAvailabilityLabel(null)).toBe("Unavailable");
   });
 });

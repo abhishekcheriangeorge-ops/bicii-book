@@ -5,9 +5,12 @@ import { notFound } from "next/navigation";
 import { AdjustStockButton } from "@/components/domain/adjust-stock-sheet";
 import { ArchiveControl } from "@/components/domain/archive-control";
 import { HistoryList, MovementList } from "@/components/domain/movement-list";
+import { NoActiveLocation } from "@/components/domain/no-active-location";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { EditProductButton } from "@/components/domain/product-sheet";
+import { PublicationControls } from "@/components/domain/publication-card";
 import { ShortId } from "@/components/domain/short-id";
+import { SplitToUniqueButton } from "@/components/domain/split-to-unique-sheet";
 import { StockBadge } from "@/components/domain/stock-badge";
 import { StockTransferButton } from "@/components/domain/stock-transfer-sheet";
 import { AddUnitButton } from "@/components/domain/unit-sheet";
@@ -27,6 +30,7 @@ import {
 } from "@/lib/inventory";
 import { describeProductEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
+import { qrUrl } from "@/lib/qr";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -43,7 +47,10 @@ const plain = (n: number) => signedQuantity(n).replace(/^\+/, "");
  * yield and Cult Commons (the DTO has none otherwise); photos (internal or
  * public, never customer); recent movements; history; archive. Adjust
  * stock needs adjust_stock, Transfer, Edit details, Add unit and Archive
- * need manage_inventory. Step 4 adds the publication card.
+ * need manage_inventory. The publication card (D26) shows the status, the
+ * manual moves (manage_inventory), what publishing needs, the QR URL and
+ * what the public sees; "Split off as unique item" (D28) needs both
+ * adjust_stock and manage_inventory and is offered on counted products.
  */
 export default async function ProductPage({ params }: PageProps<"/products/[id]">) {
   const staff = await requireStaff();
@@ -59,6 +66,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
     manage ? listProductCategories(supabase) : Promise.resolve([]),
   ]);
   if (!product) notFound();
+  const qr = await qrUrl(product.shortId);
 
   const archived = product.archivedAt !== null;
   const counted = product.trackingType === "quantity";
@@ -127,6 +135,14 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
           actions={
             counted && !archived && (canAdjust || manage) ? (
               <>
+                {canAdjust && manage ? (
+                  <SplitToUniqueButton
+                    sourceProductId={product.id}
+                    productName={product.name}
+                    defaultSalePrice={product.defaultSalePrice}
+                    stock={sheetStock}
+                  />
+                ) : null}
                 {canAdjust ? (
                   <AdjustStockButton
                     productId={product.id}
@@ -200,7 +216,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
           ) : null}
           {counted && locations.defaultLocationId === null ? (
             <p className="mt-3 text-sm text-dust-700">
-              No active stock location. Ask someone with inventory access to add one in Settings.
+              <NoActiveLocation />
             </p>
           ) : null}
         </Card>
@@ -260,13 +276,13 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
                 <li key={u.id}>
                   <Link
                     href={`/units/${u.id}`}
-                    className="flex min-h-tap items-center gap-3 rounded-xl px-2 py-2 hover:bg-dust-100"
+                    className="flex min-h-tap flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-2 py-2 hover:bg-dust-100"
                   >
                     <ShortId value={u.shortId} />
                     <StatusPill status={unitStatusTone(u.status)}>
                       {unitStatusLabel(u.status)}
                     </StatusPill>
-                    <span className="flex min-w-0 flex-1 flex-col text-sm">
+                    <span className="flex min-w-24 flex-1 flex-col text-sm">
                       <span>{u.location.name}</span>
                       {u.serialNumber ? (
                         <span className="truncate font-mono text-dust-500">
@@ -283,6 +299,19 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
           )}
         </Card>
       ) : null}
+
+      <Card title="Publication">
+        <PublicationControls
+          productId={product.id}
+          status={product.publicationStatus}
+          trackingType={product.trackingType}
+          availableUnits={product.availableUnits}
+          requirements={product.requirements}
+          qrUrl={qr}
+          preview={product.publicPreview}
+          canManage={manage}
+        />
+      </Card>
 
       <Card title="Photos">
         <PhotoGrid

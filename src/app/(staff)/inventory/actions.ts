@@ -13,6 +13,8 @@ import {
   searchParts as findParts,
   searchShopBikes as findShopBikes,
   setProductArchived as setArchived,
+  setPublicationStatus,
+  splitToUnique as split,
   transferStock as transfer,
   updateProduct as updateOneProduct,
   updateUnit as updateOneUnit,
@@ -24,6 +26,8 @@ import {
   createProductSchema,
   createUniqueItemSchema,
   searchSchema,
+  setPublicationSchema,
+  splitToUniqueSchema,
   transferStockSchema,
   updateProductSchema,
   updateUnitSchema,
@@ -202,6 +206,41 @@ export const writeOffUnit = staffAction(
     await writeOff(supabase, requestId, unitId, reason);
     refresh();
     return null;
+  },
+);
+
+/**
+ * Publish, unpublish, make internal, archive or restore a listing by hand
+ * (D26, set_publication_status). The RPC refuses 'sold' and every move it
+ * does not allow, with the reason (publication_requires_*,
+ * publication_sold_by_sale).
+ */
+export const setPublication = staffAction(
+  setPublicationSchema,
+  { name: "inventory.set_publication", permission: "manage_inventory" },
+  async ({ productId, status, reason }, { supabase }) => {
+    const result = await setPublicationStatus(supabase, productId, status, reason);
+    refresh();
+    return result;
+  },
+);
+
+/**
+ * Split one counted item off as a new draft unique product and unit (D28).
+ * The RPC needs adjust_stock AND manage_inventory; the action is gated on
+ * manage_inventory and checks adjust_stock here too, so a refusal is a
+ * plain message rather than a 403 page.
+ */
+export const splitToUnique = staffAction(
+  splitToUniqueSchema,
+  { name: "inventory.split_to_unique", permission: "manage_inventory" },
+  async (input, { supabase, staff }) => {
+    if (!hasPermission(staff, "adjust_stock")) {
+      throw new ActionError("Splitting stock also needs the adjust stock permission.");
+    }
+    const result = await split(supabase, input);
+    refresh();
+    return result;
   },
 );
 

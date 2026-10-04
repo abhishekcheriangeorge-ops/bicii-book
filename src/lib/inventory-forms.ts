@@ -271,3 +271,47 @@ export const searchSchema = z.object({
   q: z.string().trim().max(200),
   locationId: z.uuid().optional(),
 });
+
+export const setPublicationSchema = z.object({
+  productId: z.uuid({ error: "Unknown product." }),
+  status: z.enum(["draft", "internal_only", "public", "sold", "archived"], {
+    error: "Choose what to do with the listing.",
+  }),
+  reason: optionalReason,
+});
+
+/** Split off as unique item (D28): the two ids are made when the sheet opens. */
+export const splitToUniqueSchema = z.object({
+  newProductId: z.uuid({ error: "Open Split off again." }),
+  unitId: z.uuid({ error: "Open Split off again." }),
+  sourceProductId: z.uuid({ error: "Unknown product." }),
+  locationId: z.uuid({ error: "Choose where the item is." }),
+  name: productFields.name,
+  serialNumber: text(100, "serial number"),
+  condition: text(500, "condition"),
+  salePrice: optionalMoney("sale price"),
+  // The split's ledger reason is "Split to U-######: " plus this, within
+  // the ledger's 500 characters (split_unit_from_stock).
+  reason: z
+    .string({ error: "Say why it is being split off." })
+    .trim()
+    .min(1, { error: "Say why it is being split off." })
+    .max(480, { error: "Keep the reason under 480 characters." }),
+});
+
+/** A location's fields (Settings → Locations); the id is the form's idempotency key. */
+export const locationSchema = z.object({
+  id: z.uuid({ error: "Open the form again." }),
+  name: z
+    .string({ error: "Name the location." })
+    .trim()
+    .min(1, { error: "Name the location." })
+    .max(80, { error: "Keep the name under 80 characters." }),
+  kind: z.enum(["shop_floor", "workshop", "storage", "offsite"], {
+    error: "Choose what kind of place it is.",
+  }),
+  sortOrder: wholeNumber(0, 100_000, {
+    invalid: "Enter the sort order as a whole number, like 10.",
+    range: "Enter a sort order from 0 to 100,000.",
+  }),
+});

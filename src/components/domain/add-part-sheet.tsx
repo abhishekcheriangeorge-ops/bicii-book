@@ -20,6 +20,7 @@ import { overdrawWarning, signedQuantity } from "@/lib/inventory";
 import { formatMoney, lineTotal, parseMoney, toDecimal } from "@/lib/money";
 import { newId } from "@/lib/uuid";
 
+import { NoActiveLocation } from "./no-active-location";
 import { ShortId } from "./short-id";
 import { StockBadge } from "./stock-badge";
 
@@ -31,9 +32,6 @@ type Result = {
 };
 type State = ActionResult<Result> | null;
 type PartPick = PickerOption & { part: PartOption };
-
-export const NO_ACTIVE_LOCATION =
-  "No active stock location. Ask someone with inventory access to add one in Settings.";
 
 /** "12 at Shop floor · 20 total" (a unit: "At Shop floor"). */
 function stockSummary(part: PartOption, locationId: string | null): string {
@@ -361,7 +359,7 @@ function AddPartSheet({
         <EmptyState
           icon={<BoxIcon />}
           title="Nothing to take stock from"
-          description={NO_ACTIVE_LOCATION}
+          description={<NoActiveLocation />}
         />
       )}
     </Sheet>

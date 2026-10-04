@@ -5,11 +5,13 @@ import { DbError, constraintOf, mapDbError, unwrap } from "@/lib/db-errors";
 import {
   defaultLocation,
   type MovementType,
+  type PublicationRequirements,
   type PublicationStatus,
   type TrackingType,
   type UnitStatus,
 } from "@/lib/inventory";
 import { toMoneyString } from "@/lib/money";
+import type { Database } from "@/lib/database.types";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import type { WorkOrderStatus } from "@/lib/workshop";
 
@@ -128,7 +130,7 @@ const actorOf = (names: ReadonlyMap<string, string>, id: string | null) =>
 export type Location = {
   id: string;
   name: string;
-  kind: string;
+  kind: LocationKind;
   active: boolean;
   sortOrder: number;
 };
@@ -159,6 +161,76 @@ export async function listLocations(supabase: ServerSupabase): Promise<LocationL
     sortOrder: r.sort_order,
   }));
   return { locations, defaultLocationId: defaultLocation(locations)?.id ?? null };
+}
+
+export type LocationKind = Database["public"]["Enums"]["location_kind"];
+
+export type LocationInput = {
+  /** The form's id: the idempotency key of a new location. */
+  id: string;
+  name: string;
+  kind: LocationKind;
+  sortOrder: number;
+};
+
+const LOCATION_FIELDS: Record<string, string> = {
+  locations_name_key: "name",
+  locations_name_check: "name",
+};
+
+const LOCATION_NOT_FOUND = "That location no longer exists. Refresh and try again.";
+
+/**
+ * Adds a stock location (a plain insert under RLS: manage_inventory). The
+ * form's id is the idempotency key, like createProduct: a locations_pkey
+ * conflict is the location a lost response already created.
+ */
+export async function createLocation(
+  supabase: ServerSupabase,
+  input: LocationInput,
+): Promise<{ id: string }> {
+  const { error } = await supabase.from("locations").insert({
+    id: input.id,
+    name: input.name,
+    kind: input.kind,
+    sort_order: input.sortOrder,
+  });
+  if (error) {
+    if (error.code === "23505" && constraintOf(error) === "locations_pkey") return { id: input.id };
+    rethrowFields(new DbError(error), LOCATION_FIELDS);
+  }
+  return { id: input.id };
+}
+
+/** Renames a location or changes its kind and sort order (RLS: manage_inventory). */
+export async function updateLocation(
+  supabase: ServerSupabase,
+  input: LocationInput,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("locations")
+    .update({ name: input.name, kind: input.kind, sort_order: input.sortOrder })
+    .eq("id", input.id)
+    .select("id")
+    .maybeSingle();
+  if (error) rethrowFields(new DbError(error), LOCATION_FIELDS);
+  if (!data) throw new DomainError(LOCATION_NOT_FOUND);
+}
+
+/**
+ * Activates or deactivates a location. The locations trigger refuses to
+ * deactivate one still holding stock (location_has_stock); replaying the
+ * current state changes nothing.
+ */
+export async function setLocationActive(
+  supabase: ServerSupabase,
+  id: string,
+  active: boolean,
+): Promise<void> {
+  const row = unwrap(
+    await supabase.from("locations").update({ active }).eq("id", id).select("id").maybeSingle(),
+  );
+  if (!row) throw new DomainError(LOCATION_NOT_FOUND);
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +525,54 @@ export async function listMovements(
 // Product detail
 // ---------------------------------------------------------------------------
 
+/**
+ * What anonymous visitors see for one short ID: its reporting.public_items
+ * row (the only anonymous inventory surface, D9/D26), or null when it is
+ * not public. Read as staff through the same view, so the preview is the
+ * row Phase 11's public /q page will render, not a re-derivation.
+ */
+export type PublicPreview = {
+  kind: "product" | "unit";
+  shortId: string;
+  slug: string | null;
+  name: string;
+  salePrice: Money | null;
+  currency: string;
+  /** available, sold_out, sold or unavailable. */
+  availability: string;
+  /** Units only. */
+  condition: string | null;
+  photoCount: number;
+};
+
+async function publicPreview(
+  supabase: ServerSupabase,
+  kind: "product" | "unit",
+  shortId: string,
+): Promise<PublicPreview | null> {
+  const row = unwrap(
+    await supabase
+      .schema("reporting")
+      .from("public_items")
+      .select("kind, short_id, slug, name, sale_price, currency, availability, condition, photos")
+      .eq("kind", kind)
+      .eq("short_id", shortId)
+      .maybeSingle(),
+  );
+  if (!row) return null;
+  return {
+    kind,
+    shortId: row.short_id ?? shortId,
+    slug: row.slug,
+    name: row.name ?? "",
+    salePrice: money(row.sale_price),
+    currency: row.currency ?? "SGD",
+    availability: row.availability ?? "unavailable",
+    condition: row.condition,
+    photoCount: Array.isArray(row.photos) ? row.photos.length : 0,
+  };
+}
+
 export type HistoryEntry = {
   id: string;
   type: string;
@@ -516,6 +636,13 @@ export type ProductDetail = {
   /** Newest first. */
   history: HistoryEntry[];
   photos: Photo[];
+  /** Its reporting.public_items row (kind 'product'); null while not public. */
+  publicPreview: PublicPreview | null;
+  /**
+   * What publishing needs (D26), from the data loaded here; mirrors
+   * private.publication_requirements_met, which stays the authority.
+   */
+  requirements: PublicationRequirements;
   /** view_costs only (absent otherwise). */
   cost?: Money | null;
   expectedYield?: Money | null;
@@ -549,6 +676,7 @@ export async function getProduct(
     movements,
     photos,
     costsResult,
+    preview,
   ] = await Promise.all([
     listLocations(supabase),
     supabase
@@ -566,7 +694,9 @@ export async function getProduct(
     row.tracking_type === "unique"
       ? supabase
           .from("inventory_units")
-          .select("id, short_id, status, serial_number, archived_at, location:locations(id, name)")
+          .select(
+            "id, short_id, status, serial_number, archived_at, bike_id, location:locations(id, name)",
+          )
           .eq("product_id", id)
           .order("created_at", { ascending: true })
           .order("id", { ascending: true })
@@ -588,6 +718,7 @@ export async function getProduct(
           .eq("product_id", id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    publicPreview(supabase, "product", row.short_id),
   ]);
   const levels = new Map(
     (unwrap(levelsResult) ?? []).map((l) => [l.location_id, l.on_hand ?? 0] as const),
@@ -606,6 +737,39 @@ export async function getProduct(
   const unitPrice = new Map(prices.map((p) => [p.inventory_unit_id, p.selling_price] as const));
   const onHand = totals?.on_hand ?? 0;
   const negativeLocations = totals?.negative_locations ?? 0;
+  const unitRows = unwrap(unitsResult) ?? [];
+
+  // The D26 requirements, as private.publication_requirements_met checks
+  // them: a selling price (for a unique product, on every available unit),
+  // a public photo on the product, one of its units or a linked bike, and
+  // for a unique product an available unit. The name is always set (the
+  // column is required).
+  const available = unitRows.filter((u) => u.status === "available" && u.archived_at === null);
+  const unique = row.tracking_type === "unique";
+  let publicPhoto = photos.some((p) => p.visibility === "public");
+  const others = unique
+    ? [...unitRows.map((u) => u.id), ...unitRows.flatMap((u) => (u.bike_id ? [u.bike_id] : []))]
+    : [];
+  if (!publicPhoto && others.length > 0) {
+    const { count, error } = await supabase
+      .from("attachments")
+      .select("id", { count: "exact", head: true })
+      .eq("visibility", "public")
+      .in("entity_type", ["inventory_unit", "bike"])
+      .in("entity_id", others);
+    if (error) throw new DbError(error);
+    publicPhoto = (count ?? 0) > 0;
+  }
+  const requirements: PublicationRequirements = {
+    name: row.name.trim() !== "",
+    price: unique
+      ? available.length > 0
+        ? available.every((u) => unitPrice.get(u.id) != null)
+        : productPrice != null
+      : productPrice != null,
+    publicPhoto,
+    ...(unique ? { availableUnit: available.length > 0 } : {}),
+  };
 
   const detail: ProductDetail = {
     id: row.id,
@@ -635,7 +799,7 @@ export async function getProduct(
     low:
       row.tracking_type === "quantity" &&
       (totals?.below_reorder === true || onHand < 0 || negativeLocations > 0),
-    units: (unwrap(unitsResult) ?? []).map((u) => ({
+    units: unitRows.map((u) => ({
       id: u.id,
       shortId: u.short_id,
       status: u.status,
@@ -655,6 +819,8 @@ export async function getProduct(
       at: e.created_at,
     })),
     photos,
+    publicPreview: preview,
+    requirements,
   };
   if (viewCosts) {
     const costs = unwrap(costsResult);
@@ -699,6 +865,8 @@ export type UnitDetail = {
   movements: Movement[];
   history: HistoryEntry[];
   photos: Photo[];
+  /** Its reporting.public_items row (kind 'unit'); null while its product is not public. */
+  publicPreview: PublicPreview | null;
   /** view_costs only (absent otherwise). */
   cost?: Money | null;
   effectiveCost?: Money | null;
@@ -719,7 +887,7 @@ export async function getUnit(
     await supabase.from("inventory_units").select(UNIT_COLUMNS).eq("id", id).maybeSingle(),
   );
   if (!row || !row.product || !row.location) return null;
-  const [priceResult, lineResult, eventsResult, names, movements, photos, costsResult] =
+  const [priceResult, lineResult, eventsResult, names, movements, photos, costsResult, preview] =
     await Promise.all([
       supabase
         .from("selling_prices")
@@ -749,6 +917,7 @@ export async function getUnit(
             .eq("unit_id", id)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
+      publicPreview(supabase, "unit", row.short_id),
     ]);
   const line = unwrap(lineResult);
   const detail: UnitDetail = {
@@ -789,6 +958,7 @@ export async function getUnit(
       at: e.created_at,
     })),
     photos,
+    publicPreview: preview,
   };
   if (viewCosts) {
     const costs = unwrap(costsResult);
@@ -1048,6 +1218,110 @@ export async function writeOffUnit(
   } catch (err) {
     rethrowFields(err, { reason_required: "reason", reason_too_long: "reason" });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Publication (D26) and splits (D28)
+// ---------------------------------------------------------------------------
+
+/**
+ * Changes a product's publication by hand (set_publication_status,
+ * manage_inventory). The database decides every move: 'sold' is never
+ * chosen by hand and a sold product only archives (publication_sold_by_sale);
+ * entering public needs a price, a public photo and, for a unique product,
+ * an available unit (publication_requires_*). Their mapped messages reach
+ * the card. The slug is assigned at first publish and never changes.
+ */
+export async function setPublicationStatus(
+  supabase: ServerSupabase,
+  productId: string,
+  status: PublicationStatus,
+  reason?: string | null,
+): Promise<{ status: PublicationStatus; slug: string | null }> {
+  const result = unwrap(
+    await supabase.rpc("set_publication_status", {
+      product_id: productId,
+      status,
+      reason: reason?.trim() || undefined,
+    }),
+  );
+  return { status: result?.publication_status ?? status, slug: result?.public_slug ?? null };
+}
+
+export type SplitInput = {
+  /** Both made with newId() when the sheet opens: the replay keys. */
+  newProductId: string;
+  unitId: string;
+  sourceProductId: string;
+  locationId: string;
+  name: string;
+  reason: string;
+  serialNumber: string | null;
+  condition: string | null;
+  salePrice: Money | null;
+};
+
+const SPLIT_FIELDS: Record<string, string> = {
+  reason_required: "reason",
+  reason_too_long: "reason",
+  insufficient_stock: "locationId",
+  location_inactive: "locationId",
+  products_name_check: "name",
+  products_default_sale_price_check: "salePrice",
+  inventory_units_serial_number_check: "serialNumber",
+  inventory_units_condition_check: "condition",
+};
+
+/**
+ * Takes one counted item out of stock as a new draft unique product and
+ * unit at the same location (split_unit_from_stock, D28: adjust_stock and
+ * manage_inventory; the unit carries the source's default cost). Replay
+ * returns the same pair.
+ */
+export async function splitToUnique(
+  supabase: ServerSupabase,
+  input: SplitInput,
+): Promise<{ productId: string; productShortId: string; unitId: string; unitShortId: string }> {
+  try {
+    const result = unwrap(
+      await supabase.rpc("split_unit_from_stock", {
+        new_product_id: input.newProductId,
+        unit_id: input.unitId,
+        source_product_id: input.sourceProductId,
+        location_id: input.locationId,
+        name: input.name,
+        reason: input.reason,
+        serial_number: input.serialNumber ?? undefined,
+        condition: input.condition ?? undefined,
+        sale_price: input.salePrice ?? undefined,
+      }),
+    );
+    return {
+      productId: result?.product_id ?? input.newProductId,
+      productShortId: result?.product_short_id ?? "",
+      unitId: result?.unit_id ?? input.unitId,
+      unitShortId: result?.unit_short_id ?? "",
+    };
+  } catch (err) {
+    rethrowFields(err, SPLIT_FIELDS);
+  }
+}
+
+export type BikeStockUnit = { id: string; shortId: string; status: UnitStatus };
+
+/** The unit a bike is in stock as (inventory_units.bike_id is unique), read through RLS; null if none. */
+export async function getBikeStockUnit(
+  supabase: ServerSupabase,
+  bikeId: string,
+): Promise<BikeStockUnit | null> {
+  const row = unwrap(
+    await supabase
+      .from("inventory_units")
+      .select("id, short_id, status")
+      .eq("bike_id", bikeId)
+      .maybeSingle(),
+  );
+  return row ? { id: row.id, shortId: row.short_id, status: row.status } : null;
 }
 
 // ---------------------------------------------------------------------------

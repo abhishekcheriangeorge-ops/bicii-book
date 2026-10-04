@@ -73,6 +73,89 @@ export function manualPublicationTargets(
   );
 }
 
+export type PublicationAction = { to: PublicationStatus; label: string };
+
+/**
+ * The publication card's buttons (D26): manualPublicationTargets named for
+ * staff. "Publish" enters public, "Unpublish" leaves it for internal only,
+ * "Make internal" takes a draft to internal only, "Restore" brings an
+ * archived listing back to internal only and "Archive listing" archives
+ * it. Never 'sold' (sales set it); a sold product offers only Archive
+ * listing; a unique product with no available unit has no Publish.
+ */
+export function publicationActions(
+  from: PublicationStatus,
+  options: { trackingType: TrackingType; availableUnits: number },
+): PublicationAction[] {
+  return manualPublicationTargets(from, options).map((to) => ({
+    to,
+    label:
+      to === "public"
+        ? "Publish"
+        : to === "archived"
+          ? "Archive listing"
+          : from === "public"
+            ? "Unpublish"
+            : from === "archived"
+              ? "Restore"
+              : "Make internal",
+  }));
+}
+
+export type PublicationRequirements = {
+  name: boolean;
+  price: boolean;
+  publicPhoto: boolean;
+  /** Unique products only. */
+  availableUnit?: boolean;
+};
+
+const REQUIREMENT_LABELS: Record<keyof PublicationRequirements, string> = {
+  name: "A name",
+  price: "A sale price",
+  publicPhoto: "A public photo",
+  availableUnit: "An available unit",
+};
+
+/**
+ * The checklist of what publishing needs (private.publication_requirements_met,
+ * D26), in order, with whether each is met. The database decides; this only
+ * explains why Publish is disabled.
+ */
+export function publicationChecklist(
+  requirements: PublicationRequirements,
+): { key: keyof PublicationRequirements; label: string; met: boolean }[] {
+  const keys: (keyof PublicationRequirements)[] = ["name", "price", "publicPhoto"];
+  if (requirements.availableUnit !== undefined) keys.push("availableUnit");
+  return keys.map((key) => ({
+    key,
+    label: REQUIREMENT_LABELS[key],
+    met: requirements[key] === true,
+  }));
+}
+
+/** "Still needed: A sale price, A public photo." or null when everything is met. */
+export function missingRequirements(requirements: PublicationRequirements): string | null {
+  const missing = publicationChecklist(requirements)
+    .filter((r) => !r.met)
+    .map((r) => r.label);
+  return missing.length === 0 ? null : `Still needed: ${missing.join(", ")}.`;
+}
+
+/** What reporting.public_items.availability means to a shopper. */
+export function publicAvailabilityLabel(availability: string | null): string {
+  switch (availability) {
+    case "available":
+      return "Available";
+    case "sold_out":
+      return "Sold out";
+    case "sold":
+      return "Sold";
+    default:
+      return "Unavailable";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Display helpers for the stock screens (Phase 4 app). Pure; the database
 // computes every figure, these only name and colour it.
