@@ -30,15 +30,47 @@ export type ToastOptions = {
    * dismissed, so the button cannot vanish under a finger.
    */
   action?: { label: string; onAction: () => void };
+  /**
+   * A stable key: a toast with the same key replaces the one on screen in
+   * place instead of stacking another (e.g. one "3 photos not saved" per
+   * record rather than one toast per photo).
+   */
+  key?: string;
 };
 
-type ToastItem = Required<Pick<ToastOptions, "title" | "tone">> &
-  Pick<ToastOptions, "description" | "action"> & { id: number; duration: number | null };
+export type ToastItem = Required<Pick<ToastOptions, "title" | "tone">> &
+  Pick<ToastOptions, "description" | "action" | "key"> & {
+    id: number;
+    duration: number | null;
+  };
 
 type ToastApi = {
   toast: (options: ToastOptions) => number;
-  dismiss: (id: number) => void;
+  /** Dismiss by the id toast() returned, or by key. */
+  dismiss: (idOrKey: number | string) => void;
 };
+
+/** At most this many toasts on screen; only plain ones make way for new ones. */
+const MAX_TOASTS = 4;
+
+/**
+ * Adds or replaces `next` in `list`. Over MAX_TOASTS, the oldest toasts
+ * without an action go first: a toast with an action (Retry) may be the
+ * only way back to what failed, so it stays until dismissed.
+ */
+export function placeToast(list: readonly ToastItem[], next: ToastItem): ToastItem[] {
+  const at = next.key === undefined ? -1 : list.findIndex((t) => t.key === next.key);
+  if (at >= 0) return list.map((t, i) => (i === at ? next : t));
+  const out = [...list, next];
+  let excess = out.length - MAX_TOASTS;
+  return out.filter((t) => {
+    if (excess > 0 && t !== next && !t.action) {
+      excess--;
+      return false;
+    }
+    return true;
+  });
+}
 
 const ToastContext = createContext<ToastApi | null>(null);
 
@@ -63,6 +95,8 @@ const subscribeNoop = () => () => {};
  * screen readers announce reliably: polite for confirmations, assertive
  * (role="alert") for errors. Never use a toast as the only record of a
  * failure that needs action; errors also belong inline next to the field.
+ * At most four show; a new one pushes out the oldest plain one, never one
+ * with an action. A toast with a `key` updates in place.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
@@ -73,8 +107,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     () => false,
   );
 
-  const dismiss = useCallback((id: number) => {
-    setItems((list) => list.filter((t) => t.id !== id));
+  const dismiss = useCallback((idOrKey: number | string) => {
+    setItems((list) =>
+      list.filter((t) => (typeof idOrKey === "number" ? t.id !== idOrKey : t.key !== idOrKey)),
+    );
   }, []);
 
   const toast = useCallback((options: ToastOptions) => {
@@ -86,17 +122,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         : tone === "error" || options.action
           ? null
           : 5000;
-    setItems((list) => [
-      ...list.slice(-3),
-      {
+    setItems((list) =>
+      placeToast(list, {
         id,
+        key: options.key,
         title: options.title,
         description: options.description,
         action: options.action,
         tone,
         duration,
-      },
-    ]);
+      }),
+    );
     return id;
   }, []);
 

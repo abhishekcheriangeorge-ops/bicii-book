@@ -2,12 +2,14 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { UnsavedPhotos } from "@/components/domain/photo-uploads";
+
 import { HeaderSearch } from "./header-search";
 
 /**
  * Sticky top bar: BICII mark (phones; the rail shows it from md up), the
- * global search field (HeaderSearch: Enter opens /search) and the profile
- * button. Clears the notch/status bar via the safe-area inset
+ * global search field (HeaderSearch: Enter opens /search), photos that
+ * failed to save (UnsavedPhotos, from any screen) and the profile button. Clears the notch/status bar via the safe-area inset
  * (viewport-fit=cover in the root layout).
  */
 export function AppHeader({ profile }: { profile: ReactNode }) {
@@ -30,7 +32,10 @@ export function AppHeader({ profile }: { profile: ReactNode }) {
           />
         </Link>
         <HeaderSearch />
-        <div className="ml-auto flex shrink-0 items-center">{profile}</div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <UnsavedPhotos />
+          {profile}
+        </div>
       </div>
     </header>
   );

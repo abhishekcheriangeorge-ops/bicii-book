@@ -10,7 +10,7 @@ import { Spinner } from "@/components/ui/spinner";
 import type { PhotoTarget } from "@/lib/attachments";
 import { cn } from "@/lib/cn";
 
-import { usePhotoUploads, type PendingUpload } from "./use-photo-uploads";
+import { usePhotoUploads, type PendingUpload } from "./photo-uploads";
 
 /**
  * The camera control used everywhere photos are taken (SPEC §8, §22:
@@ -18,7 +18,9 @@ import { usePhotoUploads, type PendingUpload } from "./use-photo-uploads";
  * phones (`capture="environment"`); "Choose photos" picks several from the
  * library. Each photo is downscaled on the device, uploaded straight to
  * Storage with progress, and recorded; its thumbnail shows at once and a
- * failure keeps it with Retry (use-photo-uploads.ts).
+ * failure keeps it with Retry and Discard (upload-store.ts). The queue
+ * belongs to the staff layout, so photos still uploading or failed show
+ * here again when staff come back to the record.
  *
  * `hiddenIds` are photos the page already shows, so a finished upload's
  * thumbnail gives way to the real one when the page refreshes. `empty`
@@ -35,10 +37,15 @@ export function CaptureButton({
   disabled?: boolean;
   empty?: ReactNode;
 }) {
-  const { items, addFiles, retry, discard } = usePhotoUploads(target);
+  const { items, addFiles, retry, discard, forgetShown } = usePhotoUploads(target);
   const shown = items.filter(
     (it) => !(it.status === "done" && it.attachmentId && hiddenIds.includes(it.attachmentId)),
   );
+  // Saved photos the page now shows itself leave the queue.
+  const hiddenKey = hiddenIds.join(",");
+  useEffect(() => {
+    if (hiddenKey) forgetShown(hiddenKey.split(","));
+  }, [hiddenKey, forgetShown]);
   const busy = items.filter((it) => it.status !== "done" && it.status !== "failed").length;
 
   return (
@@ -178,7 +185,7 @@ function PendingTile({
   return (
     <li
       className="relative aspect-square overflow-hidden rounded-xl bg-sunken"
-      aria-label={`${item.name || "Photo"}: ${text}${item.error ? `. ${item.error}` : ""}`}
+      aria-label={`${item.label}: ${text}${item.error ? `. ${item.error}` : ""}`}
     >
       <Image
         src={item.previewUrl}
@@ -193,7 +200,7 @@ function PendingTile({
           <div className="flex items-start justify-between gap-1">
             <AlertIcon className="m-2 size-5 shrink-0" />
             <IconButton
-              aria-label={`Discard ${item.name || "photo"}`}
+              aria-label={`Discard ${item.label.toLowerCase()}`}
               icon={<CloseIcon className="size-4" />}
               variant="inherit"
               onClick={() => onDiscard(item.key)}
@@ -220,7 +227,7 @@ function PendingTile({
           {item.status === "uploading" ? (
             <span
               role="progressbar"
-              aria-label={`Uploading ${item.name || "photo"}`}
+              aria-label={`Uploading ${item.label.toLowerCase()}`}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(item.progress * 100)}

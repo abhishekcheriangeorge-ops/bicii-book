@@ -15,7 +15,12 @@ import {
  *
  * If the browser cannot decode the file (HEIC outside Safari, say), the
  * original is uploaded as it is, provided it is a photo type Storage
- * accepts. Browser-only (canvas, createImageBitmap).
+ * accepts, labelled with the type its name says when the browser gave it
+ * none (Storage checks the uploaded part's type against the bucket). Such
+ * an original keeps its metadata, GPS position included, so it is recorded
+ * without dimensions and can never be made public (attachments migration:
+ * `attachment_original_never_public`). Browser-only (canvas,
+ * createImageBitmap).
  */
 
 export type PreparedPhoto = {
@@ -123,5 +128,9 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
     throw new PhotoRejected(`${file.name || "That photo"} is over 20 MB.`);
   }
   // Undecodable here but a photo type Storage accepts: keep the original.
-  return { blob: file, mediaType: original, width: null, height: null };
+  // storage-js sends a Blob as a multipart part with the Blob's own type
+  // (it ignores `contentType` for Blobs), and a type-less IMG_0001.HEIC
+  // would go up as application/octet-stream, which the buckets refuse.
+  const blob = file.type === original ? file : new Blob([file], { type: original });
+  return { blob, mediaType: original, width: null, height: null };
 }
