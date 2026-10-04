@@ -6,6 +6,9 @@ import { cn } from "@/lib/cn";
 import { IconButton } from "./icon-button";
 import { CloseIcon } from "./icons";
 
+/** CSS variable the toast viewport uses as its bottom inset while a sheet is open. */
+export const TOAST_INSET_VAR = "--toast-inset-bottom";
+
 const FOCUSABLE = [
   "a[href]",
   "area[href]",
@@ -64,6 +67,7 @@ export function Sheet({
   const id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const portalRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   const dismissibleRef = useRef(dismissible);
 
@@ -132,6 +136,29 @@ export function Sheet({
     };
   }, [open, initialFocus]);
 
+  // Toasts confirm what a sheet just did; keep them above its action row
+  // instead of on top of Save/Cancel. The toast viewport reads this
+  // variable (src/components/ui/toast.tsx).
+  const hasFooter = Boolean(footer);
+  useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement;
+    const footerEl = footerRef.current;
+    if (!hasFooter || !footerEl) {
+      root.style.setProperty(TOAST_INSET_VAR, "env(safe-area-inset-bottom)");
+      return () => root.style.removeProperty(TOAST_INSET_VAR);
+    }
+    const update = () =>
+      root.style.setProperty(TOAST_INSET_VAR, `${footerEl.getBoundingClientRect().height}px`);
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(footerEl);
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty(TOAST_INSET_VAR);
+    };
+  }, [open, hasFooter]);
+
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -181,11 +208,21 @@ export function Sheet({
             className="-mr-2"
           />
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 md:px-6">
+        <div
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 md:px-6",
+            // Without a footer the body is the bottom edge: clear the iPhone
+            // home indicator (viewport-fit=cover), as the footer does.
+            footer ? "pb-5" : "pb-[max(1.25rem,env(safe-area-inset-bottom))]",
+          )}
+        >
           {children}
         </div>
         {footer ? (
-          <footer className="flex flex-wrap justify-end gap-2 border-t border-hairline bg-paper px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-6">
+          <footer
+            ref={footerRef}
+            className="flex flex-wrap justify-end gap-2 border-t border-hairline bg-paper px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-6"
+          >
             {footer}
           </footer>
         ) : null}

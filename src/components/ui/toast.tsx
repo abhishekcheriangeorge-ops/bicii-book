@@ -91,7 +91,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const viewport = (
     <div
       data-sheet-exempt=""
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:items-end md:px-6 md:pb-6"
+      className={cn(
+        "pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 pb-4 md:items-end md:px-6 md:pb-6",
+        // Phones: above the tab bar (4rem + the raised Scan disc), so a toast
+        // never covers Scan. md+: the rail is on the left, so the corner is
+        // free. An open Sheet moves both above its footer (--toast-inset-bottom).
+        "bottom-[var(--toast-inset-bottom,calc(5.25rem+env(safe-area-inset-bottom)))] md:bottom-[var(--toast-inset-bottom,0px)]",
+      )}
     >
       <ol
         aria-live="polite"
