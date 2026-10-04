@@ -242,6 +242,92 @@ export type Database = {
           },
         ];
       };
+      categories: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["category_kind"];
+          name: string;
+          parent_id: string | null;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          id?: string;
+          kind: Database["public"]["Enums"]["category_kind"];
+          name: string;
+          parent_id?: string | null;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          id?: string;
+          kind?: Database["public"]["Enums"]["category_kind"];
+          name?: string;
+          parent_id?: string | null;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "categories_parent_id_fkey";
+            columns: ["parent_id"];
+            isOneToOne: false;
+            referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      cult_commons_rates: {
+        Row: {
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          effective_from: string;
+          id: string;
+          rate: number;
+        };
+        Insert: {
+          cancelled_at?: string | null;
+          cancelled_by?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          effective_from: string;
+          id?: string;
+          rate: number;
+        };
+        Update: {
+          cancelled_at?: string | null;
+          cancelled_by?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          effective_from?: string;
+          id?: string;
+          rate?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "cult_commons_rates_cancelled_by_fkey";
+            columns: ["cancelled_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "cult_commons_rates_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       customers: {
         Row: {
           archived_at: string | null;
@@ -295,6 +381,62 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [];
+      };
+      services: {
+        Row: {
+          active: boolean;
+          archived_at: string | null;
+          category_id: string | null;
+          created_at: string;
+          currency: string;
+          default_direct_cost: number;
+          default_sale_price: number;
+          description: string | null;
+          id: string;
+          name: string;
+          public: boolean;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          active?: boolean;
+          archived_at?: string | null;
+          category_id?: string | null;
+          created_at?: string;
+          currency?: string;
+          default_direct_cost?: number;
+          default_sale_price: number;
+          description?: string | null;
+          id?: string;
+          name: string;
+          public?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          active?: boolean;
+          archived_at?: string | null;
+          category_id?: string | null;
+          created_at?: string;
+          currency?: string;
+          default_direct_cost?: number;
+          default_sale_price?: number;
+          description?: string | null;
+          id?: string;
+          name?: string;
+          public?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "services_category_id_fkey";
+            columns: ["category_id"];
+            isOneToOne: false;
+            referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       staff: {
         Row: {
@@ -416,17 +558,689 @@ export type Database = {
           },
         ];
       };
+      work_order_assignments: {
+        Row: {
+          assigned_at: string;
+          assigned_by: string | null;
+          id: string;
+          role: Database["public"]["Enums"]["assignment_role"];
+          staff_id: string;
+          unassigned_at: string | null;
+          unassigned_by: string | null;
+          work_order_id: string;
+        };
+        Insert: {
+          assigned_at?: string;
+          assigned_by?: string | null;
+          id?: string;
+          role: Database["public"]["Enums"]["assignment_role"];
+          staff_id: string;
+          unassigned_at?: string | null;
+          unassigned_by?: string | null;
+          work_order_id: string;
+        };
+        Update: {
+          assigned_at?: string;
+          assigned_by?: string | null;
+          id?: string;
+          role?: Database["public"]["Enums"]["assignment_role"];
+          staff_id?: string;
+          unassigned_at?: string | null;
+          unassigned_by?: string | null;
+          work_order_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_assignments_assigned_by_fkey";
+            columns: ["assigned_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_assignments_staff_id_fkey";
+            columns: ["staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_assignments_unassigned_by_fkey";
+            columns: ["unassigned_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_assignments_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_assignments_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals_staff";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_assignments_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_order_events: {
+        Row: {
+          actor_staff_id: string | null;
+          actor_user_id: string | null;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["work_order_event_type"];
+          id: number;
+          payload: NonNullable<Json>;
+          work_order_id: string;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["work_order_event_type"];
+          id?: never;
+          payload?: NonNullable<Json>;
+          work_order_id: string;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["work_order_event_type"];
+          id?: never;
+          payload?: NonNullable<Json>;
+          work_order_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_events_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_events_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals_staff";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_events_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_order_line_items: {
+        Row: {
+          cost_total: number | null;
+          created_at: string;
+          created_by: string | null;
+          cult_commons_rate_snapshot: number;
+          cult_commons_share: number | null;
+          currency: string;
+          description_snapshot: string;
+          id: string;
+          line_type: Database["public"]["Enums"]["line_type"];
+          quantity: number;
+          sale_total: number | null;
+          source_inventory_unit_id: string | null;
+          source_product_id: string | null;
+          source_service_id: string | null;
+          unit_direct_cost_snapshot: number;
+          unit_sale_price_snapshot: number;
+          void_reason: string | null;
+          voided_at: string | null;
+          voided_by: string | null;
+          work_order_id: string;
+          yield_total: number | null;
+        };
+        Insert: {
+          cost_total?: never;
+          created_at?: string;
+          created_by?: string | null;
+          cult_commons_rate_snapshot: number;
+          cult_commons_share?: never;
+          currency: string;
+          description_snapshot: string;
+          id: string;
+          line_type: Database["public"]["Enums"]["line_type"];
+          quantity: number;
+          sale_total?: never;
+          source_inventory_unit_id?: string | null;
+          source_product_id?: string | null;
+          source_service_id?: string | null;
+          unit_direct_cost_snapshot: number;
+          unit_sale_price_snapshot: number;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          work_order_id: string;
+          yield_total?: never;
+        };
+        Update: {
+          cost_total?: never;
+          created_at?: string;
+          created_by?: string | null;
+          cult_commons_rate_snapshot?: number;
+          cult_commons_share?: never;
+          currency?: string;
+          description_snapshot?: string;
+          id?: string;
+          line_type?: Database["public"]["Enums"]["line_type"];
+          quantity?: number;
+          sale_total?: never;
+          source_inventory_unit_id?: string | null;
+          source_product_id?: string | null;
+          source_service_id?: string | null;
+          unit_direct_cost_snapshot?: number;
+          unit_sale_price_snapshot?: number;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          work_order_id?: string;
+          yield_total?: never;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_line_items_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_source_service_id_fkey";
+            columns: ["source_service_id"];
+            isOneToOne: false;
+            referencedRelation: "services";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_source_service_id_fkey";
+            columns: ["source_service_id"];
+            isOneToOne: false;
+            referencedRelation: "services_staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_voided_by_fkey";
+            columns: ["voided_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals_staff";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_orders: {
+        Row: {
+          appointment_id: string | null;
+          approval_flag: boolean;
+          approval_note: string | null;
+          bike_id: string;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          checked_in_at: string;
+          collected_at: string | null;
+          completed_at: string | null;
+          completion_notes: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          customer_id: string;
+          id: string;
+          intake_notes: string | null;
+          internal_notes: string | null;
+          job_number: string;
+          lead_mechanic_id: string | null;
+          ready_for_collection_at: string | null;
+          requested_work: string;
+          started_at: string | null;
+          status: Database["public"]["Enums"]["work_order_status"];
+          status_changed_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          appointment_id?: string | null;
+          approval_flag?: boolean;
+          approval_note?: string | null;
+          bike_id: string;
+          cancellation_reason?: string | null;
+          cancelled_at?: string | null;
+          checked_in_at?: string;
+          collected_at?: string | null;
+          completed_at?: string | null;
+          completion_notes?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          customer_id: string;
+          id?: string;
+          intake_notes?: string | null;
+          internal_notes?: string | null;
+          job_number?: string;
+          lead_mechanic_id?: string | null;
+          ready_for_collection_at?: string | null;
+          requested_work: string;
+          started_at?: string | null;
+          status?: Database["public"]["Enums"]["work_order_status"];
+          status_changed_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          appointment_id?: string | null;
+          approval_flag?: boolean;
+          approval_note?: string | null;
+          bike_id?: string;
+          cancellation_reason?: string | null;
+          cancelled_at?: string | null;
+          checked_in_at?: string;
+          collected_at?: string | null;
+          completed_at?: string | null;
+          completion_notes?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          customer_id?: string;
+          id?: string;
+          intake_notes?: string | null;
+          internal_notes?: string | null;
+          job_number?: string;
+          lead_mechanic_id?: string | null;
+          ready_for_collection_at?: string | null;
+          requested_work?: string;
+          started_at?: string | null;
+          status?: Database["public"]["Enums"]["work_order_status"];
+          status_changed_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_orders_bike_id_fkey";
+            columns: ["bike_id"];
+            isOneToOne: false;
+            referencedRelation: "bikes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_orders_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_orders_customer_id_fkey";
+            columns: ["customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_orders_lead_mechanic_id_fkey";
+            columns: ["lead_mechanic_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
-      [_ in never]: never;
+      services_staff: {
+        Row: {
+          active: boolean | null;
+          archived_at: string | null;
+          category_id: string | null;
+          created_at: string | null;
+          currency: string | null;
+          default_direct_cost: number | null;
+          default_sale_price: number | null;
+          description: string | null;
+          id: string | null;
+          name: string | null;
+          public: boolean | null;
+          sort_order: number | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          active?: boolean | null;
+          archived_at?: string | null;
+          category_id?: string | null;
+          created_at?: string | null;
+          currency?: string | null;
+          default_direct_cost?: number | null;
+          default_sale_price?: number | null;
+          description?: string | null;
+          id?: string | null;
+          name?: string | null;
+          public?: boolean | null;
+          sort_order?: number | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          active?: boolean | null;
+          archived_at?: string | null;
+          category_id?: string | null;
+          created_at?: string | null;
+          currency?: string | null;
+          default_direct_cost?: number | null;
+          default_sale_price?: number | null;
+          description?: string | null;
+          id?: string | null;
+          name?: string | null;
+          public?: boolean | null;
+          sort_order?: number | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "services_category_id_fkey";
+            columns: ["category_id"];
+            isOneToOne: false;
+            referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_order_line_items_staff: {
+        Row: {
+          cost_total: number | null;
+          created_at: string | null;
+          created_by: string | null;
+          cult_commons_rate_snapshot: number | null;
+          cult_commons_share: number | null;
+          currency: string | null;
+          description_snapshot: string | null;
+          id: string | null;
+          line_type: Database["public"]["Enums"]["line_type"] | null;
+          quantity: number | null;
+          sale_total: number | null;
+          source_inventory_unit_id: string | null;
+          source_product_id: string | null;
+          source_service_id: string | null;
+          unit_direct_cost_snapshot: number | null;
+          unit_sale_price_snapshot: number | null;
+          void_reason: string | null;
+          voided_at: string | null;
+          voided_by: string | null;
+          work_order_id: string | null;
+          yield_total: number | null;
+        };
+        Insert: {
+          cost_total?: number | null;
+          created_at?: string | null;
+          created_by?: string | null;
+          cult_commons_rate_snapshot?: number | null;
+          cult_commons_share?: number | null;
+          currency?: string | null;
+          description_snapshot?: string | null;
+          id?: string | null;
+          line_type?: Database["public"]["Enums"]["line_type"] | null;
+          quantity?: number | null;
+          sale_total?: number | null;
+          source_inventory_unit_id?: string | null;
+          source_product_id?: string | null;
+          source_service_id?: string | null;
+          unit_direct_cost_snapshot?: number | null;
+          unit_sale_price_snapshot?: number | null;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          work_order_id?: string | null;
+          yield_total?: number | null;
+        };
+        Update: {
+          cost_total?: number | null;
+          created_at?: string | null;
+          created_by?: string | null;
+          cult_commons_rate_snapshot?: number | null;
+          cult_commons_share?: number | null;
+          currency?: string | null;
+          description_snapshot?: string | null;
+          id?: string | null;
+          line_type?: Database["public"]["Enums"]["line_type"] | null;
+          quantity?: number | null;
+          sale_total?: number | null;
+          source_inventory_unit_id?: string | null;
+          source_product_id?: string | null;
+          source_service_id?: string | null;
+          unit_direct_cost_snapshot?: number | null;
+          unit_sale_price_snapshot?: number | null;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          work_order_id?: string | null;
+          yield_total?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_line_items_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_source_service_id_fkey";
+            columns: ["source_service_id"];
+            isOneToOne: false;
+            referencedRelation: "services";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_source_service_id_fkey";
+            columns: ["source_service_id"];
+            isOneToOne: false;
+            referencedRelation: "services_staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_voided_by_fkey";
+            columns: ["voided_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals_staff";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_order_totals: {
+        Row: {
+          currency: string | null;
+          line_count: number | null;
+          sale_total: number | null;
+          work_order_id: string | null;
+        };
+        Relationships: [];
+      };
+      work_order_totals_staff: {
+        Row: {
+          bicii_yield_after_cc: number | null;
+          cost_total: number | null;
+          cult_commons_share: number | null;
+          currency: string | null;
+          line_count: number | null;
+          sale_total: number | null;
+          work_order_id: string | null;
+          yield_total: number | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
+      add_manual_line: {
+        Args: {
+          description: string;
+          line_id: string;
+          quantity?: unknown;
+          unit_direct_cost?: unknown;
+          unit_sale_price: unknown;
+          work_order_id: string;
+        };
+        Returns: string;
+      };
+      add_service_line: {
+        Args: {
+          description?: string;
+          line_id: string;
+          quantity?: unknown;
+          service_id: string;
+          unit_direct_cost?: unknown;
+          unit_sale_price?: unknown;
+          work_order_id: string;
+        };
+        Returns: string;
+      };
+      add_work_order_note: {
+        Args: {
+          body: string;
+          kind: Database["public"]["Enums"]["work_order_note_kind"];
+          work_order_id: string;
+        };
+        Returns: {
+          actor_staff_id: string | null;
+          actor_user_id: string | null;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["work_order_event_type"];
+          id: number;
+          payload: NonNullable<Json>;
+          work_order_id: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "work_order_events";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      assign_staff: {
+        Args: {
+          role?: Database["public"]["Enums"]["assignment_role"];
+          staff_id: string;
+          work_order_id: string;
+        };
+        Returns: {
+          assigned_at: string;
+          assigned_by: string | null;
+          id: string;
+          role: Database["public"]["Enums"]["assignment_role"];
+          staff_id: string;
+          unassigned_at: string | null;
+          unassigned_by: string | null;
+          work_order_id: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "work_order_assignments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       attachment_stray_objects: {
         Args: { entity_id: string; entity_type: Database["public"]["Enums"]["attachment_entity"] };
         Returns: {
           bucket: string;
           path: string;
         }[];
+      };
+      cancel_cult_commons_rate: {
+        Args: { rate_id: string };
+        Returns: {
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          effective_from: string;
+          id: string;
+          rate: number;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "cult_commons_rates";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_service: {
+        Args: {
+          category_id?: string;
+          default_direct_cost?: unknown;
+          default_sale_price: unknown;
+          description?: string;
+          is_active?: boolean;
+          is_public?: boolean;
+          name: string;
+          service_id: string;
+        };
+        Returns: string;
       };
       create_staff: {
         Args: {
@@ -448,6 +1262,51 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "staff";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_work_order: {
+        Args: {
+          additional_staff_ids?: string[];
+          bike_id: string;
+          customer_id: string;
+          intake_notes?: string;
+          lead_mechanic_id?: string;
+          requested_work: string;
+          services?: Json;
+          work_order_id: string;
+        };
+        Returns: {
+          appointment_id: string | null;
+          approval_flag: boolean;
+          approval_note: string | null;
+          bike_id: string;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          checked_in_at: string;
+          collected_at: string | null;
+          completed_at: string | null;
+          completion_notes: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          customer_id: string;
+          id: string;
+          intake_notes: string | null;
+          internal_notes: string | null;
+          job_number: string;
+          lead_mechanic_id: string | null;
+          ready_for_collection_at: string | null;
+          requested_work: string;
+          started_at: string | null;
+          status: Database["public"]["Enums"]["work_order_status"];
+          status_changed_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "work_orders";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -601,6 +1460,60 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      schedule_cult_commons_rate: {
+        Args: { effective_from?: string; rate: unknown };
+        Returns: {
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          effective_from: string;
+          id: string;
+          rate: number;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "cult_commons_rates";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_approval_flag: {
+        Args: { flagged: boolean; note?: string; work_order_id: string };
+        Returns: {
+          appointment_id: string | null;
+          approval_flag: boolean;
+          approval_note: string | null;
+          bike_id: string;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          checked_in_at: string;
+          collected_at: string | null;
+          completed_at: string | null;
+          completion_notes: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          customer_id: string;
+          id: string;
+          intake_notes: string | null;
+          internal_notes: string | null;
+          job_number: string;
+          lead_mechanic_id: string | null;
+          ready_for_collection_at: string | null;
+          requested_work: string;
+          started_at: string | null;
+          status: Database["public"]["Enums"]["work_order_status"];
+          status_changed_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "work_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       set_attachment_visibility: {
         Args: {
           attachment_id: string;
@@ -631,6 +1544,7 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      set_service_archived: { Args: { archived: boolean; service_id: string }; Returns: string };
       set_staff_active: {
         Args: { active: boolean; reason?: string; target_staff_id: string };
         Returns: {
@@ -646,6 +1560,46 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "staff";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_work_order_status: {
+        Args: {
+          note?: string;
+          status: Database["public"]["Enums"]["work_order_status"];
+          work_order_id: string;
+        };
+        Returns: {
+          appointment_id: string | null;
+          approval_flag: boolean;
+          approval_note: string | null;
+          bike_id: string;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          checked_in_at: string;
+          collected_at: string | null;
+          completed_at: string | null;
+          completion_notes: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          customer_id: string;
+          id: string;
+          intake_notes: string | null;
+          internal_notes: string | null;
+          job_number: string;
+          lead_mechanic_id: string | null;
+          ready_for_collection_at: string | null;
+          requested_work: string;
+          started_at: string | null;
+          status: Database["public"]["Enums"]["work_order_status"];
+          status_changed_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "work_orders";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -725,6 +1679,25 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      unassign_staff: {
+        Args: { staff_id: string; work_order_id: string };
+        Returns: {
+          assigned_at: string;
+          assigned_by: string | null;
+          id: string;
+          role: Database["public"]["Enums"]["assignment_role"];
+          staff_id: string;
+          unassigned_at: string | null;
+          unassigned_by: string | null;
+          work_order_id: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "work_order_assignments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_my_profile: {
         Args: { display_name?: string; first_name?: string; last_name?: string; phone?: string };
         Returns: Database["public"]["CompositeTypes"]["customer_profile"];
@@ -734,6 +1707,19 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      update_service: {
+        Args: {
+          category_id?: string;
+          default_direct_cost?: unknown;
+          default_sale_price: unknown;
+          description?: string;
+          is_active?: boolean;
+          is_public?: boolean;
+          name: string;
+          service_id: string;
+        };
+        Returns: string;
       };
       update_staff: {
         Args: {
@@ -759,13 +1745,72 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      update_work_order: {
+        Args: {
+          completion_notes?: string;
+          intake_notes?: string;
+          internal_notes?: string;
+          requested_work?: string;
+          work_order_id: string;
+        };
+        Returns: {
+          appointment_id: string | null;
+          approval_flag: boolean;
+          approval_note: string | null;
+          bike_id: string;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          checked_in_at: string;
+          collected_at: string | null;
+          completed_at: string | null;
+          completion_notes: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          customer_id: string;
+          id: string;
+          intake_notes: string | null;
+          internal_notes: string | null;
+          job_number: string;
+          lead_mechanic_id: string | null;
+          ready_for_collection_at: string | null;
+          requested_work: string;
+          started_at: string | null;
+          status: Database["public"]["Enums"]["work_order_status"];
+          status_changed_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "work_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      void_line: { Args: { line_id: string; reason: string }; Returns: string };
+      work_order_timeline: {
+        Args: { max_rows?: number; work_order_id: string };
+        Returns: {
+          actor_display_name: string;
+          actor_staff_id: string;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["work_order_event_type"];
+          id: number;
+          payload: Json;
+          subject_display_name: string;
+          subject_staff_id: string;
+        }[];
+      };
     };
     Enums: {
+      assignment_role: "lead" | "additional";
       attachment_entity:
         "bike" | "work_order" | "product" | "inventory_unit" | "customer" | "consignment_item";
       attachment_event_type: "created" | "visibility_changed" | "caption_changed" | "deleted";
       attachment_visibility: "internal" | "customer" | "public";
       bike_ownership_event_type: "registered" | "transferred";
+      category_kind: "service" | "product";
+      line_type: "service" | "inventory" | "manual";
       permission_key:
         | "view_costs"
         | "manage_inventory"
@@ -783,6 +1828,38 @@ export type Database = {
         | "permission_granted"
         | "permission_revoked";
       staff_role: "admin" | "staff";
+      work_order_event_type:
+        | "checked_in"
+        | "status_changed"
+        | "completed"
+        | "ready_for_collection"
+        | "collected"
+        | "cancelled"
+        | "reopened"
+        | "assignment_changed"
+        | "note_added"
+        | "diagnosis_added"
+        | "details_changed"
+        | "approval_flagged"
+        | "photo_added"
+        | "photo_removed"
+        | "line_added"
+        | "line_voided"
+        | "stock_consumed"
+        | "stock_reversed";
+      work_order_note_kind: "note" | "diagnosis";
+      work_order_status:
+        | "received"
+        | "diagnosing"
+        | "awaiting_customer"
+        | "awaiting_parts"
+        | "ready_to_start"
+        | "in_progress"
+        | "paused"
+        | "completed"
+        | "ready_for_collection"
+        | "collected"
+        | "cancelled";
     };
     CompositeTypes: {
       customer_profile: {
@@ -902,6 +1979,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      assignment_role: ["lead", "additional"],
       attachment_entity: [
         "bike",
         "work_order",
@@ -913,6 +1991,8 @@ export const Constants = {
       attachment_event_type: ["created", "visibility_changed", "caption_changed", "deleted"],
       attachment_visibility: ["internal", "customer", "public"],
       bike_ownership_event_type: ["registered", "transferred"],
+      category_kind: ["service", "product"],
+      line_type: ["service", "inventory", "manual"],
       permission_key: [
         "view_costs",
         "manage_inventory",
@@ -932,6 +2012,40 @@ export const Constants = {
         "permission_revoked",
       ],
       staff_role: ["admin", "staff"],
+      work_order_event_type: [
+        "checked_in",
+        "status_changed",
+        "completed",
+        "ready_for_collection",
+        "collected",
+        "cancelled",
+        "reopened",
+        "assignment_changed",
+        "note_added",
+        "diagnosis_added",
+        "details_changed",
+        "approval_flagged",
+        "photo_added",
+        "photo_removed",
+        "line_added",
+        "line_voided",
+        "stock_consumed",
+        "stock_reversed",
+      ],
+      work_order_note_kind: ["note", "diagnosis"],
+      work_order_status: [
+        "received",
+        "diagnosing",
+        "awaiting_customer",
+        "awaiting_parts",
+        "ready_to_start",
+        "in_progress",
+        "paused",
+        "completed",
+        "ready_for_collection",
+        "collected",
+        "cancelled",
+      ],
     },
   },
 } as const;

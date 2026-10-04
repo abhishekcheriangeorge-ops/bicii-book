@@ -87,3 +87,9 @@ export const BIKE_SERIAL = {
   priyaTern: "TRN-19-0045821",
   shopCervelo: "CV-CAL5-0921",
 } as const;
+
+/**
+ * The base Cult Commons rate row (0.3000 from 1970-01-01), shipped by the
+ * workshop catalog migration rather than the seed: production needs it.
+ */
+export const CULT_COMMONS_BASE_RATE = "cc000000-0000-4000-8000-000000000001";
