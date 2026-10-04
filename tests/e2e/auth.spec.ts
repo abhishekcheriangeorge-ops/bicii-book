@@ -69,10 +69,31 @@ test("sign-out ends the session", async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
 });
 
-for (const next of ["https://evil.example/phish", "//evil.example/phish", "/\\evil.example"]) {
+for (const next of [
+  "https://evil.example/phish",
+  "//evil.example/phish",
+  "/\\evil.example",
+  "/.//evil.example/phish",
+]) {
   test(`login ?next=${next} cannot redirect off-site`, async ({ page, baseURL }) => {
     await page.goto(`/login?next=${encodeURIComponent(next)}`);
     await signInOnForm(page, "admin");
+    await expect(page).toHaveURL(`${baseURL}/`);
+  });
+}
+
+// A signed-in visit to /login redirects straight to `next` on the server;
+// dot segments must not normalise into a protocol-relative Location.
+for (const next of ["/.//evil.example/phish", "/a/..//evil.example", "/%2e//evil.example"]) {
+  test(`signed in, GET /login?next=${next} stays on this site`, async ({ page, baseURL }) => {
+    await signIn(page, "admin");
+    const response = await page.request.get(`/login?next=${next}`, { maxRedirects: 0 });
+    expect(response.status()).toBeGreaterThanOrEqual(300);
+    expect(response.status()).toBeLessThan(400);
+    const location = response.headers()["location"] ?? "";
+    expect(location.startsWith("//")).toBe(false);
+    expect(new URL(location, baseURL).origin).toBe(new URL(baseURL!).origin);
+    await page.goto(`/login?next=${next}`);
     await expect(page).toHaveURL(`${baseURL}/`);
   });
 }

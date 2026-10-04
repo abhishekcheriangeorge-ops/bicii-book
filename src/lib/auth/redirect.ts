@@ -25,7 +25,12 @@ export function safeNextPath(next: unknown): string {
   }
   if (url.origin !== BASE) return DEFAULT_AFTER_LOGIN;
   if (url.pathname === "/login" || url.pathname.startsWith("/login/")) return DEFAULT_AFTER_LOGIN;
-  return `${url.pathname}${url.search}${url.hash}`;
+  const out = `${url.pathname}${url.search}${url.hash}`;
+  // Check the NORMALISED path again: dot segments collapse into a leading
+  // `//` ("/.//evil.example", "/a/..//evil.example", "/%2e//evil.example"),
+  // which a Location header turns into a protocol-relative URL off-site.
+  if (out.startsWith("//") || out.startsWith("/\\")) return DEFAULT_AFTER_LOGIN;
+  return out;
 }
 
 /** /login?next=<path>, for redirects from guarded pages. */

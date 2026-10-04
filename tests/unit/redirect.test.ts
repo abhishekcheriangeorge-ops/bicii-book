@@ -23,6 +23,12 @@ describe("safeNextPath", () => {
     "///evil.example",
     "/\\evil.example",
     "\\\\evil.example",
+    // Dot segments that normalise into a protocol-relative `//host`.
+    "/.//evil.example/phish",
+    "/a/..//evil.example",
+    "/%2e//evil.example",
+    "/%2e%2e//evil.example",
+    "/./%2e/..//evil.example?x=1#y",
     "javascript:alert(1)",
     "evil.example",
     "/jobs\u0000",
