@@ -6,18 +6,19 @@ import { Button, type ButtonSize, type ButtonVariant } from "@/components/ui/but
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { CONFIRM_GUARD_MS } from "@/components/ui/use-armed";
 import type { ActionResult } from "@/lib/actions";
 import { REASON_MAX_LENGTH } from "@/lib/reasons";
-
-/** How long the confirm button ignores presses after the confirmation opens (a double tap). */
-export const CONFIRM_GUARD_MS = 400;
 
 /**
  * A destructive step with a required reason (SPEC §22; DESIGN.md "Forms"):
  * the first button opens a confirmation that asks why and puts focus in the
  * reason field; the confirm button sits in a different place with a
  * different React key, and ignores presses for 400 ms after opening, so a
- * double tap cannot confirm. Cancel hands focus back to the first button.
+ * double tap cannot confirm. The dismiss button (`dismissLabel`, "Cancel"
+ * by default; "Keep job" where the action itself is "Cancel job") hands
+ * focus back to the first button. `onConfirmingChange` tells a container
+ * that the confirmation is open, so it can hide its own submit meanwhile.
  * Used to void a line and to cancel or reopen a job.
  */
 export function ReasonConfirm({
@@ -32,6 +33,8 @@ export function ReasonConfirm({
   successTitle,
   onConfirm,
   onDone,
+  onConfirmingChange,
+  dismissLabel = "Cancel",
   disabled = false,
   children,
 }: {
@@ -48,6 +51,9 @@ export function ReasonConfirm({
   /** Runs the action with the trimmed reason. Field errors on `reason` or `note` show on the field. */
   onConfirm: (reason: string) => Promise<ActionResult<unknown>>;
   onDone?: () => void;
+  onConfirmingChange?: (confirming: boolean) => void;
+  /** The button that closes the confirmation without acting. */
+  dismissLabel?: string;
   disabled?: boolean;
   /** What confirming does, in a sentence, shown in the confirmation. */
   children?: ReactNode;
@@ -61,6 +67,10 @@ export function ReasonConfirm({
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const startRef = useRef<HTMLButtonElement>(null);
   const wasConfirming = useRef(false);
+
+  useEffect(() => {
+    onConfirmingChange?.(confirming);
+  }, [confirming, onConfirmingChange]);
 
   useEffect(() => {
     const cancelled = wasConfirming.current && !confirming;
@@ -144,7 +154,7 @@ export function ReasonConfirm({
           disabled={pending}
           onClick={() => setConfirming(false)}
         >
-          Cancel
+          {dismissLabel}
         </Button>
         <Button
           key="confirm"

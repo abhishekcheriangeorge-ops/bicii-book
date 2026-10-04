@@ -162,6 +162,7 @@ function AddServiceSheet({
         <Field label="Quantity" error={errors?.quantity?.[0]} required>
           <NumberInput
             kind="quantity"
+            decimals={2}
             name="quantity"
             stepper
             minValue={1}

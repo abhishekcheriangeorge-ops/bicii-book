@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/dates";
 import type { Line } from "@/lib/domain/lines";
@@ -38,7 +39,9 @@ type Layout = (typeof LAYOUT)[keyof typeof LAYOUT];
  * price under the description, the total on the right. Voided lines are
  * kept, struck through with who, when and why, behind "Show voided". Lines
  * of someone without view_costs carry no cost figures at all (the DTO has
- * none), so there is nothing to hide here.
+ * none), so there is nothing to hide here. A manual line added without a
+ * cost carries a "Cost pending" badge for everyone (D14): its placeholder 0
+ * is not a real cost, and only someone with cost access can fix it.
  */
 export function LineTable({
   lines,
@@ -144,7 +147,10 @@ function LineRow({
     <tr className="align-top">
       <td className="py-3 pr-3 pl-4 sm:pl-5">
         <div className="flex flex-col gap-1">
-          <span className={cn("text-sm font-medium", struck)}>{line.description}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className={cn("text-sm font-medium", struck)}>{line.description}</span>
+            {line.costPending && !line.voided ? <Badge tone="waiting">Cost pending</Badge> : null}
+          </span>
           <span className={cn("text-dust-500", layout.stacked, struck)}>
             {formatQuantity(line.quantity)} × {money(line.unitSalePrice)}
           </span>
@@ -176,7 +182,7 @@ function LineRow({
       {costs ? (
         <>
           <td className={cn("px-3 py-3 text-right", layout.cell, struck)}>
-            {line.costs ? money(line.costs.unitDirectCost) : ""}
+            {line.costs ? (line.costPending ? "—" : money(line.costs.unitDirectCost)) : ""}
           </td>
           <td className={cn("px-3 py-3 text-right", layout.cell, struck)}>
             {line.costs ? money(line.costs.yieldTotal) : ""}

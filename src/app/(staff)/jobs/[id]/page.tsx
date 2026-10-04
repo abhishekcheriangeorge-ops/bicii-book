@@ -21,7 +21,12 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime, shopDaysBetween } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
-import { getWorkOrder, listActiveStaff, type WorkOrderDetail } from "@/lib/domain/workshop";
+import {
+  TIMELINE_ALL_ROWS,
+  getWorkOrder,
+  listActiveStaff,
+  type WorkOrderDetail,
+} from "@/lib/domain/workshop";
 import { telHref } from "@/lib/people";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -63,17 +68,23 @@ function sharedRate(job: WorkOrderDetail): string | null {
  * (costs, yield and Cult Commons only with view_costs: the DTO has none
  * otherwise), photos, the people on it, notes and the timeline. Straight
  * after intake (`?intake=photos`) the intake photos come first: the job
- * has to exist before a photo can be recorded against it.
+ * has to exist before a photo can be recorded against it. The timeline
+ * shows its newest events; `?events=all` shows up to TIMELINE_ALL_ROWS.
  */
 export default async function JobPage({ params, searchParams }: PageProps<"/jobs/[id]">) {
   const staff = await requireStaff();
   const { id } = await params;
   if (!isUuid(id)) notFound();
-  const intake = (await searchParams).intake === "photos";
+  const query = await searchParams;
+  const intake = query.intake === "photos";
+  const allEvents = query.events === "all";
   const viewCosts = hasPermission(staff, "view_costs");
   const supabase = await createClient();
   const [job, photos, activeStaff] = await Promise.all([
-    getWorkOrder(supabase, id, { viewCosts }),
+    getWorkOrder(supabase, id, {
+      viewCosts,
+      ...(allEvents ? { timelineRows: TIMELINE_ALL_ROWS } : {}),
+    }),
     listPhotos(supabase, { entityType: "work_order", entityId: id }),
     listActiveStaff(supabase),
   ]);
@@ -134,7 +145,12 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
         </p>
       </header>
 
-      <JobStatusActions workOrderId={job.id} jobNumber={job.jobNumber} status={job.status} />
+      <JobStatusActions
+        workOrderId={job.id}
+        jobNumber={job.jobNumber}
+        customerLabel={job.customer.label}
+        status={job.status}
+      />
 
       {intake ? (
         <Card
@@ -287,8 +303,12 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
             </div>
           </Card>
 
-          <Card title="Timeline">
-            <Timeline entries={job.timeline} />
+          <Card title="Timeline" id="timeline" className="scroll-mt-20">
+            <Timeline
+              entries={job.timeline}
+              truncated={job.timelineTruncated}
+              moreHref={allEvents ? null : `/jobs/${job.id}?events=all#timeline`}
+            />
           </Card>
         </div>
       </div>

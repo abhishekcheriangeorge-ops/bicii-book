@@ -2,6 +2,7 @@
 
 import { useState, type ChangeEvent, type ComponentPropsWithRef } from "react";
 import { cn } from "@/lib/cn";
+import { Decimal } from "@/lib/money";
 import { MinusIcon, PlusIcon } from "./icons";
 import { controlClasses } from "./input";
 import { useFieldControlProps } from "./field";
@@ -14,10 +15,17 @@ export type NumberInputProps = Omit<
 > & {
   /**
    * money: two decimals, currency prefix, decimal keypad.
-   * quantity: whole numbers, numeric keypad, optional −/+ steppers.
-   * decimal: free decimal (rates, hours).
+   * quantity: a count with optional −/+ steppers; whole numbers on the
+   *   numeric keypad, or up to `decimals` places on the decimal keypad.
+   * decimal: free decimal (rates).
    */
   kind?: NumberInputKind;
+  /**
+   * quantity only: decimal places allowed (default 0). Job lines take 2
+   * (1.5 hours of labour): the decimal keypad, and the steppers add or
+   * take 1 while keeping the fraction (1.5 → 2.5).
+   */
+  decimals?: number;
   value?: string;
   defaultValue?: string;
   /** Receives the raw text; parse with lib/money (parseMoney) at the boundary. */
@@ -39,6 +47,14 @@ const patterns: Record<NumberInputKind, string> = {
   decimal: "-?[0-9,]*(\\.[0-9]*)?",
 };
 
+/** The typed text as a Decimal, or null when it is not a plain number. */
+function asDecimal(text: string): Decimal | null {
+  const t = text.trim();
+  if (t === "") return new Decimal(0);
+  if (!/^-?\d*(\.\d*)?$/.test(t) || t === "-" || t === ".") return null;
+  return new Decimal(t);
+}
+
 /**
  * Text input for numbers. type="text" + inputMode, not type="number": number
  * inputs coerce through floats, change on scroll and reject "1,200". The
@@ -53,6 +69,7 @@ export function NumberInput({
   onChange,
   currencySymbol = "$",
   stepper = false,
+  decimals = 0,
   minValue,
   maxValue,
   suffix,
@@ -70,16 +87,19 @@ export function NumberInput({
     onValueChange?.(next);
   };
 
+  const fractional = kind === "quantity" && decimals > 0;
+  const currentNumber = asDecimal(current) ?? new Decimal(0);
+
+  // Decimal arithmetic on the text, so a fraction survives a step (1.5 + 1
+  // is 2.5, not 2) and nothing passes through a float.
   const step = (delta: number) => {
-    const n = Number.parseInt(current || "0", 10);
-    let next = (Number.isNaN(n) ? 0 : n) + delta;
-    if (minValue !== undefined) next = Math.max(minValue, next);
-    if (maxValue !== undefined) next = Math.min(maxValue, next);
-    update(String(next));
+    let next = (fractional ? currentNumber : currentNumber.trunc()).plus(delta);
+    if (minValue !== undefined) next = Decimal.max(minValue, next);
+    if (maxValue !== undefined) next = Decimal.min(maxValue, next);
+    update(next.toString());
   };
 
   const showStepper = stepper && kind === "quantity";
-  const asInt = Number.parseInt(current || "0", 10);
 
   const input = (
     <div className="relative min-w-0 flex-1">
@@ -95,8 +115,8 @@ export function NumberInput({
         {...props}
         {...wiring}
         type="text"
-        inputMode={kind === "quantity" ? "numeric" : "decimal"}
-        pattern={patterns[kind]}
+        inputMode={kind === "quantity" && !fractional ? "numeric" : "decimal"}
+        pattern={fractional ? `[0-9]*(\\.[0-9]{0,${decimals}})?` : patterns[kind]}
         autoComplete="off"
         spellCheck={false}
         disabled={disabled}
@@ -137,7 +157,7 @@ export function NumberInput({
         className={stepClasses}
         aria-label="Decrease"
         aria-controls={wiring.id}
-        disabled={disabled || (minValue !== undefined && asInt <= minValue)}
+        disabled={disabled || (minValue !== undefined && currentNumber.lte(minValue))}
         onClick={() => step(-1)}
       >
         <MinusIcon />
@@ -148,7 +168,7 @@ export function NumberInput({
         className={stepClasses}
         aria-label="Increase"
         aria-controls={wiring.id}
-        disabled={disabled || (maxValue !== undefined && asInt >= maxValue)}
+        disabled={disabled || (maxValue !== undefined && currentNumber.gte(maxValue))}
         onClick={() => step(1)}
       >
         <PlusIcon />

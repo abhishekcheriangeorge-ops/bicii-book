@@ -18,6 +18,7 @@ export function VoidLineControl({ lineId, description }: { lineId: string; descr
       question={`Why are you voiding ${description}?`}
       hint="Kept on the line and the job's timeline."
       confirmLabel="Void line"
+      dismissLabel="Keep line"
       pendingLabel="Voiding…"
       failureTitle="Line not voided"
       successTitle={`${description} voided`}

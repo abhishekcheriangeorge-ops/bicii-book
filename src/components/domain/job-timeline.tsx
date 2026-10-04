@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/dates";
 import type { TimelineEntry } from "@/lib/domain/workshop";
@@ -16,10 +18,39 @@ const DOT: Record<StatusTone, string> = {
  * A job's timeline (SPEC §7.3), newest first: what happened
  * (describeEvent), who did it ("Recorded outside the app" when nobody in
  * the app did) and when, with any note or reason quoted. It never shows a
- * cost: event payloads carry none.
+ * cost: event payloads carry none. When older events were left out
+ * (`truncated`) it says so under the last one, with a link to more when
+ * there is one (`moreHref`).
  */
-export function Timeline({ entries }: { entries: TimelineEntry[] }) {
+export function Timeline({
+  entries,
+  truncated = false,
+  moreHref = null,
+}: {
+  entries: TimelineEntry[];
+  truncated?: boolean;
+  moreHref?: string | null;
+}) {
   if (entries.length === 0) return <p className="text-dust-500">Nothing has happened yet.</p>;
+  return (
+    <div className="flex flex-col gap-3">
+      <TimelineList entries={entries} />
+      {truncated ? (
+        <p role="note" className="text-sm text-dust-700">
+          Showing the newest {entries.length.toLocaleString("en-SG")} events. Earlier ones,
+          including the check-in, are not shown.{" "}
+          {moreHref ? (
+            <Link href={moreHref} className="font-medium underline">
+              Show earlier events
+            </Link>
+          ) : null}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function TimelineList({ entries }: { entries: TimelineEntry[] }) {
   return (
     <ol aria-label="Timeline" className="flex flex-col">
       {entries.map((e, i) => (

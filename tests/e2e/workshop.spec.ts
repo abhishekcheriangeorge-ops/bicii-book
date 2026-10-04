@@ -160,7 +160,11 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
   await expect(page.getByText("Completed jobs are locked. Reopen to change lines.")).toBeVisible();
   await page.getByRole("button", { name: "Ready for collection" }).click();
   await expect(toast(page, `${jobNumber}: Ready for collection`)).toBeVisible();
-  await page.getByRole("button", { name: "Collected" }).click();
+  // Collected is final, so it is a second step naming the job, focus on Back.
+  await page.getByRole("button", { name: "Collected…" }).click();
+  const collect = page.getByRole("group", { name: new RegExp(`^Mark ${jobNumber} collected by`) });
+  await expect(collect.getByRole("button", { name: "Back" })).toBeFocused();
+  await collect.getByRole("button", { name: "Mark collected" }).click();
   await expect(toast(page, `${jobNumber}: Collected`)).toBeVisible();
   await expect(page.getByRole("button", { name: "Change status" })).toHaveCount(0);
 
