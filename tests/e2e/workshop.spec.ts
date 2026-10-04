@@ -1,9 +1,9 @@
 import path from "node:path";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { WORK_ORDER } from "../fixtures/ids";
-import { signIn, tagFor, toast } from "./helpers";
+import { nextIntakeStep, section, signIn, tagFor, toast } from "./helpers";
 
 /**
  * M1.3 workshop, on a phone and an iPad: SPEC §27.3 journey 1 (walk-in bike
@@ -14,15 +14,6 @@ import { signIn, tagFor, toast } from "./helpers";
  */
 
 const PHOTO = path.join(__dirname, "fixtures", "bike-photo.jpg");
-
-/** The section (Card) whose heading is `title`. */
-const card = (page: Page, title: string) =>
-  page.locator("section").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
-
-async function next(page: Page, expectStep: string) {
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByRole("navigation", { name: "Intake steps" })).toContainText(expectStep);
-}
 
 test("journey 1: a walk-in bike is checked in with photos, priced, completed and collected", async ({
   page,
@@ -58,12 +49,12 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
   const bikeCard = page.getByRole("button", { name: new RegExp(`Brompton ${model}`) });
   await expect(bikeCard).toHaveAttribute("aria-pressed", "true");
   await expect(bikeCard).toContainText(/B-\d{6}/);
-  await next(page, "Step 3 of 5");
+  await nextIntakeStep(page, "Step 3 of 5");
 
   // 3. Work.
   await page.getByLabel("Requested work").fill("Full service and true both wheels");
   await page.getByLabel("Condition on arrival").fill("Scuff on the left crank arm");
-  await next(page, "Step 4 of 5");
+  await nextIntakeStep(page, "Step 4 of 5");
 
   // 4. People: Marcus leads, Nur helps.
   await page
@@ -74,12 +65,12 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
     .getByRole("group", { name: "Additional staff" })
     .getByRole("button", { name: "Nur Aisyah" })
     .click();
-  await next(page, "Step 5 of 5");
+  await nextIntakeStep(page, "Step 5 of 5");
 
   // 5. Services: Full Service.
   await page.getByRole("button", { name: /^Full Service/ }).click();
   await expect(page.getByRole("list", { name: "Chosen services" })).toContainText("Full Service");
-  await next(page, "Review");
+  await nextIntakeStep(page, "Review");
   await expect(page.getByText("Lead: Marcus Tan")).toBeVisible();
   await page.getByRole("button", { name: "Create job" }).click();
 
@@ -89,7 +80,7 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
   await expect(heading).toHaveText(/^J-\d{6}$/);
   const jobNumber = (await heading.textContent())!.trim();
   const jobUrl = page.url().replace(/\?.*$/, "");
-  const intake = card(page, "Intake photos");
+  const intake = section(page, "Intake photos");
   await expect(intake).toBeVisible();
   await page.getByLabel("Choose photos").setInputFiles(PHOTO);
   await expect(
@@ -97,13 +88,15 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
   ).toHaveCount(1);
   await intake.getByRole("link", { name: "Done" }).click();
   await expect(page).toHaveURL(jobUrl);
-  await expect(card(page, "Intake photos")).toHaveCount(0);
+  await expect(section(page, "Intake photos")).toHaveCount(0);
   await expect(
-    card(page, "Photos").getByRole("list", { name: "Photos", exact: true }).getByRole("listitem"),
+    section(page, "Photos")
+      .getByRole("list", { name: "Photos", exact: true })
+      .getByRole("listitem"),
   ).toHaveCount(1);
 
   // People, read-only here.
-  const people = card(page, "People");
+  const people = section(page, "People");
   await expect(people).toContainText("LeadMarcus Tan");
   await expect(people.getByRole("list", { name: "Also on the job" })).toContainText("Nur Aisyah");
 

@@ -5,7 +5,8 @@
  * (tests/db/work-order-lines.test.ts), so the preview and the stored
  * figures can never disagree. Every value was worked out by hand:
  * sale = round(q × price, 2), cost = round(q × cost, 2), yield = sale − cost,
- * cc = round(max(yield, 0) × rate, 2), afterCc = yield − cc.
+ * cc = round(max(yield, 0) × rate, 2), afterCc = yield − cc. The shared
+ * fixture table: later phases (Phase 5) add cases here, not a new table.
  */
 
 export type LineFixture = {

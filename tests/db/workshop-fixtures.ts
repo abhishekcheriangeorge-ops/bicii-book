@@ -1,8 +1,11 @@
 /**
- * Helpers for the Phase 3 workshop database tests. Tests of the rules
- * create their own customers, bikes, services and jobs inside their
- * transaction; the seeded workshop data (WORK_ORDER, SERVICE, ... in
- * tests/fixtures/ids.ts) is for the seed, customer-access and search tests.
+ * The shared workshop DB fixture module: helpers for the Phase 3 workshop
+ * database tests, which later phases extend rather than recreate (Phase 4's
+ * inventory-line tests, Phase 5's tests/db/reporting-fixtures.ts builds its
+ * job inserts on top of it). Tests of the rules create their own
+ * customers, bikes, services and jobs inside their transaction; the seeded
+ * workshop data (WORK_ORDER, SERVICE, ... in tests/fixtures/ids.ts) is for
+ * the seed, customer-access and search tests.
  * A service a test creates needs a name the seed does not use (active
  * service names are unique), and a count must be scoped to the test's own
  * job or customer.
@@ -241,9 +244,11 @@ export async function events(tx: pg.Client, workOrderId: string): Promise<EventR
   return rows;
 }
 
+/** The job's event types, oldest first. */
 export const eventTypes = async (tx: pg.Client, workOrderId: string) =>
   (await events(tx, workOrderId)).map((e) => e.event_type);
 
+/** public.add_service_line as whoever `tx` is; returns the line id. Prices as strings. */
 export async function addServiceLine(
   tx: pg.Client,
   a: {
@@ -271,6 +276,7 @@ export async function addServiceLine(
   return rows[0].id;
 }
 
+/** public.add_manual_line as whoever `tx` is; returns the line id. Prices as strings. */
 export async function addManualLine(
   tx: pg.Client,
   a: {
@@ -296,6 +302,7 @@ export async function addManualLine(
   return rows[0].id;
 }
 
+/** public.void_line as whoever `tx` is; returns the line id. */
 export async function voidLine(tx: pg.Client, lineId: string, reason: string | null) {
   return (await tx.query<{ id: string }>("select public.void_line($1, $2) as id", [lineId, reason]))
     .rows[0].id;

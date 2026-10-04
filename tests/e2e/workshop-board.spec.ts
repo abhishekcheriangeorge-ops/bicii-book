@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { BIKE, WORK_ORDER } from "../fixtures/ids";
-import { signIn, tagFor, toast } from "./helpers";
+import { createJobViaIntake, section, signIn, tagFor, toast } from "./helpers";
 
 /**
  * M1.3 workshop, on a phone and an iPad: the board and My Jobs with their
@@ -12,10 +12,6 @@ import { signIn, tagFor, toast } from "./helpers";
  * record a test creates carries tagFor(testInfo); nothing counts rows
  * across the shared database.
  */
-
-/** The section (Card) whose heading is `title`. */
-const card = (page: Page, title: string) =>
-  page.locator("section").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
 
 /** A job number shown on the page body (not the header). */
 const job = (page: Page, number: string) =>
@@ -118,7 +114,7 @@ test("a mechanic with cost access sees the job's Cult Commons", async ({ page })
   await expect(totals).toContainText(/BICII yield after Cult Commons\s*\$123\.20/);
 
   await page.goto("/settings/services");
-  await expect(card(page, "Cult Commons")).toContainText("30%");
+  await expect(section(page, "Cult Commons")).toContainText("30%");
   await expect(page.getByRole("button", { name: "Schedule a new rate" })).toHaveCount(0);
 });
 
@@ -166,33 +162,11 @@ test("a new service reaches a new job; the lead is reassigned and a note added",
   await expect(page.getByRole("list", { name: "Servicing" })).toContainText(serviceName);
 
   // A job, through intake, with Marcus as lead.
-  await page.goto("/jobs/new");
-  await page.getByRole("button", { name: "New customer" }).click();
-  const customerSheet = page.getByRole("dialog", { name: "New customer" });
-  await customerSheet.getByLabel("First name").fill("Board");
-  await customerSheet.getByLabel("Last name").fill(tag);
-  await customerSheet.getByRole("button", { name: "Create customer" }).click();
-  await expect(page.getByText("Step 2 of 5", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Add bike" }).click();
-  const bikeSheet = page.getByRole("dialog", { name: "New bike" });
-  await bikeSheet.getByLabel("Brand").fill("Brompton");
-  await bikeSheet.getByLabel("Model").fill(`B Line ${tag}`);
-  await bikeSheet.getByRole("button", { name: "Add bike" }).click();
-  await expect(bikeSheet).toBeHidden();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByLabel("Requested work").fill("Gears slipping");
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page
-    .getByRole("radiogroup", { name: "Lead mechanic" })
-    .getByRole("radio", { name: "Marcus Tan" })
-    .click();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByText("Step 5 of 5", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.getByRole("button", { name: "Create job" }).click();
-  await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]{36}\?intake=photos$/);
-  await page.getByRole("link", { name: "Done" }).click();
-  await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]{36}$/);
+  const { jobNumber } = await createJobViaIntake(page, {
+    tag,
+    requestedWork: "Gears slipping",
+    lead: "Marcus Tan",
+  });
 
   // The new service is offered on it.
   await page.getByRole("button", { name: "Add service" }).click();
@@ -203,7 +177,7 @@ test("a new service reaches a new job; the lead is reassigned and a note added",
   await expect(addService).toBeHidden();
 
   // Reassign the lead to Nur: Marcus leaves the job.
-  const people = card(page, "People");
+  const people = section(page, "People");
   await expect(people.getByRole("list", { name: "Lead" })).toContainText("Marcus Tan");
   await people.getByRole("button", { name: "Assign" }).click();
   const assign = page.getByRole("dialog", { name: "Assign" });
@@ -232,7 +206,7 @@ test("a new service reaches a new job; the lead is reassigned and a note added",
   await expect(toast(page, "Marked as approved by the customer")).toBeVisible();
 
   // Details: a blank requested work is refused and what was typed stays.
-  await card(page, "Requested work").getByRole("button", { name: "Edit" }).click();
+  await section(page, "Requested work").getByRole("button", { name: "Edit" }).click();
   const details = page.getByRole("dialog", { name: "Edit job details" });
   await details.getByLabel("Requested work").fill("");
   await details.getByLabel("Internal notes").fill(`Seat post seized ${tag}`);
@@ -242,7 +216,7 @@ test("a new service reaches a new job; the lead is reassigned and a note added",
   await details.getByLabel("Requested work").fill("Gears slipping, index both derailleurs");
   await details.getByRole("button", { name: "Save" }).click();
   await expect(details).toBeHidden();
-  await expect(card(page, "Notes")).toContainText(`Seat post seized ${tag}`);
+  await expect(section(page, "Notes")).toContainText(`Seat post seized ${tag}`);
 
   // Everything is in the timeline.
   const timeline = page.getByRole("list", { name: "Timeline" });
@@ -263,7 +237,6 @@ test("a new service reaches a new job; the lead is reassigned and a note added",
   ).toBeVisible();
 
   // On the board, the job now shows Nur as its lead.
-  const jobNumber = (await page.getByRole("heading", { level: 1 }).textContent())!.trim();
   await page.goto(`/jobs?q=${jobNumber}`);
   await expect(page.getByRole("link", { name: new RegExp(`^${jobNumber}`) })).toContainText(
     "Nur Aisyah",

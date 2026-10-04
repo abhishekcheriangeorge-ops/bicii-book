@@ -14,7 +14,8 @@
  * no Cult Commons and does not reduce another line's. Rounding is half up
  * (away from zero), as Postgres round(numeric). The fixture table in
  * tests/fixtures/cult-commons.ts is run through both this module and the
- * database.
+ * database. This is the shared Cult Commons helper: later phases (Phase 5
+ * reporting) extend it rather than recreate it.
  */
 import { Decimal, toDecimal, type MoneyInput } from "@/lib/money";
 

@@ -68,7 +68,11 @@ export function isClosedStatus(status: WorkOrderStatus): boolean {
   return status === "collected" || status === "cancelled";
 }
 
-/** D20: a job still open this many days after check-in is overdue. */
+/**
+ * D20: a job still open this many days (× 24 hours) after check-in is
+ * overdue; in SQL, open and `now() - checked_in_at > interval '7 days'`.
+ * Phase 5 (overdue exception, Today tile) and Phase 9 reporting import it.
+ */
 export const OVERDUE_AFTER_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
