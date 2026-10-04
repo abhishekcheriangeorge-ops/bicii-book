@@ -6,11 +6,17 @@
 //
 //   npm run devstack:start
 //
-// The database must exist first: npm run db:reset.
+// If the database does not exist yet (first run), it is built first, as
+// `npm run db:reset` would. An existing database is never touched: if it is
+// not built, start stops and asks for `npm run db:reset`.
+
+import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 import pg from "pg";
 
 import { GATEWAY_URL, STATE_DIR, databaseUrl, fail, log, redact, requireCache } from "./config.mjs";
+import { buildDatabase } from "./database.mjs";
 import {
   isAlive,
   logFile,
@@ -27,6 +33,12 @@ async function checkDatabase(url) {
   try {
     await client.connect();
   } catch (err) {
+    if (err.code === "3D000") {
+      // invalid_catalog_name: the database does not exist yet.
+      log(`${redact(url)} does not exist; building it (npm run db:reset does the same)`);
+      await buildDatabase(url, { onStep: (step) => log(step) });
+      return;
+    }
     fail(
       `cannot connect to ${redact(url)} (${err.message}). Is Postgres running? Run npm run db:reset.`,
     );
@@ -57,6 +69,16 @@ async function main() {
   log(`database ${redact(url)}`);
   log(`state and logs in ${STATE_DIR}`);
 
+  // Services already running against another database (say, a different
+  // PGPORT or DATABASE_URL than last time) would pass the health checks
+  // below while serving the wrong data: restart them all.
+  const target = redact(url);
+  const previous = readTarget();
+  if (previous && previous !== target) {
+    log(`services were started for ${previous}; restarting them for ${target}`);
+    for (const service of services().reverse()) await stopService(service.name);
+  }
+
   for (const service of services()) {
     const pid = readPid(service.name);
     if (pid && isAlive(pid)) {
@@ -81,7 +103,18 @@ async function main() {
     }
     log(`${service.name}: started (pid ${newPid}, port ${service.port})`);
   }
+  writeFileSync(TARGET_FILE, `${target}\n`);
   log(`ready: ${GATEWAY_URL} (auth/v1, rest/v1, storage/v1; GET /health)`);
+}
+
+const TARGET_FILE = path.join(STATE_DIR, "database");
+
+function readTarget() {
+  try {
+    return readFileSync(TARGET_FILE, "utf8").trim();
+  } catch {
+    return "";
+  }
 }
 
 main().catch((err) => fail(err.stack ?? String(err)));

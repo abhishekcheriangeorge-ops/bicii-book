@@ -38,6 +38,12 @@ begin
   if not exists (select from pg_roles where rolname = 'supabase_storage_admin') then
     create role supabase_storage_admin login noinherit createrole;
   end if;
+  -- Supabase Auth's migrations grant to `postgres` by name. A cluster whose
+  -- bootstrap superuser has another name (initdb -U, some CI images) has no
+  -- such role; a NOLOGIN placeholder is enough for those grants.
+  if not exists (select from pg_roles where rolname = 'postgres') then
+    create role postgres nologin;
+  end if;
 end
 $$;
 
@@ -53,7 +59,10 @@ alter role supabase_storage_admin login noinherit createrole password 'postgres'
 grant anon, authenticated, service_role to authenticator;
 -- Supabase grants the API roles to postgres (so it can `set role` in tests
 -- and in the SQL editor) and to the storage admin (Storage runs each request
--- under the caller's role so storage.objects RLS applies).
+-- under the caller's role so storage.objects RLS applies). The superuser
+-- running this file may not be called postgres (a CI service container or a
+-- laptop cluster can name it anything), so grant to whoever runs it too.
+grant anon, authenticated, service_role to current_user;
 grant anon, authenticated, service_role to postgres;
 grant anon, authenticated, service_role to supabase_storage_admin;
 

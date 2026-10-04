@@ -4,7 +4,8 @@
  * PostgREST, and round-trips an object through Storage.
  *
  * Needs `npm run db:reset && npm run devstack:start`. Skips, saying so, when
- * the gateway is not reachable (e.g. in CI's database-only job).
+ * the gateway is not reachable, unless BICII_REQUIRE_STACK=1 (CI), where an
+ * unreachable gateway fails the file instead.
  */
 import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
@@ -26,6 +27,13 @@ async function gatewayHealthy(): Promise<boolean> {
 }
 
 const reachable = await gatewayHealthy();
+// CI starts the devstack before `npm test` and sets BICII_REQUIRE_STACK=1, so
+// an unreachable gateway there is a failure, not a silent skip.
+if (!reachable && process.env.BICII_REQUIRE_STACK === "1") {
+  throw new Error(
+    `[stack smoke] BICII_REQUIRE_STACK=1 but the devstack gateway is not reachable at ${url}/health.`,
+  );
+}
 if (!reachable) {
   console.warn(
     `[stack smoke] SKIPPED: devstack gateway not reachable at ${url}/health. ` +

@@ -58,6 +58,22 @@ async function migrate() {
 }
 
 /**
+ * The Supabase CLI insists on TLS unless the URL says otherwise, and a local
+ * or CI Postgres (the postgres:16 image) usually has SSL off. Loopback hosts
+ * get sslmode=disable (the CLI treats "prefer" as "require"); PGSSLMODE or
+ * an explicit ?sslmode= wins.
+ */
+function cliDatabaseUrl(url) {
+  const u = new URL(url);
+  if (!u.searchParams.has("sslmode")) {
+    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname);
+    const mode = process.env.PGSSLMODE ?? (loopback ? "disable" : undefined);
+    if (mode) u.searchParams.set("sslmode", mode);
+  }
+  return u.toString();
+}
+
+/**
  * Generates src/lib/database.types.ts with the Supabase CLI's own generator.
  * `supabase gen types typescript --db-url` runs without Docker. With
  * --fresh, generates from a throwaway database built from the migrations
@@ -75,7 +91,17 @@ async function types(args) {
     log(`generating types from ${redact(url)}`);
     const result = spawnSync(
       "npx",
-      ["-y", SUPABASE_CLI, "gen", "types", "typescript", "--db-url", url, "--schema", "public"],
+      [
+        "-y",
+        SUPABASE_CLI,
+        "gen",
+        "types",
+        "typescript",
+        "--db-url",
+        cliDatabaseUrl(url),
+        "--schema",
+        "public",
+      ],
       { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
     );
     if (result.status !== 0 || !result.stdout.includes("export type Database")) {
