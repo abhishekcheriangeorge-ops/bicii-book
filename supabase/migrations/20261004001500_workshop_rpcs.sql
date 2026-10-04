@@ -15,6 +15,8 @@
 --
 -- Line RPCs return the line id only: a line row carries its cost, and an
 -- RPC result is not column-gated (staff without view_costs call them too).
+-- For the same reason every write to a line re-raises a check or not-null
+-- violation without its row DETAIL (private.raise_without_row).
 --
 -- Extension points: Phase 2's check_in_appointment calls
 -- private.create_work_order with an appointment id; Phase 4 adds
@@ -174,6 +176,12 @@ declare
   existing public.work_order_line_items;
   svc public.services;
   inserted uuid;
+  err_state text;
+  err_constraint text;
+  err_table text;
+  err_schema text;
+  err_column text;
+  err_message text;
 begin
   select li.* into existing from public.work_order_line_items li where li.id = insert_service_line.line_id;
   if found then
@@ -205,22 +213,31 @@ begin
       detail = 'That service is inactive or archived.';
   end if;
 
-  insert into public.work_order_line_items as li (
-    id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
-    unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency, created_by
-  )
-  values (
-    insert_service_line.line_id, wo.id, 'service', svc.id,
-    coalesce(nullif(pg_catalog.btrim(insert_service_line.description), ''), svc.name),
-    insert_service_line.quantity,
-    coalesce(insert_service_line.unit_sale_price, svc.default_sale_price),
-    coalesce(insert_service_line.unit_direct_cost, svc.default_direct_cost),
-    private.cult_commons_rate_at(pg_catalog.clock_timestamp()),
-    wo.currency,
-    private.current_staff_id()
-  )
-  on conflict (id) do nothing
-  returning li.id into inserted;
+  begin
+    insert into public.work_order_line_items as li (
+      id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+      unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency, created_by
+    )
+    values (
+      insert_service_line.line_id, wo.id, 'service', svc.id,
+      coalesce(nullif(pg_catalog.btrim(insert_service_line.description), ''), svc.name),
+      insert_service_line.quantity,
+      coalesce(insert_service_line.unit_sale_price, svc.default_sale_price),
+      coalesce(insert_service_line.unit_direct_cost, svc.default_direct_cost),
+      private.cult_commons_rate_at(pg_catalog.clock_timestamp()),
+      wo.currency,
+      private.current_staff_id()
+    )
+    on conflict (id) do nothing
+    returning li.id into inserted;
+  exception
+    when check_violation or not_null_violation then
+      -- No DETAIL: it would print the row, costs included (raise_without_row).
+      get stacked diagnostics
+        err_state = returned_sqlstate, err_constraint = constraint_name, err_table = table_name,
+        err_schema = schema_name, err_column = column_name, err_message = message_text;
+      perform private.raise_without_row(err_state, err_constraint, err_table, err_schema, err_column, err_message);
+  end;
 
   if inserted is null then
     select li.* into existing from public.work_order_line_items li where li.id = insert_service_line.line_id;
@@ -551,7 +568,12 @@ comment on function public.update_work_order(uuid, text, text, text, text) is
   'Active staff: edit requested work and notes (null keeps, '''' clears); one details_changed event.';
 
 -- Active staff: add a note or a diagnosis to the timeline. Any status.
+-- note_id is the client's idempotency key (DESIGN.md "Forms"), kept in the
+-- payload: the timeline is append-only, so a retried submit must find the
+-- note it already wrote. A replay on the same job returns that event
+-- (before any other check); the same id on another job is note_conflict.
 create function public.add_work_order_note(
+  note_id uuid,
   work_order_id uuid,
   kind public.work_order_note_kind,
   body text
@@ -564,11 +586,30 @@ set search_path = ''
 as $$
 declare
   cleaned text := nullif(pg_catalog.btrim(coalesce(add_work_order_note.body, '')), '');
+  existing public.work_order_events;
 begin
   perform private.require_staff();
-  if add_work_order_note.work_order_id is null or add_work_order_note.kind is null then
-    raise exception 'work_order_id and kind are required' using errcode = '22004';
+  if add_work_order_note.note_id is null or add_work_order_note.work_order_id is null
+     or add_work_order_note.kind is null then
+    raise exception 'note_id, work_order_id and kind are required' using errcode = '22004';
   end if;
+  -- Serialises calls on the job, so two calls with one id add one note.
+  perform private.lock_work_order(add_work_order_note.work_order_id);
+
+  select e.* into existing
+  from public.work_order_events e
+  where e.event_type in ('note_added', 'diagnosis_added')
+    and (e.payload ->> 'note_id') = add_work_order_note.note_id::text;
+  if found then
+    if existing.work_order_id = add_work_order_note.work_order_id then
+      return existing;
+    end if;
+    raise exception using
+      errcode = 'P0001',
+      message = 'note_conflict',
+      detail = 'That note id is already used on another job.';
+  end if;
+
   if cleaned is null then
     raise exception using
       errcode = 'P0001',
@@ -581,24 +622,23 @@ begin
       message = 'note_too_long',
       detail = 'Keep the note under 5,000 characters.';
   end if;
-  perform 1 from public.work_orders w where w.id = add_work_order_note.work_order_id for share;
-  if not found then
-    raise exception 'work order % not found', add_work_order_note.work_order_id using errcode = 'P0002';
-  end if;
   return private.record_work_order_event(
     add_work_order_note.work_order_id,
     case add_work_order_note.kind when 'diagnosis' then 'diagnosis_added' else 'note_added' end
       ::public.work_order_event_type,
-    pg_catalog.jsonb_build_object('body', cleaned)
+    pg_catalog.jsonb_build_object('note_id', add_work_order_note.note_id, 'body', cleaned)
   );
 end;
 $$;
 
-comment on function public.add_work_order_note(uuid, public.work_order_note_kind, text) is
-  'Active staff: append a note or diagnosis to a job''s timeline.';
+comment on function public.add_work_order_note(uuid, uuid, public.work_order_note_kind, text) is
+  'Active staff: append a note or diagnosis to a job''s timeline; replay-safe by note id.';
 
 -- Active staff: the optional internal approval flag (SPEC §7.1; no customer
--- approval workflow). Not on a collected or cancelled job. Replay: no-op.
+-- approval workflow). Not on a collected or cancelled job. Like
+-- update_work_order, a null note keeps the stored one and '' clears it, so
+-- flipping the switch never overwrites a note someone else saved since the
+-- caller's page loaded. Replay: no-op.
 create function public.set_approval_flag(work_order_id uuid, flagged boolean, note text default null)
 returns public.work_orders
 language plpgsql
@@ -608,7 +648,7 @@ set search_path = ''
 as $$
 declare
   wo public.work_orders;
-  cleaned text := nullif(pg_catalog.btrim(coalesce(set_approval_flag.note, '')), '');
+  new_note text;
   result public.work_orders;
 begin
   perform private.require_staff();
@@ -617,11 +657,13 @@ begin
   end if;
   wo := private.lock_work_order(set_approval_flag.work_order_id);
   perform private.require_unclosed_work_order(wo);
-  if wo.approval_flag = set_approval_flag.flagged and wo.approval_note is not distinct from cleaned then
+  new_note := case when set_approval_flag.note is null then wo.approval_note
+                   else nullif(pg_catalog.btrim(set_approval_flag.note), '') end;
+  if wo.approval_flag = set_approval_flag.flagged and wo.approval_note is not distinct from new_note then
     return wo;
   end if;
   update public.work_orders w
-  set approval_flag = set_approval_flag.flagged, approval_note = cleaned
+  set approval_flag = set_approval_flag.flagged, approval_note = new_note
   where w.id = wo.id
   returning w.* into result;
   return result;
@@ -629,7 +671,7 @@ end;
 $$;
 
 comment on function public.set_approval_flag(uuid, boolean, text) is
-  'Active staff: set or clear the internal approval flag and note; replay-safe.';
+  'Active staff: set or clear the internal approval flag; a note replaces the stored one (null keeps, '''' clears); replay-safe.';
 
 -- ---------------------------------------------------------------------------
 -- Assignments (D22)
@@ -752,6 +794,12 @@ declare
   wo public.work_orders;
   existing public.work_order_line_items;
   inserted uuid;
+  err_state text;
+  err_constraint text;
+  err_table text;
+  err_schema text;
+  err_column text;
+  err_message text;
 begin
   if add_manual_line.unit_direct_cost is not null and not private.has_permission('view_costs') then
     raise exception 'permission view_costs required to set a cost' using errcode = '42501';
@@ -783,17 +831,30 @@ begin
       detail = 'This job is completed or closed; reopen it to change its lines.';
   end if;
 
-  insert into public.work_order_line_items as li (
-    id, work_order_id, line_type, description_snapshot, quantity,
-    unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency, created_by
-  )
-  values (
-    add_manual_line.line_id, wo.id, 'manual', add_manual_line.description, add_manual_line.quantity,
-    add_manual_line.unit_sale_price, coalesce(add_manual_line.unit_direct_cost, 0),
-    private.cult_commons_rate_at(pg_catalog.clock_timestamp()), wo.currency, actor
-  )
-  on conflict (id) do nothing
-  returning li.id into inserted;
+  -- No cost given: 0 as a placeholder, marked cost_pending (D14), so the
+  -- line's yield and Cult Commons are known to be provisional.
+  begin
+    insert into public.work_order_line_items as li (
+      id, work_order_id, line_type, description_snapshot, quantity,
+      unit_sale_price_snapshot, unit_direct_cost_snapshot, cost_pending, cult_commons_rate_snapshot,
+      currency, created_by
+    )
+    values (
+      add_manual_line.line_id, wo.id, 'manual', add_manual_line.description, add_manual_line.quantity,
+      add_manual_line.unit_sale_price, coalesce(add_manual_line.unit_direct_cost, 0),
+      add_manual_line.unit_direct_cost is null,
+      private.cult_commons_rate_at(pg_catalog.clock_timestamp()), wo.currency, actor
+    )
+    on conflict (id) do nothing
+    returning li.id into inserted;
+  exception
+    when check_violation or not_null_violation then
+      -- No DETAIL: it would print the row, costs included (raise_without_row).
+      get stacked diagnostics
+        err_state = returned_sqlstate, err_constraint = constraint_name, err_table = table_name,
+        err_schema = schema_name, err_column = column_name, err_message = message_text;
+      perform private.raise_without_row(err_state, err_constraint, err_table, err_schema, err_column, err_message);
+  end;
 
   if inserted is null then
     select li.* into existing from public.work_order_line_items li where li.id = add_manual_line.line_id;
@@ -811,7 +872,7 @@ $$;
 
 comment on function public.add_manual_line(
   uuid, uuid, text, public.money_amount, public.line_quantity, public.money_amount
-) is 'Active staff: add a free-text line to an open job (a cost needs view_costs); replay-safe by line id; returns the id.';
+) is 'Active staff: add a free-text line to an open job (a cost needs view_costs; none given marks it cost_pending, D14); replay-safe by line id; returns the id.';
 
 -- Active staff: void a line with a reason. Never deletes. Replay returns the
 -- id. EXTENSION POINT: Phase 4 replaces this function so voiding an
@@ -830,6 +891,12 @@ declare
   wo_id uuid;
   wo public.work_orders;
   target public.work_order_line_items;
+  err_state text;
+  err_constraint text;
+  err_table text;
+  err_schema text;
+  err_column text;
+  err_message text;
 begin
   if void_line.line_id is null then
     raise exception 'line_id is required' using errcode = '22004';
@@ -871,9 +938,18 @@ begin
       detail = 'Parts lines are voided with their stock reversal, which arrives with inventory.';
   end if;
 
-  update public.work_order_line_items li
-  set voided_at = pg_catalog.clock_timestamp(), voided_by = actor, void_reason = cleaned
-  where li.id = target.id;
+  begin
+    update public.work_order_line_items li
+    set voided_at = pg_catalog.clock_timestamp(), voided_by = actor, void_reason = cleaned
+    where li.id = target.id;
+  exception
+    when check_violation or not_null_violation then
+      -- No DETAIL: it would print the row, costs included (raise_without_row).
+      get stacked diagnostics
+        err_state = returned_sqlstate, err_constraint = constraint_name, err_table = table_name,
+        err_schema = schema_name, err_column = column_name, err_message = message_text;
+      perform private.raise_without_row(err_state, err_constraint, err_table, err_schema, err_column, err_message);
+  end;
   return target.id;
 end;
 $$;
@@ -887,7 +963,8 @@ comment on function public.void_line(uuid, text) is
 
 -- Active staff: a job's timeline, newest first, with the actor's name and,
 -- for assignment events, the subject's (staff cannot read colleagues' staff
--- rows, so the names are resolved here).
+-- rows, so the names are resolved here). At most 2000 rows; a caller asks
+-- for one more than it shows to know that older events exist.
 create function public.work_order_timeline(work_order_id uuid, max_rows integer default 200)
 returns table (
   id bigint,
@@ -921,12 +998,12 @@ begin
     left join public.staff s on s.id = subj.staff_id
     where e.work_order_id = work_order_timeline.work_order_id
     order by e.created_at desc, e.id desc
-    limit greatest(1, least(coalesce(work_order_timeline.max_rows, 200), 500));
+    limit greatest(1, least(coalesce(work_order_timeline.max_rows, 200), 2000));
 end;
 $$;
 
 comment on function public.work_order_timeline(uuid, integer) is
-  'Active staff: a job''s timeline, newest first, with actor and assignment-subject names (at most 500 rows).';
+  'Active staff: a job''s timeline, newest first, with actor and assignment-subject names (at most 2000 rows).';
 
 -- ---------------------------------------------------------------------------
 -- Privileges
@@ -946,7 +1023,7 @@ revoke all on function
   public.create_work_order(uuid, uuid, uuid, text, text, uuid, uuid[], jsonb),
   public.set_work_order_status(uuid, public.work_order_status, text),
   public.update_work_order(uuid, text, text, text, text),
-  public.add_work_order_note(uuid, public.work_order_note_kind, text),
+  public.add_work_order_note(uuid, uuid, public.work_order_note_kind, text),
   public.set_approval_flag(uuid, boolean, text),
   public.assign_staff(uuid, uuid, public.assignment_role),
   public.unassign_staff(uuid, uuid),
@@ -960,7 +1037,7 @@ grant execute on function
   public.create_work_order(uuid, uuid, uuid, text, text, uuid, uuid[], jsonb),
   public.set_work_order_status(uuid, public.work_order_status, text),
   public.update_work_order(uuid, text, text, text, text),
-  public.add_work_order_note(uuid, public.work_order_note_kind, text),
+  public.add_work_order_note(uuid, uuid, public.work_order_note_kind, text),
   public.set_approval_flag(uuid, boolean, text),
   public.assign_staff(uuid, uuid, public.assignment_role),
   public.unassign_staff(uuid, uuid),

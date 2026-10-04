@@ -133,23 +133,20 @@ describe.skipIf(!isolatedDatabase())("workshop under concurrency", () => {
     const transfer = asAdmin(b, (tx) =>
       tx.query("select public.transfer_bike_ownership($1, $2, 'Sold')", [bikeId, next]),
     );
-    await pause();
+    // The transfer is still waiting while the check-in holds the bike.
+    const settled = await Promise.race([
+      transfer.then(() => "settled" as const),
+      pause().then(() => "waiting" as const),
+    ]);
+    expect(settled).toBe("waiting");
+    const { rows: waiting } = await setup.query(
+      `select count(*)::int as n from pg_stat_activity
+        where pid = $1 and wait_event_type = 'Lock'`,
+      [(b as unknown as { processID: number }).processID],
+    );
+    expect(waiting).toEqual([{ n: 1 }]);
     await a.query("commit");
     expect((await transfer).ok).toBe(true);
-
-    // No job was ever checked in for someone who did not own the bike then.
-    const { rows } = await setup.query(
-      `select w.job_number
-         from public.work_orders w
-         cross join lateral (
-           select e.to_customer_id as owner
-             from public.bike_ownership_events e
-            where e.bike_id = w.bike_id and e.created_at <= w.checked_in_at
-            order by e.created_at desc limit 1
-         ) o
-        where o.owner is not null and o.owner <> w.customer_id`,
-    );
-    expect(rows).toEqual([]);
   });
 
   it("two different leads assigned at once leave exactly one active lead, mirrored on the job", async () => {

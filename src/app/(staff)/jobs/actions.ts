@@ -255,13 +255,14 @@ export const setApprovalFlag = staffAction(
   z.object({
     workOrderId,
     flagged: z.boolean(),
+    // Null or missing keeps the stored note (the switch); "" clears it.
     note: z
       .string()
       .trim()
       .max(500, { error: "Keep the approval note under 500 characters." })
       .nullable()
       .optional()
-      .transform((v) => v || null),
+      .transform((v) => v ?? null),
   }),
   { name: "jobs.set_approval" },
   async (input, { supabase }) => {
@@ -271,9 +272,10 @@ export const setApprovalFlag = staffAction(
   },
 );
 
-/** Add a note or a diagnosis to the job's timeline; any status. */
+/** Add a note or a diagnosis to the job's timeline; any status. Replay-safe by note id. */
 export const addWorkOrderNote = staffAction(
   z.object({
+    noteId: z.uuid({ error: "Open the note again." }),
     workOrderId,
     kind: z.enum(Constants.public.Enums.work_order_note_kind),
     body: z
@@ -290,15 +292,20 @@ export const addWorkOrderNote = staffAction(
   },
 );
 
+/** A field the form left out is null (keep what is stored); "" clears it. */
 const optionalText = (max: number, what: string) =>
   z
     .string()
     .trim()
     .max(max, { error: `Keep the ${what} under ${max.toLocaleString("en-SG")} characters.` })
     .optional()
-    .transform((v) => v ?? "");
+    .transform((v) => v ?? null);
 
-/** Edit the requested work and the notes; an emptied note is cleared. */
+/**
+ * Edit the requested work and the notes. The sheet sends only the fields
+ * its user changed, so a field someone else saved meanwhile is kept, not
+ * overwritten with the stale value; an emptied note is cleared.
+ */
 export const updateWorkOrderDetails = staffAction(
   z.object({
     workOrderId,
@@ -306,7 +313,9 @@ export const updateWorkOrderDetails = staffAction(
       .string({ error: "Say what the customer wants done." })
       .trim()
       .min(1, { error: "Say what the customer wants done." })
-      .max(2_000, { error: "Keep the requested work under 2,000 characters." }),
+      .max(2_000, { error: "Keep the requested work under 2,000 characters." })
+      .optional()
+      .transform((v) => v ?? null),
     intakeNotes: optionalText(5_000, "condition notes"),
     internalNotes: optionalText(10_000, "internal notes"),
     completionNotes: optionalText(5_000, "completion notes"),

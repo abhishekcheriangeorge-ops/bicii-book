@@ -46,6 +46,13 @@ export type Line = {
   /** Null when added outside the app. */
   createdByName: string | null;
   voided: { at: string; byName: string | null; reason: string | null } | null;
+  /**
+   * A manual line added without a unit cost (D14): its cost 0 is a
+   * placeholder, so its yield and Cult Commons count the whole sale until a
+   * view_costs holder voids it and adds it again with the cost. Not a cost
+   * figure: every staff member sees it.
+   */
+  costPending: boolean;
   /** Only for view_costs holders. */
   costs?: LineCosts;
 };
@@ -63,14 +70,16 @@ export type Totals = {
     ccShare: string;
     /** BICII yield after Cult Commons. */
     yieldAfterCc: string;
+    /** Live lines with no cost entered (D14): while > 0 the figures above are provisional. */
+    costPendingCount: number;
   };
 };
 
 /** The sale-side columns every staff member may read (the table's column grant). */
 const SALE_COLUMNS =
-  "id, line_type, description_snapshot, quantity, unit_sale_price_snapshot, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason";
+  "id, line_type, description_snapshot, quantity, unit_sale_price_snapshot, cost_pending, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason";
 const COST_COLUMNS =
-  "id, line_type, description_snapshot, quantity, unit_sale_price_snapshot, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason, unit_direct_cost_snapshot, cost_total, yield_total, cult_commons_rate_snapshot, cult_commons_share";
+  "id, line_type, description_snapshot, quantity, unit_sale_price_snapshot, cost_pending, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason, unit_direct_cost_snapshot, cost_total, yield_total, cult_commons_rate_snapshot, cult_commons_share";
 
 type SaleRow = {
   id: string | null;
@@ -78,6 +87,7 @@ type SaleRow = {
   description_snapshot: string | null;
   quantity: number | null;
   unit_sale_price_snapshot: number | null;
+  cost_pending: boolean | null;
   currency: string | null;
   sale_total: number | null;
   created_by: string | null;
@@ -139,6 +149,7 @@ export async function listLines(
       voided: r.voided_at
         ? { at: r.voided_at, byName: nameOf(r.voided_by), reason: r.void_reason }
         : null,
+      costPending: r.cost_pending === true,
     };
     if (viewCosts && "cost_total" in r) {
       line.costs = {
@@ -164,7 +175,7 @@ export async function getTotals(
       await supabase
         .from("work_order_totals_staff")
         .select(
-          "currency, line_count, sale_total, cost_total, yield_total, cult_commons_share, bicii_yield_after_cc",
+          "currency, line_count, sale_total, cost_total, yield_total, cult_commons_share, bicii_yield_after_cc, cost_pending_count",
         )
         .eq("work_order_id", workOrderId)
         .maybeSingle(),
@@ -178,6 +189,7 @@ export async function getTotals(
         yieldTotal: money(row?.yield_total),
         ccShare: money(row?.cult_commons_share),
         yieldAfterCc: money(row?.bicii_yield_after_cc),
+        costPendingCount: row?.cost_pending_count ?? 0,
       },
     };
   }

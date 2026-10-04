@@ -99,6 +99,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
     "Cult Commons rates can't be changed. Schedule a new rate instead.",
   cult_commons_rate_in_effect: "That rate is already in effect and can't be cancelled.",
   rate_backdated: "A new rate can start now or later, never in the past.",
+  rate_conflict: "That rate clashes with another one. Schedule it again.",
+  note_conflict: "That note clashes with another one. Add it again.",
   attachment_work_order_never_public: "Photos on a job can't be made public.",
 };
 
@@ -126,6 +128,7 @@ export const UNIQUE_ERRORS: Record<string, string> = {
     "Someone else changed the assignments at the same time. Try again.",
   work_order_assignments_one_lead_key:
     "Someone else changed the assignments at the same time. Try again.",
+  work_order_events_note_id_key: "That note has already been added.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -151,6 +154,21 @@ export const CHECK_ERRORS: Record<string, string> = {
   attachments_byte_size_check: "Photos must be under 20 MB.",
   attachments_customer_never_public: "Photos on a customer record cannot be made public.",
   attachments_work_order_never_public: "Photos on a job can't be made public.",
+  // Shape checks the RPCs and triggers keep true; reaching one means a
+  // writer outside them (an owner backfill, a new path) got something wrong.
+  staff_events_permission_matches_type: "That staff history entry is not consistent.",
+  bikes_short_id_format: "A bike ID looks like B-000123.",
+  bike_ownership_events_registered_shape: "That ownership entry is not consistent.",
+  bike_ownership_events_transfer_changes_owner: "A transfer must go to a different owner.",
+  bike_ownership_events_transfer_has_reason: "Give a reason for the transfer.",
+  bike_ownership_events_reason_check: "Keep the reason under 500 characters.",
+  attachments_bucket_matches_visibility:
+    "The photo was stored in the wrong place. Upload it again.",
+  attachments_media_type_check: "Photos must be JPEG, PNG, WebP or HEIC.",
+  attachments_path_shape: "The photo was uploaded to the wrong place. Try again.",
+  attachments_extension_matches_media_type: "That file is not the type of photo it claims to be.",
+  attachment_events_deleted_has_reason: "Give a reason for deleting the photo.",
+  attachment_events_reason_check: "Keep the reason under 500 characters.",
   // Workshop (Phase 3)
   categories_name_check: "Enter a category name under 80 characters.",
   services_name_check: "Enter a service name under 120 characters.",
@@ -159,6 +177,23 @@ export const CHECK_ERRORS: Record<string, string> = {
   services_default_direct_cost_check: "Costs can't be negative.",
   services_currency_check: "Use a three-letter currency code.",
   cult_commons_rates_rate_check: "The rate must be between 0% and 100%.",
+  cult_commons_rates_cancelled_shape: "A cancelled rate needs the time it was cancelled.",
+  work_orders_job_number_format: "A job number looks like J-000123.",
+  work_orders_currency_check: "Use a three-letter currency code.",
+  work_orders_collected_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_cancelled_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_completed_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_ready_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_ready_after_completed: "A job is ready for collection only after it is completed.",
+  work_orders_completed_after_started: "A job is completed only after work has started.",
+  work_orders_started_after_check_in: "Work can't start before the bike was checked in.",
+  work_orders_completed_after_check_in: "A job can't be completed before the bike was checked in.",
+  work_orders_collected_after_completed: "A job is collected only after it is completed.",
+  work_orders_status_changed_after_check_in:
+    "A job's status can't change before the bike was checked in.",
+  work_order_assignments_unassigned_after_assigned:
+    "Someone can't leave a job before they were assigned to it.",
+  work_order_events_payload_object: "That timeline entry is not consistent.",
   work_orders_requested_work_check: "Say what the customer wants done, in under 2,000 characters.",
   work_orders_intake_notes_check: "Keep the condition notes under 5,000 characters.",
   work_orders_internal_notes_check: "Keep the internal notes under 10,000 characters.",
@@ -172,6 +207,13 @@ export const CHECK_ERRORS: Record<string, string> = {
   work_order_line_items_void_reason_check: "Keep the reason under 500 characters.",
   work_order_line_items_inventory_source: "Parts are counted in whole units.",
   work_order_line_items_unit_quantity: "A unique item is added one at a time.",
+  work_order_line_items_rate_check: "The rate must be between 0% and 100%.",
+  work_order_line_items_currency_check: "Use a three-letter currency code.",
+  work_order_line_items_void_shape: "A voided line needs a reason.",
+  work_order_line_items_service_source: "A service line needs its service.",
+  work_order_line_items_manual_source: "A manual line can't point at a service or a part.",
+  work_order_line_items_cost_pending_shape:
+    "Only a manual line without a cost can be cost pending.",
   money_amount_not_nan: "Enter an amount.",
   rate_fraction_not_nan: "Enter a rate.",
   line_quantity_not_nan: "Enter a quantity.",

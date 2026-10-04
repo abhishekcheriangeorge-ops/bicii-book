@@ -8,7 +8,10 @@
  *   * a line snapshots price, cost and the Cult Commons rate when it is
  *     added; catalog edits, archiving and new rates never change it;
  *   * any staff member may set a sale price; a cost needs view_costs (D14);
- *     staff without view_costs never read a cost, yield or Cult Commons;
+ *     a manual line added without a cost is marked cost_pending and counted
+ *     in the totals, so its placeholder 0 is never taken for a real cost;
+ *     staff without view_costs never read a cost, yield or Cult Commons,
+ *     not even through an error's DETAIL;
  *   * lines change only while the job is open; they are voided with a
  *     reason, never edited or deleted; adds are replay-safe by line id.
  *
@@ -37,6 +40,7 @@ import {
   createWorkOrder,
   eventTypes,
   failsWith,
+  makeBike,
   makeCustomerWithBike,
   makeService,
   ownerMode,
@@ -79,7 +83,7 @@ async function line(tx: pg.Client, id: string) {
     `select quantity::text, unit_sale_price_snapshot::text as price,
             unit_direct_cost_snapshot::text as cost, cult_commons_rate_snapshot::text as rate,
             sale_total::text as sale, cost_total::text as cost_total, yield_total::text as yield,
-            cult_commons_share::text as cc, description_snapshot as description,
+            cult_commons_share::text as cc, description_snapshot as description, cost_pending,
             voided_at, voided_by, void_reason, created_by, currency, source_service_id
        from public.work_order_line_items where id = $1`,
     [id],
@@ -241,7 +245,10 @@ describe.skipIf(!isolatedDatabase())("snapshots", () => {
     await withJob(ADMIN, async (tx, jobId) => {
       const a = await addManualLine(tx, { workOrderId: jobId, price: "100.00", cost: "20.00" });
       // Scheduled for tomorrow: today's lines still use 0.30.
-      await tx.query("select public.schedule_cult_commons_rate(0.1, now() + interval '1 day')");
+      await tx.query(
+        "select public.schedule_cult_commons_rate($1, 0.1, now() + interval '1 day')",
+        [randomUUID()],
+      );
       const today = await addManualLine(tx, { workOrderId: jobId, price: "100.00", cost: "20.00" });
       await ownerMode(tx);
       await tx.query(
@@ -288,7 +295,13 @@ describe.skipIf(!isolatedDatabase())("line pricing (D14)", () => {
           description: "Wheel true (front only)",
           created_by: STAFF.mechanic2,
         });
-        expect(await line(tx, manual)).toMatchObject({ cost: "0.00", rate: "0.3000" });
+        // No cost entered: 0 is a placeholder, and the line says so (D14).
+        expect(await line(tx, manual)).toMatchObject({
+          cost: "0.00",
+          rate: "0.3000",
+          cost_pending: true,
+        });
+        expect(await line(tx, cheaper)).toMatchObject({ cost_pending: false });
 
         await actAs(tx, MECHANIC1);
         const withCost = await addServiceLine(tx, { workOrderId: jobId, serviceId, cost: "6.50" });
@@ -358,6 +371,155 @@ describe.skipIf(!isolatedDatabase())("line pricing (D14)", () => {
         { code: "22004" },
       );
     });
+  });
+});
+
+describe.skipIf(!isolatedDatabase())("a manual line with no cost entered (D14)", () => {
+  const totals = (tx: pg.Client, jobId: string) =>
+    tx
+      .query(
+        `select cost_pending_count, cost_total::text as cost, cult_commons_share::text as cc
+           from public.work_order_totals_staff where work_order_id = $1`,
+        [jobId],
+      )
+      .then((r) => r.rows[0]);
+
+  it("is marked cost pending and counted in the totals until it is voided and re-added", async () => {
+    await withJob(MECHANIC2, async (tx, jobId) => {
+      const spoke = await addManualLine(tx, {
+        workOrderId: jobId,
+        description: "Spoke",
+        price: "10.00",
+      });
+      // The adder sees that a cost is still to be entered, never a cost.
+      expect(
+        await scalar(tx, "select cost_pending from public.work_order_line_items where id = $1", [
+          spoke,
+        ]),
+      ).toBe(true);
+
+      await actAs(tx, ADMIN);
+      const labour = await addManualLine(tx, { workOrderId: jobId, price: "50.00", cost: "0" });
+      const sundry = await addManualLine(tx, { workOrderId: jobId, price: "20.00" });
+      expect(await line(tx, labour)).toMatchObject({ cost: "0.00", cost_pending: false });
+      expect(await line(tx, sundry)).toMatchObject({ cost: "0.00", cost_pending: true });
+      await actAs(tx, ADMIN);
+      // 30% of the whole 80.00: provisional while two lines have no cost.
+      expect(await totals(tx, jobId)).toEqual({ cost_pending_count: 2, cost: "0.00", cc: "24.00" });
+
+      // The correction: void it and add it again with the real cost.
+      await voidLine(tx, spoke, "Cost not known when it was added");
+      await addManualLine(tx, {
+        workOrderId: jobId,
+        description: "Spoke",
+        price: "10.00",
+        cost: "4.00",
+      });
+      expect(await totals(tx, jobId)).toEqual({ cost_pending_count: 1, cost: "4.00", cc: "22.80" });
+
+      // Immutable like every other snapshot, for the owner too.
+      await ownerMode(tx);
+      await failsWith(
+        tx,
+        () =>
+          tx.query("update public.work_order_line_items set cost_pending = false where id = $1", [
+            sundry,
+          ]),
+        { code: "P0001", message: "line_immutable" },
+      );
+    });
+  });
+
+  it("only a manual line with a zero placeholder can be pending (CHECK)", async () => {
+    await withJob(ADMIN, async (tx, jobId) => {
+      await ownerMode(tx);
+      const serviceId = await makeService(tx, { name: "Pending Probe" });
+      const insert = (lineType: string, service: string | null, cost: string) =>
+        tx.query(
+          `insert into public.work_order_line_items
+             (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+              unit_sale_price_snapshot, unit_direct_cost_snapshot, cost_pending,
+              cult_commons_rate_snapshot, currency)
+           values ($1, $2, $3, $4, 'x', 1, 10, $5, true, 0.3, 'SGD')`,
+          [randomUUID(), jobId, lineType, service, cost],
+        );
+      for (const [lineType, service, cost] of [
+        ["service", serviceId, "0"],
+        ["manual", null, "5.00"],
+      ] as const) {
+        await failsWith(tx, () => insert(lineType, service, cost), {
+          code: "23514",
+          constraint: "work_order_line_items_cost_pending_shape",
+        });
+      }
+    });
+  });
+});
+
+describe.skipIf(!isolatedDatabase())("errors never print a line's cost (SPEC §4.2)", () => {
+  // A check violation inside a security definer function would otherwise
+  // carry DETAIL "Failing row contains (...)", built with the owner's
+  // privileges: every column, the cost, rate, yield and Cult Commons too.
+  const setup = async (tx: pg.Client) => ({
+    serviceId: await makeService(tx, { name: "Secret Cost Bleed", price: "45.00", cost: "8.37" }),
+  });
+
+  const leakFree = (err: unknown, constraint: string) => {
+    const e = err as { code?: string; constraint?: string; detail?: string; message?: string };
+    expect(e).toMatchObject({ code: "23514", constraint });
+    expect(e.detail).toBeUndefined();
+    expect(JSON.stringify(e)).not.toMatch(/8\.37|Failing row/);
+  };
+
+  it("add_service_line, add_manual_line and create_work_order refuse bad values without the row", async () => {
+    await withJob(
+      MECHANIC2,
+      async (tx, jobId, { serviceId, customerId }) => {
+        const attempts: Array<[() => Promise<unknown>, string]> = [
+          [
+            () => addServiceLine(tx, { workOrderId: jobId, serviceId, quantity: "10000" }),
+            "work_order_line_items_quantity_check",
+          ],
+          [
+            () => addServiceLine(tx, { workOrderId: jobId, serviceId, price: "-1" }),
+            "work_order_line_items_unit_sale_price_check",
+          ],
+          [
+            () => addServiceLine(tx, { workOrderId: jobId, serviceId, quantity: "0" }),
+            "work_order_line_items_quantity_check",
+          ],
+          [
+            () => addManualLine(tx, { workOrderId: jobId, price: "1", description: " " }),
+            "work_order_line_items_description_check",
+          ],
+          [
+            async () => {
+              await ownerMode(tx);
+              const bikeId = await makeBike(tx, customerId);
+              await actAs(tx, MECHANIC2);
+              return createWorkOrder(tx, {
+                customerId,
+                bikeId,
+                services: [{ line_id: randomUUID(), service_id: serviceId, quantity: 10000 }],
+              });
+            },
+            "work_order_line_items_quantity_check",
+          ],
+        ];
+        for (const [attempt, constraint] of attempts) {
+          await tx.query("savepoint probe");
+          const err = await attempt().then(
+            () => null,
+            (e: unknown) => e,
+          );
+          await tx.query("rollback to savepoint probe");
+          await actAs(tx, MECHANIC2);
+          expect(err, constraint).not.toBeNull();
+          leakFree(err, constraint);
+        }
+      },
+      setup,
+    );
   });
 });
 

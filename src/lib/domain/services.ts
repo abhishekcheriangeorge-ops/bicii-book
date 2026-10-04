@@ -428,15 +428,17 @@ export async function listCultCommonsRates(
 /**
  * Schedules a Cult Commons rate (RPC schedule_cult_commons_rate, admin):
  * from now (null) or a later time, never backdated. Lines added from then
- * on snapshot it; existing lines never change (D21).
+ * on snapshot it; existing lines never change (D21). `rateId` is the
+ * sheet's idempotency key, so a retried "start now" adds no second rate.
  */
 export async function scheduleCultCommonsRate(
   supabase: ServerSupabase,
-  input: { rate: string; effectiveFrom: Date | null },
+  input: { rateId: string; rate: string; effectiveFrom: Date | null },
 ): Promise<{ id: string; effectiveFrom: string }> {
   try {
     const row = unwrap(
       await supabase.rpc("schedule_cult_commons_rate", {
+        rate_id: input.rateId,
         rate: input.rate,
         effective_from: input.effectiveFrom?.toISOString(),
       }),

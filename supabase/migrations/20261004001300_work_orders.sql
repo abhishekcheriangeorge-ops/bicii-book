@@ -277,6 +277,10 @@ create table public.work_order_events (
 create index work_order_events_work_order_idx on public.work_order_events (work_order_id, created_at, id);
 create index work_order_events_type_idx on public.work_order_events (event_type, created_at);
 create index work_order_events_actor_staff_id_idx on public.work_order_events (actor_staff_id);
+-- add_work_order_note's idempotency key (its client-chosen note id).
+create unique index work_order_events_note_id_key
+  on public.work_order_events ((payload ->> 'note_id'))
+  where event_type in ('note_added', 'diagnosis_added');
 
 comment on table public.work_order_events is
   'Append-only job timeline, written by triggers and add_work_order_note. Payloads never carry costs, yield or Cult Commons values.';

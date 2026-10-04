@@ -16,12 +16,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
+import { newId } from "@/lib/uuid";
 
 /**
  * "Customer approved extra work" (SPEC §7.1: approval happens offline; this
  * is the optional internal flag and note). The switch applies at once
- * (useOptimistic, then a toast); the note is saved with its own button.
- * Hidden on collected or cancelled jobs.
+ * (useOptimistic, then a toast) and sends no note, so the stored one is
+ * kept; the note is saved only with its own button. The draft follows the
+ * stored note whenever the page brings a newer one. Hidden on collected or
+ * cancelled jobs.
  */
 export function ApprovalSwitch({
   workOrderId,
@@ -36,10 +39,17 @@ export function ApprovalSwitch({
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(flagged);
   const [draft, setDraft] = useState(note ?? "");
+  const [shownNote, setShownNote] = useState(note);
+  if (note !== shownNote) {
+    // Someone saved a note (this user or a colleague): show it.
+    setShownNote(note);
+    setDraft(note ?? "");
+  }
   const [noteError, setNoteError] = useState<string | undefined>();
   const noteChanged = draft.trim() !== (note ?? "");
 
-  const save = (next: boolean, nextNote: string) =>
+  /** `nextNote` null keeps the stored note; "" clears it. */
+  const save = (next: boolean, nextNote: string | null) =>
     startTransition(async () => {
       setOptimistic(next);
       const result = await setApprovalFlag({ workOrderId, flagged: next, note: nextNote });
@@ -68,7 +78,7 @@ export function ApprovalSwitch({
         description="Agreed offline (phone, in person). Staff only."
         checked={optimistic}
         disabled={pending}
-        onCheckedChange={(next) => save(next, draft)}
+        onCheckedChange={(next) => save(next, null)}
       />
       <Field label="Approval note" hint="Optional: what was agreed, with whom." error={noteError}>
         <Textarea
@@ -146,6 +156,8 @@ function NoteSheet({
 }) {
   const { toast } = useToast();
   const formId = useId();
+  // The idempotency key: a retry after a lost response finds the note.
+  const [noteId] = useState(newId);
   const copy = NOTE_COPY[kind];
   const [state, formAction, pending] = useActionState<NoteState, FormData>(
     async (prev, formData) => {
@@ -186,6 +198,7 @@ function NoteSheet({
         className="flex flex-col gap-4"
         noValidate
       >
+        <input type="hidden" name="noteId" value={noteId} />
         <input type="hidden" name="workOrderId" value={workOrderId} />
         <input type="hidden" name="kind" value={kind} />
         {failed ? (
@@ -214,6 +227,8 @@ export type JobDetails = {
 };
 
 type DetailsState = ActionResult<null> | null;
+
+const DETAIL_FIELDS = ["requestedWork", "intakeNotes", "internalNotes", "completionNotes"] as const;
 
 /** "Edit" on the requested work: the work wanted, condition on arrival and the two notes. */
 export function EditDetailsButton({
@@ -249,6 +264,13 @@ function DetailsSheet({
   const formId = useId();
   const [state, formAction, pending] = useActionState<DetailsState, FormData>(
     async (prev, formData) => {
+      // Only what this user changed since the sheet opened: an unchanged
+      // field is left out (the RPC keeps it), so a colleague's newer text
+      // there is not overwritten with this page's older copy.
+      for (const field of DETAIL_FIELDS) {
+        const typed = String(formData.get(field) ?? "").trim();
+        if (typed === (details[field] ?? "").trim()) formData.delete(field);
+      }
       const result = await updateWorkOrderDetails(prev, formData);
       if (result.ok) {
         toast({ title: "Job details saved", tone: "success" });

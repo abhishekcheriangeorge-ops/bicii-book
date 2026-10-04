@@ -468,6 +468,51 @@ describe.skipIf(!isolatedDatabase())("status machine (D15, D16)", () => {
     });
   });
 
+  // set_work_order_status checks the table itself before it updates, so the
+  // test above never reaches the trigger's copy. Direct writers (the owner,
+  // a seed, a future definer path) only have the trigger.
+  it("the trigger enforces the same table and reasons for direct writers (110 pairs)", async () => {
+    await scenario(MECHANIC2, async (tx, ids) => {
+      const direct = (id: string, to: WorkOrderStatus) =>
+        tx.query("update public.work_orders set status = $2 where id = $1 returning status", [
+          id,
+          to,
+        ]);
+      let checked = 0;
+      for (const from of WORK_ORDER_STATUSES) {
+        await actAs(tx, MECHANIC2);
+        const job = await createWorkOrder(tx, ids);
+        await walkTo(tx, job.id, from);
+        await ownerMode(tx);
+        for (const to of WORK_ORDER_STATUSES) {
+          if (to === from) continue;
+          checked++;
+          const rule = transitionRule(from, to);
+          await tx.query("select private.set_change_reason(null)");
+          if (rule === null) {
+            await tx.query("select private.set_change_reason('A reason')");
+            await failsWith(tx, () => direct(job.id, to), {
+              code: "P0001",
+              message: "work_order_transition_invalid",
+            });
+            continue;
+          }
+          if (rule === "reason_required") {
+            await failsWith(tx, () => direct(job.id, to), {
+              code: "P0001",
+              message: "reason_required",
+            });
+            await tx.query("select private.set_change_reason('A reason')");
+          }
+          const moved = await tryAndUndo(tx, () => direct(job.id, to));
+          expect(moved.rows[0].status).toBe(to);
+        }
+        await tx.query("select private.set_change_reason(null)");
+      }
+      expect(checked).toBe(110);
+    });
+  });
+
   it("the same status is a replay: row unchanged, no event (11 diagonal pairs)", async () => {
     await scenario(MECHANIC2, async (tx, ids) => {
       for (const status of WORK_ORDER_STATUSES) {
@@ -630,29 +675,52 @@ describe.skipIf(!isolatedDatabase())("timeline events", () => {
         tx.query("select public.set_approval_flag($1, $2, $3)", [job.id, flagged, note]);
       await flag(true, "Customer OK'd extra work by phone");
       await flag(true, "Customer OK'd extra work by phone");
+      // A null note keeps the stored one (the switch); '' clears it.
+      await flag(false, null);
+      expect(await workOrder(tx, job.id)).toMatchObject({
+        approval_flag: false,
+        approval_note: "Customer OK'd extra work by phone",
+      });
+      await flag(false, "");
+      expect((await workOrder(tx, job.id)).approval_note).toBeNull();
 
-      const note = await tx.query(
-        "select (e).* from (select public.add_work_order_note($1, 'note', $2) e) s",
-        [job.id, "  Called the customer  "],
-      );
+      await ownerMode(tx);
+      const otherIds = await makeCustomerWithBike(tx);
+      await actAs(tx, MECHANIC2);
+      const other = await createWorkOrder(tx, otherIds);
+
+      const noteId = randomUUID();
+      const addNote = (id: string, workOrderId: string, kind: string, body: string) =>
+        tx.query("select (e).* from (select public.add_work_order_note($1, $2, $3, $4) e) s", [
+          id,
+          workOrderId,
+          kind,
+          body,
+        ]);
+      const note = await addNote(noteId, job.id, "note", "  Called the customer  ");
       expect(note.rows[0]).toMatchObject({
         event_type: "note_added",
-        payload: { body: "Called the customer" },
+        payload: { note_id: noteId, body: "Called the customer" },
       });
-      await tx.query("select public.add_work_order_note($1, 'diagnosis', 'Worn pads')", [job.id]);
-      await failsWith(
-        tx,
-        () => tx.query("select public.add_work_order_note($1, 'note', '  ')", [job.id]),
-        {
-          code: "P0001",
-          message: "note_required",
-        },
-      );
-      await failsWith(
-        tx,
-        () => tx.query("select public.add_work_order_note($1, 'note', 'x')", [randomUUID()]),
-        { code: "P0002" },
-      );
+      // A retry after a lost response finds the note it already wrote.
+      const replay = await addNote(noteId, job.id, "note", "  Called the customer  ");
+      expect(replay.rows[0].id).toBe(note.rows[0].id);
+      const diagnosisId = randomUUID();
+      await addNote(diagnosisId, job.id, "diagnosis", "Worn pads");
+      await failsWith(tx, () => addNote(randomUUID(), job.id, "note", "  "), {
+        code: "P0001",
+        message: "note_required",
+      });
+      await failsWith(tx, () => addNote(randomUUID(), randomUUID(), "note", "x"), {
+        code: "P0002",
+      });
+      await failsWith(tx, () => addNote(noteId, other.id, "note", "Called the customer"), {
+        code: "P0001",
+        message: "note_conflict",
+      });
+      await failsWith(tx, () => addNote(null as unknown as string, job.id, "note", "x"), {
+        code: "22004",
+      });
 
       const log = await events(tx, job.id);
       expect(log.map((e) => [e.event_type, e.payload])).toEqual([
@@ -666,8 +734,10 @@ describe.skipIf(!isolatedDatabase())("timeline events", () => {
         ],
         ["details_changed", { intake_notes: { from: "Dent on top tube", to: null } }],
         ["approval_flagged", { flagged: true, note: "Customer OK'd extra work by phone" }],
-        ["note_added", { body: "Called the customer" }],
-        ["diagnosis_added", { body: "Worn pads" }],
+        ["approval_flagged", { flagged: false, note: "Customer OK'd extra work by phone" }],
+        ["approval_flagged", { flagged: false, note: null }],
+        ["note_added", { note_id: noteId, body: "Called the customer" }],
+        ["diagnosis_added", { note_id: diagnosisId, body: "Worn pads" }],
       ]);
       expect(log.every((e) => e.actor_staff_id === STAFF.mechanic2)).toBe(true);
 
@@ -675,7 +745,7 @@ describe.skipIf(!isolatedDatabase())("timeline events", () => {
       await walkTo(tx, job.id, "collected");
       await failsWith(tx, () => flag(false, null), { code: "P0001", message: "work_order_closed" });
       await update([null, null, null, "Pads replaced"]);
-      await tx.query("select public.add_work_order_note($1, 'note', 'Customer happy')", [job.id]);
+      await addNote(randomUUID(), job.id, "note", "Customer happy");
     });
   });
 
@@ -707,7 +777,8 @@ describe.skipIf(!isolatedDatabase())("timeline events", () => {
       await tx.query("select public.set_approval_flag($1, true, 'Approved at 62 dollars? no')", [
         job.id,
       ]);
-      await tx.query("select public.add_work_order_note($1, 'diagnosis', 'Frayed cable')", [
+      await tx.query("select public.add_work_order_note($1, $2, 'diagnosis', 'Frayed cable')", [
+        randomUUID(),
         job.id,
       ]);
       await walkTo(tx, job.id, "completed");
@@ -818,6 +889,20 @@ describe.skipIf(!isolatedDatabase())("timeline events", () => {
       expect(rows[1].subject_display_name).not.toBe(rows[1].actor_display_name);
       expect(await count(tx, "select * from public.work_order_timeline($1, 1)", [job.id])).toBe(1);
       expect(await count(tx, "select * from public.work_order_timeline($1, -5)", [job.id])).toBe(1);
+      // At most 2000 rows, whatever is asked (the page asks one more than it shows).
+      await ownerMode(tx);
+      await tx.query(
+        `insert into public.work_order_events (work_order_id, event_type, payload)
+         select $1, 'note_added', jsonb_build_object('body', 'n' || g) from generate_series(1, 2001) g`,
+        [job.id],
+      );
+      await actAs(tx, ADMIN);
+      expect(await count(tx, "select * from public.work_order_timeline($1, 5000)", [job.id])).toBe(
+        2000,
+      );
+      expect(await count(tx, "select * from public.work_order_timeline($1, 201)", [job.id])).toBe(
+        201,
+      );
     });
   });
 });

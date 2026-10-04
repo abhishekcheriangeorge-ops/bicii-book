@@ -19,7 +19,6 @@ import {
   isClosedStatus,
   isOpenStatus,
   isOverdue,
-  matchesAge,
   nextStatuses,
   normalizeJobNumber,
   parseBoardFilters,
@@ -379,18 +378,14 @@ describe("board time windows (D20, Singapore time)", () => {
     expect(checkedInBefore("any", now)).toBeNull();
     expect(checkedInBefore("over3", now)?.toISOString()).toBe("2026-10-01T02:00:00.000Z");
     expect(checkedInBefore("overdue", now)?.toISOString()).toBe("2026-09-27T02:00:00.000Z");
+    // The board's overdue filter is checkedInBefore("overdue") plus an open
+    // status: the same jobs isOverdue (D20) marks.
     const eightDays = "2026-09-26T02:00:00Z";
-    const fourDays = "2026-09-30T02:00:00Z";
-    expect(
-      matchesAge({ status: "awaiting_customer", checkedInAt: eightDays }, "overdue", now),
-    ).toBe(true);
-    expect(matchesAge({ status: "completed", checkedInAt: eightDays }, "overdue", now)).toBe(false);
-    expect(matchesAge({ status: "in_progress", checkedInAt: fourDays }, "overdue", now)).toBe(
-      false,
-    );
-    expect(matchesAge({ status: "in_progress", checkedInAt: fourDays }, "over3", now)).toBe(true);
-    expect(matchesAge({ status: "in_progress", checkedInAt: now }, "over3", now)).toBe(false);
-    expect(matchesAge({ status: "in_progress", checkedInAt: now }, "any", now)).toBe(true);
+    const before = checkedInBefore("overdue", now)!;
+    for (const status of ["awaiting_customer", "completed"] as const) {
+      const matched = Date.parse(eightDays) < before.getTime() && isOpenStatus(status);
+      expect(matched).toBe(isOverdue({ status, checkedInAt: eightDays }, now));
+    }
   });
 
   it("shows age in whole days", () => {

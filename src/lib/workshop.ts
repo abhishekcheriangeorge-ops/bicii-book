@@ -18,14 +18,6 @@ export const WORK_ORDER_STATUSES: readonly WorkOrderStatus[] =
 /** "allowed", "reason_required" (cancel, reopen) or null (not allowed). */
 export type TransitionRule = "allowed" | "reason_required" | null;
 
-const BEFORE_WORK: readonly WorkOrderStatus[] = [
-  "received",
-  "diagnosing",
-  "awaiting_customer",
-  "awaiting_parts",
-  "ready_to_start",
-];
-
 const ALLOWED: Readonly<Record<WorkOrderStatus, readonly WorkOrderStatus[]>> = {
   received: ["diagnosing", "awaiting_customer", "awaiting_parts", "ready_to_start", "in_progress"],
   diagnosing: ["awaiting_customer", "awaiting_parts", "ready_to_start", "in_progress"],
@@ -76,11 +68,6 @@ export function isClosedStatus(status: WorkOrderStatus): boolean {
   return status === "collected" || status === "cancelled";
 }
 
-/** Not yet started: waiting on diagnosis, the customer, parts or a bench. */
-export function isBeforeWork(status: WorkOrderStatus): boolean {
-  return BEFORE_WORK.includes(status);
-}
-
 /** D20: a job still open this many days after check-in is overdue. */
 export const OVERDUE_AFTER_DAYS = 7;
 
@@ -99,6 +86,15 @@ export function isOverdue(
     job.checkedInAt instanceof Date ? job.checkedInAt.getTime() : Date.parse(job.checkedInAt);
   if (Number.isNaN(checkedIn)) return false;
   return now.getTime() - checkedIn > OVERDUE_AFTER_DAYS * DAY_MS;
+}
+
+/**
+ * Why a bike owned by an archived customer cannot be checked in yet: it is
+ * still theirs (D18), so it is not a shop bike, and archived customers get
+ * no new jobs.
+ */
+export function archivedOwnerMessage(bike: { shortId: string }, owner: { label: string }): string {
+  return `${bike.shortId} belongs to ${owner.label}, who is archived. Unarchive them, or transfer the bike to the right customer, before checking it in.`;
 }
 
 /** What staff call each status on screen (board, pills, timeline). */
@@ -425,19 +421,6 @@ export function checkedInBefore(age: AgeFilter, now: Date): Date | null {
   return new Date(now.getTime() - days * DAY_MS);
 }
 
-/** Whether a job passes the age filter at `now` (the same rule the query applies). */
-export function matchesAge(
-  job: { status: WorkOrderStatus; checkedInAt: string | Date },
-  age: AgeFilter,
-  now: Date = new Date(),
-): boolean {
-  if (age === "any") return true;
-  if (age === "overdue") return isOverdue(job, now);
-  const checkedIn =
-    job.checkedInAt instanceof Date ? job.checkedInAt.getTime() : Date.parse(job.checkedInAt);
-  return now.getTime() - checkedIn > OLD_AFTER_DAYS * DAY_MS;
-}
-
 /** The board group a status belongs to. */
 export function boardGroupOf(status: WorkOrderStatus): BoardGroup {
   return BOARD_GROUPS.find((g) => g.statuses.includes(status))!;
@@ -454,7 +437,7 @@ export function groupBoardJobs<T extends { status: WorkOrderStatus }>(
 ): BoardSection<T>[] {
   return BOARD_GROUPS.map((g) => ({
     ...g,
-    jobs: jobs.filter((j) => g.statuses.includes(j.status)),
+    jobs: jobs.filter((j) => boardGroupOf(j.status).id === g.id),
   }));
 }
 

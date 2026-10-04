@@ -12,25 +12,10 @@ import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
+import { useArmed } from "@/components/ui/use-armed";
 import { formatRate, percentToRate } from "@/lib/cult-commons";
 import { formatDateTime, fromShopLocal, toShopLocal } from "@/lib/dates";
-
-/** How long a confirm button stays disabled after the confirmation opens (a double tap). */
-const CONFIRM_GUARD_MS = 400;
-
-/** Disabled for CONFIRM_GUARD_MS after `open` turns true. */
-function useArmed(open: boolean): boolean {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(() => setArmed(true), CONFIRM_GUARD_MS);
-    return () => {
-      window.clearTimeout(timer);
-      setArmed(false);
-    };
-  }, [open]);
-  return armed;
-}
+import { newId } from "@/lib/uuid";
 
 /**
  * Admin: "Schedule a new rate" (D21). A percentage with up to two decimals
@@ -67,6 +52,8 @@ function ScheduleRateSheet({
   const [confirming, setConfirming] = useState(false);
   const armed = useArmed(confirming);
   const confirmRef = useRef<HTMLDivElement>(null);
+  // The idempotency key: a retried "start now" finds the rate it scheduled.
+  const [rateId] = useState(newId);
 
   const rate = percentToRate(percent);
   const start = when === "later" ? fromShopLocal(at) : null;
@@ -90,6 +77,7 @@ function ScheduleRateSheet({
   const confirm = () =>
     startTransition(async () => {
       const result = await scheduleCultCommonsRate({
+        rateId,
         percent,
         when,
         effectiveFrom: when === "later" ? at : undefined,

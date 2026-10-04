@@ -30,9 +30,15 @@ beforeAll(async () => {
 const rateAt = (tx: pg.Client, at: string) =>
   scalar<string>(tx, "select private.cult_commons_rate_at($1::timestamptz)::text", [at]);
 
-const schedule = (tx: pg.Client, rate: string, effectiveFrom: string | null = null) =>
+const schedule = (
+  tx: pg.Client,
+  rate: string,
+  effectiveFrom: string | null = null,
+  id: string = randomUUID(),
+) =>
   tx
-    .query("select (r).* from (select public.schedule_cult_commons_rate($1, $2) r) s", [
+    .query("select (r).* from (select public.schedule_cult_commons_rate($1, $2, $3) r) s", [
+      id,
       rate,
       effectiveFrom,
     ])
@@ -150,8 +156,32 @@ describe("Cult Commons rates (SPEC §10, D21)", () => {
         constraint: "cult_commons_rates_rate_check",
       });
       await failsWith(tx, () => schedule(tx, "NaN"), { code: "23514" });
-      await failsWith(tx, () => tx.query("select public.schedule_cult_commons_rate(null)"), {
+      await failsWith(tx, () => tx.query("select public.schedule_cult_commons_rate(null, 0.2)"), {
         code: "22004",
+      });
+    });
+  });
+
+  it("is replay-safe by id: a retried 'start now' adds no second rate", async () => {
+    await withClaims(conn, staffClaims(AUTH_USER.admin), async (tx) => {
+      const id = randomUUID();
+      const first = await schedule(tx, "0.2700", null, id);
+      const again = await schedule(tx, "0.2700", null, id);
+      expect(again).toEqual(first);
+      expect(
+        await scalar(tx, "select count(*)::int from public.cult_commons_rates where rate = 0.27"),
+      ).toBe(1);
+      await failsWith(tx, () => schedule(tx, "0.2600", null, id), {
+        code: "P0001",
+        message: "rate_conflict",
+      });
+      // A replay still returns the row once it has been cancelled.
+      const future = randomUUID();
+      const later = await schedule(tx, "0.3300", await inDays(tx, 5), future);
+      await cancel(tx, later.id);
+      expect(await schedule(tx, "0.3300", await inDays(tx, 5), future)).toMatchObject({
+        id: future,
+        cancelled_by: STAFF.admin,
       });
     });
   });
@@ -353,6 +383,47 @@ describe("service RPCs (manage_inventory; a cost needs view_costs, D14)", () => 
         default_direct_cost: "4.00",
         active: false,
       });
+    });
+  });
+
+  it("a manage_inventory holder without view_costs never reads the cost through an error's DETAIL", async () => {
+    // update_service keeps the stored cost in the new row; a check violation
+    // inside the definer function would print that row (cost included).
+    await inTransaction(conn, async (tx) => {
+      const id = await makeService(tx, { name: "Secret Cost Tune", price: "60.00", cost: "13.57" });
+      await tx.query(
+        "insert into public.staff_permissions (staff_id, permission) values ($1, 'manage_inventory')",
+        [STAFF.mechanic2],
+      );
+      await actAs(tx, staffClaims(AUTH_USER.mechanic2));
+      for (const [args, constraint] of [
+        [{ name: "Secret Cost Tune", price: "-1" }, "services_default_sale_price_check"],
+        [{ name: "   ", price: "60.00" }, "services_name_check"],
+        [{ name: "x".repeat(121), price: "60.00" }, "services_name_check"],
+      ] as const) {
+        await tx.query("savepoint probe");
+        const err = await updateService(tx, id, args).then(
+          () => null,
+          (e: unknown) => e as { code?: string; constraint?: string; detail?: string },
+        );
+        await tx.query("rollback to savepoint probe");
+        expect(err, constraint).toMatchObject({ code: "23514", constraint });
+        expect(err?.detail).toBeUndefined();
+        expect(JSON.stringify(err)).not.toMatch(/13\.57|Failing row/);
+      }
+      await tx.query("savepoint probe");
+      const long = await tx
+        .query("select public.update_service($1, 'Secret Cost Tune', 60, $2)", [
+          id,
+          "d".repeat(2001),
+        ])
+        .then(
+          () => null,
+          (e: unknown) => e as { code?: string; constraint?: string; detail?: string },
+        );
+      await tx.query("rollback to savepoint probe");
+      expect(long).toMatchObject({ code: "23514", constraint: "services_description_check" });
+      expect(long?.detail).toBeUndefined();
     });
   });
 

@@ -19,6 +19,12 @@
 --     stock ledger. Lines are added or voided only while the job is open,
 --     i.e. before it is completed (D15); reopen first.
 --   * A job is not cancelled while it has a line that is not voided (D16).
+--   * cost_pending marks a manual line added without a unit cost (D14): its
+--     snapshot holds cost 0, so its yield and Cult Commons count the whole
+--     sale until a view_costs holder voids it and adds it again with the
+--     real cost. The flag keeps "no cost entered" apart from "costs 0.00";
+--     work_order_totals_staff counts such lines so a job's Cult Commons is
+--     shown as provisional while any is live.
 --   * Cost gating (SPEC §4.2): authenticated may read the sale side of a
 --     line only; costs, rate, yield and Cult Commons are read through the
 --     *_staff views, which return rows only to holders of view_costs.
@@ -46,6 +52,8 @@ create table public.work_order_line_items (
   quantity public.line_quantity not null,
   unit_sale_price_snapshot public.money_amount not null,
   unit_direct_cost_snapshot public.money_amount not null,
+  -- A manual line added without a cost (D14): the 0 above is a placeholder.
+  cost_pending boolean not null default false,
   cult_commons_rate_snapshot public.rate_fraction not null,
   currency char(3) not null,
   -- Generated (SPEC §10, D1). Postgres forbids a generated column that
@@ -100,7 +108,10 @@ create table public.work_order_line_items (
     line_type <> 'inventory'
     or (source_product_id is not null and source_service_id is null and quantity = trunc(quantity))
   ),
-  constraint work_order_line_items_unit_quantity check (source_inventory_unit_id is null or quantity = 1)
+  constraint work_order_line_items_unit_quantity check (source_inventory_unit_id is null or quantity = 1),
+  constraint work_order_line_items_cost_pending_shape check (
+    not cost_pending or (line_type = 'manual' and unit_direct_cost_snapshot = 0)
+  )
 );
 create index work_order_line_items_work_order_idx on public.work_order_line_items (work_order_id, created_at);
 create index work_order_line_items_source_service_id_idx on public.work_order_line_items (source_service_id);
@@ -110,6 +121,8 @@ create index work_order_line_items_voided_by_idx on public.work_order_line_items
 
 comment on table public.work_order_line_items is
   'Job lines with snapshotted economics and generated totals (SPEC §10). Immutable except voiding; never deleted. Listed by created_at.';
+comment on column public.work_order_line_items.cost_pending is
+  'Manual line added without a unit cost (D14): cost 0 is a placeholder, so yield and Cult Commons are overstated until it is voided and re-added with a cost.';
 comment on column public.work_order_line_items.cult_commons_share is
   'round(max(yield, 0) x snapshotted rate, 2), per line (D1).';
 
@@ -173,6 +186,7 @@ begin
      or new.quantity is distinct from old.quantity
      or new.unit_sale_price_snapshot is distinct from old.unit_sale_price_snapshot
      or new.unit_direct_cost_snapshot is distinct from old.unit_direct_cost_snapshot
+     or new.cost_pending is distinct from old.cost_pending
      or new.cult_commons_rate_snapshot is distinct from old.cult_commons_rate_snapshot
      or new.currency is distinct from old.currency
      or new.created_by is distinct from old.created_by
@@ -292,7 +306,8 @@ with (security_barrier)
 as
   select t.work_order_id, t.currency, t.line_count, t.sale_total, t.cost_total, t.yield_total,
          t.cult_commons_share,
-         (t.yield_total - t.cult_commons_share)::public.money_amount as bicii_yield_after_cc
+         (t.yield_total - t.cult_commons_share)::public.money_amount as bicii_yield_after_cc,
+         t.cost_pending_count
   from (
     select w.id as work_order_id,
            w.currency,
@@ -302,7 +317,11 @@ as
            coalesce(sum(li.yield_total) filter (where li.voided_at is null), 0)::public.money_amount as yield_total,
            -- D1: the job's Cult Commons is the sum of its lines' shares.
            coalesce(sum(li.cult_commons_share) filter (where li.voided_at is null), 0)::public.money_amount
-             as cult_commons_share
+             as cult_commons_share,
+           -- D14: live lines with no cost entered; while > 0 the figures
+           -- above treat their cost as 0 and are provisional.
+           (count(li.id) filter (where li.voided_at is null and li.cost_pending))::integer
+             as cost_pending_count
     from public.work_orders w
     left join public.work_order_line_items li on li.work_order_id = w.id
     group by w.id, w.currency
@@ -310,15 +329,15 @@ as
   where (select private.has_permission('view_costs'));
 
 comment on view public.work_order_totals_staff is
-  'Per job: sale, cost, yield, Cult Commons (sum of line shares, D1) and BICII yield after CC, for view_costs only.';
+  'Per job: sale, cost, yield, Cult Commons (sum of line shares, D1), BICII yield after CC and the number of live lines with no cost entered (D14), for view_costs only.';
 
 create view public.work_order_line_items_staff
 with (security_barrier)
 as
   select li.id, li.work_order_id, li.line_type, li.source_service_id, li.source_product_id,
          li.source_inventory_unit_id, li.description_snapshot, li.quantity,
-         li.unit_sale_price_snapshot, li.unit_direct_cost_snapshot, li.cult_commons_rate_snapshot,
-         li.currency, li.sale_total, li.cost_total, li.yield_total, li.cult_commons_share,
+         li.unit_sale_price_snapshot, li.unit_direct_cost_snapshot, li.cost_pending,
+         li.cult_commons_rate_snapshot, li.currency, li.sale_total, li.cost_total, li.yield_total, li.cult_commons_share,
          li.created_by, li.created_at, li.voided_at, li.voided_by, li.void_reason
   from public.work_order_line_items li
   where (select private.has_permission('view_costs'));
@@ -343,9 +362,11 @@ revoke all on table public.work_order_totals_staff from public, anon, authentica
 revoke all on table public.work_order_line_items_staff from public, anon, authenticated, service_role;
 
 -- The sale side only (no unit cost, rate, cost, yield or Cult Commons).
+-- cost_pending says only that a cost is still to be entered, never what it
+-- is, so whoever added the line can see that someone with cost access must.
 grant select (
   id, work_order_id, line_type, source_service_id, source_product_id, source_inventory_unit_id,
-  description_snapshot, quantity, unit_sale_price_snapshot, currency, sale_total,
+  description_snapshot, quantity, unit_sale_price_snapshot, cost_pending, currency, sale_total,
   created_by, created_at, voided_at, voided_by, void_reason
 ) on table public.work_order_line_items to authenticated;
 grant select on table public.work_order_line_items to service_role;

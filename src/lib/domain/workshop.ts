@@ -6,6 +6,7 @@ import { customerLabel } from "@/lib/people";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import {
   allowedTransitions,
+  archivedOwnerMessage,
   checkedInBefore,
   checkedInSince,
   CLOSED_WINDOW_DAYS,
@@ -80,8 +81,10 @@ export type WorkOrderDetail = {
   assignments: { staffId: string; name: string; role: AssignmentRole; assignedAt: string }[];
   lines: Line[];
   totals: Totals;
-  /** Newest first. */
+  /** Newest first: at most the `timelineRows` asked for. */
   timeline: TimelineEntry[];
+  /** Older events exist beyond `timeline` (the check-in among them). */
+  timelineTruncated: boolean;
   allowedTransitions: Transition[];
 };
 
@@ -112,6 +115,10 @@ async function staffNames(supabase: ServerSupabase): Promise<Map<string, string>
 
 const CLOSED = "(collected,cancelled)";
 
+/** Timeline events the job page shows at first, and with "Show earlier events". */
+export const TIMELINE_ROWS = 200;
+export const TIMELINE_ALL_ROWS = 1000;
+
 /**
  * Everything the job page shows except photos (listPhotos with target
  * work_order), or null when there is no such job. With `viewCosts` false
@@ -120,7 +127,7 @@ const CLOSED = "(collected,cancelled)";
 export async function getWorkOrder(
   supabase: ServerSupabase,
   id: string,
-  { viewCosts }: { viewCosts: boolean },
+  { viewCosts, timelineRows = TIMELINE_ROWS }: { viewCosts: boolean; timelineRows?: number },
 ): Promise<WorkOrderDetail | null> {
   const [jobResult, assignmentsResult, timelineResult, names] = await Promise.all([
     supabase
@@ -136,7 +143,8 @@ export async function getWorkOrder(
       .eq("work_order_id", id)
       .is("unassigned_at", null)
       .order("assigned_at", { ascending: true }),
-    supabase.rpc("work_order_timeline", { work_order_id: id, max_rows: 200 }),
+    // One more than shown, to know whether older events were left out.
+    supabase.rpc("work_order_timeline", { work_order_id: id, max_rows: timelineRows + 1 }),
     staffNames(supabase),
   ]);
   const row = unwrap(jobResult);
@@ -153,7 +161,9 @@ export async function getWorkOrder(
       assignedAt: a.assigned_at,
     }))
     .sort((a, b) => (a.role === b.role ? 0 : a.role === "lead" ? -1 : 1));
-  const timeline = (unwrap(timelineResult) ?? []).map((e) => ({
+  const events = unwrap(timelineResult) ?? [];
+  const timelineTruncated = events.length > timelineRows;
+  const timeline = events.slice(0, timelineRows).map((e) => ({
     id: e.id,
     type: e.event_type,
     at: e.created_at,
@@ -202,6 +212,7 @@ export async function getWorkOrder(
     lines,
     totals,
     timeline,
+    timelineTruncated,
     allowedTransitions: allowedTransitions(row.status),
   };
 }
@@ -322,6 +333,12 @@ export type IntakeOption = {
   /** The customer this choice selects; null for a bike nobody owns (a shop bike). */
   customer: { id: string; label: string } | null;
   bike: IntakeBikeRef | null;
+  /**
+   * The bike's owner when they are archived: the bike is still theirs (D18),
+   * so it is neither a shop bike nor theirs to check in until they are
+   * unarchived or the bike is transferred.
+   */
+  archivedOwner: { id: string; label: string } | null;
 };
 
 /**
@@ -345,6 +362,7 @@ export async function searchIntakeOptions(
       model: string;
       variant: string | null;
       owner: { id: string; label: string } | null;
+      archivedOwner: { id: string; label: string } | null;
     }
   >();
   if (bikeIds.length > 0) {
@@ -358,12 +376,12 @@ export async function searchIntakeOptions(
           .in("id", bikeIds),
       ) ?? [];
     for (const r of rows) {
+      const owner = r.customer ? { id: r.customer.id, label: labelOf(r.customer) } : null;
+      const archived = r.customer?.archived_at != null;
       bikes.set(r.id, {
         ...r,
-        owner:
-          r.customer && r.customer.archived_at === null
-            ? { id: r.customer.id, label: labelOf(r.customer) }
-            : null,
+        owner: archived ? null : owner,
+        archivedOwner: archived ? owner : null,
       });
     }
   }
@@ -378,6 +396,7 @@ export async function searchIntakeOptions(
           meta: "Customer",
           customer: { id: h.id, label: h.title },
           bike: null,
+          archivedOwner: null,
         },
       ];
     }
@@ -388,10 +407,15 @@ export async function searchIntakeOptions(
         id: h.id,
         kind: "bike",
         label: h.title,
-        description: bike.owner ? `Owned by ${bike.owner.label}` : "Shop bike · no customer",
+        description: bike.owner
+          ? `Owned by ${bike.owner.label}`
+          : bike.archivedOwner
+            ? `Owned by ${bike.archivedOwner.label} (archived)`
+            : "Shop bike · no customer",
         meta: bike.short_id,
         customer: bike.owner,
         bike: { id: h.id, shortId: bike.short_id, title: bikeTitle(bike) },
+        archivedOwner: bike.archivedOwner,
       },
     ];
   });
@@ -452,14 +476,20 @@ export async function customerBikesForIntake(
 /**
  * Intake presets from the URL (?customer=, ?bike=), resolved to what the
  * wizard shows. A bike's owner wins over a customer that does not own it;
- * archived records are ignored.
+ * archived records are ignored. A bike whose owner is archived is not
+ * offered as a shop bike: it is left out, with `notice` saying why.
  */
 export async function intakePreset(
   supabase: ServerSupabase,
   { customerId, bikeId }: { customerId: string | null; bikeId: string | null },
-): Promise<{ customer: { id: string; label: string } | null; bike: IntakeBike | null }> {
+): Promise<{
+  customer: { id: string; label: string } | null;
+  bike: IntakeBike | null;
+  notice: string | null;
+}> {
   let customer: { id: string; label: string } | null = null;
   let bike: IntakeBike | null = null;
+  let notice: string | null = null;
   if (bikeId) {
     const row = unwrap(
       await supabase
@@ -470,7 +500,9 @@ export async function intakePreset(
         .eq("id", bikeId)
         .maybeSingle(),
     );
-    if (row && row.archived_at === null) {
+    if (row && row.archived_at === null && row.customer && row.customer.archived_at !== null) {
+      notice = archivedOwnerMessage({ shortId: row.short_id }, { label: labelOf(row.customer) });
+    } else if (row && row.archived_at === null) {
       const jobs = await openJobsFor(supabase, [row.id]);
       bike = {
         id: row.id,
@@ -479,9 +511,7 @@ export async function intakePreset(
         colour: row.colour,
         openJob: jobs.get(row.id) ?? null,
       };
-      if (row.customer && row.customer.archived_at === null) {
-        customer = { id: row.customer.id, label: labelOf(row.customer) };
-      }
+      if (row.customer) customer = { id: row.customer.id, label: labelOf(row.customer) };
     }
   }
   if (!customer && customerId) {
@@ -494,7 +524,7 @@ export async function intakePreset(
     );
     if (row && row.archived_at === null) customer = { id: row.id, label: labelOf(row) };
   }
-  return { customer, bike };
+  return { customer, bike, notice };
 }
 
 /** Active staff, by name: who can be assigned to a job (D22). */
@@ -875,6 +905,7 @@ export async function setApprovalFlag(
       await supabase.rpc("set_approval_flag", {
         work_order_id: input.workOrderId,
         flagged: input.flagged,
+        // Null keeps the stored note; "" clears it.
         note: input.note ?? undefined,
       }),
     );
@@ -885,14 +916,20 @@ export async function setApprovalFlag(
   }
 }
 
-/** Adds a note or a diagnosis to the job's timeline (RPC add_work_order_note); any status. */
+/**
+ * Adds a note or a diagnosis to the job's timeline (RPC
+ * add_work_order_note); any status. `noteId` is the sheet's idempotency
+ * key: a retry after a lost response finds the note it already added
+ * instead of writing a second, permanent one.
+ */
 export async function addWorkOrderNote(
   supabase: ServerSupabase,
-  input: { workOrderId: string; kind: "note" | "diagnosis"; body: string },
+  input: { noteId: string; workOrderId: string; kind: "note" | "diagnosis"; body: string },
 ): Promise<{ id: number }> {
   try {
     const row = unwrap(
       await supabase.rpc("add_work_order_note", {
+        note_id: input.noteId,
         work_order_id: input.workOrderId,
         kind: input.kind,
         body: input.body,
@@ -907,19 +944,20 @@ export async function addWorkOrderNote(
 
 export type WorkOrderDetailsInput = {
   workOrderId: string;
-  /** Required; trimmed. */
-  requestedWork: string;
-  /** "" clears a note. */
-  intakeNotes: string;
-  internalNotes: string;
-  completionNotes: string;
+  /** Null keeps it; otherwise trimmed and not empty. */
+  requestedWork: string | null;
+  /** Null keeps a note, "" clears it. */
+  intakeNotes: string | null;
+  internalNotes: string | null;
+  completionNotes: string | null;
 };
 
 /**
- * Replaces the requested work and the three notes (RPC update_work_order:
- * "" clears a note, the requested work cannot be cleared). One
- * details_changed event names what changed; saving with no change records
- * nothing.
+ * Changes the requested work and the three notes (RPC update_work_order:
+ * null keeps a field, "" clears a note, the requested work cannot be
+ * cleared). Callers pass only what their user changed, so a colleague's
+ * newer text in another field survives. One details_changed event names
+ * what changed; saving with no change records nothing.
  */
 export async function updateWorkOrderDetails(
   supabase: ServerSupabase,
@@ -929,10 +967,10 @@ export async function updateWorkOrderDetails(
     const row = unwrap(
       await supabase.rpc("update_work_order", {
         work_order_id: input.workOrderId,
-        requested_work: input.requestedWork,
-        intake_notes: input.intakeNotes,
-        internal_notes: input.internalNotes,
-        completion_notes: input.completionNotes,
+        requested_work: input.requestedWork ?? undefined,
+        intake_notes: input.intakeNotes ?? undefined,
+        internal_notes: input.internalNotes ?? undefined,
+        completion_notes: input.completionNotes ?? undefined,
       }),
     );
     if (!row) throw new DomainError(NOT_FOUND);

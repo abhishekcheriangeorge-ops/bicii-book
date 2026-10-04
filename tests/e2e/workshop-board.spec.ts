@@ -65,7 +65,9 @@ test("the board: My jobs, Unassigned, the Overdue age and a single status", asyn
   await expect(page).toHaveURL(/age=overdue/);
   const overdueRow = page.getByRole("link").filter({ hasText: "J-000006" });
   await expect(overdueRow).toContainText("Overdue");
-  await expect(job(page, "J-000004")).toHaveCount(0);
+  // J-000002 is ready for collection, so never overdue however old the
+  // seed is (E2E_RESET=0 keeps an ageing database).
+  await expect(job(page, "J-000002")).toHaveCount(0);
   await expect(page.getByRole("list", { name: "Active filters" })).toContainText("Age: Overdue");
 
   // One status out of the Waiting group: parts, not the customer.

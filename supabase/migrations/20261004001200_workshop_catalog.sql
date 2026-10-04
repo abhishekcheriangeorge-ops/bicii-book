@@ -248,6 +248,43 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Errors from security definer writers to tables with hidden columns.
+--
+-- A check or not-null violation carries DETAIL "Failing row contains (...)".
+-- Postgres builds it with the privileges of the current user, which inside
+-- a security definer function is the owner, so it prints every column of
+-- the row, including those the caller has no grant on (a service's default
+-- direct cost; a line's cost, rate, yield and Cult Commons). PostgREST hands
+-- DETAIL to the client. Every definer writer to services or
+-- work_order_line_items therefore catches those two errors and re-raises
+-- them through this function: the same SQLSTATE, constraint, table, column
+-- and message (which name the constraint, never a value), and no DETAIL,
+-- so src/lib/db-errors.ts still maps them by constraint name.
+-- ---------------------------------------------------------------------------
+create function private.raise_without_row(
+  sqlstate text,
+  constraint_name text,
+  table_name text,
+  schema_name text,
+  column_name text,
+  message text
+)
+returns void
+language plpgsql
+set search_path = ''
+as $$
+begin
+  raise exception using
+    errcode = raise_without_row.sqlstate,
+    message = raise_without_row.message,
+    constraint = coalesce(raise_without_row.constraint_name, ''),
+    table = coalesce(raise_without_row.table_name, ''),
+    schema = coalesce(raise_without_row.schema_name, ''),
+    column = coalesce(raise_without_row.column_name, '');
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Service RPCs (manage_inventory; a cost also needs view_costs, D14). They
 -- return the id only: a services row carries the cost, and an RPC result is
 -- not column-gated.
@@ -271,6 +308,12 @@ as $$
 declare
   existing public.services;
   inserted uuid;
+  err_state text;
+  err_constraint text;
+  err_table text;
+  err_schema text;
+  err_column text;
+  err_message text;
 begin
   perform private.require_permission('manage_inventory');
   if create_service.default_direct_cost is not null and not private.has_permission('view_costs') then
@@ -295,16 +338,24 @@ begin
       detail = 'That service id is already used for another service.';
   end if;
 
-  insert into public.services as s (
-    id, name, description, category_id, default_sale_price, default_direct_cost, active, public
-  )
-  values (
-    create_service.service_id, create_service.name, create_service.description,
-    create_service.category_id, create_service.default_sale_price,
-    coalesce(create_service.default_direct_cost, 0), create_service.is_active, create_service.is_public
-  )
-  on conflict (id) do nothing
-  returning s.id into inserted;
+  begin
+    insert into public.services as s (
+      id, name, description, category_id, default_sale_price, default_direct_cost, active, public
+    )
+    values (
+      create_service.service_id, create_service.name, create_service.description,
+      create_service.category_id, create_service.default_sale_price,
+      coalesce(create_service.default_direct_cost, 0), create_service.is_active, create_service.is_public
+    )
+    on conflict (id) do nothing
+    returning s.id into inserted;
+  exception
+    when check_violation or not_null_violation then
+      get stacked diagnostics
+        err_state = returned_sqlstate, err_constraint = constraint_name, err_table = table_name,
+        err_schema = schema_name, err_column = column_name, err_message = message_text;
+      perform private.raise_without_row(err_state, err_constraint, err_table, err_schema, err_column, err_message);
+  end;
 
   if inserted is null then
     -- A concurrent call with the same id won the insert.
@@ -345,6 +396,12 @@ set search_path = ''
 as $$
 declare
   target public.services;
+  err_state text;
+  err_constraint text;
+  err_table text;
+  err_schema text;
+  err_column text;
+  err_message text;
 begin
   perform private.require_permission('manage_inventory');
   if update_service.default_direct_cost is not null and not private.has_permission('view_costs') then
@@ -362,15 +419,25 @@ begin
     raise exception 'service % not found', update_service.service_id using errcode = 'P0002';
   end if;
 
-  update public.services s
-  set name = update_service.name,
-      description = update_service.description,
-      category_id = update_service.category_id,
-      default_sale_price = update_service.default_sale_price,
-      default_direct_cost = coalesce(update_service.default_direct_cost, s.default_direct_cost),
-      active = update_service.is_active,
-      public = update_service.is_public
-  where s.id = target.id;
+  -- The new row keeps the stored cost, which this caller may not be allowed
+  -- to read: a violation is re-raised without the row (raise_without_row).
+  begin
+    update public.services s
+    set name = update_service.name,
+        description = update_service.description,
+        category_id = update_service.category_id,
+        default_sale_price = update_service.default_sale_price,
+        default_direct_cost = coalesce(update_service.default_direct_cost, s.default_direct_cost),
+        active = update_service.is_active,
+        public = update_service.is_public
+    where s.id = target.id;
+  exception
+    when check_violation or not_null_violation then
+      get stacked diagnostics
+        err_state = returned_sqlstate, err_constraint = constraint_name, err_table = table_name,
+        err_schema = schema_name, err_column = column_name, err_message = message_text;
+      perform private.raise_without_row(err_state, err_constraint, err_table, err_schema, err_column, err_message);
+  end;
   return target.id;
 end;
 $$;
@@ -413,7 +480,13 @@ comment on function public.set_service_archived(uuid, boolean) is
 -- ---------------------------------------------------------------------------
 -- Cult Commons rate RPCs (admin only; D21)
 -- ---------------------------------------------------------------------------
+-- rate_id is the client's idempotency key (DESIGN.md "Forms"): a "start
+-- now" rate takes clock_timestamp(), so a retried submit would otherwise
+-- schedule a second row a moment later. A replay of the same id and rate
+-- returns the row as it is now (cancelled or not), before any other check;
+-- the same id with another rate is rate_conflict.
 create function public.schedule_cult_commons_rate(
+  rate_id uuid,
   rate public.rate_fraction,
   effective_from timestamptz default null
 )
@@ -430,9 +503,21 @@ begin
   if not private.is_admin() then
     raise exception 'admin required' using errcode = '42501';
   end if;
-  if schedule_cult_commons_rate.rate is null then
-    raise exception 'rate is required' using errcode = '22004';
+  if schedule_cult_commons_rate.rate_id is null or schedule_cult_commons_rate.rate is null then
+    raise exception 'rate_id and rate are required' using errcode = '22004';
   end if;
+
+  select r.* into result from public.cult_commons_rates r where r.id = schedule_cult_commons_rate.rate_id;
+  if found then
+    if result.rate = schedule_cult_commons_rate.rate then
+      return result;
+    end if;
+    raise exception using
+      errcode = 'P0001',
+      message = 'rate_conflict',
+      detail = 'That rate id is already used for another rate.';
+  end if;
+
   if schedule_cult_commons_rate.effective_from is not null
      and schedule_cult_commons_rate.effective_from < now() then
     raise exception using
@@ -441,19 +526,32 @@ begin
       detail = 'A new Cult Commons rate can start now or later, never in the past.';
   end if;
 
-  insert into public.cult_commons_rates as r (rate, effective_from, created_by)
+  insert into public.cult_commons_rates as r (id, rate, effective_from, created_by)
   values (
+    schedule_cult_commons_rate.rate_id,
     schedule_cult_commons_rate.rate,
     coalesce(schedule_cult_commons_rate.effective_from, pg_catalog.clock_timestamp()),
     actor
   )
+  on conflict (id) do nothing
   returning r.* into result;
+
+  if result.id is null then
+    -- A concurrent call with the same id won the insert.
+    select r.* into result from public.cult_commons_rates r where r.id = schedule_cult_commons_rate.rate_id;
+    if result.rate is distinct from schedule_cult_commons_rate.rate then
+      raise exception using
+        errcode = 'P0001',
+        message = 'rate_conflict',
+        detail = 'That rate id is already used for another rate.';
+    end if;
+  end if;
   return result;
 end;
 $$;
 
-comment on function public.schedule_cult_commons_rate(public.rate_fraction, timestamptz) is
-  'Admin: add a Cult Commons rate effective now (null) or later; never backdated (D21).';
+comment on function public.schedule_cult_commons_rate(uuid, public.rate_fraction, timestamptz) is
+  'Admin: add a Cult Commons rate effective now (null) or later; never backdated (D21); replay-safe by id.';
 
 create function public.cancel_cult_commons_rate(rate_id uuid)
 returns public.cult_commons_rates
@@ -503,6 +601,7 @@ comment on function public.cancel_cult_commons_rate(uuid) is
 -- Privileges
 -- ---------------------------------------------------------------------------
 revoke all on function
+  private.raise_without_row(text, text, text, text, text, text),
   private.categories_normalize(),
   private.services_enforce_rules(),
   private.cult_commons_rates_append_only(),
@@ -513,7 +612,7 @@ revoke all on function
   public.create_service(uuid, text, public.money_amount, text, uuid, public.money_amount, boolean, boolean),
   public.update_service(uuid, text, public.money_amount, text, uuid, boolean, boolean, public.money_amount),
   public.set_service_archived(uuid, boolean),
-  public.schedule_cult_commons_rate(public.rate_fraction, timestamptz),
+  public.schedule_cult_commons_rate(uuid, public.rate_fraction, timestamptz),
   public.cancel_cult_commons_rate(uuid)
 from public, anon, authenticated, service_role;
 
@@ -521,7 +620,7 @@ grant execute on function
   public.create_service(uuid, text, public.money_amount, text, uuid, public.money_amount, boolean, boolean),
   public.update_service(uuid, text, public.money_amount, text, uuid, boolean, boolean, public.money_amount),
   public.set_service_archived(uuid, boolean),
-  public.schedule_cult_commons_rate(public.rate_fraction, timestamptz),
+  public.schedule_cult_commons_rate(uuid, public.rate_fraction, timestamptz),
   public.cancel_cult_commons_rate(uuid)
 to authenticated;
 

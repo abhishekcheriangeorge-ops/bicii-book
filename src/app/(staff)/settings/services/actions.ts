@@ -164,6 +164,7 @@ export const setCategoryArchived = staffAction(
 export const scheduleCultCommonsRate = staffAction(
   z
     .object({
+      rateId: z.uuid({ error: "Open the rate sheet again." }),
       percent: z
         .string({ error: "Enter the rate." })
         .trim()
@@ -176,7 +177,7 @@ export const scheduleCultCommonsRate = staffAction(
       effectiveFrom: z.string().trim().optional(),
     })
     .transform((v, ctx) => {
-      if (v.when === "now") return { rate: v.percent, effectiveFrom: null };
+      if (v.when === "now") return { rateId: v.rateId, rate: v.percent, effectiveFrom: null };
       const at = v.effectiveFrom ? fromShopLocal(v.effectiveFrom) : null;
       if (!at) {
         ctx.addIssue({
@@ -194,7 +195,7 @@ export const scheduleCultCommonsRate = staffAction(
         });
         return z.NEVER;
       }
-      return { rate: v.percent, effectiveFrom: at };
+      return { rateId: v.rateId, rate: v.percent, effectiveFrom: at };
     }),
   { name: "cult_commons.schedule", admin: true },
   async (input, { supabase }) => {

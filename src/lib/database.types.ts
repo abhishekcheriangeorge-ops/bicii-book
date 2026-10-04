@@ -698,6 +698,7 @@ export type Database = {
       };
       work_order_line_items: {
         Row: {
+          cost_pending: boolean;
           cost_total: number | null;
           created_at: string;
           created_by: string | null;
@@ -721,6 +722,7 @@ export type Database = {
           yield_total: number | null;
         };
         Insert: {
+          cost_pending?: boolean;
           cost_total?: never;
           created_at?: string;
           created_by?: string | null;
@@ -744,6 +746,7 @@ export type Database = {
           yield_total?: never;
         };
         Update: {
+          cost_pending?: boolean;
           cost_total?: never;
           created_at?: string;
           created_by?: string | null;
@@ -991,6 +994,7 @@ export type Database = {
       };
       work_order_line_items_staff: {
         Row: {
+          cost_pending: boolean | null;
           cost_total: number | null;
           created_at: string | null;
           created_by: string | null;
@@ -1014,6 +1018,7 @@ export type Database = {
           yield_total: number | null;
         };
         Insert: {
+          cost_pending?: boolean | null;
           cost_total?: number | null;
           created_at?: string | null;
           created_by?: string | null;
@@ -1037,6 +1042,7 @@ export type Database = {
           yield_total?: number | null;
         };
         Update: {
+          cost_pending?: boolean | null;
           cost_total?: number | null;
           created_at?: string | null;
           created_by?: string | null;
@@ -1123,6 +1129,7 @@ export type Database = {
       work_order_totals_staff: {
         Row: {
           bicii_yield_after_cc: number | null;
+          cost_pending_count: number | null;
           cost_total: number | null;
           cult_commons_share: number | null;
           currency: string | null;
@@ -1162,6 +1169,7 @@ export type Database = {
         Args: {
           body: string;
           kind: Database["public"]["Enums"]["work_order_note_kind"];
+          note_id: string;
           work_order_id: string;
         };
         Returns: {
@@ -1513,7 +1521,7 @@ export type Database = {
         };
       };
       schedule_cult_commons_rate: {
-        Args: { effective_from?: string; rate: unknown };
+        Args: { effective_from?: string; rate: unknown; rate_id: string };
         Returns: {
           cancelled_at: string | null;
           cancelled_by: string | null;

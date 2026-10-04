@@ -336,10 +336,14 @@ describe("the seeded jobs", () => {
     expect(total.rows).toEqual([{ line_count: 1, sale_total: "80.00" }]);
   });
 
-  it("exactly one job is overdue under D20: J-000006", async () => {
+  // Check-ins are backdated from the seed's now(), so the rule is applied at
+  // seed time (J-000007 is checked in then), not today: an existing seeded
+  // database ages by the day and J-000005 (6 days) would cross the line.
+  it("exactly one job is overdue under D20 at seed time: J-000006", async () => {
     const byId = await jobs();
+    const seededAt = byId.get(WORK_ORDER.nurulBianchiReceived)!.checked_in_at;
     const overdue = [...byId.values()]
-      .filter((j) => isOverdue({ status: j.status, checkedInAt: j.checked_in_at }))
+      .filter((j) => isOverdue({ status: j.status, checkedInAt: j.checked_in_at }, seededAt))
       .map((j) => j.job_number);
     expect(overdue).toEqual([JOB_NUMBER.danielCannondaleAwaitingCustomer]);
   });
