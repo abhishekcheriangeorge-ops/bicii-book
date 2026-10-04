@@ -59,6 +59,14 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.update_work_order(uuid, text, text, text, text)",
   "public.void_line(uuid, text)",
   "public.work_order_timeline(uuid, integer)",
+  // Inventory (Phase 4): active staff add and void parts; adjust_stock and
+  // write_off_unit need adjust_stock; transfers and units manage_inventory
+  // (a unit cost also view_costs)
+  "public.add_inventory_line(uuid, uuid, uuid, integer, uuid, uuid, money_amount)",
+  "public.adjust_stock(uuid, uuid, uuid, integer, movement_type, text, money_amount)",
+  "public.create_unique_unit(uuid, uuid, uuid, text, text, money_amount, money_amount, uuid, text)",
+  "public.transfer_stock(uuid, uuid, uuid, uuid, integer, text, uuid)",
+  "public.write_off_unit(uuid, uuid, text)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -103,6 +111,25 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "public.work_order_totals": ["SELECT"],
   "public.work_order_totals_staff": ["SELECT"],
   "public.work_orders": ["SELECT"],
+  // Inventory (Phase 4): staff read; manage_inventory writes locations and
+  // products (no cost without view_costs: the invoker cost-write guards);
+  // units are created and moved only by RPCs (UPDATE is a column grant for
+  // details, prices and archiving); the ledger and the histories are
+  // read-only. SELECT on products, units and movements excludes the cost
+  // columns, which only the cost views return (view_costs).
+  "public.inventory_movement_costs": ["SELECT"],
+  "public.inventory_movements": ["SELECT"],
+  "public.inventory_unit_costs": ["SELECT"],
+  "public.inventory_unit_events": ["SELECT"],
+  "public.inventory_units": ["SELECT", "UPDATE"],
+  "public.locations": ["INSERT", "SELECT", "UPDATE"],
+  "public.product_costs": ["SELECT"],
+  "public.product_events": ["SELECT"],
+  "public.products": ["INSERT", "SELECT", "UPDATE"],
+  "public.selling_prices": ["SELECT"],
+  "reporting.low_stock": ["SELECT"],
+  "reporting.product_stock": ["SELECT"],
+  "reporting.stock_levels": ["SELECT"],
 };
 
 /**
@@ -110,9 +137,17 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
  * still granted to an API role. Each must filter rows itself. The Phase 3
  * *_staff views read cost columns authenticated has no grant on, and return
  * rows only when private.has_permission('view_costs') (security_barrier);
- * reporting's public_items (Phase 8) will be the first public one.
+ * so do Phase 4's three cost views, and public.selling_prices returns rows
+ * to active staff only; reporting's public_items (Phase 4 step 2) will be
+ * the first public one.
  */
 export const DEFINER_VIEWS: readonly string[] = [
+  // Inventory (Phase 4): costs for view_costs only; selling prices for
+  // active staff (private.selling_price, the single price source)
+  "public.inventory_movement_costs",
+  "public.inventory_unit_costs",
+  "public.product_costs",
+  "public.selling_prices",
   "public.services_staff",
   "public.work_order_line_items_staff",
   "public.work_order_totals_staff",

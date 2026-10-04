@@ -100,7 +100,7 @@ async function types(args) {
         "--db-url",
         cliDatabaseUrl(url),
         "--schema",
-        "public",
+        "public,reporting",
       ],
       { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
     );

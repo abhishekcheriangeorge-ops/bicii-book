@@ -152,6 +152,32 @@ describe("mapDbError", () => {
     ).toBe("Photos on a job can't be made public.");
   });
 
+  it("maps the inventory's business errors, unique indexes and checks (Phase 4)", () => {
+    expect(mapDbError(pgrst("P0001", "part_cost_missing"))).toMatchObject({
+      kind: "business",
+      message:
+        "This part has no cost yet, so its yield cannot be worked out. Ask someone with cost access to set it.",
+    });
+    expect(mapDbError(pgrst("P0001", "location_required")).message).toBe(
+      "There is no active stock location. Add one in Settings → Locations.",
+    );
+    expect(mapDbError(pgrst("P0001", "line_type_unsupported")).message).toBe(GENERIC_ERROR);
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "products_sku_key_unique" }).message,
+    ).toBe("Another product already uses that SKU.");
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "work_order_line_items_unit_once" })
+        .message,
+    ).toBe("That unit is already on a job.");
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "attachments_stock_never_customer",
+      }).message,
+    ).toBe("Stock photos have no customer; choose Internal or Public.");
+  });
+
   it("maps numeric overflow (22003) to a plain message", () => {
     expect(mapDbError(pgrst("22003", "numeric field overflow"))).toEqual({
       message: "That amount is too large.",
@@ -200,18 +226,42 @@ describe("unwrap / DbError", () => {
   });
 });
 
+/**
+ * Codes that a merged migration still contains but that nothing raises any
+ * more, because a later migration replaced the function that raised them
+ * (merged migrations are never edited). Each maps to the migration that
+ * retired it; no migration from that one on may raise it again.
+ */
+const RETIRED_CODES: Record<string, string> = {
+  // Phase 3's void_line refused part lines until Phase 4 replaced it with
+  // the stock-reversal branch.
+  line_type_unsupported: "20261004001900_inventory_jobs.sql",
+};
+
 describe("BUSINESS_ERRORS covers every code the migrations raise", () => {
   it("has a message for each P0001 MESSAGE code in supabase/migrations", async () => {
     const { readFileSync, readdirSync } = await import("node:fs");
     const path = await import("node:path");
     const dir = path.join(process.cwd(), "supabase", "migrations");
     const codes = new Set<string>();
-    for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql"))) {
+    const raisedFrom = new Map<string, string[]>();
+    const files = readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    for (const file of files) {
       const sql = readFileSync(path.join(dir, file), "utf8");
-      for (const m of sql.matchAll(/message\s*=\s*'([a-z0-9_]+)'/g)) codes.add(m[1]);
+      for (const m of sql.matchAll(/message\s*=\s*'([a-z0-9_]+)'/g)) {
+        codes.add(m[1]);
+        raisedFrom.set(m[1], [...(raisedFrom.get(m[1]) ?? []), file]);
+      }
     }
     expect(codes.size).toBeGreaterThan(0);
-    expect([...codes].filter((c) => !(c in BUSINESS_ERRORS))).toEqual([]);
+    expect([...codes].filter((c) => !(c in BUSINESS_ERRORS) && !(c in RETIRED_CODES))).toEqual([]);
+    for (const [code, retiredBy] of Object.entries(RETIRED_CODES)) {
+      expect(files).toContain(retiredBy);
+      expect((raisedFrom.get(code) ?? []).filter((f) => f >= retiredBy)).toEqual([]);
+      expect(code in BUSINESS_ERRORS).toBe(false);
+    }
   });
 });
 
