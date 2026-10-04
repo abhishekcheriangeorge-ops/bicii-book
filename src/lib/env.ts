@@ -1,0 +1,98 @@
+import { z } from "zod";
+
+/**
+ * Environment configuration, validated with zod at the trust boundary
+ * (ADR-001 A1). Parsed lazily on first use and memoised, so a missing
+ * variable fails loudly where it is needed instead of at import time (which
+ * would break `next build` for pages that never touch it).
+ *
+ * Every variable here is documented in `.env.example`. Never commit values.
+ */
+
+const url = z.url({ protocol: /^https?$/, error: "must be an http(s) URL" });
+const nonEmpty = z.string().trim().min(1, { error: "must not be empty" });
+
+/** Exposed to the browser: names must start with NEXT_PUBLIC_. */
+export const publicEnvSchema = z.object({
+  NEXT_PUBLIC_SUPABASE_URL: url,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: nonEmpty,
+  /** Base of every QR payload: `{base}/q/{shortId}` (PLAN D9). */
+  NEXT_PUBLIC_PUBLIC_SITE_URL: url.transform((v) => v.replace(/\/+$/, "")),
+});
+
+/** Server only. Never import the result into a Client Component. */
+export const serverEnvSchema = z.object({
+  /** Postgres connection for DB tests and type generation. */
+  DATABASE_URL: z
+    .string()
+    .regex(/^postgres(ql)?:\/\//, { error: "must be a postgres:// connection string" })
+    .optional(),
+  /** Integrations only (src/lib/integrations/**); never in a client bundle. */
+  SUPABASE_SERVICE_ROLE_KEY: nonEmpty.optional(),
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  SHOPIFY_SHOP_DOMAIN: nonEmpty.optional(),
+  SHOPIFY_ADMIN_TOKEN: nonEmpty.optional(),
+  SHOPIFY_WEBHOOK_SECRET: nonEmpty.optional(),
+});
+
+export type PublicEnv = z.infer<typeof publicEnvSchema>;
+export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+type Source = Record<string, string | undefined>;
+
+export class EnvError extends Error {
+  constructor(scope: "public" | "server", issues: z.core.$ZodIssue[]) {
+    const lines = issues.map((i) => `  - ${i.path.join(".") || "(root)"}: ${i.message}`);
+    super(
+      `Invalid ${scope} environment configuration:\n${lines.join("\n")}\n` +
+        "Set these in .env.local (see .env.example for every variable).",
+    );
+    this.name = "EnvError";
+  }
+}
+
+function blankToUndefined(source: Source): Source {
+  return Object.fromEntries(Object.entries(source).map(([k, v]) => [k, v === "" ? undefined : v]));
+}
+
+export function parsePublicEnv(source: Source): PublicEnv {
+  const result = publicEnvSchema.safeParse(blankToUndefined(source));
+  if (!result.success) throw new EnvError("public", result.error.issues);
+  return result.data;
+}
+
+export function parseServerEnv(source: Source): ServerEnv {
+  const result = serverEnvSchema.safeParse(blankToUndefined(source));
+  if (!result.success) throw new EnvError("server", result.error.issues);
+  return result.data;
+}
+
+let publicEnv: PublicEnv | undefined;
+let serverEnv: ServerEnv | undefined;
+
+/**
+ * Public env. Each variable is referenced by its literal name so Next.js
+ * inlines it into client bundles at build time; `process.env[name]` would not.
+ */
+export function getPublicEnv(): PublicEnv {
+  publicEnv ??= parsePublicEnv({
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_PUBLIC_SITE_URL,
+  });
+  return publicEnv;
+}
+
+export function getServerEnv(): ServerEnv {
+  if (typeof window !== "undefined") {
+    throw new Error("getServerEnv() was called in the browser; server env is server-only.");
+  }
+  serverEnv ??= parseServerEnv(process.env);
+  return serverEnv;
+}
+
+/** Test hook: forget memoised values so a test can change process.env. */
+export function resetEnvCache(): void {
+  publicEnv = undefined;
+  serverEnv = undefined;
+}
