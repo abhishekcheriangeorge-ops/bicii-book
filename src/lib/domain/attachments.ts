@@ -8,6 +8,7 @@ import {
   SIGNED_URL_TTL_SECONDS,
   attachmentPath,
   bucketFor,
+  isUndecodedOriginal,
   otherBucket,
   type PhotoBucket,
   type PhotoEntity,
@@ -40,13 +41,22 @@ import { DomainError } from "./errors";
  *   visibility to/from public = copy to the other bucket, then the RPC
  *   (which checks the copy exists), then remove the original. If the RPC
  *   fails the copy is removed again (a private photo must not linger in
- *   the public bucket); if removing the original fails, repeating the
- *   change finishes the job. An object is only removed after re-reading
- *   the row and seeing it names the other bucket.
+ *   the public bucket). If removing the original fails, the change has
+ *   still happened: the result says the cleanup is pending, and choosing
+ *   the same setting again (the viewer's "Finish") removes it. An object
+ *   is only removed after re-reading the row and seeing it names the
+ *   other bucket (Storage's own policy refuses to delete an object a row
+ *   points at, too).
  *
  *   delete = the RPC (reason required; the row is kept in
  *   attachment_events), then remove the object. A replay finds the path in
  *   the `deleted` event and removes whatever is left.
+ *
+ * Whatever a failed cleanup (or a crash between steps) leaves behind is
+ * not left for staff to remember: listPhotos removes the record's stray
+ * objects (attachment_stray_objects: nothing points at them, and they are
+ * old enough not to belong to a change still running) every time the
+ * record is shown, so media-public ends up holding only public photos.
  */
 
 export type { PhotoTarget };
@@ -149,16 +159,47 @@ async function urlsFor(supabase: ServerSupabase, rows: Row[]): Promise<Map<strin
   return urls;
 }
 
-/** A record's photos, oldest first, with URLs to show them. */
+/**
+ * Removes the objects under a record that no attachment points at any more
+ * and that are safe to remove (attachment_stray_objects): what a failed
+ * Storage cleanup or an interrupted change left behind. Best effort: what
+ * cannot be removed now is found again next time. Returns how many went.
+ */
+export async function sweepStrayPhotos(
+  supabase: ServerSupabase,
+  target: PhotoTarget,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("attachment_stray_objects", {
+    entity_type: target.entityType,
+    entity_id: target.entityId,
+  });
+  if (error || !data || data.length === 0) return 0;
+  let removed = 0;
+  for (const bucket of [INTERNAL_BUCKET, PUBLIC_BUCKET] as const) {
+    const paths = data.filter((o) => o.bucket === bucket).map((o) => o.path);
+    if (paths.length === 0) continue;
+    const { data: gone } = await supabase.storage.from(bucket).remove(paths);
+    removed += gone?.length ?? 0;
+  }
+  return removed;
+}
+
+/**
+ * A record's photos, oldest first, with URLs to show them. Also clears the
+ * record's stray objects (sweepStrayPhotos), so a cleanup that failed
+ * finishes the next time anyone looks at the record.
+ */
 export async function listPhotos(supabase: ServerSupabase, target: PhotoTarget): Promise<Photo[]> {
-  const rows = unwrap(
-    await supabase
+  const [result] = await Promise.all([
+    supabase
       .from("attachments")
       .select(COLUMNS)
       .eq("entity_type", target.entityType)
       .eq("entity_id", target.entityId)
       .order("created_at", { ascending: true }),
-  ) as Row[];
+    sweepStrayPhotos(supabase, target),
+  ]);
+  const rows = unwrap(result) as Row[];
   const urls = await urlsFor(supabase, rows);
   return rows.map((r) => toPhoto(r, urls.get(r.storage_path) ?? null));
 }
@@ -270,21 +311,33 @@ async function removeUnlessCurrent(
 export type CleanupReport = (problem: string, details: Record<string, unknown>) => void;
 
 /**
+ * A change that has happened. `cleanupPending`: an old copy of the photo
+ * could not be removed from Storage yet. Repeating the same change
+ * finishes it; failing that, the next showing of the record does
+ * (listPhotos).
+ */
+export type PhotoChange = { cleanupPending: boolean };
+
+/**
  * Who may see a photo. internal <-> customer stays in media-internal (the
  * RPC alone); to or from public moves the object between buckets (see the
  * module comment for the order and what a failure leaves behind). PLAN D13:
- * a photo on a customer record is never public.
+ * a photo on a customer record is never public; nor is an original stored
+ * without re-encoding, which may carry its GPS position.
  */
 export async function setPhotoVisibility(
   supabase: ServerSupabase,
   id: string,
   visibility: Visibility,
   report: CleanupReport,
-): Promise<void> {
+): Promise<PhotoChange> {
   const row = await readRow(supabase, id);
   if (!row) throw new DomainError("That photo no longer exists. Refresh and try again.");
   if (visibility === "public" && row.entity_type === "customer") {
     throw new DomainError(BUSINESS_ERRORS.attachment_customer_never_public);
+  }
+  if (visibility === "public" && isUndecodedOriginal(row)) {
+    throw new DomainError(BUSINESS_ERRORS.attachment_original_never_public);
   }
   const from = asBucket(row.storage_bucket);
   const to = bucketFor(visibility);
@@ -294,14 +347,16 @@ export async function setPhotoVisibility(
     unwrap(await supabase.rpc("set_attachment_visibility", { attachment_id: id, visibility }));
     // Finish an earlier move that could not remove its old copy.
     const leftover = await removeUnlessCurrent(supabase, id, otherBucket(to), path);
-    if (leftover)
+    if (leftover) {
       report("stale_copy_not_removed", {
         attachmentId: id,
         bucket: otherBucket(to),
         path,
         error: leftover,
       });
-    return;
+      return { cleanupPending: true };
+    }
+    return { cleanupPending: false };
   }
 
   const { error: copyError } = await supabase.storage
@@ -330,34 +385,36 @@ export async function setPhotoVisibility(
   const removeError = await removeUnlessCurrent(supabase, id, from, path);
   if (removeError) {
     report("original_not_removed", { attachmentId: id, bucket: from, path, error: removeError });
-    throw new DomainError(
-      "Visibility changed, but the old copy could not be removed yet. Choose the same setting again to finish.",
-    );
+    return { cleanupPending: true };
   }
+  return { cleanupPending: false };
 }
 
 /**
  * Deletes a photo with a reason (RPC delete_attachment keeps who, when, why
  * and the row in attachment_events), then removes its object. Safe to
- * repeat: a replay reads the path from the `deleted` event.
+ * repeat: a replay reads the path from the `deleted` event. The photo is
+ * deleted once this returns; `cleanupPending` means its file is still in
+ * Storage (repeating finishes it, as does the next showing of the record).
  */
 export async function deletePhoto(
   supabase: ServerSupabase,
   id: string,
   reason: string,
   report: CleanupReport,
-): Promise<void> {
+): Promise<PhotoChange> {
   const cleaned = reason.trim();
   if (!cleaned) {
     throw new DomainError("Say why you are deleting this photo.", {
       reason: ["Say why you are deleting this photo."],
     });
   }
-  const deleted = unwrap(
+  // A set: the deleted row, or none on a replay.
+  const deleted = (unwrap(
     await supabase.rpc("delete_attachment", { attachment_id: id, reason: cleaned }),
-  ) as Row | null;
+  ) ?? []) as Row[];
 
-  let path = deleted?.storage_path ?? null;
+  let path: string | null = deleted[0]?.storage_path ?? null;
   if (!path) {
     const event = unwrap(
       await supabase
@@ -372,7 +429,7 @@ export async function deletePhoto(
     const payload = event?.payload as { storage_path?: unknown } | null | undefined;
     path = typeof payload?.storage_path === "string" ? payload.storage_path : null;
   }
-  if (!path) return;
+  if (!path) return { cleanupPending: false };
 
   // The row is gone and ids are never reused, so neither bucket's copy is
   // referenced any more.
@@ -383,8 +440,7 @@ export async function deletePhoto(
   }
   if (failures.length > 0) {
     report("deleted_object_not_removed", { attachmentId: id, path, errors: failures });
-    throw new DomainError(
-      "The photo was deleted, but its file could not be removed yet. Try again to finish.",
-    );
+    return { cleanupPending: true };
   }
+  return { cleanupPending: false };
 }

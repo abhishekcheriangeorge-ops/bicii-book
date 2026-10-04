@@ -23,7 +23,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import type { ActionResult } from "@/lib/actions";
-import { visibilityOptions, type Visibility } from "@/lib/attachments";
+import { isUndecodedOriginal, visibilityOptions, type Visibility } from "@/lib/attachments";
 import { formatDateTime } from "@/lib/dates";
 import type { Photo } from "@/lib/domain/attachments";
 import { formatBytes } from "@/lib/images";
@@ -34,7 +34,12 @@ const CONFIRM_GUARD_MS = 400;
 /**
  * One photo, enlarged, with what staff can change about it: its caption,
  * who may see it (internal / customer / public, each explained; PLAN D13:
- * never public on a customer record) and deleting it with a reason.
+ * never public on a customer record, nor for an original that may carry
+ * its GPS position) and deleting it with a reason.
+ *
+ * A change that went through but could not remove the photo's old copy
+ * from Storage says so (not as a failure) and offers Finish, which repeats
+ * it; the next showing of the record finishes it anyway (listPhotos).
  */
 export function PhotoViewer({
   photo,
@@ -97,29 +102,43 @@ function VisibilityControl({ photo }: { photo: Photo }) {
   const { toast } = useToast();
   const [optimistic, setOptimistic] = useOptimistic(photo.visibility);
   const [pending, start] = useTransition();
-  const options = visibilityOptions(photo.entityType);
+  // The setting whose move went through but left an old copy to remove.
+  const [unfinished, setUnfinished] = useState<Visibility | null>(null);
+  const options = visibilityOptions(photo.entityType, { original: isUndecodedOriginal(photo) });
   const current = options.find((o) => o.value === optimistic) ?? options[0];
   const blocked = options.filter((o) => o.blocked);
   const labelId = useId();
+  const labelOf = (v: Visibility) => options.find((o) => o.value === v)?.label.toLowerCase();
 
   const change = (next: Visibility) => {
-    if (next === optimistic) return;
+    // Choosing the current setting again only means something when it
+    // still has a cleanup to finish.
+    if (next === optimistic && next !== unfinished) return;
     start(async () => {
       setOptimistic(next);
       const result = await setPhotoVisibility({ attachmentId: photo.id, visibility: next });
-      if (result.ok) {
-        toast({
-          title: `Photo is now ${options.find((o) => o.value === next)?.label.toLowerCase()}`,
-          tone: "success",
-        });
-      } else {
+      if (!result.ok) {
         toast({
           title: "Visibility not changed",
           description: result.error,
           tone: "error",
           action: { label: "Retry", onAction: () => change(next) },
         });
+        return;
       }
+      if (result.data.cleanupPending) {
+        setUnfinished(next);
+        toast({
+          title: `Photo is now ${labelOf(next)}`,
+          description:
+            "Its old copy could not be removed yet. Press Finish, or it is removed the next time this record is opened.",
+          tone: "info",
+          action: { label: "Finish", onAction: () => change(next) },
+        });
+        return;
+      }
+      setUnfinished(null);
+      toast({ title: `Photo is now ${labelOf(next)}`, tone: "success" });
     });
   };
 
@@ -145,6 +164,22 @@ function VisibilityControl({ photo }: { photo: Photo }) {
       <p className="text-sm text-dust-700">
         <span className="font-medium">{current.label}:</span> {current.description}
       </p>
+      {unfinished && unfinished === optimistic ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-waiting-soft p-3">
+          <p className="flex-1 text-sm text-waiting-deep">
+            The photo&rsquo;s old copy is still being removed.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            pending={pending}
+            pendingLabel="Finishing…"
+            onClick={() => change(unfinished)}
+          >
+            Finish
+          </Button>
+        </div>
+      ) : null}
       {blocked.map((o) => (
         <p key={o.value} className="text-sm text-dust-500">
           {o.blocked}
@@ -199,16 +234,32 @@ function DeleteControl({ photo, onDeleted }: { photo: Photo; onDeleted: () => vo
   const [pending, start] = useTransition();
   const openedAt = useRef(0);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
 
+  // Opening the confirmation focuses the reason; Cancel puts focus back on
+  // "Delete photo…" (the focused Cancel button has just gone).
   useEffect(() => {
     if (confirming) reasonRef.current?.focus();
+    else if (wasConfirming.current) startRef.current?.focus();
+    wasConfirming.current = confirming;
   }, [confirming]);
 
   const remove = (why: string) => {
     start(async () => {
       const result = await deletePhoto({ attachmentId: photo.id, reason: why });
       if (result.ok) {
-        toast({ title: "Photo deleted", tone: "success" });
+        toast(
+          result.data.cleanupPending
+            ? {
+                title: "Photo deleted",
+                description:
+                  "Its file could not be removed from storage yet. Press Finish, or it is removed the next time this record is opened.",
+                tone: "info",
+                action: { label: "Finish", onAction: () => remove(why) },
+              }
+            : { title: "Photo deleted", tone: "success" },
+        );
         onDeleted();
         return;
       }
@@ -242,6 +293,7 @@ function DeleteControl({ photo, onDeleted }: { photo: Photo; onDeleted: () => vo
       <div key="start" className="border-t border-hairline pt-4">
         <Button
           key="delete"
+          ref={startRef}
           variant="ghost"
           size="sm"
           className="text-danger-deep"

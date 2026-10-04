@@ -63,10 +63,26 @@ export type VisibilityOption = {
 };
 
 /**
- * The visibility levels for a photo on `entityType`, with who sees each.
- * PLAN D13: a photo on a customer record is never public.
+ * Whether a photo is an original stored as it was uploaded (the device
+ * could not decode it, so it was not re-encoded): recorded without its
+ * dimensions, and possibly still carrying EXIF metadata, GPS included.
  */
-export function visibilityOptions(entityType: AttachmentEntity): VisibilityOption[] {
+export function isUndecodedOriginal(photo: { width: number | null; height: number | null }) {
+  return photo.width === null || photo.height === null;
+}
+
+export const ORIGINAL_NEVER_PUBLIC =
+  "This photo was stored as its original file, which may carry where it was taken, so it can't be public. Add it again as a JPEG to share it publicly.";
+
+/**
+ * The visibility levels for a photo on `entityType`, with who sees each.
+ * PLAN D13: a photo on a customer record is never public; nor is an
+ * undecoded original (`original`), which may carry its GPS position.
+ */
+export function visibilityOptions(
+  entityType: AttachmentEntity,
+  { original = false }: { original?: boolean } = {},
+): VisibilityOption[] {
   const owner = entityType === "customer" ? "this customer" : "the bike's current owner";
   return [
     {
@@ -86,7 +102,11 @@ export function visibilityOptions(entityType: AttachmentEntity): VisibilityOptio
       label: "Public",
       description: "Anyone with the link, e.g. a listing for a bike for sale.",
       blocked:
-        entityType === "customer" ? "Photos on a customer record can never be public." : null,
+        entityType === "customer"
+          ? "Photos on a customer record can never be public."
+          : original
+            ? ORIGINAL_NEVER_PUBLIC
+            : null,
     },
   ];
 }

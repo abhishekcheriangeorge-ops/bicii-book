@@ -15,6 +15,7 @@ import {
   setPhotoVisibility as visibility,
   type CleanupReport,
   type Photo,
+  type PhotoChange,
   type UploadTarget,
 } from "@/lib/domain/attachments";
 import { MAX_PHOTO_BYTES, PHOTO_MEDIA_TYPES } from "@/lib/images";
@@ -22,12 +23,14 @@ import { REASON_MAX_LENGTH } from "@/lib/reasons";
 
 import type { Logger } from "pino";
 
-export type { Photo, UploadTarget };
+export type { Photo, PhotoChange, UploadTarget };
 
 /**
  * Photo actions (src/lib/domain/attachments.ts). Uploads go from the phone
  * straight to Storage: prepareUploads mints the signed URLs, the browser
- * uploads, recordPhoto records each one.
+ * uploads, recordPhoto records each one. recordPhoto does not refresh the
+ * page: a batch of photos would re-render it (and re-sign every photo on
+ * it) once per photo, so the upload queue refreshes once when it drains.
  */
 
 const target = {
@@ -63,11 +66,7 @@ export const recordPhoto = staffAction(
     height: dimension,
   }),
   { name: "attachments.record" },
-  async (input, { supabase }) => {
-    const photo = await record(supabase, input);
-    refresh();
-    return photo;
-  },
+  async (input, { supabase }) => record(supabase, input),
 );
 
 export const setPhotoCaption = staffAction(
@@ -91,14 +90,13 @@ export const setPhotoCaption = staffAction(
 export const setPhotoVisibility = staffAction(
   z.object({ attachmentId, visibility: z.enum(Constants.public.Enums.attachment_visibility) }),
   { name: "attachments.set_visibility" },
-  async (input, { supabase, log }) => {
+  async (input, { supabase, log }): Promise<PhotoChange> => {
     try {
-      await visibility(supabase, input.attachmentId, input.visibility, reporter(log));
+      return await visibility(supabase, input.attachmentId, input.visibility, reporter(log));
     } finally {
-      // Even a half-finished move may have changed the row.
+      // Even a move that failed part-way may have changed the row.
       refresh();
     }
-    return null;
   },
 );
 
@@ -112,12 +110,11 @@ export const deletePhoto = staffAction(
       .max(REASON_MAX_LENGTH, { error: `Keep the reason under ${REASON_MAX_LENGTH} characters.` }),
   }),
   { name: "attachments.delete" },
-  async (input, { supabase, log }) => {
+  async (input, { supabase, log }): Promise<PhotoChange> => {
     try {
-      await remove(supabase, input.attachmentId, input.reason, reporter(log));
+      return await remove(supabase, input.attachmentId, input.reason, reporter(log));
     } finally {
       refresh();
     }
-    return null;
   },
 );

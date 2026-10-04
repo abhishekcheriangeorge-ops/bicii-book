@@ -5,6 +5,7 @@ import {
   PUBLIC_BUCKET,
   attachmentPath,
   bucketFor,
+  isUndecodedOriginal,
   otherBucket,
   visibilityOptions,
 } from "@/lib/attachments";
@@ -34,5 +35,14 @@ describe("photo storage rules", () => {
     const customer = visibilityOptions("customer");
     expect(customer.find((o) => o.value === "public")?.blocked).toMatch(/never be public/);
     expect(customer.find((o) => o.value === "customer")?.description).toMatch(/this customer/);
+  });
+
+  it("never offers public for an original stored without dimensions (it may carry GPS)", () => {
+    expect(isUndecodedOriginal({ width: null, height: null })).toBe(true);
+    expect(isUndecodedOriginal({ width: 2048, height: null })).toBe(true);
+    expect(isUndecodedOriginal({ width: 2048, height: 1536 })).toBe(false);
+    const original = visibilityOptions("bike", { original: true });
+    expect(original.find((o) => o.value === "public")?.blocked).toMatch(/original file/);
+    expect(original.find((o) => o.value === "customer")?.blocked).toBeNull();
   });
 });

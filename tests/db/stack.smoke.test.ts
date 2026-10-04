@@ -12,10 +12,11 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
-import { ANON_KEY, GATEWAY_URL, SERVICE_ROLE_KEY } from "../../scripts/devstack/config.mjs";
+import { ANON_KEY, SERVICE_ROLE_KEY } from "../../scripts/devstack/config.mjs";
 import type { Database } from "@/lib/database.types";
 
 import { BIKE, SEED_PASSWORD, STAFF, STAFF_EMAIL } from "../fixtures/ids";
+import { STACK_URL, stackReachable } from "./stack";
 
 /** A real 2x2 JPEG (269 bytes), so Storage sees a genuine photo. */
 const TINY_JPEG = Buffer.from(
@@ -23,31 +24,8 @@ const TINY_JPEG = Buffer.from(
   "base64",
 );
 
-const url = process.env.BICII_STACK_URL ?? GATEWAY_URL;
-
-async function gatewayHealthy(): Promise<boolean> {
-  try {
-    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1500) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-const reachable = await gatewayHealthy();
-// CI starts the devstack before `npm test` and sets BICII_REQUIRE_STACK=1, so
-// an unreachable gateway there is a failure, not a silent skip.
-if (!reachable && process.env.BICII_REQUIRE_STACK === "1") {
-  throw new Error(
-    `[stack smoke] BICII_REQUIRE_STACK=1 but the devstack gateway is not reachable at ${url}/health.`,
-  );
-}
-if (!reachable) {
-  console.warn(
-    `[stack smoke] SKIPPED: devstack gateway not reachable at ${url}/health. ` +
-      "Run `npm run db:reset && npm run devstack:start` to include it.",
-  );
-}
+const url = STACK_URL;
+const reachable = await stackReachable("stack smoke");
 
 const options = { auth: { persistSession: false, autoRefreshToken: false } };
 
@@ -118,14 +96,29 @@ describe.skipIf(!reachable)("devstack through the gateway", () => {
     expect(staffError).toBeNull();
     expect(staffFile?.size).toBe(TINY_JPEG.length);
 
+    // Recorded, so not even its uploader can remove it with a bare Storage call.
+    const { data: refused } = await bucket.remove([path]);
+    expect(refused).toEqual([]);
+    const { data: stillThere } = await bucket.download(path);
+    expect(stillThere?.size).toBe(TINY_JPEG.length);
+
     // Clean up the way the app deletes: RPC with a reason, then the object.
-    const { error: deleteError } = await staff.rpc("delete_attachment", {
+    const { data: deleted, error: deleteError } = await staff.rpc("delete_attachment", {
       attachment_id: id,
       reason: "Stack smoke test cleanup",
     });
     expect(deleteError).toBeNull();
-    const { error: removeError } = await bucket.remove([path]);
+    expect(deleted).toMatchObject([{ id, storage_path: path }]);
+    // A replay through PostgREST is an empty list, not a row of nulls.
+    const { data: replay, error: replayError } = await staff.rpc("delete_attachment", {
+      attachment_id: id,
+      reason: "Stack smoke test cleanup",
+    });
+    expect(replayError).toBeNull();
+    expect(replay).toEqual([]);
+    const { data: removed, error: removeError } = await bucket.remove([path]);
     expect(removeError).toBeNull();
+    expect(removed).toHaveLength(1);
     await staff.auth.signOut();
   });
 
