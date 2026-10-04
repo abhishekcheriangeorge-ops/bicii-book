@@ -1,0 +1,221 @@
+"use server";
+
+import { refresh } from "next/cache";
+
+import { ActionError, staffAction } from "@/lib/actions";
+import { hasPermission } from "@/lib/auth/permissions";
+import { z } from "zod";
+import {
+  addUnit as addOneUnit,
+  adjustStock as adjust,
+  createProduct as createOneProduct,
+  createUniqueItem as createUnique,
+  searchParts as findParts,
+  searchShopBikes as findShopBikes,
+  setProductArchived as setArchived,
+  transferStock as transfer,
+  updateProduct as updateOneProduct,
+  updateUnit as updateOneUnit,
+  writeOffUnit as writeOff,
+} from "@/lib/domain/inventory";
+import {
+  addUnitSchema,
+  adjustStockSchema,
+  createProductSchema,
+  createUniqueItemSchema,
+  searchSchema,
+  transferStockSchema,
+  updateProductSchema,
+  updateUnitSchema,
+  writeOffUnitSchema,
+} from "@/lib/inventory-forms";
+
+/**
+ * Inventory actions (SPEC §11, §12, §22, §23; src/lib/domain/inventory.ts).
+ * Product and unit details and transfers need manage_inventory; stock
+ * adjustments and write-offs need adjust_stock; entering a cost needs
+ * view_costs as well (SPEC §4.2). The RPCs, RLS and triggers check every
+ * one again; these validate the input and refresh the page.
+ */
+
+type Staff = Parameters<typeof hasPermission>[0];
+
+/** Only view_costs holders enter a cost (the database refuses anyone else too). */
+function requireCost(staff: Staff, costs: Record<string, string | null>): void {
+  if (hasPermission(staff, "view_costs")) return;
+  const entered = Object.entries(costs).filter(([, v]) => v !== null);
+  if (entered.length === 0) return;
+  throw new ActionError(
+    "You can't set a cost.",
+    Object.fromEntries(entered.map(([k]) => [k, ["Only staff who can view costs can enter one."]])),
+  );
+}
+
+const productInput = (input: z.output<typeof updateProductSchema>) => ({
+  name: input.name,
+  sku: input.sku,
+  brand: input.brand,
+  categoryId: input.categoryId,
+  description: input.description,
+  salePrice: input.salePrice,
+  cost: input.cost,
+  reorderPoint: input.reorderPoint,
+  active: input.active,
+});
+
+/** A new counted (quantity) or unique product; the form's id is the idempotency key. */
+export const createProduct = staffAction(
+  createProductSchema,
+  { name: "inventory.create_product", permission: "manage_inventory" },
+  async ({ id, trackingType, ...input }, { supabase, staff }) => {
+    requireCost(staff, { cost: input.cost });
+    const result = await createOneProduct(supabase, id, {
+      ...productInput({ id, ...input }),
+      trackingType,
+    });
+    refresh();
+    return result;
+  },
+);
+
+/**
+ * A unique item with its first unit, from one sheet: the product (form
+ * id), then the unit (unit id), both idempotent. If the unit is refused the
+ * product still exists; the result says why, and its page offers Add unit.
+ */
+export const createUniqueItem = staffAction(
+  createUniqueItemSchema,
+  { name: "inventory.create_unique_item", permission: "manage_inventory" },
+  async (input, { supabase, staff }) => {
+    requireCost(staff, { cost: input.cost, unitCost: input.unitCost });
+    const result = await createUnique(supabase, {
+      productId: input.id,
+      unitId: input.unitId,
+      product: productInput(input),
+      unit: {
+        locationId: input.locationId,
+        serialNumber: input.serialNumber,
+        condition: input.condition,
+        salePrice: input.unitSalePrice,
+        cost: input.unitCost,
+        bikeId: input.bikeId,
+      },
+    });
+    refresh();
+    return result;
+  },
+);
+
+/** Edit a product's details; a blank cost keeps the current one. */
+export const updateProduct = staffAction(
+  updateProductSchema,
+  { name: "inventory.update_product", permission: "manage_inventory" },
+  async (input, { supabase, staff }) => {
+    requireCost(staff, { cost: input.cost });
+    await updateOneProduct(supabase, input.id, productInput(input));
+    refresh();
+    return null;
+  },
+);
+
+/** Archive (refused while published or holding stock) or unarchive a product. */
+export const archiveProduct = staffAction(
+  z.object({ productId: z.uuid({ error: "Unknown product." }), archived: z.boolean() }),
+  { name: "inventory.set_product_archived", permission: "manage_inventory" },
+  async ({ productId, archived }, { supabase }) => {
+    await setArchived(supabase, productId, archived);
+    refresh();
+    return null;
+  },
+);
+
+/** Register another unit of a unique product (shop-owned, D27); replay-safe by unit id. */
+export const addUnit = staffAction(
+  addUnitSchema,
+  { name: "inventory.add_unit", permission: "manage_inventory" },
+  async (input, { supabase, staff }) => {
+    requireCost(staff, { unitCost: input.unitCost });
+    const result = await addOneUnit(supabase, {
+      unitId: input.unitId,
+      productId: input.productId,
+      locationId: input.locationId,
+      serialNumber: input.serialNumber,
+      condition: input.condition,
+      salePrice: input.unitSalePrice,
+      cost: input.unitCost,
+      bikeId: input.bikeId,
+    });
+    refresh();
+    return result;
+  },
+);
+
+/** Edit a unit's serial, condition, price, notes and (view_costs) cost. */
+export const updateUnit = staffAction(
+  updateUnitSchema,
+  { name: "inventory.update_unit", permission: "manage_inventory" },
+  async (input, { supabase, staff }) => {
+    requireCost(staff, { unitCost: input.unitCost });
+    await updateOneUnit(supabase, input.id, {
+      serialNumber: input.serialNumber,
+      condition: input.condition,
+      salePrice: input.unitSalePrice,
+      cost: input.unitCost,
+      internalNotes: input.internalNotes,
+    });
+    refresh();
+    return null;
+  },
+);
+
+/** Move stock or a unit between active locations; replay-safe by request id. */
+export const transferStock = staffAction(
+  transferStockSchema,
+  { name: "inventory.transfer_stock", permission: "manage_inventory" },
+  async (input, { supabase }) => {
+    await transfer(supabase, input);
+    refresh();
+    return null;
+  },
+);
+
+/**
+ * A manual stock change with a reason (never below zero, D23); a unit cost
+ * for stock added needs view_costs. Replay-safe by request id.
+ */
+export const adjustStock = staffAction(
+  adjustStockSchema,
+  { name: "inventory.adjust_stock", permission: "adjust_stock" },
+  async (input, { supabase, staff }) => {
+    requireCost(staff, { unitCost: input.unitCost });
+    const result = await adjust(supabase, input);
+    refresh();
+    return result;
+  },
+);
+
+/** Write off an available or reserved unit with a reason; replay-safe by request id. */
+export const writeOffUnit = staffAction(
+  writeOffUnitSchema,
+  { name: "inventory.write_off_unit", permission: "adjust_stock" },
+  async ({ requestId, unitId, reason }, { supabase }) => {
+    await writeOff(supabase, requestId, unitId, reason);
+    refresh();
+    return null;
+  },
+);
+
+/** Parts for a job's Add part picker (any staff; costs only for view_costs). */
+export const searchParts = staffAction(
+  searchSchema,
+  { name: "inventory.search_parts" },
+  async ({ q, locationId }, { supabase, staff }) =>
+    q ? findParts(supabase, q, { locationId, viewCosts: hasPermission(staff, "view_costs") }) : [],
+);
+
+/** Shop bikes that can become a unique item (no owner, not already in stock). */
+export const searchShopBikes = staffAction(
+  searchSchema,
+  { name: "inventory.search_shop_bikes" },
+  async ({ q }, { supabase }) => (q ? findShopBikes(supabase, q) : []),
+);

@@ -1,0 +1,341 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+import { AdjustStockButton } from "@/components/domain/adjust-stock-sheet";
+import { ArchiveControl } from "@/components/domain/archive-control";
+import { HistoryList, MovementList } from "@/components/domain/movement-list";
+import { PhotoGrid } from "@/components/domain/photo-grid";
+import { EditProductButton } from "@/components/domain/product-sheet";
+import { ShortId } from "@/components/domain/short-id";
+import { StockBadge } from "@/components/domain/stock-badge";
+import { StockTransferButton } from "@/components/domain/stock-transfer-sheet";
+import { AddUnitButton } from "@/components/domain/unit-sheet";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { ChevronRightIcon } from "@/components/ui/icons";
+import { StatusPill } from "@/components/ui/status-pill";
+import { hasPermission } from "@/lib/auth/permissions";
+import { requireStaff } from "@/lib/auth/session";
+import { getProduct, listLocations, listProductCategories } from "@/lib/domain/inventory";
+import {
+  publicationLabel,
+  publicationTone,
+  signedQuantity,
+  unitStatusLabel,
+  unitStatusTone,
+} from "@/lib/inventory";
+import { describeProductEvent } from "@/lib/inventory-history";
+import { formatMoney } from "@/lib/money";
+import { createClient } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/uuid";
+
+export const metadata: Metadata = { title: "Product" };
+
+const plain = (n: number) => signedQuantity(n).replace(/^\+/, "");
+
+/**
+ * One product (SPEC §11, §12, §21): its P- number large, name, SKU, brand,
+ * category and publication; stock by location with the total (a low-stock
+ * note at or below the reorder point, "recount needed" for a location
+ * below zero, D23); for a unique product its units; the selling price
+ * (public.selling_prices) and, only for view_costs holders, cost, expected
+ * yield and Cult Commons (the DTO has none otherwise); photos (internal or
+ * public, never customer); recent movements; history; archive. Adjust
+ * stock needs adjust_stock, Transfer, Edit details, Add unit and Archive
+ * need manage_inventory. Step 4 adds the publication card.
+ */
+export default async function ProductPage({ params }: PageProps<"/products/[id]">) {
+  const staff = await requireStaff();
+  const { id } = await params;
+  if (!isUuid(id)) notFound();
+  const viewCosts = hasPermission(staff, "view_costs");
+  const manage = hasPermission(staff, "manage_inventory");
+  const canAdjust = hasPermission(staff, "adjust_stock");
+  const supabase = await createClient();
+  const [product, locations, categories] = await Promise.all([
+    getProduct(supabase, id, { viewCosts }),
+    listLocations(supabase),
+    manage ? listProductCategories(supabase) : Promise.resolve([]),
+  ]);
+  if (!product) notFound();
+
+  const archived = product.archivedAt !== null;
+  const counted = product.trackingType === "quantity";
+  const sheetStock = product.stock.map((s) => ({
+    locationId: s.locationId,
+    name: s.name,
+    active: s.active,
+    onHand: s.onHand,
+  }));
+  const negative = product.stock.filter((s) => s.onHand < 0);
+  const others = [product.brand, product.category?.name].filter((v): v is string => !!v);
+  const meta = product.sku ? [product.sku, ...others] : others;
+  const money = (v: string | null | undefined) =>
+    v === null || v === undefined ? "Not set" : formatMoney(v, product.currency);
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 pt-6 pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <ShortId value={product.shortId} large />
+            <StatusPill status={publicationTone(product.publicationStatus)}>
+              {publicationLabel(product.publicationStatus)}
+            </StatusPill>
+            {archived ? <Badge tone="waiting">Archived</Badge> : null}
+            {!product.active ? <Badge>Inactive</Badge> : null}
+          </div>
+          <h1 className="text-3xl break-words sm:text-4xl">{product.name}</h1>
+          {meta.length > 0 ? (
+            <p className="text-dust-700">
+              {product.sku ? <span className="font-mono">{product.sku}</span> : null}
+              {product.sku && others.length > 0 ? " · " : null}
+              {others.join(" · ")}
+            </p>
+          ) : null}
+          <p className="text-sm text-dust-500">
+            {counted ? "Counted by quantity" : "Unique: each item has its own U- number"}
+          </p>
+        </div>
+        {manage ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <EditProductButton
+              product={{
+                id: product.id,
+                name: product.name,
+                sku: product.sku,
+                brand: product.brand,
+                categoryId: product.category?.id ?? null,
+                description: product.description,
+                defaultSalePrice: product.defaultSalePrice,
+                ...(viewCosts ? { cost: product.cost ?? null } : {}),
+                reorderPoint: product.reorderPoint,
+                active: product.active,
+                trackingType: product.trackingType,
+              }}
+              categories={categories}
+              viewCosts={viewCosts}
+            />
+          </div>
+        ) : null}
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card
+          title="Stock"
+          actions={
+            counted && !archived && (canAdjust || manage) ? (
+              <>
+                {canAdjust ? (
+                  <AdjustStockButton
+                    productId={product.id}
+                    productName={product.name}
+                    stock={sheetStock}
+                    defaultLocationId={locations.defaultLocationId}
+                    viewCosts={viewCosts}
+                  />
+                ) : null}
+                {manage ? (
+                  <StockTransferButton
+                    subject={{
+                      kind: "product",
+                      productId: product.id,
+                      name: product.name,
+                      stock: sheetStock,
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : null
+          }
+        >
+          <dl aria-label="Stock by location" className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
+            {product.stock.map((s) => (
+              <div key={s.locationId} className="contents">
+                <dt className={s.active ? undefined : "text-dust-500"}>
+                  {s.name}
+                  {s.active ? "" : " (inactive)"}
+                </dt>
+                <dd
+                  className={
+                    s.onHand < 0
+                      ? "text-right font-semibold text-danger-deep tabular-nums"
+                      : "text-right tabular-nums"
+                  }
+                >
+                  {plain(s.onHand)}
+                </dd>
+              </div>
+            ))}
+            <div className="contents">
+              <dt className="border-t border-hairline pt-2 font-semibold">Total</dt>
+              <dd className="border-t border-hairline pt-2 text-right font-bold tabular-nums">
+                {plain(product.onHand)}
+              </dd>
+            </div>
+          </dl>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <StockBadge
+              onHand={product.onHand}
+              reorderPoint={product.reorderPoint}
+              negativeLocations={product.negativeLocations}
+              unique={!counted}
+              availableUnits={product.availableUnits}
+            />
+            {!counted && product.heldUnits > 0 ? (
+              <Badge tone="waiting">{product.heldUnits} on a job</Badge>
+            ) : null}
+          </div>
+          {negative.length > 0 ? (
+            <p className="mt-3 text-sm text-danger-deep">
+              Recount needed at {negative.map((s) => s.name).join(" and ")}: parts used on jobs took
+              the count below zero.
+            </p>
+          ) : null}
+          {counted && product.low && negative.length === 0 && product.reorderPoint !== null ? (
+            <p className="mt-3 text-sm text-waiting-deep">
+              Low stock: at or below the reorder point of {product.reorderPoint}.
+            </p>
+          ) : null}
+          {counted && locations.defaultLocationId === null ? (
+            <p className="mt-3 text-sm text-dust-700">
+              No active stock location. Ask someone with inventory access to add one in Settings.
+            </p>
+          ) : null}
+        </Card>
+
+        <Card title="Prices">
+          <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
+            <dt>Selling price</dt>
+            <dd className="text-right font-semibold tabular-nums">{money(product.salePrice)}</dd>
+          </dl>
+          {viewCosts ? (
+            <section aria-labelledby="cost-and-yield" className="mt-4 flex flex-col gap-2">
+              <h3
+                id="cost-and-yield"
+                className="font-display text-xs font-bold tracking-wide uppercase"
+              >
+                Cost and yield (staff with cost access only)
+              </h3>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm tabular-nums">
+                <dt>Cost</dt>
+                <dd className="text-right">{money(product.cost)}</dd>
+                <dt>Expected yield</dt>
+                <dd className="text-right">{money(product.expectedYield)}</dd>
+                <dt>Cult Commons share</dt>
+                <dd className="text-right">{money(product.expectedCultCommons)}</dd>
+              </dl>
+              {product.cost === null ? (
+                <p className="text-sm text-waiting-deep">
+                  No cost yet: this product can&apos;t go on a job until it has one.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+        </Card>
+      </div>
+
+      {!counted ? (
+        <Card
+          title="Units"
+          actions={
+            manage && !archived ? (
+              <AddUnitButton
+                productId={product.id}
+                locations={locations.locations}
+                defaultLocationId={locations.defaultLocationId}
+                viewCosts={viewCosts}
+              />
+            ) : null
+          }
+        >
+          {product.units.length === 0 ? (
+            <p className="text-dust-700">
+              No units yet.{manage ? " Add the item itself with Add unit." : ""}
+            </p>
+          ) : (
+            <ul aria-label="Units" className="-mx-2 flex flex-col">
+              {product.units.map((u) => (
+                <li key={u.id}>
+                  <Link
+                    href={`/units/${u.id}`}
+                    className="flex min-h-tap items-center gap-3 rounded-xl px-2 py-2 hover:bg-dust-100"
+                  >
+                    <ShortId value={u.shortId} />
+                    <StatusPill status={unitStatusTone(u.status)}>
+                      {unitStatusLabel(u.status)}
+                    </StatusPill>
+                    <span className="flex min-w-0 flex-1 flex-col text-sm">
+                      <span>{u.location.name}</span>
+                      {u.serialNumber ? (
+                        <span className="truncate font-mono text-dust-500">
+                          S/N {u.serialNumber}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="text-sm tabular-nums">{money(u.salePrice)}</span>
+                    <ChevronRightIcon className="size-5 shrink-0 text-dust-500" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      ) : null}
+
+      <Card title="Photos">
+        <PhotoGrid
+          target={{ entityType: "product", entityId: product.id }}
+          photos={product.photos}
+          canAdd={!archived}
+        />
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card
+          title="Recent movements"
+          actions={
+            <Link
+              href={`/inventory/movements?product=${product.id}`}
+              className="inline-flex min-h-tap items-center text-sm font-semibold underline underline-offset-4"
+            >
+              All movements
+            </Link>
+          }
+        >
+          {product.movements.length === 0 ? (
+            <p className="text-dust-700">No stock has moved yet.</p>
+          ) : (
+            <MovementList movements={product.movements} showProduct={false} />
+          )}
+        </Card>
+        <Card title="History">
+          <HistoryList
+            entries={product.history}
+            describe={(e) =>
+              describeProductEvent(e.type, e.payload, { currency: product.currency })
+            }
+          />
+        </Card>
+      </div>
+
+      {product.description ? (
+        <Card title="Description">
+          <p className="whitespace-pre-line text-dust-700">{product.description}</p>
+        </Card>
+      ) : null}
+
+      {manage ? (
+        <Card title="Archive">
+          <ArchiveControl
+            kind="product"
+            id={product.id}
+            name={product.shortId}
+            archived={archived}
+          />
+        </Card>
+      ) : null}
+    </>
+  );
+}

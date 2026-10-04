@@ -172,9 +172,48 @@ describe("describeEvent", () => {
     ).toBe("Added Labour × 1.5 · $90.00");
   });
 
-  it("stock events (Phase 4) read generically", () => {
-    expect(d({ type: "stock_consumed", payload: {} }).title).toBe("Stock used");
-    expect(d({ type: "stock_reversed", payload: {} }).title).toBe("Stock returned");
+  it("stock events (Phase 4) say what was used or returned, where, and never a cost", () => {
+    const consumed = {
+      line_id: "l1",
+      movement_id: 7,
+      product_id: "p1",
+      product_short_id: "P-000003",
+      inventory_unit_id: null,
+      unit_short_id: null,
+      location_id: "loc",
+      location_name: "Shop floor",
+      quantity: 2,
+      on_hand_after: 38,
+    };
+    const used = d({
+      type: "stock_consumed",
+      payload: consumed,
+      lineDescription: "Road inner tube",
+    });
+    expect(used.title).toBe("Used 2 × Road inner tube (P-000003) from Shop floor");
+    const returned = d({
+      type: "stock_reversed",
+      payload: { ...consumed, reversal_of_id: 7 },
+      lineDescription: "Road inner tube",
+    });
+    expect(returned.title).toBe("Returned 2 × Road inner tube (P-000003) to Shop floor");
+    // A unit's line already names its U- number; no quantity for a unique item.
+    expect(
+      d({
+        type: "stock_consumed",
+        payload: { ...consumed, unit_short_id: "U-000002", quantity: 1 },
+        lineDescription: "Brompton C Line · U-000002",
+      }).title,
+    ).toBe("Used Brompton C Line · U-000002 from Shop floor");
+    // Without the line, the short ID stands in; an empty payload still reads.
+    expect(d({ type: "stock_consumed", payload: consumed }).title).toBe(
+      "Used 2 × P-000003 from Shop floor",
+    );
+    expect(d({ type: "stock_consumed", payload: {} }).title).toBe("Used a part");
+    expect(d({ type: "stock_reversed", payload: {} }).title).toBe("Returned a part");
+    for (const e of [used, returned]) {
+      expect(`${e.title} ${e.detail ?? ""}`).not.toMatch(/\$|cost|yield|cult/i);
+    }
   });
 
   it("survives a payload that is not an object", () => {

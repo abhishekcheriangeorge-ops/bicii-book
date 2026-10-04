@@ -21,6 +21,12 @@ export type TimelineEvent = {
   payload: unknown;
   /** The staff member an assignment event is about (work_order_timeline's subject name). */
   subjectName?: string | null;
+  /**
+   * The description of the line a stock event is about (its payload's
+   * line_id; the job's own lines), since stock payloads carry short IDs,
+   * not names.
+   */
+  lineDescription?: string | null;
 };
 
 export type EventDescription = {
@@ -76,6 +82,24 @@ function lineSummary(p: Payload, currency: string): string {
     quantity !== null && formatQuantity(quantity) !== "1" ? ` × ${formatQuantity(quantity)}` : "";
   const money = total !== null ? ` · ${formatMoney(total, lineCurrency)}` : "";
   return `${description}${qty}${money}`;
+}
+
+/**
+ * "2 × Road inner tube (P-000003)" for a counted part; a unique unit's
+ * line description already names its U- number, so it stands alone. The
+ * payload's short IDs stand in when the line's description is unknown.
+ */
+function partSummary(p: Payload, lineDescription: string | null | undefined): string {
+  const unit = text(p, "unit_short_id");
+  const shortId = unit ?? text(p, "product_short_id");
+  const name = lineDescription?.trim() || null;
+  const quantity = amount(p, "quantity");
+  const label = name
+    ? shortId && !name.includes(shortId)
+      ? `${name} (${shortId})`
+      : name
+    : (shortId ?? "a part");
+  return unit || quantity === null ? label : `${formatQuantity(quantity)} × ${label}`;
 }
 
 /**
@@ -169,10 +193,22 @@ export function describeEvent(
         detail: text(p, "reason"),
         tone: "danger",
       };
-    case "stock_consumed":
-      return { title: "Stock used", detail: text(p, "description"), tone: "neutral" };
-    case "stock_reversed":
-      return { title: "Stock returned", detail: text(p, "reason"), tone: "neutral" };
+    case "stock_consumed": {
+      const where = text(p, "location_name");
+      return {
+        title: `Used ${partSummary(p, event.lineDescription)}${where ? ` from ${where}` : ""}`,
+        detail: null,
+        tone: "neutral",
+      };
+    }
+    case "stock_reversed": {
+      const where = text(p, "location_name");
+      return {
+        title: `Returned ${partSummary(p, event.lineDescription)}${where ? ` to ${where}` : ""}`,
+        detail: null,
+        tone: "info",
+      };
+    }
     default: {
       const unknown: never = event.type;
       return { title: String(unknown), detail: null, tone: "neutral" };

@@ -1,13 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/dates";
 import type { Line } from "@/lib/domain/lines";
+import { signedQuantity } from "@/lib/inventory";
 import { formatMoney, formatQuantity } from "@/lib/money";
 
+import { ShortId } from "./short-id";
+import { StockBadge } from "./stock-badge";
 import { VoidLineControl } from "./void-line-control";
 
 /**
@@ -41,7 +45,9 @@ type Layout = (typeof LAYOUT)[keyof typeof LAYOUT];
  * of someone without view_costs carry no cost figures at all (the DTO has
  * none), so there is nothing to hide here. A manual line added without a
  * cost carries a "Cost pending" badge for everyone (D14): its placeholder 0
- * is not a real cost, and only someone with cost access can fix it.
+ * is not a real cost, and only someone with cost access can fix it. A part
+ * line (Phase 4) links its P- or U- record and shows what is left where it
+ * was taken from ("37 left"); voiding it says what goes back to stock.
  */
 export function LineTable({
   lines,
@@ -64,7 +70,7 @@ export function LineTable({
       {shown.length === 0 ? (
         <p className="px-4 text-dust-500 sm:px-5">
           {lines.length === 0
-            ? "No lines yet. Add a service or a manual line."
+            ? "No lines yet. Add a service, a part or a manual line."
             : "Every line is voided."}
         </p>
       ) : (
@@ -151,6 +157,7 @@ function LineRow({
             <span className={cn("text-sm font-medium", struck)}>{line.description}</span>
             {line.costPending && !line.voided ? <Badge tone="waiting">Cost pending</Badge> : null}
           </span>
+          {line.part ? <PartInfo part={line.part} voided={line.voided !== null} /> : null}
           <span className={cn("text-dust-500", layout.stacked, struck)}>
             {formatQuantity(line.quantity)} × {money(line.unitSalePrice)}
           </span>
@@ -167,7 +174,13 @@ function LineRow({
               {line.voided.reason ? `: “${line.voided.reason}”` : ""}
             </span>
           ) : null}
-          {canVoid ? <VoidLineControl lineId={line.id} description={line.description} /> : null}
+          {canVoid ? (
+            <VoidLineControl
+              lineId={line.id}
+              description={line.description}
+              stockReturn={line.part ? stockReturn(line.part) : undefined}
+            />
+          ) : null}
         </div>
       </td>
       <td className={cn("px-3 py-3 text-right", layout.cell, struck)}>
@@ -193,5 +206,31 @@ function LineRow({
         </>
       ) : null}
     </tr>
+  );
+}
+
+/** "2 to Shop floor", "U-000001 to Shop floor"; null when the location is unknown. */
+function stockReturn(part: NonNullable<Line["part"]>): string | null {
+  if (!part.locationName) return null;
+  return `${part.unitId ? part.shortId : part.quantity} to ${part.locationName}`;
+}
+
+/** The part's P- or U- number, linked, and what is left where it came from. */
+function PartInfo({ part, voided }: { part: NonNullable<Line["part"]>; voided: boolean }) {
+  const href = part.unitId ? `/units/${part.unitId}` : `/products/${part.productId}`;
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <Link href={href} className="rounded-md underline-offset-2 hover:underline">
+        <ShortId value={part.shortId} />
+      </Link>
+      {!voided && !part.unitId && part.onHandAtLocation !== null ? (
+        <StockBadge
+          onHand={part.onHandAtLocation}
+          label={`${signedQuantity(part.onHandAtLocation).replace(/^\+/, "")} left${
+            part.locationName ? ` at ${part.locationName}` : ""
+          }`}
+        />
+      ) : null}
+    </span>
   );
 }

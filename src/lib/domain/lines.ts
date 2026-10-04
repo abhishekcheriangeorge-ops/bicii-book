@@ -53,8 +53,29 @@ export type Line = {
    * figure: every staff member sees it.
    */
   costPending: boolean;
+  /**
+   * Inventory lines (Phase 4): the part's P- or U- record and the stock it
+   * took. `onHandAtLocation` is the current ledger on-hand where the part
+   * was taken from (reporting.stock_levels), for everyone; never a cost.
+   */
+  part?: LinePart;
   /** Only for view_costs holders. */
   costs?: LineCosts;
+};
+
+export type LinePart = {
+  productId: string;
+  /** Set for a unique unit. */
+  unitId: string | null;
+  /** P-###### or U-######. */
+  shortId: string;
+  /** Whole units (parts are counted in whole numbers). */
+  quantity: number;
+  /** Where its job_consumption movement took the stock from; null if none (an owner backfill). */
+  locationId: string | null;
+  locationName: string | null;
+  /** Ledger on-hand at that location now; null when there is no location. */
+  onHandAtLocation: number | null;
 };
 
 export type Totals = {
@@ -77,13 +98,15 @@ export type Totals = {
 
 /** The sale-side columns every staff member may read (the table's column grant). */
 const SALE_COLUMNS =
-  "id, line_type, description_snapshot, quantity, unit_sale_price_snapshot, cost_pending, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason";
+  "id, line_type, source_product_id, source_inventory_unit_id, description_snapshot, quantity, unit_sale_price_snapshot, cost_pending, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason";
 const COST_COLUMNS =
-  "id, line_type, description_snapshot, quantity, unit_sale_price_snapshot, cost_pending, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason, unit_direct_cost_snapshot, cost_total, yield_total, cult_commons_rate_snapshot, cult_commons_share";
+  "id, line_type, source_product_id, source_inventory_unit_id, description_snapshot, quantity, unit_sale_price_snapshot, cost_pending, currency, sale_total, created_by, created_at, voided_at, voided_by, void_reason, unit_direct_cost_snapshot, cost_total, yield_total, cult_commons_rate_snapshot, cult_commons_share";
 
 type SaleRow = {
   id: string | null;
   line_type: LineType | null;
+  source_product_id: string | null;
+  source_inventory_unit_id: string | null;
   description_snapshot: string | null;
   quantity: number | null;
   unit_sale_price_snapshot: number | null;
@@ -134,6 +157,7 @@ export async function listLines(
           .order("id", { ascending: true }),
       ) ?? []);
   const nameOf = (id: string | null) => (id ? (names.get(id) ?? "A former colleague") : null);
+  const parts = await loadParts(supabase, rows);
 
   return rows.map((r) => {
     const line: Line = {
@@ -151,6 +175,8 @@ export async function listLines(
         : null,
       costPending: r.cost_pending === true,
     };
+    const part = r.id ? parts.get(r.id) : undefined;
+    if (part) line.part = part;
     if (viewCosts && "cost_total" in r) {
       line.costs = {
         unitDirectCost: money(r.unit_direct_cost_snapshot),
@@ -162,6 +188,67 @@ export async function listLines(
     }
     return line;
   });
+}
+
+/**
+ * The part behind each inventory line: its P-/U- short ID, the location
+ * its job_consumption movement took stock from, and the ledger on-hand
+ * there now (reporting.stock_levels). Reads only cost-free columns.
+ */
+async function loadParts(
+  supabase: ServerSupabase,
+  rows: readonly SaleRow[],
+): Promise<Map<string, LinePart>> {
+  const parts = rows.filter((r) => r.line_type === "inventory" && r.id && r.source_product_id);
+  if (parts.length === 0) return new Map();
+  const lineIds = parts.map((r) => r.id!);
+  const productIds = [...new Set(parts.map((r) => r.source_product_id!))];
+  const unitIds = [
+    ...new Set(parts.map((r) => r.source_inventory_unit_id).filter((v): v is string => !!v)),
+  ];
+  const [productsResult, unitsResult, movementsResult, levelsResult] = await Promise.all([
+    supabase.from("products").select("id, short_id").in("id", productIds),
+    unitIds.length > 0
+      ? supabase.from("inventory_units").select("id, short_id").in("id", unitIds)
+      : Promise.resolve({ data: [] as { id: string; short_id: string }[], error: null }),
+    supabase
+      .from("inventory_movements")
+      .select("work_order_line_item_id, location_id, location:locations(name)")
+      .in("work_order_line_item_id", lineIds)
+      .eq("movement_type", "job_consumption"),
+    supabase
+      .schema("reporting")
+      .from("stock_levels")
+      .select("product_id, location_id, on_hand")
+      .in("product_id", productIds),
+  ]);
+  const productShort = new Map((unwrap(productsResult) ?? []).map((p) => [p.id, p.short_id]));
+  const unitShort = new Map((unwrap(unitsResult) ?? []).map((u) => [u.id, u.short_id]));
+  const consumed = new Map(
+    (unwrap(movementsResult) ?? []).map((m) => [
+      m.work_order_line_item_id,
+      { locationId: m.location_id, locationName: m.location?.name ?? null },
+    ]),
+  );
+  const onHand = new Map(
+    (unwrap(levelsResult) ?? []).map((l) => [`${l.product_id}|${l.location_id}`, l.on_hand ?? 0]),
+  );
+  const result = new Map<string, LinePart>();
+  for (const r of parts) {
+    const productId = r.source_product_id!;
+    const unitId = r.source_inventory_unit_id;
+    const where = consumed.get(r.id!);
+    result.set(r.id!, {
+      productId,
+      unitId,
+      shortId: (unitId ? unitShort.get(unitId) : productShort.get(productId)) ?? "",
+      quantity: Number(r.quantity ?? 0),
+      locationId: where?.locationId ?? null,
+      locationName: where?.locationName ?? null,
+      onHandAtLocation: where ? (onHand.get(`${productId}|${where.locationId}`) ?? 0) : null,
+    });
+  }
+  return result;
 }
 
 /** A job's running totals over its live lines (the database's views). */

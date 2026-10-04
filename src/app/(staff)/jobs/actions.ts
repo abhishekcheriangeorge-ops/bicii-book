@@ -11,6 +11,7 @@ import {
   addServiceLine as addService,
   voidLine as voidOne,
 } from "@/lib/domain/lines";
+import { addPartToJob as addPart } from "@/lib/domain/inventory";
 import { searchServices } from "@/lib/domain/services";
 import {
   addWorkOrderNote as addNote,
@@ -23,6 +24,7 @@ import {
   unassignStaff as unassign,
   updateWorkOrderDetails as updateDetails,
 } from "@/lib/domain/workshop";
+import { addPartSchema } from "@/lib/inventory-forms";
 import { Decimal, parseMoney, toMoneyString } from "@/lib/money";
 import { REASON_MAX_LENGTH } from "@/lib/reasons";
 
@@ -179,6 +181,23 @@ export const addManualLine = staffAction(
   async (input, { supabase, staff }) => {
     requireCostPermission(staff, input.unitDirectCost);
     const result = await addManual(supabase, input);
+    refresh();
+    return result;
+  },
+);
+
+/**
+ * Add a part from stock to an open job (any staff, D15). The price may be
+ * changed by anyone (D14); the cost is the part's own and never entered
+ * here (D24 PART-PRICE-COST). A counted part may take its location below
+ * zero (D23 NEG-CONSUMPTION: the sheet warns first); a unique unit is held
+ * for the job until it is completed (D25). Replay-safe by line id.
+ */
+export const addPartToJob = staffAction(
+  addPartSchema,
+  { name: "jobs.add_part" },
+  async (input, { supabase }) => {
+    const result = await addPart(supabase, input);
     refresh();
     return result;
   },
