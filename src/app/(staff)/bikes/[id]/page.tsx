@@ -4,17 +4,20 @@ import { notFound } from "next/navigation";
 
 import { ArchiveControl } from "@/components/domain/archive-control";
 import { EditBikeButton } from "@/components/domain/bike-sheet";
+import { JobHistoryList } from "@/components/domain/job-history";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { ShortId } from "@/components/domain/short-id";
 import { TransferOwnershipButton } from "@/components/domain/transfer-sheet";
 import { Badge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ChevronRightIcon, WrenchIcon } from "@/components/ui/icons";
+import { ChevronRightIcon, PlusIcon, WrenchIcon } from "@/components/ui/icons";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
 import { getBike, type OwnershipEvent } from "@/lib/domain/bikes";
+import { listWorkOrdersForBike } from "@/lib/domain/workshop";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -29,16 +32,18 @@ function describe(event: OwnershipEvent): string {
 /**
  * One bike (SPEC §5, §21): its permanent B- number first, photos with the
  * camera, the current owner with transfer, the ownership history (never
- * rewritten), service history (work orders, M1.3), details and archiving.
+ * rewritten), service history (its jobs, newest first, with "New job"),
+ * details and archiving.
  */
 export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
   await requireStaff();
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const supabase = await createClient();
-  const [bike, photos] = await Promise.all([
+  const [bike, photos, jobs] = await Promise.all([
     getBike(supabase, id),
     listPhotos(supabase, { entityType: "bike", entityId: id }),
+    listWorkOrdersForBike(supabase, id),
   ]);
   if (!bike) notFound();
   const archived = bike.archivedAt !== null;
@@ -172,12 +177,38 @@ export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
         </Card>
       </div>
 
-      <Card title="Service history">
-        <EmptyState
-          icon={<WrenchIcon />}
-          title="No work orders yet"
-          description="Work orders arrive with the workshop (M1.3). Each visit will appear here, newest first."
-        />
+      <Card
+        title="Service history"
+        actions={
+          archived ? null : (
+            <ButtonLink
+              href={`/jobs/new?bike=${bike.id}`}
+              variant="outline"
+              size="sm"
+              icon={<PlusIcon className="size-4" />}
+            >
+              New job
+            </ButtonLink>
+          )
+        }
+      >
+        {jobs.items.length === 0 ? (
+          <EmptyState
+            icon={<WrenchIcon />}
+            title="No jobs yet"
+            description="Each visit to the workshop appears here, newest first."
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {jobs.more ? (
+              <p className="text-sm text-dust-700">
+                Showing the latest {jobs.items.length} jobs. There are more: find an older one by
+                its J- number in Search.
+              </p>
+            ) : null}
+            <JobHistoryList label="Service history" jobs={jobs.items} />
+          </div>
+        )}
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">

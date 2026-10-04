@@ -28,7 +28,7 @@ async function createCustomer(page: Page, first: string, last: string, phone?: s
 
 /** Searches from the header field (Enter opens /search) and opens the bike result. */
 async function searchFromHeader(page: Page, query: string, bikeTitle: string) {
-  const header = page.getByRole("searchbox", { name: "Search customers and bikes" });
+  const header = page.getByRole("searchbox", { name: "Search customers, bikes and jobs" });
   await header.fill(query);
   await header.press("Enter");
   await expect(page).toHaveURL(/\/search\?q=/);

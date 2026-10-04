@@ -3,8 +3,8 @@
  * Pure: the grouping and links are shared by the /search page and tests.
  */
 
-/** Kinds staff_search knows in Phase 1. Later phases add theirs here and in the RPC. */
-export const SEARCH_KINDS = ["customer", "bike"] as const;
+/** Kinds staff_search knows (Phase 1 customers and bikes, Phase 3 jobs). Later phases add theirs here and in the RPC. */
+export const SEARCH_KINDS = ["customer", "bike", "work_order"] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 
 export function isSearchKind(value: unknown): value is SearchKind {
@@ -24,6 +24,7 @@ export type SearchHit = {
 export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
   customer: "Customers",
   bike: "Bikes",
+  work_order: "Jobs",
 };
 
 /** Where a hit opens in the staff app. */
@@ -33,6 +34,8 @@ export function hrefForHit(hit: Pick<SearchHit, "kind" | "id">): string {
       return `/customers/${hit.id}`;
     case "bike":
       return `/bikes/${hit.id}`;
+    case "work_order":
+      return `/jobs/${hit.id}`;
   }
 }
 
@@ -41,7 +44,8 @@ export type SearchGroup = { kind: SearchKind; label: string; hits: SearchHit[] }
 /**
  * Hits grouped by kind, keeping the database's order inside each group.
  * The group holding the best hit comes first (an exact short ID or serial
- * number puts Bikes above Customers); ties keep SEARCH_KINDS order.
+ * number puts Bikes above Customers, an exact J- number puts Jobs first);
+ * ties keep SEARCH_KINDS order.
  */
 export function groupHits(hits: readonly SearchHit[]): SearchGroup[] {
   const groups = SEARCH_KINDS.map((kind) => ({

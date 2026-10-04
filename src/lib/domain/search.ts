@@ -8,7 +8,8 @@ import type { ListPage } from "./list";
 
 /**
  * Global staff search (SPEC §20) over the staff_search RPC: customers and
- * bikes in Phase 1, more kinds as later phases add them. Exact short IDs
+ * bikes (Phase 1) and jobs by J- number (Phase 3), more kinds as later
+ * phases add them. Exact short IDs
  * and serial numbers rank first; archived records are left out. At most
  * `limit` hits over every kind together; `more` says there were more.
  */

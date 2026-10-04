@@ -9,7 +9,7 @@ import { rememberSearch } from "@/lib/recent-searches";
 
 /**
  * The global search field in the header (SPEC §20): customers and bikes by
- * name, phone, email, serial number or B- number. Enter opens /search with
+ * name, phone, email, serial number or B- number, and jobs by J- number. Enter opens /search with
  * the results (a GET form, so it works before hydration too). "/" focuses
  * it from anywhere on a keyboard (iPad, desktop). On /search itself the
  * page has its own, larger field, so this one steps aside.
@@ -49,7 +49,7 @@ export function HeaderSearch() {
       }}
     >
       <label htmlFor="header-search" className="sr-only">
-        Search customers and bikes
+        Search customers, bikes and jobs
       </label>
       <SearchIcon
         aria-hidden="true"
