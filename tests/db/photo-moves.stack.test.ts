@@ -10,8 +10,9 @@
  *   * internal -> public: the copy lands in media-public (public URL 200),
  *     the private original is gone; public -> internal: the public URL
  *     stops working; delete: gone from both buckets; a replay is harmless;
- *   * a refused move (customer record, PLAN D13; undecoded original) copies
- *     nothing into media-public;
+ *   * a refused move (customer record, PLAN D13; job, D19; undecoded
+ *     original) copies nothing into media-public: the app refuses before
+ *     any Storage copy, the database is the backstop;
  *   * a move or delete whose Storage cleanup fails says so (cleanupPending)
  *     and leaves a public copy only until the change is repeated or the
  *     record is shown again (listPhotos sweeps it).
@@ -34,7 +35,7 @@ import {
 } from "@/lib/domain/attachments";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
-import { BIKE, CUSTOMER } from "../fixtures/ids";
+import { BIKE, CUSTOMER, WORK_ORDER } from "../fixtures/ids";
 import { STACK_URL, anonClient, stackReachable, staffClient } from "./stack";
 
 /** A real 2x2 JPEG (269 bytes). */
@@ -47,6 +48,10 @@ const reachable = await stackReachable("photo moves");
 
 const BIKE_TARGET: PhotoTarget = { entityType: "bike", entityId: BIKE.shopCervelo };
 const CUSTOMER_TARGET: PhotoTarget = { entityType: "customer", entityId: CUSTOMER.priya };
+const JOB_TARGET: PhotoTarget = {
+  entityType: "work_order",
+  entityId: WORK_ORDER.chloeGiantInProgress,
+};
 
 let staff: ServerSupabase;
 /** The devstack's own database, to age objects (as if minutes had passed). */
@@ -190,6 +195,11 @@ describe.skipIf(!reachable)("photo visibility moves through real Storage", () =>
     );
     expect(await bucketsHolding(onCustomer.path)).toEqual([INTERNAL_BUCKET]);
 
+    // D19: a job photo is never public either.
+    const onJob = await addPhoto(JOB_TARGET);
+    await expect(setPhotoVisibility(staff, onJob.id, "public", report)).rejects.toThrow(/on a job/);
+    expect(await bucketsHolding(onJob.path)).toEqual([INTERNAL_BUCKET]);
+
     // An original the phone could not decode (no dimensions) may carry GPS.
     const original = await addPhoto(BIKE_TARGET, { width: null, height: null });
     await expect(setPhotoVisibility(staff, original.id, "public", report)).rejects.toThrow(
@@ -197,7 +207,7 @@ describe.skipIf(!reachable)("photo visibility moves through real Storage", () =>
     );
     expect(await bucketsHolding(original.path)).toEqual([INTERNAL_BUCKET]);
 
-    for (const photo of [onCustomer, original]) {
+    for (const photo of [onCustomer, onJob, original]) {
       await deletePhoto(staff, photo.id, "Stack test", report);
     }
   });

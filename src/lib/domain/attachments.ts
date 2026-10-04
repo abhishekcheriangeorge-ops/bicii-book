@@ -204,8 +204,24 @@ export async function listPhotos(supabase: ServerSupabase, target: PhotoTarget):
   return rows.map((r) => toPhoto(r, urls.get(r.storage_path) ?? null));
 }
 
+/** The table holding each kind of record a photo can belong to. */
+function tableFor(entityType: PhotoEntity): "bikes" | "customers" | "work_orders" {
+  switch (entityType) {
+    case "bike":
+      return "bikes";
+    case "customer":
+      return "customers";
+    case "work_order":
+      return "work_orders";
+    default: {
+      const unknown: never = entityType;
+      throw new Error(`No table for photo entity ${String(unknown)}`);
+    }
+  }
+}
+
 async function requireEntity(supabase: ServerSupabase, target: PhotoTarget): Promise<void> {
-  const table = target.entityType === "bike" ? "bikes" : "customers";
+  const table = tableFor(target.entityType);
   const row = unwrap(
     await supabase.from(table).select("id").eq("id", target.entityId).maybeSingle(),
   );
@@ -322,8 +338,9 @@ export type PhotoChange = { cleanupPending: boolean };
  * Who may see a photo. internal <-> customer stays in media-internal (the
  * RPC alone); to or from public moves the object between buckets (see the
  * module comment for the order and what a failure leaves behind). PLAN D13:
- * a photo on a customer record is never public; nor is an original stored
- * without re-encoding, which may carry its GPS position.
+ * a photo on a customer record is never public; D19: nor is a photo on a
+ * job; nor is an original stored without re-encoding, which may carry its
+ * GPS position.
  */
 export async function setPhotoVisibility(
   supabase: ServerSupabase,
@@ -335,6 +352,11 @@ export async function setPhotoVisibility(
   if (!row) throw new DomainError("That photo no longer exists. Refresh and try again.");
   if (visibility === "public" && row.entity_type === "customer") {
     throw new DomainError(BUSINESS_ERRORS.attachment_customer_never_public);
+  }
+  // D19: refused before anything is copied to media-public (the database
+  // trigger and CHECK are the backstop).
+  if (visibility === "public" && row.entity_type === "work_order") {
+    throw new DomainError(BUSINESS_ERRORS.attachment_work_order_never_public);
   }
   if (visibility === "public" && isUndecodedOriginal(row)) {
     throw new DomainError(BUSINESS_ERRORS.attachment_original_never_public);

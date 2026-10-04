@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   INTERNAL_BUCKET,
+  PHOTO_ENTITIES,
   PUBLIC_BUCKET,
   attachmentPath,
   bucketFor,
+  isPhotoEntity,
   isUndecodedOriginal,
   otherBucket,
   visibilityOptions,
@@ -35,6 +37,26 @@ describe("photo storage rules", () => {
     const customer = visibilityOptions("customer");
     expect(customer.find((o) => o.value === "public")?.blocked).toMatch(/never be public/);
     expect(customer.find((o) => o.value === "customer")?.description).toMatch(/this customer/);
+  });
+
+  it("offers internal and customer for a job photo, never public (PLAN D19)", () => {
+    const job = visibilityOptions("work_order");
+    expect(job.find((o) => o.value === "customer")?.description).toBe(
+      "Staff, and the job's customer on the BICII website once customer accounts launch.",
+    );
+    expect(job.find((o) => o.value === "customer")?.blocked).toBeNull();
+    expect(job.find((o) => o.value === "public")?.blocked).toBe(
+      "Photos on a job can never be public.",
+    );
+    expect(attachmentPath("work_order", BIKE, ID, "image/jpeg")).toBe(
+      `work_order/${BIKE}/${ID}.jpg`,
+    );
+  });
+
+  it("knows which records hold photos", () => {
+    expect(PHOTO_ENTITIES).toEqual(["bike", "customer", "work_order"]);
+    expect(isPhotoEntity("work_order")).toBe(true);
+    expect(isPhotoEntity("product")).toBe(false);
   });
 
   it("never offers public for an original stored without dimensions (it may carry GPS)", () => {
