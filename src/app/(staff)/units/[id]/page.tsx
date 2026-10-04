@@ -16,7 +16,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime } from "@/lib/dates";
 import { getUnit, listLocations } from "@/lib/domain/inventory";
-import { unitStatusLabel, unitStatusTone } from "@/lib/inventory";
+import { publicationLabel, unitStatusLabel, unitStatusTone } from "@/lib/inventory";
 import { describeUnitEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
 import { qrUrl } from "@/lib/qr";
@@ -218,9 +218,9 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
       <Card title="Public listing">
         <div className="flex flex-col gap-4">
           <p className="text-sm text-dust-700">
-            Published with its product.{" "}
+            {`Listing follows ${unit.product.shortId} (${publicationLabel(unit.product.publicationStatus)}).`}{" "}
             <Link href={`/products/${unit.product.id}`} className="font-medium underline">
-              Change it on {unit.product.shortId}
+              Change it there
             </Link>
             .
           </p>

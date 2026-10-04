@@ -18,16 +18,8 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
+import { LOCATION_KIND_LABELS, type LocationKindValue } from "@/lib/inventory";
 import { newId } from "@/lib/uuid";
-
-export const LOCATION_KIND_LABELS = {
-  shop_floor: "Shop floor",
-  workshop: "Workshop",
-  storage: "Storage",
-  offsite: "Off-site",
-} as const;
-
-export type LocationKindValue = keyof typeof LOCATION_KIND_LABELS;
 
 export type EditableLocation = {
   id: string;

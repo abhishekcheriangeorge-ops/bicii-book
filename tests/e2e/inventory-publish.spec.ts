@@ -106,6 +106,10 @@ test("a new location appears where stock is counted until it is switched off", a
   await expect(page).toHaveURL(/\/settings\/locations$/);
   const list = page.getByRole("list", { name: "Locations" });
   await expect(list.getByRole("listitem", { name: "Shop floor" })).toContainText("Default");
+  // The kind label renders (it is read in a Server Component).
+  await expect(list.getByRole("listitem", { name: "Shop floor" })).toContainText(
+    "Shop floor · Sort order 10",
+  );
 
   await page.getByRole("button", { name: "Add location" }).click();
   const sheet = page.getByRole("dialog", { name: "New location" });
@@ -114,7 +118,7 @@ test("a new location appears where stock is counted until it is switched off", a
   await sheet.getByRole("button", { name: "Add location" }).click();
   await expect(toast(page, `${name} added`)).toBeVisible();
   const row = list.getByRole("listitem", { name });
-  await expect(row).toContainText("Sort order 900");
+  await expect(row).toContainText("Storage · Sort order 900");
   await expect(row).not.toContainText("Default");
 
   // It is offered when adjusting stock.
@@ -189,4 +193,8 @@ test("a shop bike in stock links to its unit and cannot be archived", async ({ p
 
   await link.click();
   await expect(page).toHaveURL(new RegExp(`/units/${UNIT.colnago}$`));
+  // The listing card names the product's actual publication status.
+  await expect(
+    page.getByText(/^Listing follows P-\d{6} \((Draft|Internal only|Public|Sold|Archived)\)\./),
+  ).toBeVisible();
 });

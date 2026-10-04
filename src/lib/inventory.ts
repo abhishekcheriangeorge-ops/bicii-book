@@ -304,6 +304,20 @@ export function isMovementFilter(value: unknown): value is MovementFilter {
 
 export type LocationLike = { id: string; name: string; active: boolean; sortOrder: number };
 
+export type LocationKindValue = Database["public"]["Enums"]["location_kind"];
+
+/**
+ * Location kinds as staff read them. Plain data in a plain module: a
+ * Server Component that imported it from a "use client" module would get a
+ * client reference, not the object, and every label would read undefined.
+ */
+export const LOCATION_KIND_LABELS: Readonly<Record<LocationKindValue, string>> = {
+  shop_floor: "Shop floor",
+  workshop: "Workshop",
+  storage: "Storage",
+  offsite: "Off-site",
+};
+
 /**
  * Where stock goes when nobody says: the active location with the lowest
  * sort order, then name (the rule add_inventory_line applies in SQL), or

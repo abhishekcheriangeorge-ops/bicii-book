@@ -857,6 +857,8 @@ export type UnitDetail = {
     sku: string | null;
     currency: string;
     archived: boolean;
+    /** A unit's public listing follows its product's publication. */
+    publicationStatus: PublicationStatus;
   };
   location: { id: string; name: string; active: boolean };
   bike: { id: string; shortId: string; title: string } | null;
@@ -875,7 +877,7 @@ export type UnitDetail = {
 };
 
 const UNIT_COLUMNS =
-  "id, short_id, status, ownership_type, serial_number, condition, internal_notes, sale_price, sold_at, archived_at, created_at, product:products(id, short_id, name, sku, currency, archived_at), location:locations(id, name, active), bike:bikes!inventory_units_bike_id_fkey(id, short_id, brand, model, variant)";
+  "id, short_id, status, ownership_type, serial_number, condition, internal_notes, sale_price, sold_at, archived_at, created_at, product:products(id, short_id, name, sku, currency, archived_at, publication_status), location:locations(id, name, active), bike:bikes!inventory_units_bike_id_fkey(id, short_id, brand, model, variant)";
 
 /** One unit with its product, location, bike, job, movements, history and photos; null if unknown. */
 export async function getUnit(
@@ -940,6 +942,7 @@ export async function getUnit(
       sku: row.product.sku,
       currency: row.product.currency,
       archived: row.product.archived_at !== null,
+      publicationStatus: row.product.publication_status,
     },
     location: { id: row.location.id, name: row.location.name, active: row.location.active },
     bike: row.bike

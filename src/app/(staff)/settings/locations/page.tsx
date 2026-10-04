@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import {
   EditLocationButton,
-  LOCATION_KIND_LABELS,
   LocationActiveSwitch,
   NewLocationButton,
 } from "@/components/domain/location-controls";
@@ -13,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { listLocations } from "@/lib/domain/inventory";
+import { LOCATION_KIND_LABELS } from "@/lib/inventory";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Locations" };
