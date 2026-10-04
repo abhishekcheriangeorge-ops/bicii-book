@@ -225,16 +225,40 @@ Attachment storage: two Supabase Storage buckets, created by migration
 HEIC/HEIF) up to 20 MiB. `media-internal` is private; staff read it directly
 and customers get short-lived signed URLs minted on a server for
 `visibility = customer` rows they are entitled to (`my_bike_attachments`).
-`media-public` is public-read and holds only rows with `visibility =
-public`. Changing visibility to or from `public` moves the object between
-buckets: the server copies it to the other bucket (same path), calls
-`set_attachment_visibility` with the new location (which must exist), then
-removes the old object. Storage policies on `storage.objects`:
+`media-public` is a public bucket: its files are served to anyone at their
+public URL (`/object/public/…`, which Storage serves without RLS), and it
+holds only rows with `visibility = public`. Changing visibility to or from
+`public` moves the object between buckets: the server copies it to the
+other bucket (same path), calls `set_attachment_visibility` with the new
+location (which must exist), then removes the old object. A photo recorded
+without width and height is an original the device could not decode and
+uploaded as is (it may carry EXIF GPS), so it is never public
+(`attachment_original_never_public`), like any photo on a customer record.
+Storage policies on `storage.objects`:
 
-- `media-internal`: insert/update/delete for active staff; select for active
-  staff. Nobody else, ever: not anon, not signed-in customers, not inactive
-  staff. Customer access is only through signed URLs.
-- `media-public`: select for all; insert/update/delete for active staff.
+- `media-internal`: select and insert for active staff. Nobody else, ever:
+  not anon, not signed-in customers, not inactive staff. Customer access is
+  only through signed URLs.
+- `media-public`: select and insert for active staff only. No select for
+  anon or customers: public URLs need none, and a select policy would let
+  anyone list the bucket.
+- Both: no update policy (nothing is overwritten: uploads never upsert, a
+  move copies to a new bucket). Delete for active staff only of objects no
+  attachment row points at (`private.attachment_object_referenced`; those
+  policies are in the attachments migration), so a recorded photo leaves
+  Storage only through `delete_attachment` (reason, history) or a move.
+
+Storage and Postgres share no transaction, so a Storage cleanup can fail
+after the database change (the old copy after a move, a deleted photo's
+file) or a change can stop half-way. The server says so (`cleanupPending`,
+"Finish" in the viewer repeats the change), and every time it shows a
+record it removes that record's stray objects:
+`attachment_stray_objects(entity_type, entity_id)` lists objects under the
+record's folder that no row points at and are older than 10 minutes (not
+part of a move still running); in `media-internal` only those whose
+attachment id has history, or older than a day (an upload whose
+`record_attachment` may still come). So `media-public` converges on public
+photos only, whatever failed.
 
 Object path: `{entity_type}/{entity_id}/{attachment_id}.{ext}`. Upload flow
 (ADR-001 A7): the server picks the attachment id, mints a signed upload URL
@@ -818,8 +842,8 @@ security-definer function. Blank = no access.
 | bike_ownership_events | S | trigger only | never | never |
 | attachments | S; C `customer`/`public` rows of own bikes via `my_bike_attachments()` | RPC `record_attachment` (S) | S caption only; visibility via RPC `set_attachment_visibility` (S) | RPC `delete_attachment` (S, reason) |
 | attachment_events | S | triggers only | never | never |
-| storage `media-internal` | S | S | S | S |
-| storage `media-public` | everyone | S | S | S |
+| storage `media-internal` | S | S | — | S, only objects no attachment points at |
+| storage `media-public` | S (everyone else only by public URL; nobody lists it) | S | — | S, only objects no attachment points at |
 | shop_hours, closure_overrides, appointment_types | S; anon/C active+public rows | A | A | A |
 | appointments | S; C own | RPC (`book_appointment`) | RPC / S | — |
 | work_orders | S; C own (customer projection view) | S | S | — |
@@ -913,10 +937,11 @@ Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
 | `staff_roster()` | A or P(manage_staff) | Every staff row with its *granted* permissions, for Staff settings (a manage_staff holder could otherwise grant but not see permissions, §15). |
 | `staff_directory()` | S | `id, display_name, role, active` of every staff member: how staff see colleagues' names (§15) without reading the `staff` table. |
 | `transfer_bike_ownership(bike_id, to_customer_id, reason)` | S | `to_customer_id` null = the shop. Reason required (P0001 `reason_required`, `reason_too_long` over 500). Locks the bike; one `transferred` event with actor and reason (by trigger); replaying the current owner is a no-op. P0002 unknown bike/customer; `customer_archived`, `bike_archived`. Returns the bike. |
-| `record_attachment(attachment_id, entity_type, entity_id, storage_bucket, storage_path, media_type, byte_size, width, height, caption, visibility)` | S | Entity must exist (P0002; `attachment_entity_unsupported` for types without a table yet); bucket must match visibility (`attachment_bucket_mismatch`); path must be `{entity_type}/{entity_id}/{attachment_id}.{ext}` with ext matching the type (`attachment_path_mismatch`); photo types only (`attachment_media_type_unsupported`); the object must be in `storage.objects` (`attachment_object_missing`) with a matching mimetype (`attachment_media_type_mismatch`); Storage's size wins. Replay returns the same row; an id used for another file (`attachment_conflict`) or deleted (`attachment_deleted`) is refused; customer records are never public (`attachment_customer_never_public`). `created` event. |
-| `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Locks the row; `visibility_changed` event; replay is a no-op. |
-| `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload; returns the deleted row (the server then removes the object), or null on replay. |
-| `staff_search(q, kinds, max_results)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65) and bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name). Exact short ID or serial rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded; `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100. Later phases add a `private.search_<kind>` function and a branch. |
+| `record_attachment(attachment_id, entity_type, entity_id, storage_bucket, storage_path, media_type, byte_size, width, height, caption, visibility)` | S | Entity must exist (P0002; `attachment_entity_unsupported` for types without a table yet); bucket must match visibility (`attachment_bucket_mismatch`); path must be `{entity_type}/{entity_id}/{attachment_id}.{ext}` with ext matching the type (`attachment_path_mismatch`); photo types only (`attachment_media_type_unsupported`); the object must be in `storage.objects` (`attachment_object_missing`) with a matching mimetype (`attachment_media_type_mismatch`); Storage's size wins. Replay returns the same row; an id used for another file (`attachment_conflict`) or deleted (`attachment_deleted`) is refused; customer records are never public (`attachment_customer_never_public`), nor is a photo without width and height (an undecoded original, `attachment_original_never_public`). `created` event. |
+| `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Never public for a customer record or an undecoded original (`attachment_original_never_public`). Locks the row; `visibility_changed` event; replay is a no-op. |
+| `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload. Returns a set: the deleted row (the server then removes the object), or no row on replay (PostgREST: `[]`). |
+| `attachment_stray_objects(entity_type, entity_id)` | S | Objects under `{entity_type}/{entity_id}/` in either photo bucket that no attachment points at and that are safe to remove now (older than 10 minutes; in `media-internal`, with history or older than a day), at most 100. The server removes them when it shows the record. |
+| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65) and bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name). Exact short ID or serial rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists; `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |

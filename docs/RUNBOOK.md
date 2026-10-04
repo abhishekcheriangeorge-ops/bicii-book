@@ -111,6 +111,16 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    `storage.objects` as the function owner (`postgres`), which relies on
    `postgres` bypassing RLS there, as it does on hosted Supabase:
    `select rolbypassrls from pg_roles where rolname = 'postgres';` → `t`.
+   `media-public` has no select policy for anon on purpose (public URLs
+   need none; one would let anyone list the bucket): if the Supabase
+   advisor or a dashboard prompt offers to add "public read" there, don't.
+   Leftover objects from a failed Storage cleanup are removed by the app
+   whenever the record is shown (`attachment_stray_objects`); to look for
+   any by hand, as an admin in the SQL editor: `select o.bucket_id, o.name
+   from storage.objects o where o.bucket_id in ('media-internal',
+   'media-public') and not exists (select 1 from public.attachments a where
+   a.storage_bucket = o.bucket_id and a.storage_path = o.name);` (recent
+   ones may be uploads or moves still running).
 
 ## Applying migrations to a hosted project
 

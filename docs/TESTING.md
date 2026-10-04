@@ -75,8 +75,15 @@ reused, so they would burn IDs in a database you keep).
 running (`npm run db:reset && npm run devstack:start`): it signs in through
 the gateway with supabase-js as `admin@bicii.test`, calls
 `rpc('my_staff_profile')`, and round-trips an object through Storage with
-the service key. It skips with a message when the gateway is not reachable,
-unless `BICII_REQUIRE_STACK=1` (CI), where that fails the file.
+the service key. `tests/db/photo-moves.stack.test.ts` runs the app's own
+photo domain code (`src/lib/domain/attachments.ts`, loaded with
+`server-only` aliased to its empty module in the db project) as mechanic2
+against real Storage: moves between buckets, deletes, refused moves and
+failed cleanups (a client whose Storage `remove` fails), checked by
+fetching public URLs with no key; it ages objects through the devstack's
+database to stand in for the sweep's 10-minute grace. Both use
+`tests/db/stack.ts` and skip with a message when the gateway is not
+reachable, unless `BICII_REQUIRE_STACK=1` (CI), where that fails the file.
 
 Phase 1 helpers (`tests/db/customer-fixtures.ts`): `linkCustomerLogin`
 gives a seeded customer an Auth login inside the test's transaction (no
@@ -166,12 +173,13 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
-| RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing. |
+| RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. |
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
 | Stable physical identity | bike short IDs are server-assigned `B-######`, increasing, unique, never client-supplied (42501) and immutable (`bike_short_id_immutable`). |
-| Storage enforces visibility (SPEC §8) | `media-internal`: anon, customers and inactive staff read/write nothing, active staff everything; `media-public`: everyone reads, only staff write (`media-storage.test.ts`); live signed-upload round trip with anon download refused (`stack.smoke.test.ts`). |
+| Storage enforces visibility (SPEC §8) | `media-internal`: anon, customers and inactive staff read/write nothing, active staff read and add; `media-public`: only active staff read or list it through the API, only staff add; nobody overwrites; staff delete only objects no attachment points at (`media-storage.test.ts`); live signed-upload round trip with anon download refused, a bare Storage remove of a recorded photo refused, `delete_attachment` replay is `[]` (`stack.smoke.test.ts`). |
+| Attachment visibility move (PLAN Phase 1) | The app's own domain code against real Storage (`photo-moves.stack.test.ts`): internal → public → internal → deleted, a stranger's fetch of the public URL succeeding only while public and the original removed each time; refused moves (customer record, undecoded original) copy nothing; a failed cleanup reports `cleanupPending`, Finish removes the leftover, and a leftover nobody finishes is swept when the record is shown. E2E does the same through the viewer. |
 | Lists and search name records alike | `customerLabel` (TypeScript, used by table-backed lists) equals `private.customer_label` for every fallback case, and `bikeTitle`/`bikeSubtitle` equal `staff_search`'s title and subtitle for every seeded bike (`display-parity.test.ts`). |
-| Attachments describe real objects | `record_attachment` rejects a path that is not `{entity_type}/{entity_id}/{id}.{ext}`, a missing object, the wrong bucket, a non-photo, an unknown entity; replay-safe; delete needs a reason and is kept in `attachment_events` (`attachments.test.ts`). |
+| Attachments describe real objects | `record_attachment` rejects a path that is not `{entity_type}/{entity_id}/{id}.{ext}`, a missing object, the wrong bucket, a non-photo, an unknown entity; replay-safe; delete needs a reason and is kept in `attachment_events`; an undecoded original (no dimensions) is never public; `attachment_stray_objects` lists only what no row points at and is old enough (`attachments.test.ts`). |
 | Anonymous cannot read costs/notes | every table in the RLS matrix: anon select returns 0 rows or is denied. |
 | Mechanic permission boundaries | staff without `view_costs` cannot select cost columns; without `adjust_stock` cannot call `adjust_stock`; admin can. |
 | Consignment sale yields correctly | $1,000 sale, $500 owed → yield 500, CC 150. |
@@ -219,14 +227,21 @@ customer's page (owner preset; it gets a B- number and a `registered`
 history entry), uploads the fixture JPEG (`tests/e2e/fixtures/bike-photo.jpg`)
 with `setInputFiles` and sees the thumbnail load (640px wide: downscaling
 leaves small photos alone), opens it and shares it with the customer
-(badge on the tile, still set after a reload), finds the bike from the
+(badge on the tile, still set after a reload), makes it public (a fetch of
+its public URL with no session succeeds; the private original's signed
+link stops working) and internal again (the public URL stops working),
+deletes it with a reason after checking Cancel returns focus (its signed
+link stops working), finds the bike from the
 header search by its serial number typed lower-case with spaces for dashes
 and by its B- number, transfers it to the other customer with a reason (the
 history shows both names, the reason and the actor), archives the first
 customer (Add bike disabled; gone from search, listed under Archived);
 mechanic2, with no permissions, creates a customer, adds a photo to the
-customer record whose Public option is disabled with the D13 explanation,
-and registers a shop bike with no customer.
+customer record whose Public option is disabled with the D13 explanation
+(and looks it: muted colour, not-allowed cursor), and registers a shop bike
+with no customer. A search test slows every `/customers` result by 700 ms:
+what is typed while "tan" loads is kept ("tan wei", not "tani"), and opening
+a result while a search is still waiting to be sent keeps the record open.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
@@ -269,8 +284,8 @@ fine).
 - `test` (every PR and push): `npm run db:reset` and `npm run
   devstack:start`, then `npm test` (unit + db; the db project builds its own
   template: roles → Auth → Storage → migrations → seed). With
-  `BICII_REQUIRE_STACK=1` the live-stack smoke test fails instead of
-  skipping if the gateway is down.
+  `BICII_REQUIRE_STACK=1` the live-stack tests fail instead of skipping if
+  the gateway is down.
 - `build` (every PR and push): `next build` with placeholder public env.
 - `e2e` (its own workflow, `e2e.yml`: manual dispatch, nightly at 02:23
   Singapore time, and PRs labelled `e2e`; `ci.yml` never runs on `labeled`,
