@@ -64,6 +64,12 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.my_bikes()",
   "public.my_customer_profile()",
   "public.update_my_profile(text, text, text, text)",
+  // Customer job projection (Phase 3, shown in Phase 11): own jobs only,
+  // customer-safe columns (D17)
+  "public.my_work_order_attachments(uuid)",
+  "public.my_work_order_lines(uuid)",
+  "public.my_work_order_timeline(uuid)",
+  "public.my_work_orders()",
 ];
 
 /**

@@ -1405,6 +1405,58 @@ export type Database = {
           role: Database["public"]["Enums"]["staff_role"];
         }[];
       };
+      my_work_order_attachments: {
+        Args: { work_order_id: string };
+        Returns: {
+          caption: string;
+          created_at: string;
+          height: number;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number;
+        }[];
+      };
+      my_work_order_lines: {
+        Args: { work_order_id: string };
+        Returns: {
+          currency: string;
+          description: string;
+          id: string;
+          quantity: unknown;
+          sale_total: unknown;
+          unit_sale_price: unknown;
+        }[];
+      };
+      my_work_order_timeline: {
+        Args: { work_order_id: string };
+        Returns: {
+          attachment_id: string;
+          created_at: string;
+          id: number;
+          kind: string;
+          status: Database["public"]["Enums"]["customer_job_status"];
+        }[];
+      };
+      my_work_orders: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          bike_id: string;
+          bike_short_id: string;
+          bike_title: string;
+          checked_in_at: string;
+          collected_at: string;
+          completed_at: string;
+          currency: string;
+          id: string;
+          job_number: string;
+          ready_for_collection_at: string;
+          sale_total: unknown;
+          status: Database["public"]["Enums"]["customer_job_status"];
+        }[];
+      };
       record_attachment: {
         Args: {
           attachment_id: string;
@@ -1810,6 +1862,14 @@ export type Database = {
       attachment_visibility: "internal" | "customer" | "public";
       bike_ownership_event_type: "registered" | "transferred";
       category_kind: "service" | "product";
+      customer_job_status:
+        | "received"
+        | "awaiting_customer"
+        | "awaiting_parts"
+        | "in_progress"
+        | "completed"
+        | "ready_for_collection"
+        | "collected";
       line_type: "service" | "inventory" | "manual";
       permission_key:
         | "view_costs"
@@ -1992,6 +2052,15 @@ export const Constants = {
       attachment_visibility: ["internal", "customer", "public"],
       bike_ownership_event_type: ["registered", "transferred"],
       category_kind: ["service", "product"],
+      customer_job_status: [
+        "received",
+        "awaiting_customer",
+        "awaiting_parts",
+        "in_progress",
+        "completed",
+        "ready_for_collection",
+        "collected",
+      ],
       line_type: ["service", "inventory", "manual"],
       permission_key: [
         "view_costs",
