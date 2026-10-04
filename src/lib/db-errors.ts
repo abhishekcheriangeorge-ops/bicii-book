@@ -54,7 +54,7 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   staff_permission_immutable: "Remove the permission and grant the new one instead.",
   // Customers and bikes (Phase 1)
   customer_archived: "That customer is archived. Unarchive them first.",
-  bike_archived: "That bike is archived. Unarchive it before changing its owner.",
+  bike_archived: "That bike is archived. Unarchive it before changing its owner or stocking it.",
   bike_short_id_immutable: "A bike keeps its ID for life.",
   bike_history_append_only: "Bike ownership history cannot be changed.",
   // Attachments (Phase 1)
