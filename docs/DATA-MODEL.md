@@ -438,7 +438,10 @@ so an `UPDATE OF completed_at` trigger would never fire. Under the job lock
 product (ascending) and the units FOR UPDATE (ascending); on completion
 (including re-completion) held_for_customer units become sold with
 `sold_at = completed_at` (cause `job_completed`) and
-`private.refresh_unique_publication` runs per product; on reopen sold units
+`private.refresh_unique_publication` runs per product; on reopen it first locks the linked bikes of
+those units FOR UPDATE (ascending, lock order step 4) and refuses with
+`bike_with_customer` when a sold unit's bike now has a customer (D29: the
+bike goes back to the shop first); otherwise sold units
 with no sale line go back to held_for_customer, `sold_at` null (cause
 `job_reopened`), with no movement and no publication change. Stamps never change without a status change, and `job_number`,
 `customer_id`, `bike_id`, `currency`, `created_by`, `created_at` and
@@ -769,8 +772,11 @@ customer (`attachment_stock_never_customer`, backstop CHECK
 A shop bike linked to a unit that is available, reserved or
 held_for_customer cannot be given to a customer or archived:
 `bikes_guard_stock_link` (BEFORE UPDATE … WHEN customer_id or archived_at
-changes) raises `bike_in_stock`. `bikes.inventory_unit_id` has its FK and a
-unique index; `private.register_unit` sets it.
+changes) raises `bike_in_stock`. The other direction (D29): a unit whose
+linked bike has a customer never goes back into stock; the reopen trigger
+and `void_line` refuse with `bike_with_customer`, and
+`private.assert_unit_consistent` is the backstop. `bikes.inventory_unit_id`
+has its FK and a unique index; `private.register_unit` sets it.
 
 `supplier_products` moved to Phase 7 (`suppliers` does not exist before).
 
@@ -853,7 +859,8 @@ insert or a change of status, location or bike) call
 `private.assert_unit_consistent(unit_id)` at commit: while available or
 reserved the unit's ledger nets to 1 at its own location and 0 elsewhere; in
 every other status it nets to 0 at every location; a linked bike points
-back. Otherwise `unit_ledger_inconsistent`. held_for_customer ↔ sold (job
+back and, while the unit is available, reserved or held_for_customer, has no
+customer (D29). Otherwise `unit_ledger_inconsistent`. held_for_customer ↔ sold (job
 completion and reopen, D25) needs no movement.
 
 **Global lock order** (binding for Phase 4 and every later phase that
@@ -864,8 +871,10 @@ touches stock):
 2. the work_order_line_items row FOR UPDATE;
 3. `private.lock_stock(product_id)` (a transaction advisory lock); several
    products in ascending product_id;
-4. the bikes row FOR UPDATE (only `create_unique_unit`, before
-   `register_unit` links the bike);
+4. the bikes row FOR UPDATE (`create_unique_unit`, before `register_unit`
+   links the bike; `void_line` and the reopen branch of
+   `work_orders_sell_held_units`, before the unit, for the D29 owner check);
+   several bikes in ascending id;
 5. the inventory_units row FOR UPDATE; several units in ascending id;
 6. the products row FOR UPDATE (only `private.refresh_unique_publication`
    and `set_publication_status`, which takes `lock_stock(product)` first).
@@ -1084,8 +1093,11 @@ writes nothing.
     only from `visibility = 'public'` attachments. A product row has the
     product's photos, oldest first; a unit row has the unit's, then the
     product's, then its linked bike's, each oldest first, the bike's
-    limited to those created before `coalesce(unit.sold_at, 'infinity')`,
-    so a photo taken after the bike passed to its buyer never appears.
+    limited to those created before the earlier of `unit.sold_at` and the
+    bike's first transfer to a customer at or after the unit's creation
+    (`bike_ownership_events`; `infinity` when neither exists), so a photo
+    taken after the bike passed to its buyer never appears, even if a later
+    reopen and re-completion moved `sold_at` (D29).
 - The Admin also answers `/q/{shortId}` for staff (Phase 4,
   `src/app/(staff)/q/[shortId]/page.tsx`), its only /q route: after
   `requireStaff()` it resolves the ID with `resolveShortId`
@@ -1369,10 +1381,10 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `schedule_cult_commons_rate(rate_id, rate, effective_from = null)` → `cult_commons_rates` | A | Replay by `rate_id` first (same rate → the row as it is now; else `rate_conflict`). Null = now; earlier than now → `rate_backdated` (D21); 23505 on a taken start time. |
 | `cancel_cult_commons_rate(rate_id)` → `cult_commons_rates` | A | Only before it starts (`cult_commons_rate_in_effect`); replay returns the row. |
 | `add_inventory_line(line_id, work_order_id, product_id, quantity integer = 1, location_id = null, inventory_unit_id = null, unit_sale_price money_amount = null)` → `inventory_line_result (line_id, movement_id, location_id, on_hand_after, replayed)` | S | Built (Phase 4). 22004 on null ids/quantity. Order: `private.lock_work_order` (P0002); `private.lock_stock(product)` and the unit FOR UPDATE (P0002); replay by line id before the open check (same job, inventory, product, unit, quantity → the line, its job_consumption movement and current on-hand, `replayed = true`; else `line_conflict`); `work_order_locked` (D15); `quantity_invalid` (1..999; unique: 1); P0002 / `product_archived` / `product_inactive`; `currency_mismatch`; `ownership_not_saleable` (product or unit not shop_owned, D27). Quantity: `unit_product_mismatch` if a unit is given; default location (lowest active sort_order, name) or `location_required`; `location_inactive`; on-hand may go negative (D23). Unique: `unit_required`, `unit_product_mismatch`, `unit_not_available`, `unit_location_mismatch`. `part_price_missing` / `part_cost_missing` (D24). Inserts the line (snapshots price, cost, rate; `cost_pending` false; description = name, or name · U-… · S/N …), the `job_consumption` movement (−quantity, cost snapshot), unit → held_for_customer and publication refresh, `stock_consumed`. Never returns a cost. |
-| `void_line(line_id, reason)` inventory branch | S | Built (Phase 4, create or replace keeping Phase 3's signature, guard, reason rules, error order, effects, lock order and wrapper; `line_type_unsupported` is gone): already voided → id before the open check; `work_order_locked` (reopen first, D25); after `voided_*`: `lock_stock`, the unit FOR UPDATE, one `reversal` of the line's job_consumption (`reversal_of_id`, same product, unit, location and cost snapshot; allowed at a location deactivated since), held unit → available, `refresh_unique_publication` (sold → public, no requirement check), `stock_reversed`. Concurrent voids serialise on the job; the unique `reversal_of_id` is the backstop. |
+| `void_line(line_id, reason)` inventory branch | S | Built (Phase 4, create or replace keeping Phase 3's signature, guard, reason rules, error order, effects, lock order and wrapper; `line_type_unsupported` is gone): already voided → id before the open check; `work_order_locked` (reopen first, D25); after `voided_*`: `lock_stock`, the unit's bike FOR UPDATE (if any), the unit FOR UPDATE, `bike_with_customer` when that bike has a customer (D29), one `reversal` of the line's job_consumption (`reversal_of_id`, same product, unit, location and cost snapshot; allowed at a location deactivated since), held unit → available, `refresh_unique_publication` (sold → public, no requirement check), `stock_reversed`. Concurrent voids serialise on the job; the unique `reversal_of_id` is the backstop. |
 | `adjust_stock(request_id, product_id, location_id, quantity_delta integer, movement_type, reason, unit_cost money_amount = null)` → `table(movement_id bigint, on_hand integer)` | P(adjust_stock) | Built (Phase 4). `movement_type_not_manual` (only stock_adjustment ±, damaged −), `reason_required` / `reason_too_long`, `quantity_invalid`; a unit cost needs P(view_costs) (42501) and a positive delta (22023). `lock_stock`, then replay by request_id (same product, location, delta, type → that row; else `request_conflict`); P0002; `product_unit_tracked`; `product_archived`; `location_inactive`; `insufficient_stock` if a negative delta leaves the location below zero. Snapshot = unit_cost else the product default. Records actor and time (SPEC §23). |
 | `transfer_stock(request_id, product_id, from_location_id, to_location_id, quantity integer, reason = null, inventory_unit_id = null)` → `table(movement_id bigint, location_id uuid, quantity_delta integer)` | P(manage_inventory) | Built (Phase 4). `transfer_same_location`; `lock_stock` and the unit FOR UPDATE; replay by request_id (both rows; else `request_conflict`); `location_inactive`; `product_archived`. Quantity: `quantity_invalid`, `insufficient_stock`. Unique: `unit_required`, quantity 1, `unit_not_available` (available or reserved only), `unit_location_mismatch`; moves `location_id` (unit `moved` event). Two `transfer` rows sharing request_id. |
-| `create_unique_unit(unit_id, product_id, location_id, serial_number = null, condition = null, sale_price = null, direct_cost = null, bike_id = null, reason = null)` → `unique_unit_result (unit_id, short_id)` | P(manage_inventory); a cost needs P(view_costs) | Built (Phase 4). `lock_stock` before the replay (unit id exists with the same product → it; else `unit_conflict`); `product_not_unique`, `product_archived`, `product_inactive`, `location_inactive`; a bike is locked FOR UPDATE and must exist, not be archived (`bike_archived`), have no owner (`bike_has_owner`) and no unit (`bike_already_linked`). `private.register_unit` (shop_owned, D27), then a +1 `stock_adjustment` (reason default "Registered as a unique item", request_id = unit id). |
+| `create_unique_unit(unit_id, product_id, location_id, serial_number = null, condition = null, sale_price = null, direct_cost = null, bike_id = null, reason = null)` → `unique_unit_result (unit_id, short_id)` | P(manage_inventory); a cost needs P(view_costs) | Built (Phase 4). `lock_stock` before the replay (unit id exists with the same product → it; else `unit_conflict`); `product_not_unique`, `product_archived`, `product_inactive`, `location_inactive`; a bike is locked FOR UPDATE and must exist, not be archived (`bike_archived`), have no owner (`bike_has_owner`) and no unit (`bike_already_linked`). `private.register_unit` (shop_owned, D27), then a +1 `stock_adjustment` (reason default "Registered as a unique item", request_id = unit id), then `refresh_unique_publication` (a sold product with a new available unit is public again, D26). |
 | `write_off_unit(request_id, unit_id, reason)` → `unit_status_result (unit_id, status)` | P(adjust_stock) | Built (Phase 4). `reason_required`; P0002; `lock_stock`, the unit FOR UPDATE; replay: a damaged movement with this request_id for this unit → current state, the key used for anything else → `request_conflict`; already written off → no-op; available or reserved → written_off plus a `damaged` −1; else `unit_not_available`. |
 | `set_publication_status(product_id, status, reason = null)` → `publication_result (product_id, publication_status, public_slug)` | P(manage_inventory) | Built (Phase 4). 22004 on null ids; `reason_too_long` (> 500); `lock_stock(product)`, then the product FOR UPDATE (P0002). A target of `sold`, or leaving `sold` for anything but `archived` → `publication_sold_by_sale`. Same status → the row, no event. Otherwise the products trigger: `publication_transition_invalid`, `publication_requires_price` / `_photo` / `_available_unit`, slug at the first publish, `publication_changed {from, to}` with the reason. Phase 10 hooks the Shopify sync onto publication changes by trigger. |
 | `split_unit_from_stock(new_product_id, unit_id, source_product_id, location_id, name, reason, serial_number = null, condition = null, sale_price = null)` → `split_unit_result (product_id, product_short_id, unit_id, unit_short_id)` | P(adjust_stock) and P(manage_inventory) | Built (Phase 4, D28). 22004 on null ids; `reason_required`, `reason_too_long` (> 480: the movements' reason is "Split to U-######: " + reason). `lock_stock(source)`, then replay (unit id on new_product_id → the same result; the unit id or new_product_id used otherwise → `unit_conflict`); P0002; `product_not_quantity`, `product_archived`, `ownership_not_saleable` (D27); P0002 / `location_inactive`; `insufficient_stock` (on-hand at the location < 1). Inserts a draft unique product (name; description, brand, category, currency from the source; price = sale_price else the source's; default cost = the source's), `private.register_unit` (shop_owned, cost = the source's default cost) and two `stock_adjustment` movements (−1 source, +1 unit) with the reason, cost snapshot and request_id = unit id. Writes the carried cost for a caller without P(view_costs) (definer path; the invoker cost-write guards still refuse that caller's direct writes); never returns a cost. 23514 checks re-raised without the row. |

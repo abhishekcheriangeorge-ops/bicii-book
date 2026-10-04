@@ -152,6 +152,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   bike_has_owner: "That bike belongs to a customer. Only a shop bike can be stock.",
   bike_already_linked: "That bike is already in stock as another unit.",
   bike_in_stock: "This bike is in stock as a unit; sell or write off the unit first.",
+  bike_with_customer:
+    "That bike now belongs to a customer. Transfer it back to the shop before putting its unit back in stock.",
   product_events_append_only: "Product history can't be changed.",
   inventory_unit_events_append_only: "Unit history can't be changed.",
   attachment_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",

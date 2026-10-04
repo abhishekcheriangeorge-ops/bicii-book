@@ -50,7 +50,7 @@ import {
   unit,
   type PublicItem,
 } from "./inventory-fixtures";
-import { failsWith, makeBike, ownerMode, tryAndUndo } from "./workshop-fixtures";
+import { failsWith, makeBike, ownerMode, setStatus, tryAndUndo } from "./workshop-fixtures";
 
 let conn: pg.Client;
 
@@ -374,6 +374,60 @@ describe.skipIf(!isolatedDatabase())(
         await ownerMode(tx);
         expect(photoPaths(row)).not.toContain(await pathOf(tx, after));
         expect(photoPaths(row)).not.toContain(await pathOf(tx, atSale));
+        await assertLedgerConsistent(tx);
+      });
+    });
+
+    it("bike photos stay cut off at the first handover to a buyer, even after a reopen and re-completion (D29)", async () => {
+      await inTx(async (tx) => {
+        await ownerMode(tx);
+        const bike = await makeBike(tx, null);
+        const productId = await makeProduct(tx, { tracking: "unique", name: "Shop bike again" });
+        const before = await addPublicPhoto(tx, "bike", bike, {
+          createdAt: "2026-01-01T00:00:00Z",
+        });
+        await actAs(tx, ADMIN);
+        const u = await makeUnit(tx, productId, { bikeId: bike });
+        await publishProduct(tx, productId);
+        const job = await newJob(tx);
+        await addPart(tx, { workOrderId: job.id, productId, unitId: u.unit_id });
+        await completeJob(tx, job.id);
+        const handOver = (to: string | null, reason: string) =>
+          tx.query("select public.transfer_bike_ownership($1, $2, $3)", [bike, to, reason]);
+        await handOver(job.customer_id, "Sold on the job");
+        // While the job is closed and the bike is the buyer's, a reopen is refused.
+        await failsWith(tx, () => setStatus(tx, job.id, "in_progress", "Pending cost"), {
+          code: "P0001",
+          message: "bike_with_customer",
+        });
+
+        // The buyer's bike is photographed; later it comes back to the shop,
+        // the job is reopened and completed again (sold_at moves forward).
+        await ownerMode(tx);
+        const afterHandover = await addPublicPhoto(tx, "bike", bike, {
+          createdAt: await scalar<string>(tx, "select clock_timestamp()::text"),
+        });
+        await actAs(tx, ADMIN);
+        await handOver(null, "Buyer returned the bike");
+        await setStatus(tx, job.id, "in_progress", "Pending cost");
+        await setStatus(tx, job.id, "completed");
+        // The photo predates the new sold_at, so sold_at alone would show it.
+        await ownerMode(tx);
+        expect(
+          await scalar<boolean>(
+            tx,
+            `select a.created_at < u.sold_at from public.attachments a, public.inventory_units u
+              where a.id = $1 and u.id = $2`,
+            [afterHandover, u.unit_id],
+          ),
+        ).toBe(true);
+
+        await actAs(tx, ANON);
+        const row = bySid(await publicItems(tx), u.short_id);
+        expect(row?.availability).toBe("sold");
+        await ownerMode(tx);
+        expect(photoPaths(row)).toEqual([await pathOf(tx, before)]);
+        expect(photoPaths(row)).not.toContain(await pathOf(tx, afterHandover));
         await assertLedgerConsistent(tx);
       });
     });

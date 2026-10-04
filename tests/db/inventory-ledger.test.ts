@@ -55,6 +55,7 @@ import {
   eventTypes,
   events,
   failsWith,
+  makeBike,
   makeCustomerWithBike,
   ownerMode,
   setStatus,
@@ -332,6 +333,34 @@ describe.skipIf(!isolatedDatabase())(
          values ($1, $2, $3, 1, 'stock_adjustment', 'Forged'), ($1, $2, $4, -1, 'stock_adjustment', 'Forged')`,
           [productId, unitId, LOCATION.shopFloor, elsewhere],
         );
+
+        // A linked bike that does not point back at its unit.
+        const linked = await makeUniqueWithUnit(tx);
+        await ownerMode(tx);
+        const shopBike = await makeBike(tx, null);
+        await forge("update public.inventory_units set bike_id = $1 where id = $2", [
+          shopBike,
+          linked.unitId,
+        ]);
+        // An in-stock unit whose linked bike a customer owns (D29): the owner
+        // is forged with triggers off (bike_in_stock refuses it otherwise),
+        // then any status change re-runs the check.
+        const owned = await makeProduct(tx, { tracking: "unique" });
+        const ownedBike = await makeBike(tx, null);
+        await actAs(tx, ADMIN);
+        const ownedUnit = await makeUnit(tx, owned, { bikeId: ownedBike });
+        await assertLedgerConsistent(tx);
+        await ownerMode(tx);
+        const { customerId } = await makeCustomerWithBike(tx);
+        await tx.query("set local session_replication_role = replica");
+        await tx.query("update public.bikes set customer_id = $1 where id = $2", [
+          customerId,
+          ownedBike,
+        ]);
+        await tx.query("set local session_replication_role = origin");
+        await forge("update public.inventory_units set status = 'reserved' where id = $1", [
+          ownedUnit.unit_id,
+        ]);
         await assertLedgerConsistent(tx);
       });
     });
@@ -886,6 +915,79 @@ describe.skipIf(!isolatedDatabase())("sold at completion (SOLD-AT-COMPLETION, D1
         (await movements(tx, productId)).filter((m) => m.movement_type === "job_consumption"),
       ).toHaveLength(1);
       await assertLedgerConsistent(tx);
+    });
+  });
+
+  it("a sold shop bike handed to its buyer is never stock again: the reopen is refused (bike_with_customer, D29)", async () => {
+    await inTx(async (tx) => {
+      await ownerMode(tx);
+      const bike = await makeBike(tx, null);
+      const productId = await makeProduct(tx, { tracking: "unique", name: "Shop bike" });
+      await addPublicPhoto(tx, "product", productId);
+      await actAs(tx, ADMIN);
+      const u = await makeUnit(tx, productId, { bikeId: bike });
+      await ownerMode(tx);
+      await publish(tx, productId);
+      await actAs(tx, ADMIN);
+      const job = await newJob(tx);
+      const part = await addPart(tx, { workOrderId: job.id, productId, unitId: u.unit_id });
+      await walkTo(tx, job.id, "ready_for_collection");
+      const sold = await unit(tx, u.unit_id);
+      expect(sold.status).toBe("sold");
+      expect(await publication(tx, productId)).toBe("sold");
+
+      const handOver = (to: string | null, reason: string) =>
+        tx.query("select public.transfer_bike_ownership($1, $2, $3)", [bike, to, reason]);
+      await handOver(job.customer_id, "Sold on the job");
+
+      // The reopen would hold the unit again, clear sold_at and let a void
+      // put a customer's bike back in stock.
+      await failsWith(tx, () => reopenJob(tx, job.id), {
+        code: "P0001",
+        message: "bike_with_customer",
+      });
+      expect(await unit(tx, u.unit_id)).toMatchObject({ status: "sold", sold_at: sold.sold_at });
+      expect(await publication(tx, productId)).toBe("sold");
+      expect(
+        await scalar<string>(tx, "select status::text from public.work_orders where id = $1", [
+          job.id,
+        ]),
+      ).toBe("ready_for_collection");
+
+      // Back with the shop (the buyer returned it), the documented path works.
+      await handOver(null, "Buyer returned the bike");
+      await reopenJob(tx, job.id);
+      expect((await unit(tx, u.unit_id)).status).toBe("held_for_customer");
+      await voidLine(tx, part.line_id, "Returned");
+      expect((await unit(tx, u.unit_id)).status).toBe("available");
+      expect(await publication(tx, productId)).toBe("public");
+      await assertLedgerConsistent(tx);
+    });
+  });
+
+  it("void_line refuses to return a unit whose bike a customer owns (bike_with_customer)", async () => {
+    await inTx(async (tx) => {
+      await ownerMode(tx);
+      const bike = await makeBike(tx, null);
+      const productId = await makeProduct(tx, { tracking: "unique" });
+      await actAs(tx, ADMIN);
+      const u = await makeUnit(tx, productId, { bikeId: bike });
+      const job = await newJob(tx);
+      const part = await addPart(tx, { workOrderId: job.id, productId, unitId: u.unit_id });
+      // Unreachable through the RPCs (bike_in_stock refuses the transfer
+      // while the unit is held): forge the owner with triggers off.
+      await ownerMode(tx);
+      await tx.query("set local session_replication_role = replica");
+      await tx.query("update public.bikes set customer_id = $1 where id = $2", [
+        job.customer_id,
+        bike,
+      ]);
+      await tx.query("set local session_replication_role = origin");
+      await actAs(tx, ADMIN);
+      await failsWith(tx, () => voidLine(tx, part.line_id, "Returned"), {
+        code: "P0001",
+        message: "bike_with_customer",
+      });
     });
   });
 

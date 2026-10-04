@@ -388,8 +388,10 @@ as
          p.currency::text,
          (case u.status when 'available' then 'available' when 'sold' then 'sold' else 'unavailable' end)::text,
          -- The unit's photos, then the product's, then the linked bike's
-         -- taken before the unit was sold (a photo taken after the bike
-         -- passed to its buyer never appears).
+         -- taken before the unit was sold and before the bike first passed
+         -- to a customer after the unit was registered (a photo taken after
+         -- the bike passed to its buyer never appears, even if a reopen or a
+         -- re-completion later moved sold_at; D29).
          coalesce((
            select pg_catalog.jsonb_agg(
                     pg_catalog.jsonb_build_object(
@@ -411,7 +413,16 @@ as
              from public.attachments a
              where u.bike_id is not null
                and a.entity_type = 'bike' and a.entity_id = u.bike_id and a.visibility = 'public'
-               and a.created_at < coalesce(u.sold_at, 'infinity'::timestamptz)
+               and a.created_at < coalesce(
+                     least(
+                       u.sold_at,
+                       (select pg_catalog.min(e.created_at)
+                        from public.bike_ownership_events e
+                        where e.bike_id = u.bike_id and e.to_customer_id is not null
+                          and e.created_at >= u.created_at)
+                     ),
+                     'infinity'::timestamptz
+                   )
            ) ph
          ), '[]'::jsonb),
          greatest(u.updated_at, p.updated_at)

@@ -18,6 +18,9 @@
 --     held_for_customer with no stock movement, and re-completion sells it
 --     again. Lines change only while the job is open (D15): to return a
 --     part from a completed job, reopen it and void the line.
+--   * A unit whose shop bike has since passed to a customer never goes back
+--     into stock (D29): the reopen and void_line refuse with
+--     bike_with_customer until the bike is transferred back to the shop.
 --   * A job with a live line, parts included, is not cancelled (D16: Phase
 --     3's work_order_has_lines covers it; nothing is added here).
 --   * Lock order: see the inventory migration's header (work order, line,
@@ -394,7 +397,9 @@ comment on function public.add_inventory_line(uuid, uuid, uuid, integer, uuid, u
 -- also gets its linked reversal movement (allowed even at a location
 -- deactivated since), its unit goes back to available and its product's
 -- publication is refreshed (sold -> public, no requirement check). A part
--- on a completed job is returned by reopening the job first (D15, D25).
+-- on a completed job is returned by reopening the job first (D15, D25). A
+-- unit whose linked bike a customer owns is refused (bike_with_customer,
+-- D29), with the bike locked before the unit (lock order step 4).
 create or replace function public.void_line(line_id uuid, reason text)
 returns uuid
 language plpgsql
@@ -409,6 +414,8 @@ declare
   wo public.work_orders;
   target public.work_order_line_items;
   unit public.inventory_units;
+  unit_bike_id uuid;
+  bike_owner uuid;
   consumption public.inventory_movements;
   reversal bigint;
   product_short text;
@@ -468,12 +475,27 @@ begin
   end;
 
   if target.line_type = 'inventory' then
-    -- Lock order steps 3 and 5: the stock, then the unit.
+    -- Lock order steps 3, 4 and 5: the stock, the unit's bike, then the
+    -- unit. A unit's bike_id is set once at registration (register_unit),
+    -- so reading it before the unit lock is stable.
     perform private.lock_stock(target.source_product_id);
     if target.source_inventory_unit_id is not null then
+      select u.bike_id into unit_bike_id from public.inventory_units u
+      where u.id = target.source_inventory_unit_id;
+      if unit_bike_id is not null then
+        select b.customer_id into bike_owner from public.bikes b where b.id = unit_bike_id for update;
+      end if;
       select u.* into unit from public.inventory_units u
       where u.id = target.source_inventory_unit_id
       for update;
+      -- D29: a unit whose bike a customer now owns never goes back into
+      -- stock (the reopen already refuses this; this is the RPC's own guard).
+      if bike_owner is not null and unit.status in ('held_for_customer', 'sold') then
+        raise exception using
+          errcode = 'P0001',
+          message = 'bike_with_customer',
+          detail = 'That bike now belongs to a customer; transfer it back to the shop before returning the unit to stock.';
+      end if;
     end if;
 
     select m.* into consumption from public.inventory_movements m
@@ -549,6 +571,8 @@ declare
   cause text;
   pid uuid;
   uid uuid;
+  owned_bike text;
+  owned_unit text;
 begin
   if old.completed_at is null and new.completed_at is not null then
     cause := 'job_completed';
@@ -567,6 +591,44 @@ begin
   loop
     perform private.lock_stock(pid);
   end loop;
+
+  if cause = 'job_reopened' then
+    -- Lock order step 4, before the units: the linked bikes of the units
+    -- this reopen would hold again. D29: a sold shop bike that has passed
+    -- to its buyer is not taken back by a reopen (it would put a bike a
+    -- customer owns back into stock, clear its sold_at and with it the
+    -- public photo cut-off). The bike goes back to the shop first.
+    perform 1
+    from public.bikes b
+    where b.id in (
+      select u.bike_id
+      from public.inventory_units u
+      join public.work_order_line_items li on li.source_inventory_unit_id = u.id
+      where li.work_order_id = new.id and li.voided_at is null and li.line_type = 'inventory'
+        and u.bike_id is not null
+    )
+    order by b.id
+    for update;
+
+    select b.short_id, u.short_id into owned_bike, owned_unit
+    from public.inventory_units u
+    join public.work_order_line_items li on li.source_inventory_unit_id = u.id
+    join public.bikes b on b.id = u.bike_id
+    where li.work_order_id = new.id and li.voided_at is null and li.line_type = 'inventory'
+      and u.status = 'sold' and u.sold_sale_line_id is null
+      and b.customer_id is not null
+    order by u.id
+    limit 1;
+    if found then
+      raise exception using
+        errcode = 'P0001',
+        message = 'bike_with_customer',
+        detail = pg_catalog.format(
+          '%s (sold on this job as %s) now belongs to a customer; transfer it back to the shop before reopening the job.',
+          owned_bike, owned_unit
+        );
+    end if;
+  end if;
 
   perform 1
   from public.inventory_units u

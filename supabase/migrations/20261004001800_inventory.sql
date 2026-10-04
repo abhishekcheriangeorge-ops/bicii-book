@@ -29,8 +29,9 @@
 --   * Photos on stock are internal or public, never customer: stock has no
 --     customer (D13 extended, enforced like D19).
 --   * A shop bike linked to a unit in stock cannot be given to a customer or
---     archived (bike_in_stock): the public page never shows a bike a
---     customer owns.
+--     archived (bike_in_stock), and a unit whose bike a customer owns never
+--     goes back into stock (bike_with_customer, D29; assert_unit_consistent
+--     is the backstop): the public page never shows a bike a customer owns.
 --   * Customer access boundary: every table here is staff-only. The
 --     anonymous projection is reporting.public_items (Step 2).
 --
@@ -45,8 +46,11 @@
 --   2. the work_order_line_items row FOR UPDATE;
 --   3. private.lock_stock(product_id); several products in ascending
 --      product_id order;
---   4. the bikes row FOR UPDATE (only create_unique_unit, before
---      private.register_unit links the bike);
+--   4. the bikes row FOR UPDATE (create_unique_unit, before
+--      private.register_unit links the bike; void_line and the reopen
+--      branch of work_orders_sell_held_units, before the unit, so a
+--      concurrent transfer_bike_ownership cannot slip between the owner
+--      check and the status change); several bikes in ascending id;
 --   5. the inventory_units row FOR UPDATE; several units in ascending id;
 --   6. the products row FOR UPDATE, taken only by
 --      private.refresh_unique_publication (and Step 2's
@@ -890,7 +894,10 @@ $$;
 -- locations (SPEC §12, §23): while available or reserved its ledger nets to
 -- 1 at its own location and 0 elsewhere; in every other status it nets to 0
 -- at every location (held_for_customer <-> sold needs no movement). A linked
--- bike points back at the unit.
+-- bike points back at the unit, and while the unit is in stock (available,
+-- reserved or held_for_customer) that bike has no customer: a bike a
+-- customer owns is never stock again (bikes_guard_stock_link is the other
+-- direction; void_line and the reopen refuse with bike_with_customer).
 create function private.assert_unit_consistent(unit_id uuid)
 returns void
 language plpgsql
@@ -936,6 +943,17 @@ begin
       message = 'unit_ledger_inconsistent',
       detail = pg_catalog.format(
         'Unit %s does not match its stock ledger (status %s); record the missing movement.',
+        unit.short_id, unit.status
+      );
+  end if;
+  if unit.bike_id is not null
+     and unit.status in ('available', 'reserved', 'held_for_customer')
+     and exists (select 1 from public.bikes b where b.id = unit.bike_id and b.customer_id is not null) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'unit_ledger_inconsistent',
+      detail = pg_catalog.format(
+        'Unit %s is in stock (status %s) but its bike belongs to a customer.',
         unit.short_id, unit.status
       );
   end if;
