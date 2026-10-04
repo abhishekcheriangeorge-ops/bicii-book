@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Inter } from "next/font/google";
+import { ServiceWorkerRegistration } from "@/components/shell/service-worker";
 import { ToastProvider } from "@/components/ui/toast";
 import "./globals.css";
 
@@ -26,6 +27,10 @@ export const metadata: Metadata = {
   applicationName: "BICII Admin",
   // Staff app: keep it out of search engines
   robots: { index: false, follow: false },
+  icons: { apple: "/apple-touch-icon.png" },
+  // Home-screen launch on iOS: full screen, light status bar over paper.
+  appleWebApp: { capable: true, title: "BICII", statusBarStyle: "default" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -47,6 +52,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-full flex-col">
         <ToastProvider>{children}</ToastProvider>
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );
