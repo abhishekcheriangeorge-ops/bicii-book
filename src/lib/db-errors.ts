@@ -107,6 +107,7 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   product_inactive: "That product is inactive.",
   product_archived: "That product is archived. Unarchive it first.",
   product_not_unique: "Only a unique item has individual units.",
+  product_not_quantity: "Only stock counted by quantity can be split into a unique item.",
   product_unit_tracked: "This item is counted unit by unit. Change its units instead.",
   product_tracking_type_immutable:
     "A product stays counted or unique. Create a new product instead.",
@@ -137,14 +138,16 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   part_price_missing: "This part has no sale price. Enter a price or ask someone to set one.",
   part_cost_missing:
     "This part has no cost yet, so its yield cannot be worked out. Ask someone with cost access to set it.",
-  ownership_not_saleable: "This item is not shop stock, so it cannot be used on a job.",
+  ownership_not_saleable:
+    "This item is not shop stock, so it can't be used on a job or split into a unique item.",
   currency_mismatch: "That item is priced in another currency than the job.",
   publication_transition_invalid:
     "The item can't move to that publication status from where it is now.",
   publication_requires_photo: "Add a public photo before publishing.",
   publication_requires_price: "Set a selling price before publishing.",
   publication_requires_available_unit: "There is no available unit to publish.",
-  publication_sold_by_sale: "Sold items change status only through a sale or its reversal.",
+  publication_sold_by_sale:
+    "A sold item changes status only through a sale or its reversal. By hand it can only be archived.",
   publication_initial_invalid: "A new product starts as a draft or internal only.",
   bike_has_owner: "That bike belongs to a customer. Only a shop bike can be stock.",
   bike_already_linked: "That bike is already in stock as another unit.",

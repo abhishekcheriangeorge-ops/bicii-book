@@ -23,7 +23,7 @@ import type pg from "pg";
 
 import { AUTH_USER, LOCATION } from "../fixtures/ids";
 import { attachmentPath } from "./customer-fixtures";
-import { actAs, scalar, staffClaims } from "./harness";
+import { actAs, inTransaction, scalar, staffClaims, type Claims } from "./harness";
 import {
   createWorkOrder,
   makeCustomerWithBike,
@@ -35,6 +35,32 @@ import {
 export const ADMIN = staffClaims(AUTH_USER.admin);
 export const MECHANIC1 = staffClaims(AUTH_USER.mechanic1);
 export const MECHANIC2 = staffClaims(AUTH_USER.mechanic2);
+
+export type Outcome<T> =
+  { ok: true; value: T } | { ok: false; error: { code?: string; message?: string } };
+
+/**
+ * Runs `fn` as `claims` (the admin by default) on `c` in a COMMITTED
+ * transaction; resolves to its result or its error. For concurrency tests
+ * (isolatedDatabase() only).
+ */
+export function committed<T>(
+  c: pg.Client,
+  fn: (tx: pg.Client) => Promise<T>,
+  claims: Claims = ADMIN,
+): Promise<Outcome<T>> {
+  return inTransaction(
+    c,
+    async (tx) => {
+      await actAs(tx, claims);
+      return fn(tx);
+    },
+    { commit: true },
+  ).then(
+    (value) => ({ ok: true as const, value }),
+    (error: { code?: string; message?: string }) => ({ ok: false as const, error }),
+  );
+}
 
 /** Runs the deferred constraint triggers (unit ledger consistency) now. */
 export async function assertLedgerConsistent(tx: pg.Client): Promise<void> {
@@ -316,19 +342,46 @@ export const publication = (tx: pg.Client, productId: string) =>
   ]);
 
 /**
- * A public photo of a product (or unit/bike) inserted as the owner (no
- * storage object needed for a direct insert); returns its id.
+ * A photo of a product, unit or bike inserted as the owner (no storage
+ * object needed for a direct insert); public unless `visibility` says
+ * otherwise; `createdAt` backdates or postdates it. Returns its id.
  */
 export async function addPublicPhoto(
   tx: pg.Client,
   entityType: "product" | "inventory_unit" | "bike",
   entityId: string,
+  {
+    visibility = "public",
+    createdAt = null,
+    caption = null,
+    width = 1600,
+    height = 1200,
+  }: {
+    visibility?: "public" | "internal";
+    createdAt?: Date | string | null;
+    caption?: string | null;
+    width?: number | null;
+    height?: number | null;
+  } = {},
 ): Promise<string> {
   const id = randomUUID();
   await tx.query(
-    `insert into public.attachments (id, entity_type, entity_id, storage_bucket, storage_path, media_type, visibility)
-     values ($1, $2, $3, 'media-public', $4, 'image/jpeg', 'public')`,
-    [id, entityType, entityId, attachmentPath(entityType, entityId, id)],
+    `insert into public.attachments
+       (id, entity_type, entity_id, storage_bucket, storage_path, media_type, visibility, caption,
+        width, height, created_at)
+     values ($1, $2, $3, $4, $5, 'image/jpeg', $6, $7, $8, $9, coalesce($10::timestamptz, now()))`,
+    [
+      id,
+      entityType,
+      entityId,
+      visibility === "public" ? "media-public" : "media-internal",
+      attachmentPath(entityType, entityId, id),
+      visibility,
+      caption,
+      width,
+      height,
+      createdAt,
+    ],
   );
   return id;
 }
@@ -338,6 +391,101 @@ export async function publish(tx: pg.Client, productId: string): Promise<void> {
   await tx.query("update public.products set publication_status = 'public' where id = $1", [
     productId,
   ]);
+}
+
+export type PublicationResult = {
+  product_id: string;
+  publication_status: string;
+  public_slug: string | null;
+};
+
+/** public.set_publication_status as whoever `tx` is. */
+export async function setPublication(
+  tx: pg.Client,
+  productId: string,
+  status: string,
+  reason: string | null = null,
+): Promise<PublicationResult> {
+  const { rows } = await tx.query<PublicationResult>(
+    `select (r).product_id, (r).publication_status::text, (r).public_slug
+       from (select public.set_publication_status($1, $2, $3) r) s`,
+    [productId, status, reason],
+  );
+  return rows[0];
+}
+
+/**
+ * Publishes a product through set_publication_status as whoever `tx` is,
+ * walking draft → internal_only first when needed.
+ */
+export async function publishProduct(tx: pg.Client, productId: string): Promise<PublicationResult> {
+  const from = await publication(tx, productId);
+  if (from === "draft" || from === "archived") await setPublication(tx, productId, "internal_only");
+  return setPublication(tx, productId, "public");
+}
+
+export type SplitResult = {
+  product_id: string;
+  product_short_id: string;
+  unit_id: string;
+  unit_short_id: string;
+};
+
+/** public.split_unit_from_stock as whoever `tx` is (fresh ids unless given). */
+export async function splitUnit(
+  tx: pg.Client,
+  a: {
+    newProductId?: string;
+    unitId?: string;
+    sourceProductId: string;
+    locationId?: string;
+    name?: string;
+    reason?: string | null;
+    serial?: string | null;
+    condition?: string | null;
+    price?: string | null;
+  },
+): Promise<SplitResult> {
+  const { rows } = await tx.query<SplitResult>(
+    `select (r).product_id, (r).product_short_id, (r).unit_id, (r).unit_short_id
+       from (select public.split_unit_from_stock($1, $2, $3, $4, $5, $6, $7, $8, $9) r) s`,
+    [
+      a.newProductId ?? randomUUID(),
+      a.unitId ?? randomUUID(),
+      a.sourceProductId,
+      a.locationId ?? LOCATION.shopFloor,
+      a.name ?? "Ex-display item",
+      a.reason === undefined ? "Ex-display, sold on its own" : a.reason,
+      a.serial ?? null,
+      a.condition ?? null,
+      a.price ?? null,
+    ],
+  );
+  return rows[0];
+}
+
+export type PublicItem = {
+  kind: "product" | "unit";
+  short_id: string;
+  slug: string | null;
+  name: string;
+  description: string | null;
+  brand: string | null;
+  category: string | null;
+  condition: string | null;
+  sale_price: string | null;
+  currency: string;
+  availability: "available" | "sold_out" | "sold" | "unavailable";
+  photos: { bucket: string; path: string; width: number; height: number; caption: string | null }[];
+  updated_at: Date;
+};
+
+/** Every row of reporting.public_items as whoever `tx` is, by short ID. */
+export async function publicItems(tx: pg.Client): Promise<PublicItem[]> {
+  const { rows } = await tx.query<PublicItem>(
+    "select * from reporting.public_items order by short_id",
+  );
+  return rows;
 }
 
 /**

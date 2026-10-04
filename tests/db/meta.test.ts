@@ -10,6 +10,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   ANON_FUNCTIONS,
+  ANON_PRIVATE_FUNCTIONS,
   ANON_RELATIONS,
   AUTHENTICATED_FUNCTIONS,
   AUTHENTICATED_RELATIONS,
@@ -174,15 +175,20 @@ describe("functions", () => {
     expect(rows.map((r) => r.fn)).toEqual([]);
   });
 
-  it("anon can execute nothing in private", async () => {
+  // A view's functions run as the caller, so reporting.public_items needs
+  // anon to hold EXECUTE on private.selling_price (the single price
+  // source). Nothing else in private, and anon has no USAGE on the schema
+  // (see "schemas" below), so the view is anon's only way to it.
+  it("anon can execute exactly the allow-listed functions in private (only through public_items)", async () => {
     const { rows } = await conn.query<{ fn: string }>(
       `select p.oid::regprocedure::text as fn
          from pg_proc p
          join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'private'
-          and has_function_privilege('anon', p.oid, 'EXECUTE')`,
+          and has_function_privilege('anon', p.oid, 'EXECUTE')
+        order by 1`,
     );
-    expect(rows).toEqual([]);
+    expect(rows.map((r) => r.fn)).toEqual([...ANON_PRIVATE_FUNCTIONS].sort());
   });
 
   it("every security definer function pins search_path", async () => {
@@ -285,17 +291,24 @@ describe("money", () => {
 });
 
 describe("schemas", () => {
-  it("private and reporting grant nothing to anon or PUBLIC", async () => {
+  // anon may use `reporting` (USAGE, never CREATE) because
+  // reporting.public_items is the anonymous inventory surface (Phase 4);
+  // which reporting views anon can read is pinned by ANON_RELATIONS in the
+  // relations allow-list (public_items only). `private` stays closed to
+  // anon, and PUBLIC holds nothing on either schema.
+  it("anon uses reporting (for public_items only) but never private; PUBLIC holds nothing on either", async () => {
     const { rows } = await conn.query(
-      `select n.nspname, r.rolname, has_schema_privilege(r.oid, n.oid, 'USAGE') as usage,
+      `select n.nspname, has_schema_privilege(r.oid, n.oid, 'USAGE') as usage,
               has_schema_privilege(r.oid, n.oid, 'CREATE') as create
          from pg_namespace n
          cross join pg_roles r
-        where n.nspname in ('private', 'reporting') and r.rolname = 'anon'`,
+        where n.nspname in ('private', 'reporting') and r.rolname = 'anon'
+        order by 1`,
     );
-    for (const r of rows) {
-      expect(r).toMatchObject({ usage: false, create: false });
-    }
+    expect(rows).toEqual([
+      { nspname: "private", usage: false, create: false },
+      { nspname: "reporting", usage: true, create: false },
+    ]);
     const pub = await conn.query(
       `select nspname from pg_namespace n, aclexplode(n.nspacl) a
         where n.nspname in ('private', 'reporting') and a.grantee = 0`,

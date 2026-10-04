@@ -14,8 +14,23 @@
 /** Functions anonymous visitors may call. Phase 2+ adds the public booking RPCs. */
 export const ANON_FUNCTIONS: readonly string[] = [];
 
-/** Relations (tables, views, sequences) anonymous visitors may touch, with privileges. */
-export const ANON_RELATIONS: Readonly<Record<string, readonly string[]>> = {};
+/**
+ * Relations (tables, views, sequences) anonymous visitors may touch, with
+ * privileges. reporting.public_items (Phase 4) is the only anonymous
+ * inventory surface: published products and units, public columns and
+ * public photos only (DATA-MODEL §11, §15); Phase 11's /q page reads it.
+ */
+export const ANON_RELATIONS: Readonly<Record<string, readonly string[]>> = {
+  "reporting.public_items": ["SELECT"],
+};
+
+/**
+ * Functions in `private` that anon may execute. Only private.selling_price:
+ * reporting.public_items calls it, and a view's functions run as the
+ * caller. anon has no USAGE on `private`, so it cannot call it directly
+ * (tests/db/meta.test.ts checks both).
+ */
+export const ANON_PRIVATE_FUNCTIONS: readonly string[] = ["private.selling_price(uuid,uuid)"];
 
 /**
  * Functions signed-in users may call (each one checks the caller itself).
@@ -60,11 +75,14 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.void_line(uuid, text)",
   "public.work_order_timeline(uuid, integer)",
   // Inventory (Phase 4): active staff add and void parts; adjust_stock and
-  // write_off_unit need adjust_stock; transfers and units manage_inventory
-  // (a unit cost also view_costs)
+  // write_off_unit need adjust_stock; transfers, units and publication
+  // manage_inventory (a unit cost also view_costs); a split needs both
+  // adjust_stock and manage_inventory
   "public.add_inventory_line(uuid, uuid, uuid, integer, uuid, uuid, money_amount)",
   "public.adjust_stock(uuid, uuid, uuid, integer, movement_type, text, money_amount)",
   "public.create_unique_unit(uuid, uuid, uuid, text, text, money_amount, money_amount, uuid, text)",
+  "public.set_publication_status(uuid, publication_status, text)",
+  "public.split_unit_from_stock(uuid, uuid, uuid, uuid, text, text, text, text, money_amount)",
   "public.transfer_stock(uuid, uuid, uuid, uuid, integer, text, uuid)",
   "public.write_off_unit(uuid, uuid, text)",
   // Customer self-service (Phase 1): the caller's own rows only
@@ -129,6 +147,8 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "public.selling_prices": ["SELECT"],
   "reporting.low_stock": ["SELECT"],
   "reporting.product_stock": ["SELECT"],
+  // The anonymous projection, readable by signed-in users (customers) too
+  "reporting.public_items": ["SELECT"],
   "reporting.stock_levels": ["SELECT"],
 };
 
@@ -138,8 +158,9 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
  * *_staff views read cost columns authenticated has no grant on, and return
  * rows only when private.has_permission('view_costs') (security_barrier);
  * so do Phase 4's three cost views, and public.selling_prices returns rows
- * to active staff only; reporting's public_items (Phase 4 step 2) will be
- * the first public one.
+ * to active staff only. reporting.public_items is the first public one: it
+ * reads the staff-only tables as its owner and filters to published rows
+ * and public columns itself (security_barrier).
  */
 export const DEFINER_VIEWS: readonly string[] = [
   // Inventory (Phase 4): costs for view_costs only; selling prices for
@@ -151,4 +172,6 @@ export const DEFINER_VIEWS: readonly string[] = [
   "public.services_staff",
   "public.work_order_line_items_staff",
   "public.work_order_totals_staff",
+  // Inventory (Phase 4): the anonymous /q projection
+  "reporting.public_items",
 ];

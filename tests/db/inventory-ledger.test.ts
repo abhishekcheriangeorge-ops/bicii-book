@@ -32,6 +32,7 @@ import {
   addPublicPhoto,
   addStock,
   assertLedgerConsistent,
+  committed,
   completeJob,
   makeLocation,
   makeProduct,
@@ -1016,28 +1017,6 @@ describe.skipIf(!isolatedDatabase())(
 // ---------------------------------------------------------------------------
 // Concurrency: real connections, committed transactions.
 // ---------------------------------------------------------------------------
-
-type Outcome<T> =
-  { ok: true; value: T } | { ok: false; error: { code?: string; message?: string } };
-
-/** Runs `fn` as `claims` on `c` in a committed transaction; resolves to its result or error. */
-function committed<T>(
-  c: pg.Client,
-  fn: (tx: pg.Client) => Promise<T>,
-  claims = ADMIN,
-): Promise<Outcome<T>> {
-  return inTransaction(
-    c,
-    async (tx) => {
-      await actAs(tx, claims);
-      return fn(tx);
-    },
-    { commit: true },
-  ).then(
-    (value) => ({ ok: true as const, value }),
-    (error: { code?: string; message?: string }) => ({ ok: false as const, error }),
-  );
-}
 
 describe.skipIf(!isolatedDatabase())("under concurrency", () => {
   let setup: pg.Client;

@@ -2274,6 +2274,20 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      set_publication_status: {
+        Args: {
+          product_id: string;
+          reason?: string;
+          status: Database["public"]["Enums"]["publication_status"];
+        };
+        Returns: Database["public"]["CompositeTypes"]["publication_result"];
+        SetofOptions: {
+          from: "*";
+          to: "publication_result";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       set_service_archived: { Args: { archived: boolean; service_id: string }; Returns: string };
       set_staff_active: {
         Args: { active: boolean; reason?: string; target_staff_id: string };
@@ -2330,6 +2344,26 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "work_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      split_unit_from_stock: {
+        Args: {
+          condition?: string;
+          location_id: string;
+          name: string;
+          new_product_id: string;
+          reason: string;
+          sale_price?: unknown;
+          serial_number?: string;
+          source_product_id: string;
+          unit_id: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["split_unit_result"];
+        SetofOptions: {
+          from: "*";
+          to: "split_unit_result";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -2682,6 +2716,17 @@ export type Database = {
         on_hand_after: number | null;
         replayed: boolean | null;
       };
+      publication_result: {
+        product_id: string | null;
+        publication_status: Database["public"]["Enums"]["publication_status"] | null;
+        public_slug: string | null;
+      };
+      split_unit_result: {
+        product_id: string | null;
+        product_short_id: string | null;
+        unit_id: string | null;
+        unit_short_id: string | null;
+      };
       unique_unit_result: {
         unit_id: string | null;
         short_id: string | null;
@@ -2725,6 +2770,24 @@ export type Database = {
           short_id: string | null;
           sku: string | null;
           tracking_type: Database["public"]["Enums"]["tracking_type"] | null;
+        };
+        Relationships: [];
+      };
+      public_items: {
+        Row: {
+          availability: string | null;
+          brand: string | null;
+          category: string | null;
+          condition: string | null;
+          currency: string | null;
+          description: string | null;
+          kind: string | null;
+          name: string | null;
+          photos: Json | null;
+          sale_price: number | null;
+          short_id: string | null;
+          slug: string | null;
+          updated_at: string | null;
         };
         Relationships: [];
       };
