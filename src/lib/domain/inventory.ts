@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { Logger } from "pino";
+
 import { bikeTitle } from "@/lib/bikes";
 import { DbError, constraintOf, mapDbError, unwrap } from "@/lib/db-errors";
 import {
@@ -1138,11 +1140,15 @@ export async function addUnit(
  * A unique item in one go: the product (its form id, idempotent), then its
  * first unit (create_unique_unit, idempotent by the unit id). If the second
  * step fails the product exists, and its page offers "Add unit"; the
- * returned `unitError` says why.
+ * returned `unitError` says why. The action still succeeds (the product was
+ * saved), so the swallowed failure is logged here with its kind, code and
+ * error, at error level for infrastructure failures (unknown, unavailable)
+ * and warn for refusals, as staffAction would have logged it (ADR-001 A2).
  */
 export async function createUniqueItem(
   supabase: ServerSupabase,
   input: { productId: string; unitId: string; product: ProductInput; unit: UnitInput },
+  log: Pick<Logger, "warn" | "error">,
 ): Promise<{
   productId: string;
   unit: { id: string; shortId: string } | null;
@@ -1157,8 +1163,26 @@ export async function createUniqueItem(
     });
     return { productId: input.productId, unit, unitError: null };
   } catch (err) {
-    const message = err instanceof DomainError ? err.message : mapDbError(err).message;
-    return { productId: input.productId, unit: null, unitError: message };
+    if (err instanceof DomainError) {
+      log.warn(
+        { outcome: "unit_rejected", productId: input.productId, reason: err.message },
+        "unique item saved without its unit",
+      );
+      return { productId: input.productId, unit: null, unitError: err.message };
+    }
+    const mapped = mapDbError(err);
+    log[mapped.kind === "unknown" || mapped.kind === "unavailable" ? "error" : "warn"](
+      {
+        outcome: "unit_failed",
+        productId: input.productId,
+        kind: mapped.kind,
+        code: mapped.code,
+        reason: mapped.reason,
+        err,
+      },
+      "unique item saved without its unit",
+    );
+    return { productId: input.productId, unit: null, unitError: mapped.message };
   }
 }
 

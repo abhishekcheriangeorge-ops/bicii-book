@@ -90,21 +90,25 @@ export const createProduct = staffAction(
 export const createUniqueItem = staffAction(
   createUniqueItemSchema,
   { name: "inventory.create_unique_item", permission: "manage_inventory" },
-  async (input, { supabase, staff }) => {
+  async (input, { supabase, staff, log }) => {
     requireCost(staff, { cost: input.cost, unitCost: input.unitCost });
-    const result = await createUnique(supabase, {
-      productId: input.id,
-      unitId: input.unitId,
-      product: productInput(input),
-      unit: {
-        locationId: input.locationId,
-        serialNumber: input.serialNumber,
-        condition: input.condition,
-        salePrice: input.unitSalePrice,
-        cost: input.unitCost,
-        bikeId: input.bikeId,
+    const result = await createUnique(
+      supabase,
+      {
+        productId: input.id,
+        unitId: input.unitId,
+        product: productInput(input),
+        unit: {
+          locationId: input.locationId,
+          serialNumber: input.serialNumber,
+          condition: input.condition,
+          salePrice: input.unitSalePrice,
+          cost: input.unitCost,
+          bikeId: input.bikeId,
+        },
       },
-    });
+      log,
+    );
     refresh();
     return result;
   },
