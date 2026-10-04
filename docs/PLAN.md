@@ -287,8 +287,8 @@ Scope notes (decided while building; none changes business semantics):
 - `inventory_movements.request_id` replaces DATA-MODEL's
   `transfer_group_id`: it is each RPC call's idempotency key and a
   transfer's pairing key. No RPC reuses another entity's id or another
-  call's key as its request_id; `create_unique_unit` (and Step 2's
-  `split_unit_from_stock`) use the client's new unit id, created for that
+  call's key as its request_id; `create_unique_unit` and
+  `split_unit_from_stock` use the client's new unit id, created for that
   one call.
 - Phase 3's option "Phase 4 replaces `private.work_orders_enforce_rules`"
   is resolved with a separate AFTER trigger, `work_orders_sell_held_units`
@@ -314,6 +314,24 @@ inventory branch, `work_orders_sell_held_units`) and
 (state machines); tests `tests/db/inventory-ledger.test.ts` and
 `tests/db/inventory-catalog.test.ts` on `tests/db/inventory-fixtures.ts`.
 Decisions D23-D28.
+
+Shipped (database, part 2): migrations
+`20261004002100_inventory_publication.sql` (`set_publication_status`
+returning `publication_result`, D26's manual rules on top of the products
+trigger; `split_unit_from_stock` returning `split_unit_result`, D28;
+`reporting.public_items`, the anonymous /q projection, with anon USAGE on
+`reporting` and EXECUTE on `private.selling_price`, which the view calls as
+the caller) and `20261004002200_inventory_search.sql`
+(`private.search_products`, `private.search_units`, `staff_search` with the
+`product` and `inventory_unit` kinds); error code `product_not_quantity`;
+tests `tests/db/inventory-publication.test.ts`,
+`tests/db/inventory-split.test.ts` and the Phase 4 cases of
+`tests/db/staff-search.test.ts`. Until Step 3 adds product and unit pages,
+the app's search asks `staff_search` for the kinds it can open
+(`SEARCH_KINDS`). A public unique product whose units are all written off
+stays `public` and shows `unavailable` on its page until staff unpublish it
+(write-offs do not change publication; D26 has no automatic exit except
+the sale).
 
 ### Phase 5 — Financial engine
 

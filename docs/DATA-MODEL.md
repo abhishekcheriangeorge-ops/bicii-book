@@ -645,7 +645,7 @@ Built in Phase 4 (`20261004001800_inventory.sql`). Money columns are
 `money_amount`, quantities `integer`. Every table has RLS: staff read;
 `manage_inventory` writes locations and products; customers and anonymous
 visitors read nothing (the anonymous surface is `reporting.public_items`,
-Phase 4 step 2).
+§11, built in `20261004002100_inventory_publication.sql`).
 
 ```
 locations
@@ -774,8 +774,11 @@ unique index; `private.register_unit` sets it.
 
 Quantity products print one QR (`P-...`) any number of times. Unique units
 print their own (`U-...`). A bulk unit that becomes special is
-`split_unit_from_stock` (Phase 4 step 2, D28): a `stock_adjustment` of −1
-on the source plus a new draft unique product and unit.
+`split_unit_from_stock` (Phase 4, D28; §16): a `stock_adjustment` of −1
+on the source plus a new draft unique product and its available unit at
+the same location, both carrying the source's default direct cost, and the
+unit's +1 `stock_adjustment`; both movements have request_id = the new
+unit id.
 
 ## 7. Inventory movement ledger
 
@@ -863,7 +866,7 @@ touches stock):
    `register_unit` links the bike);
 5. the inventory_units row FOR UPDATE; several units in ascending id;
 6. the products row FOR UPDATE (only `private.refresh_unique_publication`
-   and step 2's `set_publication_status`).
+   and `set_publication_status`, which takes `lock_stock(product)` first).
 
 Every RPC takes its locks before its replay check and any other read;
 functions that lock and then read stay VOLATILE.
@@ -874,7 +877,7 @@ Private extension points (security definer, no grants):
 |---|---|
 | `private.record_movement(product, unit, location, delta, type, reason, unit_cost_snapshot, request_id, work_order_id, line_id, reversal_of_id)` | THE single insert path; currency from the product; refuses an inactive location except for a reversal |
 | `private.register_unit(unit_id, product, location, ownership, serial, condition, sale_price, direct_cost, bike_id, consignment_item_id)` | THE single unit-creation path, plus the bike link; Phase 6 creates consigned units through it |
-| `private.selling_price(product_id, unit_id)` | THE single selling-price source: unit.sale_price, else product.default_sale_price. Phase 6 replaces it to return the consignment asking price; Phase 8 labels and Phase 10 Shopify use it unchanged |
+| `private.selling_price(product_id, unit_id)` | THE single selling-price source: unit.sale_price, else product.default_sale_price. Phase 6 replaces it to return the consignment asking price; Phase 8 labels and Phase 10 Shopify use it unchanged. EXECUTE for authenticated and anon, because the cost views and `reporting.public_items` call it as the caller (`create or replace` keeps the grants) |
 | `private.lock_stock(product_id)` | the per-product stock lock |
 | `private.stock_on_hand(product_id, location_id)` | ledger on-hand |
 | `private.refresh_unique_publication(product_id)` | public → sold when no unit is in stock and one is sold; sold → public when a unit is available again (skips requirements) |
@@ -1044,10 +1047,43 @@ writes nothing.
 - Every product, inventory unit and bike has a `short_id`. The QR payload is
   the URL `{shop_settings.public_site_url}/q/{short_id}` and nothing else.
 - The public site route `/q/[shortId]` resolves the ID through
-  `reporting.public_items` (a view that exposes only rows with
-  `publication_status = public` or `sold`, and only public columns: name,
-  description, brand, public photos, sale price, availability, slug). Unknown or
-  unpublished IDs 404 identically, so the URL space leaks nothing.
+  `reporting.public_items` (built in Phase 4, `20261004002100_inventory_publication.sql`;
+  below). Unknown or unpublished IDs are simply absent from it, so they
+  404 identically and the URL space leaks nothing.
+- `reporting.public_items` is the ONLY anonymous inventory surface (§15)
+  and Phase 11's contract. A definer view `with (security_barrier)` that
+  reads the staff-only tables as its owner and filters itself; SELECT for
+  anon and authenticated. Columns, exactly and in this order: `kind`
+  (`product` | `unit`), `short_id`, `slug` (the product's `public_slug`,
+  also on unit rows), `name`, `description`, `brand`, `category` (the
+  category's name), `condition` (null for products), `sale_price`,
+  `currency`, `availability` (`available` | `sold_out` | `sold` |
+  `unavailable`), `photos` (jsonb), `updated_at` (a unit row's is the later
+  of the unit's and the product's). Never a cost, serial number, internal
+  note, location, ownership, consignor or SKU.
+  - Rows: products whose `publication_status` is `public` or `sold` and
+    `archived_at` is null; units of such products that are not archived
+    and not `written_off` or `returned_to_consignor`. A product archived
+    after its sale (sold → archived) shows neither itself nor its units.
+  - `sale_price` = `private.selling_price(product_id, null)` for a product
+    row and `private.selling_price(product_id, unit_id)` for a unit row, so
+    Phase 6's replacement (the consignment asking price) flows through.
+    A view's functions run as the caller, so anon and authenticated have
+    EXECUTE on `private.selling_price`; anon has no USAGE on `private`, so
+    the view is its only way to it (meta test).
+  - `availability`: a quantity product is `sold` if its publication is
+    sold, else `available` when its ledger on-hand (all locations) is above
+    zero, else `sold_out`; a unique product is `available` when any unit is
+    available, else `sold` if its publication is sold, else `unavailable`
+    (its units are on a job, reserved or written off); a unit is
+    `available`, `sold`, or `unavailable` for any other status.
+  - `photos`: an array of `{bucket, path, width, height, caption}` (from
+    `storage_bucket`, `storage_path`, `width`, `height`, `caption`) built
+    only from `visibility = 'public'` attachments. A product row has the
+    product's photos, oldest first; a unit row has the unit's, then the
+    product's, then its linked bike's, each oldest first, the bike's
+    limited to those created before `coalesce(unit.sold_at, 'infinity')`,
+    so a photo taken after the bike passed to its buyer never appears.
 - The Admin scanner recognises the same URL (or a bare short ID) and routes to
   the staff detail page: `/products/[id]`, `/units/[id]`, `/bikes/[id]`,
   `/jobs/[id]`.
@@ -1066,8 +1102,16 @@ writes nothing.
   the products trigger enforces it for every writer. A new product starts
   draft or internal_only (`publication_initial_invalid`). `public_slug` is
   assigned at the first publish (name slug + `-` + lower(short_id), 'item'
-  when the name has no letters or digits) and never changes. Inventory rows
-  are never public by default.
+  when the name has no letters or digits) and never changes
+  (`product_slug_immutable`), through unpublish, rename and republish.
+  Inventory rows are never public by default. By hand, publication changes
+  only through `set_publication_status` (§16; authenticated has no column
+  grant on `publication_status`), which adds D26's manual rules: `sold` is
+  never chosen by hand, and a sold product leaves `sold` by hand only for
+  `archived` (`publication_sold_by_sale`); its accepted targets equal
+  `manualPublicationTargets` in `src/lib/inventory.ts` for every state
+  (tested). A public unique product whose units are all written off stays
+  public (showing `unavailable`) until staff unpublish it.
 
 ## 12. Label printing
 
@@ -1152,9 +1196,11 @@ From Phase 4 the `reporting` schema is exposed to PostgREST
 (`supabase/config.toml` `[api] schemas`, the devstack's `db-schemas`, type
 generation with `--schema public,reporting`, RUNBOOK "Hosted Supabase"),
 because `reporting.public_items` is the anonymous surface (§15).
-`authenticated` has USAGE; `anon` gets USAGE together with `public_items`
-(Phase 4 step 2). The stock views are security_invoker, so the base tables'
-staff-only RLS applies. `private` is never exposed.
+`authenticated` has USAGE; `anon` has USAGE (never CREATE) for
+`public_items` only, the one reporting view granted to it. The stock views
+are security_invoker, so the base tables' staff-only RLS applies;
+`public_items` is a definer view that filters itself (§11). `private` is
+never exposed.
 
 | View | Purpose |
 |---|---|
@@ -1169,7 +1215,7 @@ staff-only RLS applies. `private` is never exposed.
 | `consignor_ledger` / `consignor_item_ledger` | Owed, paid, outstanding. |
 | `purchase_order_progress` | Ordered vs received per line. |
 | `shopify_sync_status` | Per published product. |
-| `public_items` | The only thing anon can read about inventory. |
+| `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at`; price from `private.selling_price`; public photos only. Definer view, security_barrier, SELECT for anon and authenticated. Rules in §11. |
 
 Materialise `daily_summary` only if measured to be slow; refresh then runs
 `after()` completion/sale mutations.
@@ -1203,7 +1249,7 @@ security-definer function. Blank = no access.
 | work_order_line_items | S sale columns only; P(view_costs) everything via `work_order_line_items_staff`; C own job's live lines (description, quantity, unit price, total) via `my_work_order_lines()` | RPC `add_service_line`, `add_manual_line` (cost needs P(view_costs)) | RPC `void_line` (voided_* only) | never |
 | work_order_totals / work_order_totals_staff (views) | S sale totals / P(view_costs) cost, yield, Cult Commons | — | — | — |
 | locations | S | P(manage_inventory) (id, name, kind, active, sort_order) | P(manage_inventory) (name, kind, active, sort_order; `location_has_stock`) | — (deactivate) |
-| products | S, every column except `default_direct_cost`; anon/C via `public_items` only | P(manage_inventory) (no short_id, publication, slug, ownership or Shopify ids; a cost needs P(view_costs): `products_cost_write_guard`) | P(manage_inventory) (sku, name, description, brand, category, prices, reorder point, active, archived_at; cost guard as insert); publication via RPC (step 2) | — (archive) |
+| products | S, every column except `default_direct_cost`; anon/C via `public_items` only | P(manage_inventory) (no short_id, publication, slug, ownership or Shopify ids; a cost needs P(view_costs): `products_cost_write_guard`); RPC `split_unit_from_stock` (P(adjust_stock) and P(manage_inventory)) | P(manage_inventory) (sku, name, description, brand, category, prices, reorder point, active, archived_at; cost guard as insert); publication via RPC `set_publication_status` | — (archive) |
 | inventory_units | S, every column except `direct_cost` | RPC `create_unique_unit` (P(manage_inventory); cost needs P(view_costs)) | P(manage_inventory) serial, condition, prices, notes, archived_at (cost guard); status, location, bike, ownership only by RPCs and triggers | — (archive) |
 | inventory_movements | S, every column except `unit_cost_snapshot` | RPCs only (`private.record_movement`) | never (`movement_append_only`) | never |
 | product_events, inventory_unit_events | S | triggers only | never | never |
@@ -1219,7 +1265,7 @@ security-definer function. Blank = no access.
 | print_jobs | S | S | S | — |
 | integration_events, retry queue, sync | A | service role only | service role / RPC | — |
 | reporting.* financial views | P(view_financial_reports) | — | — | — |
-| reporting.public_items | everyone | — | — | — |
+| reporting.public_items | everyone: anon and authenticated (definer view, published rows and public columns only; the only anonymous inventory surface; anon has USAGE on `reporting` for it and EXECUTE on `private.selling_price`, which it calls) | — | — | — |
 
 **Customer access pattern (Phase 1, binding for every later phase).** Staff
 and signed-in customers share the `authenticated` role, so a column grant
@@ -1312,7 +1358,8 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `transfer_stock(request_id, product_id, from_location_id, to_location_id, quantity integer, reason = null, inventory_unit_id = null)` → `table(movement_id bigint, location_id uuid, quantity_delta integer)` | P(manage_inventory) | Built (Phase 4). `transfer_same_location`; `lock_stock` and the unit FOR UPDATE; replay by request_id (both rows; else `request_conflict`); `location_inactive`; `product_archived`. Quantity: `quantity_invalid`, `insufficient_stock`. Unique: `unit_required`, quantity 1, `unit_not_available` (available or reserved only), `unit_location_mismatch`; moves `location_id` (unit `moved` event). Two `transfer` rows sharing request_id. |
 | `create_unique_unit(unit_id, product_id, location_id, serial_number = null, condition = null, sale_price = null, direct_cost = null, bike_id = null, reason = null)` → `unique_unit_result (unit_id, short_id)` | P(manage_inventory); a cost needs P(view_costs) | Built (Phase 4). `lock_stock` before the replay (unit id exists with the same product → it; else `unit_conflict`); `product_not_unique`, `product_archived`, `product_inactive`, `location_inactive`; a bike is locked FOR UPDATE and must exist, not be archived (`bike_archived`), have no owner (`bike_has_owner`) and no unit (`bike_already_linked`). `private.register_unit` (shop_owned, D27), then a +1 `stock_adjustment` (reason default "Registered as a unique item", request_id = unit id). |
 | `write_off_unit(request_id, unit_id, reason)` → `unit_status_result (unit_id, status)` | P(adjust_stock) | Built (Phase 4). `reason_required`; P0002; `lock_stock`, the unit FOR UPDATE; replay: a damaged movement with this request_id for this unit → current state, the key used for anything else → `request_conflict`; already written off → no-op; available or reserved → written_off plus a `damaged` −1; else `unit_not_available`. |
-| `set_publication_status(product_id, status)` | P(manage_inventory) | State-machine check; enqueues Shopify sync if linked. |
+| `set_publication_status(product_id, status, reason = null)` → `publication_result (product_id, publication_status, public_slug)` | P(manage_inventory) | Built (Phase 4). 22004 on null ids; `reason_too_long` (> 500); `lock_stock(product)`, then the product FOR UPDATE (P0002). A target of `sold`, or leaving `sold` for anything but `archived` → `publication_sold_by_sale`. Same status → the row, no event. Otherwise the products trigger: `publication_transition_invalid`, `publication_requires_price` / `_photo` / `_available_unit`, slug at the first publish, `publication_changed {from, to}` with the reason. Phase 10 hooks the Shopify sync onto publication changes by trigger. |
+| `split_unit_from_stock(new_product_id, unit_id, source_product_id, location_id, name, reason, serial_number = null, condition = null, sale_price = null)` → `split_unit_result (product_id, product_short_id, unit_id, unit_short_id)` | P(adjust_stock) and P(manage_inventory) | Built (Phase 4, D28). 22004 on null ids; `reason_required`, `reason_too_long` (> 480: the movements' reason is "Split to U-######: " + reason). `lock_stock(source)`, then replay (unit id on new_product_id → the same result; the unit id or new_product_id used otherwise → `unit_conflict`); P0002; `product_not_quantity`, `product_archived`, `ownership_not_saleable` (D27); P0002 / `location_inactive`; `insufficient_stock` (on-hand at the location < 1). Inserts a draft unique product (name; description, brand, category, currency from the source; price = sale_price else the source's; default cost = the source's), `private.register_unit` (shop_owned, cost = the source's default cost) and two `stock_adjustment` movements (−1 source, +1 unit) with the reason, cost snapshot and request_id = unit id. Writes the carried cost for a caller without P(view_costs) (definer path; the invoker cost-write guards still refuse that caller's direct writes); never returns a cost. 23514 checks re-raised without the row. |
 | `record_retail_sale(lines[], customer_id, recognized_at, idempotency_key)` | S | Sale + lines + movements; unit/consignment → sold. |
 | `restock_unit(unit_id, location_id, reason)` | P(adjust_stock) | `return` movement; unit → available; product status back from `sold`. |
 | `create_consignment_item(...)` | P(manage_consignments) | Item + unit + movement. |
@@ -1334,7 +1381,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Never public for a customer record or an undecoded original (`attachment_original_never_public`). Locks the row; `visibility_changed` event; replay is a no-op. |
 | `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload. Returns a set: the deleted row (the server then removes the object), or no row on replay (PostgREST: `[]`). |
 | `attachment_stray_objects(entity_type, entity_id)` | S | Objects under `{entity_type}/{entity_id}/` in either photo bucket that no attachment points at and that are safe to remove now (older than 10 minutes; in `media-internal`, with history or older than a day), at most 100. The server removes them when it shows the record. |
-| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status). Exact short ID, serial or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
+| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |

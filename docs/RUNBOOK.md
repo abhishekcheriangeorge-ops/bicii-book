@@ -94,9 +94,11 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    because `reporting.public_items` is the anonymous surface of the public
    site's QR pages (DATA-MODEL §14, §15), and staff read the stock views
    (`stock_levels`, `product_stock`, `low_stock`) there; the migrations
-   grant `authenticated` USAGE (and, from Phase 4 step 2, `anon` USAGE
-   with `public_items` only), and the views are security_invoker over the
-   staff-only tables, so nothing else in the schema is reachable. This is
+   grant `authenticated` USAGE and `anon` USAGE (anon can select
+   `public_items` only); the stock views are security_invoker over the
+   staff-only tables and `public_items` is a definer view that shows
+   published rows and public columns only, so nothing else in the schema
+   is reachable. This is
    the same list as `supabase/config.toml` `[api] schemas` and the
    devstack's PostgREST `db-schemas`. Hosted Supabase
    grants ALL on every new `public` table, sequence and function to
