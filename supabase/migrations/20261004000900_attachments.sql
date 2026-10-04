@@ -22,6 +22,16 @@
 --   * attachment_events is append-only and records every create, visibility
 --     change, caption change and delete, written by triggers.
 --   * Attachments of a customer record are never public (PLAN D13).
+--   * A photo recorded without its width and height is an original the
+--     device could not decode and so uploaded as it was (prepare-photo.ts):
+--     it may still carry its EXIF metadata, GPS position included, so it is
+--     never public either (`attachment_original_never_public`).
+--   * Storage objects: staff may delete only objects no attachment row
+--     points at (policies at the end), so a recorded photo leaves Storage
+--     only through this migration's RPCs. Objects nothing points at any
+--     more (a move or delete whose Storage cleanup failed, an upload never
+--     recorded) are listed by attachment_stray_objects, and the server
+--     removes them whenever it shows the record.
 --   * Which entity types can have attachments grows by phase: this
 --     migration knows customers and bikes. private.attachment_entity_exists
 --     is the extension point; a later phase adds its table's branch there
@@ -470,6 +480,13 @@ begin
       message = 'attachment_customer_never_public',
       detail = 'Photos on a customer record cannot be made public.';
   end if;
+  if record_attachment.visibility = 'public'
+     and (record_attachment.width is null or record_attachment.height is null) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'attachment_original_never_public',
+      detail = 'A photo stored as its original file may carry its location; add it again as a JPEG to make it public.';
+  end if;
   perform private.check_attachment_path(
     record_attachment.attachment_id, record_attachment.entity_type, record_attachment.entity_id,
     record_attachment.media_type, record_attachment.storage_path
@@ -578,6 +595,13 @@ begin
       message = 'attachment_customer_never_public',
       detail = 'Photos on a customer record cannot be made public.';
   end if;
+  if set_attachment_visibility.visibility = 'public'
+     and (current_row.width is null or current_row.height is null) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'attachment_original_never_public',
+      detail = 'A photo stored as its original file may carry its location; add it again as a JPEG to make it public.';
+  end if;
   perform private.check_attachment_path(
     current_row.id, current_row.entity_type, current_row.entity_id, current_row.media_type, target_path
   );
@@ -601,9 +625,10 @@ comment on function public.set_attachment_visibility(uuid, public.attachment_vis
 -- Active staff. Deletes the row with a mandatory reason; the
 -- attachment_events `deleted` row keeps the actor, the reason and the
 -- removed row. Returns the removed row (the server then deletes its
--- object), or null when it was already deleted (replay-safe).
+-- object), or no row when it was already deleted (replay-safe; a set, so
+-- PostgREST answers a replay with [] rather than an object of nulls).
 create function public.delete_attachment(attachment_id uuid, reason text)
-returns public.attachments
+returns setof public.attachments
 language plpgsql
 volatile
 security definer
@@ -631,7 +656,7 @@ begin
       select 1 from public.attachment_events e
       where e.attachment_id = delete_attachment.attachment_id and e.event_type = 'deleted'
     ) then
-      return null;
+      return;
     end if;
     raise exception 'attachment % not found', delete_attachment.attachment_id using errcode = 'P0002';
   end if;
@@ -641,7 +666,7 @@ begin
   where a.id = delete_attachment.attachment_id
   returning a.* into result;
   perform private.set_change_reason(null);
-  return result;
+  return next result;
 end;
 $$;
 
@@ -703,3 +728,109 @@ create policy attachments_update_staff on public.attachments
 create policy attachment_events_select_staff on public.attachment_events
   for select to authenticated
   using ((select private.is_staff()));
+
+-- ---------------------------------------------------------------------------
+-- Storage objects the attachment rows no longer (or never did) point at.
+-- ---------------------------------------------------------------------------
+
+-- Does an attachment row point at this object? Used by the Storage DELETE
+-- policies below, as the caller, so it reads the table as its owner.
+create function private.attachment_object_referenced(bucket text, name text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.attachments a
+    where a.storage_bucket = attachment_object_referenced.bucket
+      and a.storage_path = attachment_object_referenced.name
+  );
+$$;
+
+-- Staff may remove an object from either photo bucket only once no row
+-- points at it: the old copy after a move, the object of a deleted photo,
+-- an upload that was never recorded. A recorded photo cannot be removed
+-- (or, with no UPDATE policy, overwritten) by a bare Storage call, which
+-- would skip delete_attachment's reason and history.
+create policy media_internal_delete_unreferenced on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'media-internal'
+    and (select private.is_staff())
+    and not private.attachment_object_referenced(bucket_id, name)
+  );
+
+create policy media_public_delete_unreferenced on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'media-public'
+    and (select private.is_staff())
+    and not private.attachment_object_referenced(bucket_id, name)
+  );
+
+-- Active staff. Objects under one record's folder ({entity_type}/{entity_id}/)
+-- in either photo bucket that no attachment row points at and that are safe
+-- to remove now; the server removes them when it shows the record, so a
+-- Storage cleanup that failed (a photo made private whose public copy could
+-- not be removed, a deleted photo's file) finishes on the next visit and
+-- media-public keeps only objects of `public` rows. An object is listed
+--   * after 10 minutes, so a copy made for a move that is still running
+--     (copy, then the RPC that points the row at it) is never taken; and
+--   * in media-internal, only when its attachment id was recorded at some
+--     point (it has history) or after a day: until then it may be an upload
+--     whose record_attachment is still to come (upload URLs last two hours;
+--     a failed record can be retried later).
+create function public.attachment_stray_objects(entity_type public.attachment_entity, entity_id uuid)
+returns table (bucket text, path text)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  prefix text;
+begin
+  perform private.require_staff();
+  if attachment_stray_objects.entity_type is null or attachment_stray_objects.entity_id is null then
+    raise exception 'entity_type and entity_id are required' using errcode = '22004';
+  end if;
+  prefix := attachment_stray_objects.entity_type::text || '/' || attachment_stray_objects.entity_id::text || '/';
+
+  return query
+    select o.bucket_id::text, o.name::text
+    from storage.objects o
+    cross join lateral (
+      select case
+        when pg_catalog.substr(o.name, pg_catalog.length(prefix) + 1)
+             ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.]'
+          then pg_catalog.substr(o.name, pg_catalog.length(prefix) + 1, 36)::uuid
+      end as attachment_id
+    ) k
+    where o.bucket_id in ('media-internal', 'media-public')
+      and pg_catalog.left(o.name, pg_catalog.length(prefix)) = prefix
+      and o.created_at < now() - interval '10 minutes'
+      and not private.attachment_object_referenced(o.bucket_id, o.name)
+      and (
+        o.bucket_id = 'media-public'
+        or o.created_at < now() - interval '1 day'
+        or exists (
+          select 1 from public.attachment_events e where e.attachment_id = k.attachment_id
+        )
+      )
+    order by o.bucket_id, o.name
+    limit 100;
+end;
+$$;
+
+comment on function public.attachment_stray_objects(public.attachment_entity, uuid) is
+  'Active staff: objects under one record''s folder that no attachment points at and that may be removed now.';
+
+revoke all on function private.attachment_object_referenced(text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function private.attachment_object_referenced(text, text) to authenticated;
+
+revoke all on function public.attachment_stray_objects(public.attachment_entity, uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.attachment_stray_objects(public.attachment_entity, uuid) to authenticated;

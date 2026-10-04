@@ -8,7 +8,8 @@
  *   * exact short ID and serial matches rank first (rank 1), above every
  *     fuzzy hit;
  *   * kinds filter and result limit; unknown kinds raise; blank finds
- *     nothing; LIKE metacharacters are literal; archived rows are left out;
+ *     nothing; LIKE metacharacters are literal; archived rows are left out,
+ *     or searched alone (archived = true) with the same matching;
  *   * active staff only.
  */
 import type pg from "pg";
@@ -235,6 +236,29 @@ describe("query handling", () => {
       expect(await search(tx, BIKE_SERIAL.tanTarmac)).toEqual([]);
       // His other bike is still found, by his name too.
       expect(ids(await search(tx, "tan", ["bike"]))).toEqual([BIKE.tanBrompton]);
+    });
+  });
+
+  it("with archived = true searches archived records only, matching exactly as for active ones", async () => {
+    await inTransaction(conn, async (tx) => {
+      await tx.query("update public.customers set archived_at = now() where id = $1", [
+        CUSTOMER.tan,
+      ]);
+      await tx.query("update public.bikes set archived_at = now() where id = $1", [BIKE.tanTarmac]);
+      await actAs(tx, staffClaims(AUTH_USER.mechanic2));
+      const archived = (q: string, kinds: string[] | null = null) =>
+        tx
+          .query<Hit>("select * from public.staff_search($1, $2, 20, true)", [q, kinds])
+          .then((r) => ids(r.rows));
+      const digits = BIKE_SHORT_ID.tanTarmac.replace("B-", "");
+      // The short ID with or without its dash, the serial in any form, the owner's name.
+      for (const q of [BIKE_SHORT_ID.tanTarmac, `B${digits}`, `b ${digits}`, "wsbc 6041 2345 6n"]) {
+        expect(await archived(q, ["bike"])).toEqual([BIKE.tanTarmac]);
+      }
+      expect(await archived("tan wei ming", ["bike"])).toEqual([BIKE.tanTarmac]);
+      expect(await archived("tan wei ming", ["customer"])).toEqual([CUSTOMER.tan]);
+      // Active records are not in the archived results.
+      expect(await archived("tan", ["bike"])).not.toContain(BIKE.tanBrompton);
     });
   });
 });

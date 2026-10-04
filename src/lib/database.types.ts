@@ -421,6 +421,13 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      attachment_stray_objects: {
+        Args: { entity_id: string; entity_type: Database["public"]["Enums"]["attachment_entity"] };
+        Returns: {
+          bucket: string;
+          path: string;
+        }[];
+      };
       create_staff: {
         Args: {
           auth_user_id: string;
@@ -462,12 +469,12 @@ export type Database = {
           updated_at: string;
           visibility: Database["public"]["Enums"]["attachment_visibility"];
           width: number | null;
-        };
+        }[];
         SetofOptions: {
           from: "*";
           to: "attachments";
-          isOneToOne: true;
-          isSetofReturn: false;
+          isOneToOne: false;
+          isSetofReturn: true;
         };
       };
       grant_permission: {
@@ -680,7 +687,7 @@ export type Database = {
         }[];
       };
       staff_search: {
-        Args: { kinds?: string[]; max_results?: number; q: string };
+        Args: { archived?: boolean; kinds?: string[]; max_results?: number; q: string };
         Returns: {
           id: string;
           kind: string;

@@ -94,19 +94,24 @@ async function asCustomer<T>(
   });
 }
 
-/** Inserts attachments directly as the owner (no Storage object needed for a table row). */
+/**
+ * Inserts attachments directly as the owner (no Storage object needed for a
+ * table row), taken now or at `createdAt`.
+ */
 async function addBikePhotos(
   tx: pg.Client,
   bikeId: string,
   visibilities: ("internal" | "customer" | "public")[],
+  createdAt: Date | null = null,
 ): Promise<Record<string, string>> {
   const ids: Record<string, string> = {};
   for (const visibility of visibilities) {
     const id = randomUUID();
     await tx.query(
       `insert into public.attachments
-         (id, entity_type, entity_id, storage_bucket, storage_path, media_type, visibility, caption)
-       values ($1, 'bike', $2, $3, $4, 'image/jpeg', $5, $6)`,
+         (id, entity_type, entity_id, storage_bucket, storage_path, media_type, visibility, caption,
+          created_at)
+       values ($1, 'bike', $2, $3, $4, 'image/jpeg', $5, $6, coalesce($7::timestamptz, now()))`,
       [
         id,
         bikeId,
@@ -114,6 +119,7 @@ async function addBikePhotos(
         attachmentPath("bike", bikeId, id),
         visibility,
         `${visibility} photo`,
+        createdAt,
       ],
     );
     ids[visibility] = id;
@@ -324,6 +330,69 @@ describe("my_bikes / my_bike_attachments", () => {
     expect(rows.map((r) => r.id).sort()).toEqual([ids.customer, ids.public].sort());
     expect(rows.map((r) => r.visibility).sort()).toEqual(["customer", "public"]);
     for (const row of rows) expect(Object.keys(row).sort()).toEqual(ATTACHMENT_COLUMNS);
+  });
+
+  /** my_bike_attachments(bikeId) as `login`, then back to the owner. */
+  async function photosAs(tx: pg.Client, login: string, bikeId: string) {
+    await actAs(tx, customerClaims(login));
+    const rows = await rowsOf(tx, "select id from public.my_bike_attachments($1)", [bikeId]);
+    await tx.query("reset role");
+    return rows.map((r) => r.id as string).sort();
+  }
+
+  it("PLAN D12: after a transfer the new owner sees the photos taken before it, the previous owner none", async () => {
+    await inTransaction(conn, async (tx) => {
+      const ids = await addBikePhotos(tx, BIKE.tanBrompton, ["internal", "customer", "public"]);
+      const tan = await linkCustomerLogin(tx, CUSTOMER.tan);
+      const priya = await linkCustomerLogin(tx, CUSTOMER.priya);
+      expect(await photosAs(tx, tan, BIKE.tanBrompton)).toEqual([ids.customer, ids.public].sort());
+
+      await actAs(tx, staffClaims(AUTH_USER.admin));
+      await tx.query("select public.transfer_bike_ownership($1, $2, 'Sold to Priya')", [
+        BIKE.tanBrompton,
+        CUSTOMER.priya,
+      ]);
+      await tx.query("reset role");
+
+      expect(await photosAs(tx, tan, BIKE.tanBrompton)).toEqual([]);
+      expect(await photosAs(tx, priya, BIKE.tanBrompton)).toEqual(
+        [ids.customer, ids.public].sort(),
+      );
+    });
+  });
+
+  it("PLAN D12 on the seeded sale: Daniel no longer sees the Bianchi's photos, Nurul sees older ones", async () => {
+    await inTransaction(conn, async (tx) => {
+      // Taken while Daniel still owned it: a day before the seeded transfer.
+      const transferredAt = await scalar<Date>(
+        tx,
+        "select min(created_at) from public.bike_ownership_events where bike_id = $1 and event_type = 'transferred'",
+        [BIKE.nurulBianchi],
+      );
+      const before = new Date(transferredAt.getTime() - 24 * 60 * 60 * 1000);
+      const ids = await addBikePhotos(
+        tx,
+        BIKE.nurulBianchi,
+        ["internal", "customer", "public"],
+        before,
+      );
+      const daniel = await linkCustomerLogin(tx, CUSTOMER.daniel);
+      const nurul = await linkCustomerLogin(tx, CUSTOMER.nurul);
+      expect(await photosAs(tx, daniel, BIKE.nurulBianchi)).toEqual([]);
+      expect(await photosAs(tx, nurul, BIKE.nurulBianchi)).toEqual(
+        [ids.customer, ids.public].sort(),
+      );
+    });
+  });
+
+  it("an archived bike's photos disappear for its owner too", async () => {
+    await inTransaction(conn, async (tx) => {
+      const ids = await addBikePhotos(tx, BIKE.tanTarmac, ["customer", "public"]);
+      const tan = await linkCustomerLogin(tx, CUSTOMER.tan);
+      expect(await photosAs(tx, tan, BIKE.tanTarmac)).toEqual([ids.customer, ids.public].sort());
+      await tx.query("update public.bikes set archived_at = now() where id = $1", [BIKE.tanTarmac]);
+      expect(await photosAs(tx, tan, BIKE.tanTarmac)).toEqual([]);
+    });
   });
 });
 

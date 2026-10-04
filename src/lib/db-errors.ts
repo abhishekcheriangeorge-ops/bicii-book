@@ -68,6 +68,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   attachment_deleted: "That photo was deleted. Upload it again.",
   attachment_immutable: "A photo stays on the record it was taken for.",
   attachment_customer_never_public: "Photos on a customer record cannot be made public.",
+  attachment_original_never_public:
+    "This photo was stored as its original file, which may carry where it was taken. Add it again as a JPEG to make it public.",
   attachment_history_append_only: "Photo history cannot be changed.",
 };
 

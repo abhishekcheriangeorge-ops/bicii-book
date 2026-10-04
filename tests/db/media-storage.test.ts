@@ -2,10 +2,16 @@
  * Photo buckets and their storage.objects policies (SPEC §8 "Storage
  * policies must enforce visibility"; DATA-MODEL §2):
  *
- *   media-internal  private: active staff read and write; anonymous
+ *   media-internal  private: active staff read and add; anonymous
  *                   visitors, signed-in customers and inactive staff can
  *                   do nothing.
- *   media-public    public: anyone reads; only active staff write.
+ *   media-public    public bucket: files are served at public URLs (which
+ *                   skip RLS; stack.smoke.test.ts fetches one), but only
+ *                   active staff may read or list it through the API, and
+ *                   only they add to it.
+ *   both            nobody overwrites an object (no UPDATE policy), and
+ *                   staff delete only objects no attachment row points at,
+ *                   so a recorded photo leaves only through the RPCs.
  *
  * Storage runs each request as the caller's API role with RLS on
  * storage.objects, which is exactly what these tests do. (The live
@@ -121,16 +127,10 @@ describe("media-internal", () => {
     });
   });
 
-  it("active staff upload, read, update and delete", async () => {
+  it("active staff upload, read, and delete an object no attachment points at", async () => {
     await withObject("media-internal", "staff", async (tx, name) => {
       expect(await visible(tx, "media-internal", name)).toBe(1);
       await insertAs(tx, "media-internal");
-      const upd = await tx.query(
-        `update storage.objects set metadata = '{"mimetype": "image/jpeg"}'
-          where bucket_id = 'media-internal' and name = $1`,
-        [name],
-      );
-      expect(upd.rowCount).toBe(1);
       await allowDelete(tx);
       const del = await tx.query(
         "delete from storage.objects where bucket_id = 'media-internal' and name = $1",
@@ -149,11 +149,17 @@ describe("media-internal", () => {
 });
 
 describe("media-public", () => {
-  it("anyone reads it: anonymous visitors and customers", async () => {
+  it("only active staff read or list it through the API: not anonymous visitors, not customers", async () => {
     await withObject("media-public", "anon", async (tx, name) => {
-      expect(await visible(tx, "media-public", name)).toBe(1);
+      expect(await visible(tx, "media-public", name)).toBe(0);
     });
     await withObject("media-public", "customer", async (tx, name) => {
+      expect(await visible(tx, "media-public", name)).toBe(0);
+    });
+    await withObject("media-public", "inactive staff", async (tx, name) => {
+      expect(await visible(tx, "media-public", name)).toBe(0);
+    });
+    await withObject("media-public", "staff", async (tx, name) => {
       expect(await visible(tx, "media-public", name)).toBe(1);
     });
   });
@@ -189,12 +195,86 @@ describe("media-public", () => {
     });
   });
 
-  it("anonymous visitors still see nothing of media-internal next to it", async () => {
+  it("anonymous visitors list nothing in either bucket", async () => {
     await inTransaction(conn, async (tx) => {
       await putStorageObject(tx, "media-internal", objectName());
       await putStorageObject(tx, "media-public", objectName());
       await actAs(tx, { role: "anon" });
       const { rows } = await tx.query("select distinct bucket_id from storage.objects");
+      expect(rows).toEqual([]);
+    });
+  });
+});
+
+describe("recorded photos", () => {
+  /** An object in `bucket` with an attachments row pointing at it (as the owner). */
+  async function recorded(tx: pg.Client, bucket: "media-internal" | "media-public") {
+    const id = randomUUID();
+    const name = attachmentPath("bike", BIKE.tanTarmac, id);
+    await putStorageObject(tx, bucket, name);
+    await tx.query(
+      `insert into public.attachments
+         (id, entity_type, entity_id, storage_bucket, storage_path, media_type, visibility, width, height)
+       values ($1, 'bike', $2, $3, $4, 'image/jpeg', $5, 640, 480)`,
+      [id, BIKE.tanTarmac, bucket, name, bucket === "media-public" ? "public" : "internal"],
+    );
+    return { id, name };
+  }
+
+  it("staff cannot delete or overwrite an object an attachment points at, in either bucket", async () => {
+    for (const bucket of ["media-internal", "media-public"] as const) {
+      await inTransaction(conn, async (tx) => {
+        const { name } = await recorded(tx, bucket);
+        await actAs(tx, staffClaims(AUTH_USER.mechanic2));
+        expect(await visible(tx, bucket, name)).toBe(1);
+        const upd = await tx.query(
+          `update storage.objects set metadata = '{"mimetype": "image/png"}'
+            where bucket_id = $1 and name = $2`,
+          [bucket, name],
+        );
+        expect(upd.rowCount).toBe(0);
+        await allowDelete(tx);
+        const del = await tx.query(
+          "delete from storage.objects where bucket_id = $1 and name = $2",
+          [bucket, name],
+        );
+        expect(del.rowCount).toBe(0);
+        await tx.query("reset role");
+        expect(await visible(tx, bucket, name)).toBe(1);
+      });
+    }
+  });
+
+  it("once the row is gone (deleted with a reason) staff may remove its object", async () => {
+    await inTransaction(conn, async (tx) => {
+      const { id, name } = await recorded(tx, "media-internal");
+      await actAs(tx, staffClaims(AUTH_USER.mechanic2));
+      await tx.query("select * from public.delete_attachment($1, 'Blurred')", [id]);
+      await allowDelete(tx);
+      const del = await tx.query(
+        "delete from storage.objects where bucket_id = 'media-internal' and name = $1",
+        [name],
+      );
+      expect(del.rowCount).toBe(1);
+    });
+  });
+
+  it("the copy left in the other bucket after a move is removable, the current object is not", async () => {
+    await inTransaction(conn, async (tx) => {
+      const { name } = await recorded(tx, "media-public");
+      // The private original a move to public left behind.
+      await putStorageObject(tx, "media-internal", name);
+      await actAs(tx, staffClaims(AUTH_USER.mechanic2));
+      await allowDelete(tx);
+      const del = await tx.query(
+        "delete from storage.objects where name = $1 and bucket_id in ('media-internal', 'media-public')",
+        [name],
+      );
+      expect(del.rowCount).toBe(1);
+      await tx.query("reset role");
+      const { rows } = await tx.query("select bucket_id from storage.objects where name = $1", [
+        name,
+      ]);
       expect(rows).toEqual([{ bucket_id: "media-public" }]);
     });
   });

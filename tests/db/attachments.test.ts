@@ -10,7 +10,10 @@
  *   * delete_attachment needs a reason and keeps who/why/what in
  *     attachment_events, which is append-only;
  *   * staff cannot insert, delete or move attachments directly; captions
- *     they may edit (recorded); a customer record's photo is never public.
+ *     they may edit (recorded); a customer record's photo is never public,
+ *     nor is an original stored without its dimensions (it may carry GPS);
+ *   * attachment_stray_objects lists the objects under a record that no
+ *     row points at and that are safe to remove now.
  */
 import { randomUUID } from "node:crypto";
 
@@ -147,10 +150,9 @@ const setVisibility = (
     )
     .then((r) => r.rows[0]);
 
+/** The deleted row, or undefined on a replay (delete_attachment returns a set). */
 const remove = (tx: pg.Client, id: string, reason: string | null) =>
-  tx
-    .query("select (d).* from (select public.delete_attachment($1, $2) d) s", [id, reason])
-    .then((r) => r.rows[0]);
+  tx.query("select * from public.delete_attachment($1, $2)", [id, reason]).then((r) => r.rows[0]);
 
 describe("record_attachment", () => {
   it("records an uploaded photo with its uploader, Storage's own size, and a created event", async () => {
@@ -230,6 +232,8 @@ describe("record_attachment", () => {
             visibility: "public",
             mediaType: "image/webp",
             path: attachmentPath("bike", BIKE.shopCervelo, publicBike, "webp"),
+            width: 2048,
+            height: 1536,
           }),
         ).toMatchObject({ storage_bucket: "media-public", visibility: "public" });
       },
@@ -340,6 +344,17 @@ describe("record_attachment", () => {
     ).rejects.toMatchObject({ code: "P0001", message: "attachment_media_type_mismatch" });
   });
 
+  it("never records an original without dimensions as public", async () => {
+    const id = randomUUID();
+    const args = { id, entityId: BIKE.shopCervelo, visibility: "public" };
+    await expect(
+      asMechanic(
+        (tx) => upload(tx, args),
+        (tx) => record(tx, { ...args, width: 2048 }),
+      ),
+    ).rejects.toMatchObject({ code: "P0001", message: "attachment_original_never_public" });
+  });
+
   it("never records a customer record's photo as public", async () => {
     const id = randomUUID();
     const args = { id, entityType: "customer", entityId: CUSTOMER.tan, visibility: "public" };
@@ -398,11 +413,15 @@ describe("record_attachment", () => {
 });
 
 describe("set_attachment_visibility", () => {
-  /** Owner: an internal photo of Tan's Tarmac, recorded by mechanic1. */
-  async function internalPhoto(tx: pg.Client, id: string): Promise<void> {
+  /** Owner: an internal photo of Tan's Tarmac (re-encoded, so with dimensions), recorded by mechanic1. */
+  async function internalPhoto(
+    tx: pg.Client,
+    id: string,
+    size: { width: number | null; height: number | null } = { width: 2048, height: 1536 },
+  ): Promise<void> {
     await upload(tx, { id });
     await actAs(tx, staffClaims(AUTH_USER.mechanic1));
-    await record(tx, { id });
+    await record(tx, { id, ...size });
     await tx.query("reset role");
   }
 
@@ -511,6 +530,27 @@ describe("set_attachment_visibility", () => {
     ).rejects.toMatchObject({ code: "P0001", message: "attachment_customer_never_public" });
   });
 
+  it("never makes public an original stored without its dimensions (it may carry GPS)", async () => {
+    const id = randomUUID();
+    const path = attachmentPath("bike", BIKE.tanTarmac, id);
+    await expect(
+      asMechanic(
+        async (tx) => {
+          await internalPhoto(tx, id, { width: null, height: null });
+          await putStorageObject(tx, "media-public", path);
+        },
+        (tx) => setVisibility(tx, id, "public", "media-public", path),
+      ),
+    ).rejects.toMatchObject({ code: "P0001", message: "attachment_original_never_public" });
+    // Customer is fine: it stays private.
+    await asMechanic(
+      (tx) => internalPhoto(tx, id, { width: null, height: null }),
+      async (tx) => {
+        expect(await setVisibility(tx, id, "customer")).toMatchObject({ visibility: "customer" });
+      },
+    );
+  });
+
   it("raises P0002 for an unknown attachment", async () => {
     await expect(
       asStaff(conn, STAFF.mechanic2, (tx) => setVisibility(tx, randomUUID(), "customer")),
@@ -579,13 +619,14 @@ describe("delete_attachment", () => {
     );
   });
 
-  it("is replay-safe: deleting again returns null and records nothing", async () => {
+  it("is replay-safe: deleting again returns no row and records nothing", async () => {
     const id = randomUUID();
     await asMechanic(
       (tx) => photo(tx, id),
       async (tx) => {
-        await remove(tx, id, "Duplicate");
-        expect((await remove(tx, id, "Duplicate")).id).toBeNull();
+        expect(await remove(tx, id, "Duplicate")).toMatchObject({ id });
+        // A set: a replay is no row at all (PostgREST answers []), not a row of nulls.
+        expect(await remove(tx, id, "Duplicate")).toBeUndefined();
         expect(await events(tx, id)).toHaveLength(2);
       },
     );
@@ -706,5 +747,73 @@ describe("direct table access", () => {
         }),
       ).rejects.toMatchObject({ code: "P0001", message: "attachment_history_append_only" });
     }
+  });
+});
+
+describe("attachment_stray_objects", () => {
+  /** An object under Tan's Tarmac, created `ageMinutes` ago (as the owner). */
+  async function object(tx: pg.Client, bucket: string, name: string, ageMinutes: number) {
+    await putStorageObject(tx, bucket, name);
+    await tx.query(
+      `update storage.objects set created_at = now() - make_interval(mins => $3)
+        where bucket_id = $1 and name = $2`,
+      [bucket, name, ageMinutes],
+    );
+  }
+  const strays = (tx: pg.Client, entityType = "bike", entityId: string = BIKE.tanTarmac) =>
+    tx
+      .query<{ bucket: string; path: string }>(
+        "select bucket, path from public.attachment_stray_objects($1::public.attachment_entity, $2)",
+        [entityType, entityId],
+      )
+      .then((r) => r.rows);
+
+  it("lists what no row points at, once it is safe to remove, and nothing a row needs", async () => {
+    await inTransaction(conn, async (tx) => {
+      const current = randomUUID(); // a public photo, its private original left behind
+      const deleted = randomUUID(); // deleted, its file still there
+      const leftover = randomUUID(); // made internal, its public copy still there
+      const fresh = randomUUID(); // a copy made a moment ago for a move still running
+      const unrecorded = randomUUID(); // an upload not recorded yet
+      const abandoned = randomUUID(); // an upload never recorded, two days old
+      const p = (id: string) => attachmentPath("bike", BIKE.tanTarmac, id);
+
+      for (const id of [current, deleted, leftover]) {
+        await object(tx, "media-internal", p(id), 60);
+        await actAs(tx, staffClaims(AUTH_USER.mechanic1));
+        await record(tx, { id, width: 640, height: 480 });
+        await tx.query("reset role");
+      }
+      await object(tx, "media-public", p(current), 60);
+      await object(tx, "media-public", p(leftover), 60);
+      await object(tx, "media-public", p(fresh), 1);
+      await object(tx, "media-internal", p(unrecorded), 60);
+      await object(tx, "media-internal", p(abandoned), 2 * 24 * 60);
+      // Another record's stray is not this record's business.
+      await object(tx, "media-public", attachmentPath("bike", BIKE.priyaDomane, randomUUID()), 60);
+
+      await actAs(tx, staffClaims(AUTH_USER.mechanic2));
+      await setVisibility(tx, current, "public", "media-public", p(current));
+      await remove(tx, deleted, "Blurred");
+
+      expect(await strays(tx)).toEqual(
+        [
+          { bucket: "media-internal", path: p(abandoned) },
+          { bucket: "media-internal", path: p(current) },
+          { bucket: "media-internal", path: p(deleted) },
+          { bucket: "media-public", path: p(leftover) },
+        ].sort((a, b) => (a.bucket + a.path).localeCompare(b.bucket + b.path)),
+      );
+    });
+  });
+
+  it("is for active staff only", async () => {
+    await expect(asAnon(conn, (tx) => strays(tx))).rejects.toMatchObject({ code: "42501" });
+    await expect(
+      inTransaction(conn, async (tx) => {
+        await actAs(tx, customerClaims(await linkCustomerLogin(tx, CUSTOMER.tan)));
+        return strays(tx);
+      }),
+    ).rejects.toMatchObject({ code: "42501" });
   });
 });

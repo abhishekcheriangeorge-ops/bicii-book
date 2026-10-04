@@ -1,7 +1,7 @@
 -- Global staff search (SPEC §5 "Search by customer, brand/model, serial
 -- number and BICII ID", §20; DATA-MODEL.md §16).
 --
--- staff_search(q, kinds, max_results) returns typed hits
+-- staff_search(q, kinds, max_results, archived) returns typed hits
 -- (kind, id, title, subtitle, short_id, rank) across every kind of record
 -- staff look up. Phase 1 knows `customer` and `bike`; each later phase adds
 -- its kind (work_order, product, inventory_unit, supplier, consignor, ...)
@@ -23,7 +23,9 @@
 --   0.7 / 0.6  serial number / short ID contains q
 --   0.5–0.9    customer name/email words, by trigram word similarity
 --   0.45–0.85  bike words, by trigram word similarity
--- Archived customers and bikes are not returned.
+-- Archived customers and bikes are not returned, unless `archived` is true,
+-- which searches only archived ones (the Archived lists) with exactly the
+-- same matching.
 
 -- Lower-cased words of q, longest first, at most 8.
 create function private.search_terms(q text)
@@ -84,7 +86,7 @@ as $$
   select nullif(pg_catalog.upper(pg_catalog.regexp_replace(coalesce(q, ''), '[^A-Za-z0-9]', '', 'g')), '');
 $$;
 
-create function private.search_customers(q text, max_results integer)
+create function private.search_customers(q text, max_results integer, archived boolean)
 returns table (kind text, id uuid, title text, subtitle text, short_id text, rank real)
 language sql
 stable
@@ -129,12 +131,12 @@ as $$
   from matched m
   join public.customers c on c.id = m.id
   cross join input i
-  where c.archived_at is null
+  where (c.archived_at is not null) = search_customers.archived
   order by 6 desc, 3, 2
   limit max_results;
 $$;
 
-create function private.search_bikes(q text, max_results integer)
+create function private.search_bikes(q text, max_results integer, archived boolean)
 returns table (kind text, id uuid, title text, subtitle text, short_id text, rank real)
 language sql
 stable
@@ -211,14 +213,20 @@ as $$
   join public.bikes b on b.id = m.id
   left join public.customers c on c.id = b.customer_id
   cross join input i
-  where b.archived_at is null
+  where (b.archived_at is not null) = search_bikes.archived
   order by 6 desc, 3, 2
   limit max_results;
 $$;
 
 -- Active staff. Blank q returns nothing; kinds null means every kind and
--- an unknown kind raises 22023; max_results is clamped to 1..100.
-create function public.staff_search(q text, kinds text[] default null, max_results integer default 20)
+-- an unknown kind raises 22023; max_results is clamped to 1..100; archived
+-- true searches archived records only.
+create function public.staff_search(
+  q text,
+  kinds text[] default null,
+  max_results integer default 20,
+  archived boolean default false
+)
 returns table (kind text, id uuid, title text, subtitle text, short_id text, rank real)
 language plpgsql
 stable
@@ -245,10 +253,10 @@ begin
   return query
     select h.kind, h.id, h.title, h.subtitle, h.short_id, h.rank
     from (
-      select * from private.search_customers(term, n)
+      select * from private.search_customers(term, n, coalesce(staff_search.archived, false))
       where staff_search.kinds is null or 'customer' = any (staff_search.kinds)
       union all
-      select * from private.search_bikes(term, n)
+      select * from private.search_bikes(term, n, coalesce(staff_search.archived, false))
       where staff_search.kinds is null or 'bike' = any (staff_search.kinds)
     ) h
     order by h.rank desc, h.kind, h.title, h.id
@@ -256,18 +264,18 @@ begin
 end;
 $$;
 
-comment on function public.staff_search(text, text[], integer) is
-  'Active staff: global search across customers and bikes (later phases add kinds); exact short ID and serial first.';
+comment on function public.staff_search(text, text[], integer, boolean) is
+  'Active staff: global search across customers and bikes (later phases add kinds); exact short ID and serial first; archived=true searches archived records.';
 
 revoke all on function
   private.search_terms(text),
   private.contains_pattern(text),
   private.search_phone_digits(text),
   private.search_key(text),
-  private.search_customers(text, integer),
-  private.search_bikes(text, integer)
+  private.search_customers(text, integer, boolean),
+  private.search_bikes(text, integer, boolean)
 from public, anon, authenticated, service_role;
 
-revoke all on function public.staff_search(text, text[], integer)
+revoke all on function public.staff_search(text, text[], integer, boolean)
   from public, anon, authenticated, service_role;
-grant execute on function public.staff_search(text, text[], integer) to authenticated;
+grant execute on function public.staff_search(text, text[], integer, boolean) to authenticated;
