@@ -63,6 +63,17 @@ export function services() {
         GOTRUE_EXTERNAL_PHONE_ENABLED: "false",
         GOTRUE_MAILER_AUTOCONFIRM: "true",
         GOTRUE_LOG_LEVEL: "info",
+        // The [auth] settings of supabase/config.toml, which `supabase start`
+        // passes to Auth the same way. Set explicitly so the devstack never
+        // falls back to a binary default the CLI stack and hosted projects
+        // do not use (GOTRUE_JWT_EXP = jwt_expiry is in authEnv). Without the
+        // reuse interval (no default in the binary: 0s) two requests racing
+        // to refresh an expired session could trip reuse detection.
+        // password_requirements = "" is the binary's default (no env).
+        GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true",
+        GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10",
+        GOTRUE_PASSWORD_MIN_LENGTH: "6",
+        GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: "false",
       }),
     },
     {
