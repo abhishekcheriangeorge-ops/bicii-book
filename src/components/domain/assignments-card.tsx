@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { assignStaff, unassignStaff } from "@/app/(staff)/jobs/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Chip } from "@/components/ui/chip";
+import { ChipRadioGroup } from "@/components/ui/chip";
 import { PlusIcon } from "@/components/ui/icons";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Sheet } from "@/components/ui/sheet";
@@ -192,29 +192,30 @@ function AssignSheet({
           <p id="assign-who" className="font-display text-xs font-bold tracking-wide uppercase">
             Who
           </p>
-          <div role="radiogroup" aria-labelledby="assign-who" className="flex flex-wrap gap-2">
-            {staff.map((s) => {
+          <ChipRadioGroup
+            labelledBy="assign-who"
+            value={staffId ?? undefined}
+            onChange={(id) => {
+              setStaffId(id);
+              setError(null);
+            }}
+            options={staff.map((s) => {
               const on = current(s.id);
-              return (
-                <Chip
-                  key={s.id}
-                  role="radio"
-                  pressed={staffId === s.id}
-                  onClick={() => {
-                    setStaffId(s.id);
-                    setError(null);
-                  }}
-                >
-                  {s.name}
-                  {on ? (
-                    <span className="text-xs font-normal opacity-80">
-                      ({on.role === "lead" ? "lead" : "on the job"})
-                    </span>
-                  ) : null}
-                </Chip>
-              );
+              return {
+                value: s.id,
+                children: (
+                  <>
+                    {s.name}
+                    {on ? (
+                      <span className="text-xs font-normal opacity-80">
+                        ({on.role === "lead" ? "lead" : "on the job"})
+                      </span>
+                    ) : null}
+                  </>
+                ),
+              };
             })}
-          </div>
+          />
           <p className="text-sm text-dust-500">Active staff only.</p>
         </div>
         <div className="flex flex-col gap-2">

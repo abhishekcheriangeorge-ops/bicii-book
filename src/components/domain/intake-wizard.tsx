@@ -15,7 +15,7 @@ import { createWorkOrder, listIntakeBikes, searchIntakeOptions } from "@/app/(st
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Chip } from "@/components/ui/chip";
+import { Chip, ChipRadioGroup } from "@/components/ui/chip";
 import { Field } from "@/components/ui/field";
 import { PlusIcon, SearchIcon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,8 @@ import type { ServiceOption } from "@/lib/domain/services";
 import type { IntakeBike, IntakeOption } from "@/lib/domain/workshop";
 import {
   clearDraft,
+  prunedMessage,
+  pruneDraft,
   readDraft,
   saveDraft,
   type IntakeDraft,
@@ -39,6 +41,7 @@ import {
 } from "@/lib/intake-draft";
 import { formatMoney, lineTotal, sumMoney } from "@/lib/money";
 import { newId } from "@/lib/uuid";
+import { archivedOwnerMessage } from "@/lib/workshop";
 
 import { BikeSheet } from "./bike-sheet";
 import { CustomerSheet } from "./customer-sheet";
@@ -55,7 +58,12 @@ export type IntakeWizardProps = {
   /** The Cult Commons rate in force (view_costs only), for the preview. */
   ccRate: string | null;
   /** From ?customer= / ?bike= (a customer's or a bike's page). */
-  preset: { customer: { id: string; label: string } | null; bike: IntakeBike | null };
+  preset: {
+    customer: { id: string; label: string } | null;
+    bike: IntakeBike | null;
+    /** Why a preset bike was left out (its owner is archived). */
+    notice?: string | null;
+  };
   currency: string;
 };
 
@@ -88,8 +96,9 @@ const noSubscribe = () => () => {};
  * The wizard owns the idempotency keys (the job's id and each service
  * line's), so a double tap or a retry after a lost response never makes
  * two jobs. It autosaves to this device (src/lib/intake-draft.ts) and
- * offers the draft back on return. Rendered only in the browser: the draft
- * lives in localStorage.
+ * offers the draft back on return, without the services and people that
+ * can no longer be chosen (pruneDraft), saying what it removed. Rendered
+ * only in the browser: the draft lives in localStorage.
  */
 export function IntakeWizard(props: IntakeWizardProps) {
   const mounted = useSyncExternalStore(
@@ -128,6 +137,8 @@ function freshDraft(preset: IntakeWizardProps["preset"]): IntakeDraft {
 
 type BikesState = { customerId: string; items: IntakeBike[]; error: string | null };
 
+const BIKES_FAILED = "The bikes could not be loaded. Check the connection and try again.";
+
 function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: IntakeWizardProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -138,7 +149,11 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
   const [customerSheet, setCustomerSheet] = useState(false);
   const [bikeSheet, setBikeSheet] = useState(false);
   const [result, setResult] = useState<ActionResult<unknown> | null>(null);
-  const [stepError, setStepError] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(preset.notice ?? null);
+  // What Continue removed from a restored draft.
+  const [notice, setNotice] = useState<string | null>(null);
+  // Bumped by "Try again" to fetch the bikes again.
+  const [bikesAttempt, setBikesAttempt] = useState(0);
   const [creating, startCreate] = useTransition();
   const finished = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -151,19 +166,25 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
     if (!offer && !finished.current) saveDraft(draft);
   }, [draft, offer]);
 
-  // The chosen customer's bikes.
+  // The chosen customer's bikes. A rejected call (a dropped connection)
+  // shows an error with "Try again", never an endless skeleton.
   useEffect(() => {
     if (!customerId) return;
     let live = true;
-    listIntakeBikes({ customerId }).then((r) => {
-      if (live) {
-        setBikes({ customerId, items: r.ok ? r.data : [], error: r.ok ? null : r.error });
-      }
-    });
+    listIntakeBikes({ customerId }).then(
+      (r) => {
+        if (live) {
+          setBikes({ customerId, items: r.ok ? r.data : [], error: r.ok ? null : r.error });
+        }
+      },
+      () => {
+        if (live) setBikes({ customerId, items: [], error: BIKES_FAILED });
+      },
+    );
     return () => {
       live = false;
     };
-  }, [customerId]);
+  }, [customerId, bikesAttempt]);
 
   // Each new step's heading takes focus (screen readers hear where they are).
   useEffect(() => {
@@ -177,6 +198,7 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
   const update = (patch: Partial<IntakeDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const goTo = (next: number) => {
     setStepError(null);
+    setNotice(null);
     update({ step: Math.max(0, Math.min(REVIEW, next)) });
   };
 
@@ -226,6 +248,11 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
 
   const pickOption = (option: IntakeOption | null) => {
     if (!option) return;
+    if (option.bike && option.archivedOwner) {
+      // Still theirs (D18): not a shop bike, and not anyone else's job yet.
+      setStepError(archivedOwnerMessage(option.bike, option.archivedOwner));
+      return;
+    }
     setStepError(null);
     if (option.kind === "customer" && option.customer) {
       chooseCustomer(option.customer);
@@ -265,7 +292,9 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
         return;
       }
     }
+    const active = new Set(staff.map((s) => s.id));
     startCreate(async () => {
+      // Only what the screens show: services still offered, active staff.
       const r = await createWorkOrder({
         id: draft.workOrderId,
         customerId: draft.customer!.id,
@@ -273,12 +302,14 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
         requestedWork: draft.requestedWork,
         intakeNotes: draft.intakeNotes,
         leadId: draft.leadId,
-        additionalIds: draft.additionalIds.filter((id) => id !== draft.leadId),
-        services: draft.services.map((s) => ({
-          lineId: s.lineId,
-          serviceId: s.serviceId,
-          quantity: s.quantity,
-        })),
+        additionalIds: draft.additionalIds.filter((id) => id !== draft.leadId && active.has(id)),
+        services: draft.services
+          .filter((s) => services.some((x) => x.id === s.serviceId))
+          .map((s) => ({
+            lineId: s.lineId,
+            serviceId: s.serviceId,
+            quantity: s.quantity,
+          })),
       });
       setResult(r);
       if (!r.ok) {
@@ -308,7 +339,12 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             onClick={() => {
-              setDraft(offer);
+              const pruned = pruneDraft(offer, {
+                serviceIds: new Set(services.map((x) => x.id)),
+                staffIds: new Set(staff.map((x) => x.id)),
+              });
+              setDraft(pruned.draft);
+              setNotice(prunedMessage(pruned));
               setOffer(null);
             }}
           >
@@ -360,8 +396,9 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
         <p className="eyebrow text-dust-500">
           {step === REVIEW ? "Review" : `Step ${step + 1} of ${REVIEW}`}
         </p>
+        {/* One segment per counted step: full at "Step 5 of 5" and on Review. */}
         <ol className="flex gap-1.5" aria-hidden="true">
-          {STEPS.map((name, i) => (
+          {STEPS.slice(0, REVIEW).map((name, i) => (
             <li
               key={name}
               className={cn("h-1.5 flex-1 rounded-full", i <= step ? "bg-ink" : "bg-dust-200")}
@@ -374,6 +411,11 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
         <h2 id="intake-step" ref={headingRef} tabIndex={-1} className="text-3xl focus:outline-none">
           {STEPS[step]}
         </h2>
+        {notice ? (
+          <p role="status" className="rounded-xl bg-info-soft p-3 text-sm text-info-deep">
+            {notice}
+          </p>
+        ) : null}
         {stepError ? (
           <p role="alert" className="text-sm font-medium text-danger-deep">
             {stepError}
@@ -436,9 +478,19 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
               Bikes of <span className="font-medium text-ink">{draft.customer.label}</span>
             </p>
             {bikes?.error && bikes.customerId === customerId ? (
-              <p role="alert" className="text-sm text-danger-deep">
-                {bikes.error}
-              </p>
+              <div role="alert" className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-danger-deep">{bikes.error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setBikes(null);
+                    setBikesAttempt((n) => n + 1);
+                  }}
+                >
+                  Try again
+                </Button>
+              </div>
             ) : null}
             {bikeList === null ? (
               <Skeleton className="h-20" />
@@ -615,18 +667,22 @@ function Wizard({ me, staff, services, viewCosts, ccRate, preset, currency }: In
           onCreated={({ id, label }) => {
             const owner = draft.customer!.id;
             update({ bike: { id, shortId: "", title: label } });
-            listIntakeBikes({ customerId: owner }).then((r) => {
-              if (!r.ok) return;
-              setBikes({ customerId: owner, items: r.data, error: null });
-              const added = r.data.find((b) => b.id === id);
-              if (added) {
-                setDraft((d) =>
-                  d.bike?.id === id
-                    ? { ...d, bike: { id, shortId: added.shortId, title: added.title } }
-                    : d,
-                );
-              }
-            });
+            listIntakeBikes({ customerId: owner }).then(
+              (r) => {
+                if (!r.ok) return;
+                setBikes({ customerId: owner, items: r.data, error: null });
+                const added = r.data.find((b) => b.id === id);
+                if (added) {
+                  setDraft((d) =>
+                    d.bike?.id === id
+                      ? { ...d, bike: { id, shortId: added.shortId, title: added.title } }
+                      : d,
+                  );
+                }
+              },
+              // The bike is chosen already; the list keeps what it had.
+              () => undefined,
+            );
           }}
         />
       ) : null}
@@ -703,22 +759,19 @@ function PeopleStep({
         <h3 id="lead-label" className="font-display text-xs font-bold tracking-wide uppercase">
           Lead mechanic
         </h3>
-        <div role="radiogroup" aria-labelledby="lead-label" className="flex flex-wrap gap-2">
-          {ordered.map((s) => (
-            <Chip
-              key={s.id}
-              role="radio"
-              pressed={leadId === s.id}
-              onClick={() => onLead(s.id)}
-              label={s.id === me.id ? `Me (${s.name})` : s.name}
-            >
-              {s.id === me.id ? "Me" : s.name}
-            </Chip>
-          ))}
-          <Chip role="radio" pressed={leadId === null} onClick={() => onLead(null)}>
-            Unassigned
-          </Chip>
-        </div>
+        <ChipRadioGroup<string | null>
+          labelledBy="lead-label"
+          value={leadId}
+          onChange={onLead}
+          options={[
+            ...ordered.map((s) => ({
+              value: s.id,
+              children: s.id === me.id ? "Me" : s.name,
+              label: s.id === me.id ? `Me (${s.name})` : s.name,
+            })),
+            { value: null, children: "Unassigned" },
+          ]}
+        />
       </div>
       <div className="flex flex-col gap-2">
         <h3
@@ -824,6 +877,7 @@ function ServicesStep({
                 <span className="w-44">
                   <NumberInput
                     kind="quantity"
+                    decimals={2}
                     stepper
                     minValue={1}
                     maxValue={MAX_QUANTITY}

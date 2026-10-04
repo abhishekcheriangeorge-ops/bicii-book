@@ -5,6 +5,8 @@ import {
   clearDraft,
   draftHasContent,
   parseDraft,
+  pruneDraft,
+  prunedMessage,
   readDraft,
   saveDraft,
   serializeDraft,
@@ -157,5 +159,43 @@ describe("intake draft storage", () => {
     expect(() => saveDraft(draft, throwing)).not.toThrow();
     expect(() => clearDraft(throwing)).not.toThrow();
     expect(() => saveDraft(draft, null)).not.toThrow();
+  });
+});
+
+describe("a restored draft is checked against what can be chosen now", () => {
+  const withMore: IntakeDraft = {
+    ...draft,
+    additionalIds: [ID(5), ID(8)],
+    services: [
+      { lineId: ID(6), serviceId: ID(7), quantity: "2" },
+      { lineId: ID(9), serviceId: ID(10), quantity: "1" },
+    ],
+  };
+
+  it("keeps everything that is still offered and active", () => {
+    const pruned = pruneDraft(withMore, {
+      serviceIds: new Set([ID(7), ID(10)]),
+      staffIds: new Set([ID(4), ID(5), ID(8)]),
+    });
+    expect(pruned).toEqual({ draft: withMore, removedServices: 0, removedStaff: 0 });
+    expect(prunedMessage(pruned)).toBeNull();
+  });
+
+  it("drops archived services and staff no longer active, and says so", () => {
+    // Brake Bleed (ID 10) was archived, the lead (ID 4) and a helper (ID 8) deactivated.
+    const pruned = pruneDraft(withMore, {
+      serviceIds: new Set([ID(7)]),
+      staffIds: new Set([ID(5)]),
+    });
+    expect(pruned.draft).toEqual({
+      ...withMore,
+      leadId: null,
+      additionalIds: [ID(5)],
+      services: [{ lineId: ID(6), serviceId: ID(7), quantity: "2" }],
+    });
+    expect(pruned).toMatchObject({ removedServices: 1, removedStaff: 2 });
+    expect(prunedMessage(pruned)).toBe(
+      "Removed from the draft: 1 service is no longer offered, and 2 people are no longer active staff.",
+    );
   });
 });

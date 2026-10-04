@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { searchIntakeOptions } from "@/app/(staff)/jobs/actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Chip } from "@/components/ui/chip";
+import { ChipRadioGroup } from "@/components/ui/chip";
 import { Field } from "@/components/ui/field";
 import { SearchPicker, type PickerOption } from "@/components/ui/search-picker";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -176,21 +176,15 @@ function BoardFilterSheet({
             Mechanic
           </p>
           <p className="text-sm text-dust-500">Jobs they are on, as lead or helping.</p>
-          <div role="radiogroup" aria-labelledby="mechanic-filter" className="flex flex-wrap gap-2">
-            <Chip role="radio" pressed={mechanicId === null} onClick={() => setMechanicId(null)}>
-              Anyone
-            </Chip>
-            {staff.map((s) => (
-              <Chip
-                key={s.id}
-                role="radio"
-                pressed={mechanicId === s.id}
-                onClick={() => setMechanicId(s.id)}
-              >
-                {s.name}
-              </Chip>
-            ))}
-          </div>
+          <ChipRadioGroup<string | null>
+            labelledBy="mechanic-filter"
+            value={mechanicId}
+            onChange={setMechanicId}
+            options={[
+              { value: null, children: "Anyone" },
+              ...staff.map((s) => ({ value: s.id, children: s.name })),
+            ]}
+          />
         </div>
 
         <Field label="Customer">

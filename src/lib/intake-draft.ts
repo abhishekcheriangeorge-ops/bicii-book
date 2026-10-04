@@ -144,3 +144,53 @@ export function clearDraft(storage: StorageLike | null = defaultStorage()): void
     // Nothing to do.
   }
 }
+
+export type DraftPruning = {
+  draft: IntakeDraft;
+  /** Services on the draft that are no longer offered (archived or inactive since). */
+  removedServices: number;
+  /** The lead or helpers on the draft who are no longer active staff. */
+  removedStaff: number;
+};
+
+/**
+ * A restored draft checked against what can be chosen now: services
+ * archived or deactivated since it was saved, and a lead or helpers who are
+ * no longer active, are dropped (the screens only show what can be chosen,
+ * so these could neither be seen nor removed, and creating the job would be
+ * refused every time). The counts are for telling the user what changed.
+ */
+export function pruneDraft(
+  draft: IntakeDraft,
+  available: { serviceIds: ReadonlySet<string>; staffIds: ReadonlySet<string> },
+): DraftPruning {
+  const services = draft.services.filter((s) => available.serviceIds.has(s.serviceId));
+  const leadId = draft.leadId && available.staffIds.has(draft.leadId) ? draft.leadId : null;
+  const additionalIds = draft.additionalIds.filter((id) => available.staffIds.has(id));
+  return {
+    draft: { ...draft, services, leadId, additionalIds },
+    removedServices: draft.services.length - services.length,
+    removedStaff:
+      (draft.leadId !== leadId ? 1 : 0) + (draft.additionalIds.length - additionalIds.length),
+  };
+}
+
+/** What pruneDraft removed, in a sentence; null when nothing was. */
+export function prunedMessage({ removedServices, removedStaff }: DraftPruning): string | null {
+  const parts: string[] = [];
+  if (removedServices > 0) {
+    parts.push(
+      removedServices === 1
+        ? "1 service is no longer offered"
+        : `${removedServices} services are no longer offered`,
+    );
+  }
+  if (removedStaff > 0) {
+    parts.push(
+      removedStaff === 1
+        ? "1 person is no longer active staff"
+        : `${removedStaff} people are no longer active staff`,
+    );
+  }
+  return parts.length > 0 ? `Removed from the draft: ${parts.join(", and ")}.` : null;
+}
