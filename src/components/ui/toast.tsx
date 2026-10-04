@@ -24,10 +24,16 @@ export type ToastOptions = {
   tone?: ToastTone;
   /** ms before auto-dismiss. Errors default to staying until dismissed. */
   duration?: number | null;
+  /**
+   * One follow-up button, e.g. "Retry" on a failed upload. Pressing it runs
+   * `onAction` and dismisses the toast. Toasts with an action stay until
+   * dismissed, so the button cannot vanish under a finger.
+   */
+  action?: { label: string; onAction: () => void };
 };
 
 type ToastItem = Required<Pick<ToastOptions, "title" | "tone">> &
-  Pick<ToastOptions, "description"> & { id: number; duration: number | null };
+  Pick<ToastOptions, "description" | "action"> & { id: number; duration: number | null };
 
 type ToastApi = {
   toast: (options: ToastOptions) => number;
@@ -75,10 +81,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const id = nextId.current++;
     const tone = options.tone ?? "neutral";
     const duration =
-      options.duration !== undefined ? options.duration : tone === "error" ? null : 5000;
+      options.duration !== undefined
+        ? options.duration
+        : tone === "error" || options.action
+          ? null
+          : 5000;
     setItems((list) => [
       ...list.slice(-3),
-      { id, title: options.title, description: options.description, tone, duration },
+      {
+        id,
+        title: options.title,
+        description: options.description,
+        action: options.action,
+        tone,
+        duration,
+      },
     ]);
     return id;
   }, []);
@@ -150,6 +167,18 @@ function ToastCard({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numbe
         <p className="font-display text-sm font-bold tracking-wide uppercase">{item.title}</p>
         {item.description ? <p className="text-sm opacity-90">{item.description}</p> : null}
       </div>
+      {item.action ? (
+        <button
+          type="button"
+          className="mt-0.5 inline-flex min-h-tap shrink-0 cursor-pointer items-center rounded-full border-2 border-current px-4 font-display text-xs font-bold tracking-wide uppercase transition-colors hover:bg-current/10"
+          onClick={() => {
+            onDismiss(item.id);
+            item.action?.onAction();
+          }}
+        >
+          {item.action.label}
+        </button>
+      ) : null}
       <IconButton
         aria-label="Dismiss notification"
         icon={<CloseIcon className="size-4" />}
