@@ -39,6 +39,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.record_attachment(uuid, attachment_entity, uuid, text, text, text, integer, integer, integer, text, attachment_visibility)",
   "public.set_attachment_visibility(uuid, attachment_visibility, text, text)",
   "public.transfer_bike_ownership(uuid, uuid, text)",
+  // Customer self-service (Phase 1): the caller's own rows only
+  "public.my_bike_attachments(uuid)",
+  "public.my_bikes()",
+  "public.my_customer_profile()",
+  "public.update_my_profile(text, text, text, text)",
 ];
 
 /**

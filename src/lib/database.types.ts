@@ -488,6 +488,45 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      my_bike_attachments: {
+        Args: { bike_id: string };
+        Returns: {
+          caption: string;
+          created_at: string;
+          height: number;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number;
+        }[];
+      };
+      my_bikes: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          brand: string;
+          colour: string;
+          created_at: string;
+          description: string;
+          frame_size: string;
+          id: string;
+          model: string;
+          serial_number: string;
+          short_id: string;
+          variant: string;
+        }[];
+      };
+      my_customer_profile: {
+        Args: Record<PropertyKey, never>;
+        Returns: Database["public"]["CompositeTypes"]["customer_profile"][];
+        SetofOptions: {
+          from: "*";
+          to: "customer_profile";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       my_staff_profile: {
         Args: Record<PropertyKey, never>;
         Returns: {
@@ -668,6 +707,16 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      update_my_profile: {
+        Args: { display_name?: string; first_name?: string; last_name?: string; phone?: string };
+        Returns: Database["public"]["CompositeTypes"]["customer_profile"];
+        SetofOptions: {
+          from: "*";
+          to: "customer_profile";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_staff: {
         Args: {
           display_name?: string;
@@ -718,7 +767,15 @@ export type Database = {
       staff_role: "admin" | "staff";
     };
     CompositeTypes: {
-      [_ in never]: never;
+      customer_profile: {
+        id: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        display_name: string | null;
+        email: string | null;
+        phone: string | null;
+        created_at: string | null;
+      };
     };
   };
 };
