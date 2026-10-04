@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AddServiceButton } from "@/components/domain/add-service-sheet";
+import { AssignmentsCard } from "@/components/domain/assignments-card";
+import { ApprovalSwitch, EditDetailsButton, NoteButtons } from "@/components/domain/job-notes";
 import { Timeline } from "@/components/domain/job-timeline";
 import { JobStatusActions } from "@/components/domain/job-status-actions";
 import { LineTable } from "@/components/domain/line-table";
@@ -19,7 +21,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime, shopDaysBetween } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
-import { getWorkOrder, type WorkOrderDetail } from "@/lib/domain/workshop";
+import { getWorkOrder, listActiveStaff, type WorkOrderDetail } from "@/lib/domain/workshop";
 import { telHref } from "@/lib/people";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -70,9 +72,10 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   const intake = (await searchParams).intake === "photos";
   const viewCosts = hasPermission(staff, "view_costs");
   const supabase = await createClient();
-  const [job, photos] = await Promise.all([
+  const [job, photos, activeStaff] = await Promise.all([
     getWorkOrder(supabase, id, { viewCosts }),
     listPhotos(supabase, { entityType: "work_order", entityId: id }),
+    listActiveStaff(supabase),
   ]);
   if (!job) notFound();
 
@@ -81,8 +84,6 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   const closed = isClosedStatus(job.status);
   const overdue = isOverdue({ status: job.status, checkedInAt: job.stamps.checkedInAt }, now);
   const tel = telHref(job.customer.phone);
-  const lead = job.assignments.find((a) => a.role === "lead") ?? null;
-  const additional = job.assignments.filter((a) => a.role === "additional");
   const target = { entityType: "work_order" as const, entityId: job.id };
   const lockedReason = open
     ? null
@@ -160,7 +161,20 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="flex min-w-0 flex-col gap-6">
-          <Card title="Requested work">
+          <Card
+            title="Requested work"
+            actions={
+              <EditDetailsButton
+                workOrderId={job.id}
+                details={{
+                  requestedWork: job.requestedWork,
+                  intakeNotes: job.intakeNotes,
+                  internalNotes: job.internalNotes,
+                  completionNotes: job.completionNotes,
+                }}
+              />
+            }
+          >
             <p className="whitespace-pre-line">{job.requestedWork}</p>
             {job.intakeNotes ? (
               <>
@@ -209,28 +223,12 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
         </div>
 
         <div className="flex min-w-0 flex-col gap-6">
-          <Card title="People">
-            <dl className="flex flex-col gap-3">
-              <div>
-                <dt className="eyebrow text-dust-500">Lead</dt>
-                <dd className="font-medium">{lead ? lead.name : "Unassigned"}</dd>
-              </div>
-              {additional.length > 0 ? (
-                <div>
-                  <dt className="eyebrow text-dust-500">Also on the job</dt>
-                  <dd>
-                    <ul aria-label="Also on the job">
-                      {additional.map((a) => (
-                        <li key={a.staffId} className="font-medium">
-                          {a.name}
-                        </li>
-                      ))}
-                    </ul>
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-          </Card>
+          <AssignmentsCard
+            workOrderId={job.id}
+            assignments={job.assignments}
+            staff={activeStaff}
+            editable={!closed}
+          />
 
           <Card title="Dates">
             <dl aria-label="Dates" className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
@@ -246,36 +244,48 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
             </dl>
           </Card>
 
-          {job.approval.flagged || job.approval.note || job.internalNotes || job.completionNotes ? (
-            <Card title="Notes" eyebrow="Staff only">
-              <div className="flex flex-col gap-4">
-                {job.approval.flagged || job.approval.note ? (
+          <Card title="Notes" eyebrow="Staff only">
+            <div className="flex flex-col gap-5">
+              {closed ? (
+                job.approval.flagged || job.approval.note ? (
                   <div>
                     {job.approval.flagged ? <Badge tone="done">Customer approved</Badge> : null}
                     {job.approval.note ? (
                       <p className="mt-1 text-dust-700">{job.approval.note}</p>
                     ) : null}
                   </div>
-                ) : null}
-                {job.internalNotes ? (
-                  <div>
-                    <h3 className="font-display text-xs font-bold tracking-wide uppercase">
-                      Internal notes
-                    </h3>
-                    <p className="mt-1 whitespace-pre-line text-dust-700">{job.internalNotes}</p>
-                  </div>
-                ) : null}
-                {job.completionNotes ? (
-                  <div>
-                    <h3 className="font-display text-xs font-bold tracking-wide uppercase">
-                      Completion notes
-                    </h3>
-                    <p className="mt-1 whitespace-pre-line text-dust-700">{job.completionNotes}</p>
-                  </div>
-                ) : null}
+                ) : null
+              ) : (
+                <ApprovalSwitch
+                  workOrderId={job.id}
+                  flagged={job.approval.flagged}
+                  note={job.approval.note}
+                />
+              )}
+              {job.internalNotes ? (
+                <div>
+                  <h3 className="font-display text-xs font-bold tracking-wide uppercase">
+                    Internal notes
+                  </h3>
+                  <p className="mt-1 whitespace-pre-line text-dust-700">{job.internalNotes}</p>
+                </div>
+              ) : null}
+              {job.completionNotes ? (
+                <div>
+                  <h3 className="font-display text-xs font-bold tracking-wide uppercase">
+                    Completion notes
+                  </h3>
+                  <p className="mt-1 whitespace-pre-line text-dust-700">{job.completionNotes}</p>
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-2">
+                <p className="text-sm text-dust-500">
+                  Notes and diagnoses go into the timeline below.
+                </p>
+                <NoteButtons workOrderId={job.id} />
               </div>
-            </Card>
-          ) : null}
+            </div>
+          </Card>
 
           <Card title="Timeline">
             <Timeline entries={job.timeline} />
