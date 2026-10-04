@@ -754,7 +754,9 @@ Cult Commons with exactly Phase 3's generated expression for quantity 1
 (D1). `public.selling_prices` gives every active staff member the
 effective selling price of each product (unit null) and unit. Direct API
 writes of a cost column by a caller without `view_costs` are refused (42501)
-by two SECURITY INVOKER triggers, `products_cost_write_guard` and
+whatever the value (an UPDATE naming the column is refused even when it
+equals the stored cost, so the refusal is never an equality oracle on a
+hidden cost) by two SECURITY INVOKER triggers, `products_cost_write_guard` and
 `inventory_units_cost_write_guard` (invoker because inside a definer
 function `current_user` is the owner; definer RPCs check `view_costs`
 themselves). Definer writes to these tables re-raise check and not-null

@@ -1132,10 +1132,14 @@ begin
   if current_user::text not in ('authenticated', 'anon') then
     return new;
   end if;
+  -- An UPDATE that names the column is refused whatever the value: a
+  -- refusal only when it differs would answer "is the stored cost X?"
+  -- (an equality oracle on a hidden column). The trigger is UPDATE OF the
+  -- column, so it fires only when the column is in the SET list.
   if tg_op = 'INSERT' then
     changed := new.default_direct_cost is not null;
   else
-    changed := new.default_direct_cost is distinct from old.default_direct_cost;
+    changed := true;
   end if;
   if changed and not private.has_permission('view_costs') then
     raise exception 'permission view_costs required to set a cost' using errcode = '42501';
@@ -1335,10 +1339,14 @@ begin
   if current_user::text not in ('authenticated', 'anon') then
     return new;
   end if;
+  -- An UPDATE that names the column is refused whatever the value: a
+  -- refusal only when it differs would answer "is the stored cost X?"
+  -- (an equality oracle on a hidden column). The trigger is UPDATE OF the
+  -- column, so it fires only when the column is in the SET list.
   if tg_op = 'INSERT' then
     changed := new.direct_cost is not null;
   else
-    changed := new.direct_cost is distinct from old.direct_cost;
+    changed := true;
   end if;
   if changed and not private.has_permission('view_costs') then
     raise exception 'permission view_costs required to set a cost' using errcode = '42501';

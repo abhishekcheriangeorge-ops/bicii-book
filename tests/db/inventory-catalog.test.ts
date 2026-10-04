@@ -282,6 +282,22 @@ describe("cost gating (SPEC §4.2)", () => {
             tx.query("update public.inventory_units set direct_cost = 1 where id = $1", [unitId]),
           { code: "42501" },
         );
+        // The stored value (8.00, and null on the unit) is refused too: a
+        // refusal only on a change would confirm a guessed hidden cost.
+        for (const [sql, value] of [
+          ["update public.products set default_direct_cost = $2 where id = $1", "8.00"],
+          ["update public.products set default_direct_cost = $2 where id = $1", null],
+          ["update public.inventory_units set direct_cost = $2 where id = $1", null],
+          ["update public.inventory_units set direct_cost = $2 where id = $1", "1.00"],
+        ] as const) {
+          await failsWith(
+            tx,
+            () => tx.query(sql, [sql.includes("products") ? productId : unitId, value]),
+            {
+              code: "42501",
+            },
+          );
+        }
         // Other columns, and a unit without a cost, are fine.
         await tx.query("update public.products set default_sale_price = 25 where id = $1", [
           productId,
