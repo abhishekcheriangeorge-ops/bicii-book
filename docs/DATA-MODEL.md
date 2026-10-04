@@ -152,7 +152,8 @@ bikes
   short_id text not null unique         -- B-000123, printed on QR for bikes;
                                         -- assigned by trigger from next_short_id('B'), immutable
   customer_id uuid null -> customers    -- CURRENT owner; null = shop / unknown
-  inventory_unit_id uuid null           -- set when shop-owned/consigned; FK -> inventory_units in Phase 4
+  inventory_unit_id uuid null           -- the unit this shop bike is in stock as; FK -> inventory_units
+                                        -- (Phase 4, unique), set by private.register_unit; no client grant
   brand text not null, model text not null
   variant, frame_size, colour text null
   serial_number text null               -- not unique (duplicates exist)
@@ -424,11 +425,22 @@ sold units to held_for_customer on reopen (whenever `completed_at` goes from
 non-null to null every unit on a non-voided inventory line of the job goes
 sold → held_for_customer; whenever `completed_at` goes from null to
 non-null, including re-completion after a reopen, they go
-held_for_customer → sold), with no stock movement (D6). Phase 3 keeps the
-reopen rule in `private.work_orders_enforce_rules`, commented as the Phase 4
-extension point, so Phase 4 can create or replace it starting from Phase 3's
-body or add its own `work_orders` trigger keyed on that `completed_at`
-change. Stamps never change without a status change, and `job_number`,
+held_for_customer → sold), with no stock movement (D6, D25). Phase 3 keeps
+the reopen rule in `private.work_orders_enforce_rules` (BEFORE INSERT OR
+UPDATE), commented as the Phase 4 extension point; Phase 4 resolved that
+extension point with a separate trigger and left the function as it is:
+`work_orders_sell_held_units`, SECURITY DEFINER, `AFTER UPDATE ON
+work_orders FOR EACH ROW WHEN (old.completed_at is distinct from
+new.completed_at)`. It has no column list on purpose: `completed_at` is set
+and cleared by the BEFORE trigger and is never in an UPDATE's target list,
+so an `UPDATE OF completed_at` trigger would never fire. Under the job lock
+`set_work_order_status` already holds, it takes `private.lock_stock` per
+product (ascending) and the units FOR UPDATE (ascending); on completion
+(including re-completion) held_for_customer units become sold with
+`sold_at = completed_at` (cause `job_completed`) and
+`private.refresh_unique_publication` runs per product; on reopen sold units
+with no sale line go back to held_for_customer, `sold_at` null (cause
+`job_reopened`), with no movement and no publication change. Stamps never change without a status change, and `job_number`,
 `customer_id`, `bike_id`, `currency`, `created_by`, `created_at` and
 `checked_in_at` never change (`work_order_immutable`); `lead_mechanic_id`
 may only become the active lead (so only the assignments trigger moves it).
@@ -462,7 +474,7 @@ consistent. One event per action:
 | `note_added` / `diagnosis_added` | `add_work_order_note` | `note_id, body` (`note_id`, the client's key, unique: `work_order_events_note_id_key`) |
 | `photo_added` / `photo_removed` | job attachment recorded (at its `created_at`) / deleted | `attachment_id, visibility` / `attachment_id, reason` |
 | `line_added` / `line_voided` | line inserted (at `created_at`) / voided (at `voided_at`) | `line_id, line_type, description, quantity, unit_sale_price, sale_total, currency` / `line_id, description, quantity, sale_total, reason` |
-| `stock_consumed` / `stock_reversed` | Phase 4 | — |
+| `stock_consumed` / `stock_reversed` | `add_inventory_line` / the `void_line` inventory branch (Phase 4) | `line_id, movement_id, product_id, product_short_id, inventory_unit_id, unit_short_id, location_id, location_name, quantity, on_hand_after` / `line_id, movement_id, reversal_of_id, product_short_id, unit_short_id, location_name, quantity, on_hand_after` |
 
 Payloads never contain cost, yield, rate or Cult Commons values: every
 staff member reads the timeline, with or without `view_costs` (a test walks
@@ -533,8 +545,9 @@ work_order_line_items                    -- immutable except voiding; never dele
   work_order_id uuid -> work_orders
   line_type line_type not null           -- enum: service | inventory | manual
   source_service_id uuid null -> services
-  source_product_id uuid null            -- FK in Phase 4
-  source_inventory_unit_id uuid null     -- FK in Phase 4
+  source_product_id uuid null -> products            -- FK added in Phase 4
+  source_inventory_unit_id uuid null -> inventory_units  -- FK added in Phase 4;
+     -- partial unique index work_order_line_items_unit_once (live lines only)
   description_snapshot text not null     -- 1..300
   quantity line_quantity not null        -- numeric(10,2), NaN-free domain; 0 < q ≤ 9999
   unit_sale_price_snapshot money_amount not null (≥ 0)
@@ -628,114 +641,245 @@ Deviations from this document's earlier draft, each for a reason:
 
 ## 6. Catalog and inventory
 
+Built in Phase 4 (`20261004001800_inventory.sql`). Money columns are
+`money_amount`, quantities `integer`. Every table has RLS: staff read;
+`manage_inventory` writes locations and products; customers and anonymous
+visitors read nothing (the anonymous surface is `reporting.public_items`,
+Phase 4 step 2).
+
 ```
 locations
-  id, name, kind location_kind (shop_floor | workshop | storage | offsite),
-  active, sort_order
+  id uuid PK
+  name text not null (≤ 80, trimmed, non-blank), constraint locations_name_key unique
+  kind location_kind not null default 'shop_floor'
+     -- enum: shop_floor | workshop | storage | offsite
+  active boolean not null default true
+  sort_order integer not null default 0
+  created_at, updated_at
+  -- The DEFAULT location is the active one with the lowest (sort_order,
+  -- name); there is no flag. The migration inserts the one-shop bootstrap
+  -- 'Shop floor' (1c000000-…-000000000001, sort 10), so a hosted database
+  -- works without the seed (SPEC §11). Deactivating a location whose
+  -- ledger on-hand is non-zero for any product raises location_has_stock.
 
 products
-  id uuid PK
-  short_id text not null unique            -- P-000789 (encoded in QR)
-  sku text null unique                     -- supplier/own SKU, optional
-  name text not null, description text
-  brand text null, category_id uuid null
-  tracking_type tracking_type not null     -- enum: quantity | unique
+  id uuid PK                               -- client-supplied by the form id
+  short_id text not null unique            -- P-######, assigned by trigger, immutable
+  sku text null (≤ 64)
+  sku_key text generated                   -- upper(sku) without punctuation;
+                                           -- unique index products_sku_key_unique
+  name text not null (≤ 200), description text (≤ 5000), brand text (≤ 100)
+  category_id uuid null -> categories      -- kind must be 'product' (category_kind_mismatch)
+  tracking_type tracking_type not null     -- enum: quantity | unique; immutable
   ownership_type ownership_type not null default 'shop_owned'
-     -- enum: shop_owned | consignment | customer_owned
-     -- for unique products this is informational; the unit carries the truth
+     -- enum: shop_owned | consignment | customer_owned; not client-writable
   publication_status publication_status not null default 'draft'
-     -- enum: draft | internal_only | public | sold | archived
-  public_slug text null unique
-  default_sale_price money_amount null
-  default_direct_cost money_amount null    -- last/standard cost; see D5
+     -- enum: draft | internal_only | public | sold | archived (§11, D26)
+  public_slug text null unique             -- set at first publish, never changes
+  default_sale_price money_amount null ≥ 0
+  default_direct_cost money_amount null ≥ 0  -- no column grant: product_costs
   currency char(3) not null default 'SGD'
-  reorder_point integer null               -- low-stock threshold
-  shopify_product_id text null unique
-  shopify_variant_id text null unique
+  reorder_point integer null ≥ 0           -- low stock: on_hand <= reorder_point
+  shopify_product_id text null unique, shopify_variant_id text null unique  -- Phase 10
   active boolean not null default true
-  created_at, updated_at, archived_at
+  search_text text generated (name, brand, sku; trigram index)
+  created_by uuid null -> staff, created_at, updated_at, archived_at
+  -- products_enforce_rules (definer, every writer): trims, assigns the
+  -- short ID, keeps short_id and tracking_type immutable, enforces the
+  -- publication machine and requirements (§11), assigns the slug, refuses
+  -- archiving while public (product_published) or while any location's
+  -- ledger is non-zero or a unit is available/reserved/held
+  -- (product_has_stock).
 
-inventory_units   (one row per physical unique item)
+inventory_units   (one row per physical unique item; created only by RPCs)
   id uuid PK
-  short_id text not null unique            -- U-000012 (encoded in QR)
-  product_id uuid not null -> products (tracking_type = unique)
+  short_id text not null unique            -- U-######, assigned by trigger, immutable
+  product_id uuid not null -> products     -- unique-tracked (product_not_unique); immutable
   location_id uuid not null -> locations
-  serial_number text null
-  condition text null                      -- free text or small enum later
-  ownership_type ownership_type not null
-  consignment_item_id uuid null -> consignment_items
-  bike_id uuid null -> bikes               -- when the unit is a complete bike
+  serial_number text null (≤ 100), serial_key generated (btree + trigram)
+  condition text null (≤ 500)              -- PUBLIC once the product is published
+  ownership_type ownership_type not null default 'shop_owned'
+  consignment_item_id uuid null            -- no FK until Phase 6;
+                                           -- required when ownership = consignment
+  bike_id uuid null unique -> bikes        -- when the unit is a complete bike
   status unit_status not null default 'available'
      -- enum: available | reserved | sold | returned_to_consignor |
      --       written_off | held_for_customer
-  sale_price money_amount null             -- overrides product default
-  direct_cost money_amount null            -- purchase cost or consignor payout
-  sold_sale_line_id uuid null unique -> sale_lines
-  sold_at timestamptz null
-  internal_notes text
-  created_at, updated_at, archived_at
+  sale_price money_amount null ≥ 0         -- overrides product default
+  direct_cost money_amount null ≥ 0        -- no column grant: inventory_unit_costs
+  sold_sale_line_id uuid null unique       -- no FK until Phase 6
+  sold_at timestamptz null                 -- check (status = 'sold') = (sold_at is not null)
+  internal_notes text (≤ 10000)
+  created_by, created_at, updated_at, archived_at
+  -- archived only when sold, written_off or returned_to_consignor (unit_in_stock)
 
-supplier_products   (future multiple suppliers per product; create now, use later)
-  supplier_id, product_id, supplier_sku, last_unit_cost, lead_days
-  PK (supplier_id, product_id)
+product_events / inventory_unit_events   (append-only, written by triggers)
+  id, product_id | unit_id, event_type, actor_staff_id, payload jsonb,
+  reason (private.change_reason()), correlation_id, created_at
 ```
 
+Unit status transitions (`private.unit_status_transition_allowed`,
+mirrored in `src/lib/inventory.ts`; same-state pairs are false):
+
+| From | To |
+|---|---|
+| available | reserved, held_for_customer, sold, returned_to_consignor, written_off |
+| reserved | available, held_for_customer, sold |
+| held_for_customer | available, sold |
+| sold | available, held_for_customer (the latter only on a job reopen, D25) |
+| written_off | available |
+| returned_to_consignor | (none) |
+
+History payloads are exact and never carry a cost (no cost column name or
+value appears in any product, unit or work-order event, nor in any RPC
+return). Product: `created {short_id, name, tracking_type,
+publication_status}`, `details_changed {fields: [names]}` (names only),
+`price_changed {from, to}`, `cost_changed {}`, `publication_changed {from,
+to}`, `archived {}` / `unarchived {}`. Unit: `created {short_id,
+product_id, location_id, status, ownership_type}`, `status_changed {from,
+to}` merged with the event context (`{work_order_id, job_number, line_id}`
+or `{work_order_id, job_number, cause: 'job_completed' | 'job_reopened'}`,
+set through `private.set_event_context` and read by
+`private.event_context()`), `moved {from_location_id, to_location_id}`,
+`details_changed {fields}`, `price_changed {from, to}`, `cost_changed {}`,
+`archived {}` / `unarchived {}`.
+
+Cost gating uses Phase 3's mechanism: `authenticated` has no column grant on
+`products.default_direct_cost`, `inventory_units.direct_cost` or
+`inventory_movements.unit_cost_snapshot` (so `select *` fails; callers list
+columns), and reads them through the definer `security_barrier` views
+`product_costs`, `inventory_unit_costs` and `inventory_movement_costs`
+(rows only for `view_costs`), which also give expected yield and expected
+Cult Commons with exactly Phase 3's generated expression for quantity 1
+(D1). `public.selling_prices` gives every active staff member the
+effective selling price of each product (unit null) and unit. Direct API
+writes of a cost column by a caller without `view_costs` are refused (42501)
+by two SECURITY INVOKER triggers, `products_cost_write_guard` and
+`inventory_units_cost_write_guard` (invoker because inside a definer
+function `current_user` is the owner; definer RPCs check `view_costs`
+themselves). Definer writes to these tables re-raise check and not-null
+violations without the row (`private.raise_without_row`).
+
+Photos on stock (`product`, `inventory_unit`) are internal or public, never
+customer (`attachment_stock_never_customer`, backstop CHECK
+`attachments_stock_never_customer`; D13 extended, D19's pattern).
+
+A shop bike linked to a unit that is available, reserved or
+held_for_customer cannot be given to a customer or archived:
+`bikes_guard_stock_link` (BEFORE UPDATE … WHEN customer_id or archived_at
+changes) raises `bike_in_stock`. `bikes.inventory_unit_id` has its FK and a
+unique index; `private.register_unit` sets it.
+
+`supplier_products` moved to Phase 7 (`suppliers` does not exist before).
+
 Quantity products print one QR (`P-...`) any number of times. Unique units
-print their own (`U-...`). A bulk unit that becomes special is handled by a
-`stock_adjustment` movement of −1 on the product plus creating a new unique
-product + unit; there is no conversion machinery.
+print their own (`U-...`). A bulk unit that becomes special is
+`split_unit_from_stock` (Phase 4 step 2, D28): a `stock_adjustment` of −1
+on the source plus a new draft unique product and unit.
 
 ## 7. Inventory movement ledger
 
 ```
-inventory_movements  (append-only; insert only through RPCs)
+inventory_movements  (append-only for every writer; inserted only through private.record_movement)
   id bigint identity PK
   product_id uuid not null -> products
   inventory_unit_id uuid null -> inventory_units
   location_id uuid not null -> locations
-  quantity_delta integer not null check (quantity_delta <> 0)
+  quantity_delta integer not null check (<> 0 and |delta| <= 100000)
   movement_type movement_type not null
      -- enum: purchase_received | job_consumption | retail_sale | online_sale |
      --       stock_adjustment | damaged | return | consignment_received |
      --       consignment_returned | transfer | reversal
-  work_order_id uuid null
+  work_order_id uuid null -> work_orders
   work_order_line_item_id uuid null -> work_order_line_items
-  sale_line_id uuid null -> sale_lines
-  purchase_receipt_line_id uuid null -> purchase_receipt_lines
-  consignment_item_id uuid null -> consignment_items
-  transfer_group_id uuid null              -- pairs the −/+ rows of a transfer
+  sale_line_id uuid null                   -- FK in Phase 6
+  purchase_receipt_line_id uuid null       -- FK in Phase 7
+  consignment_item_id uuid null            -- FK in Phase 6
+  request_id uuid null                     -- the calling RPC's per-call key;
+                                           -- a transfer's two rows share it
   reversal_of_id bigint null unique -> inventory_movements
-  unit_cost_snapshot money_amount null
-  currency char(3) not null default 'SGD'
-  reason text null                         -- required for adjustments/damaged
-  created_by uuid null -> staff
-  created_at
-  check (inventory_unit_id is null or abs(quantity_delta) = 1)
-  check (movement_type not in ('stock_adjustment','damaged') or reason is not null)
-  unique (work_order_line_item_id) where movement_type = 'job_consumption'
-  unique (sale_line_id) where movement_type in ('retail_sale','online_sale')
-  unique (purchase_receipt_line_id)
-  index (product_id, location_id, created_at), index (inventory_unit_id)
+  unit_cost_snapshot money_amount null ≥ 0 -- no column grant: inventory_movement_costs
+  currency char(3) not null default 'SGD'  -- the product's
+  reason text null                         -- non-blank, ≤ 500
+  created_by uuid null -> staff, correlation_id text, created_at (clock_timestamp)
+  check inventory_movements_unit_delta: inventory_unit_id is null or abs(quantity_delta) = 1
+  check inventory_movements_reason_required: stock_adjustment/damaged need a reason
+  check inventory_movements_reversal_shape: (type = reversal) = (reversal_of_id is not null)
+  check inventory_movements_job_consumption_shape: job_consumption needs the job and line, delta < 0
+  check inventory_movements_damaged_negative, inventory_movements_transfer_request
 ```
 
-The partial unique indexes are the idempotency guarantees: a line can consume
-once, a sale line can ship once, a receipt line can be received once, a
-movement can be reversed once. A retry hits the index and the RPC returns the
-existing movement instead of inserting.
+`request_id` replaces the original `transfer_group_id`: it is each call's
+idempotency key, generated by the client for that one call. No RPC reuses
+another entity's id or another call's key as its request_id, except that
+`create_unique_unit` and `split_unit_from_stock` use the client's new unit
+id, which is created for that one call.
 
-Stock on hand is `reporting.stock_levels`:
-`select product_id, location_id, sum(quantity_delta) on_hand from
-inventory_movements group by 1,2`. A cached `inventory_balances` table may be
-added later as a projection maintained by trigger; `reporting.stock_reconciliation`
-compares the two and is the reconciliation tool from the spec.
+The partial unique indexes are the idempotency guarantees. Phases 6, 7 and
+10 rely on these exact predicates:
 
-Unique-unit invariant: `inventory_units.status` is only changed by RPCs that
-also write the movement, inside one transaction, after `select … for update` on
-the unit. A `sold` unit cannot be consumed, sold or transferred; the RPC raises.
-The one exception is D6/D15's reopen rule (Phase 4, §4): when a job's
-`completed_at` is cleared its sold units go back to `held_for_customer`, and
-when it is stamped again they go back to `sold`, with no stock movement (the
-unit never left the job).
+| Index | Predicate |
+|---|---|
+| `inventory_movements_job_consumption_once` | unique (work_order_line_item_id) where movement_type = 'job_consumption' |
+| `inventory_movements_sale_line_once` | unique (sale_line_id) where movement_type in ('retail_sale','online_sale') |
+| `inventory_movements_receipt_line_once` | unique (purchase_receipt_line_id) where movement_type = 'purchase_received' |
+| `inventory_movements_request_once` | unique (request_id, product_id, location_id) where request_id is not null |
+| `inventory_movements_reversal_of_id_key` | unique (reversal_of_id) |
+
+Plus btree indexes on (product_id, location_id, id), (inventory_unit_id,
+id), work_order_id, work_order_line_item_id, created_by and (id desc).
+
+`inventory_movements_enforce_rules` (BEFORE INSERT) requires a unit for a
+unique product and forbids one for a quantity product, checks the unit's
+product, requires a reversal to undo exactly one non-reversal movement
+(same product, unit, location, opposite delta; `movement_invalid`), and
+fills created_by and correlation_id. UPDATE and DELETE raise
+`movement_append_only` for every writer.
+
+Stock on hand is `reporting.stock_levels` (§14): the sum of quantity_delta
+per product and location. A cached `inventory_balances` table may be added
+later as a projection; `reporting.stock_reconciliation` (Phase 9) compares
+the two.
+
+Unique-unit invariant, proved by the database: two DEFERRABLE INITIALLY
+DEFERRED constraint triggers named `inventory_unit_ledger_consistent` (on
+inventory_movements after insert of a unit row; on inventory_units after
+insert or a change of status, location or bike) call
+`private.assert_unit_consistent(unit_id)` at commit: while available or
+reserved the unit's ledger nets to 1 at its own location and 0 elsewhere; in
+every other status it nets to 0 at every location; a linked bike points
+back. Otherwise `unit_ledger_inconsistent`. held_for_customer ↔ sold (job
+completion and reopen, D25) needs no movement.
+
+**Global lock order** (binding for Phase 4 and every later phase that
+touches stock):
+
+1. the work_orders row FOR UPDATE, always through `private.lock_work_order`
+   (never FOR SHARE on a work order before FOR UPDATE in one transaction);
+2. the work_order_line_items row FOR UPDATE;
+3. `private.lock_stock(product_id)` (a transaction advisory lock); several
+   products in ascending product_id;
+4. the bikes row FOR UPDATE (only `create_unique_unit`, before
+   `register_unit` links the bike);
+5. the inventory_units row FOR UPDATE; several units in ascending id;
+6. the products row FOR UPDATE (only `private.refresh_unique_publication`
+   and step 2's `set_publication_status`).
+
+Every RPC takes its locks before its replay check and any other read;
+functions that lock and then read stay VOLATILE.
+
+Private extension points (security definer, no grants):
+
+| Function | Contract |
+|---|---|
+| `private.record_movement(product, unit, location, delta, type, reason, unit_cost_snapshot, request_id, work_order_id, line_id, reversal_of_id)` | THE single insert path; currency from the product; refuses an inactive location except for a reversal |
+| `private.register_unit(unit_id, product, location, ownership, serial, condition, sale_price, direct_cost, bike_id, consignment_item_id)` | THE single unit-creation path, plus the bike link; Phase 6 creates consigned units through it |
+| `private.selling_price(product_id, unit_id)` | THE single selling-price source: unit.sale_price, else product.default_sale_price. Phase 6 replaces it to return the consignment asking price; Phase 8 labels and Phase 10 Shopify use it unchanged |
+| `private.lock_stock(product_id)` | the per-product stock lock |
+| `private.stock_on_hand(product_id, location_id)` | ledger on-hand |
+| `private.refresh_unique_publication(product_id)` | public → sold when no unit is in stock and one is sold; sold → public when a unit is available again (skips requirements) |
+| `private.publication_transition_allowed`, `private.unit_status_transition_allowed`, `private.publication_requirements_met` | the state machines and publication requirements |
+| `private.set_event_context(jsonb)`, `private.event_context()` | transaction-local extra keys for unit history |
 
 ## 8. Sales (non-workshop revenue)
 
@@ -907,11 +1051,23 @@ writes nothing.
 - The Admin scanner recognises the same URL (or a bare short ID) and routes to
   the staff detail page: `/products/[id]`, `/units/[id]`, `/bikes/[id]`,
   `/jobs/[id]`.
-- Publication state machine on `products.publication_status`:
-  `draft → internal_only → public`, `public → sold` (unique only, set by the
-  sale RPC), `public|internal_only|sold → archived`. A product cannot become
-  `public` without a name, at least one `public` attachment and a sale price.
-  Inventory rows are never public by default.
+- Publication state machine on `products.publication_status` (D26,
+  `private.publication_transition_allowed`, mirrored in
+  `src/lib/inventory.ts`): draft → internal_only, archived; internal_only →
+  public, archived; public → internal_only, sold, archived; sold → public,
+  archived; archived → internal_only. `sold` is entered only by a sale path
+  (job completion; Phases 6 and 10) and only for unique products; `sold →
+  public` is the system restore of `private.refresh_unique_publication`,
+  which skips the requirements so a void is never blocked. Any other entry
+  into `public` needs a selling price (`private.selling_price`), at least
+  one `public` photo on the product, a unit or a unit's bike, and for a
+  unique product an available unit (`publication_requires_price`,
+  `publication_requires_photo`, `publication_requires_available_unit`);
+  the products trigger enforces it for every writer. A new product starts
+  draft or internal_only (`publication_initial_invalid`). `public_slug` is
+  assigned at the first publish (name slug + `-` + lower(short_id), 'item'
+  when the name has no letters or digits) and never changes. Inventory rows
+  are never public by default.
 
 ## 12. Label printing
 
@@ -992,15 +1148,24 @@ component or route handler talks to Shopify directly.
 
 All views are plain SQL over source tables. None are maintained by hand.
 
+From Phase 4 the `reporting` schema is exposed to PostgREST
+(`supabase/config.toml` `[api] schemas`, the devstack's `db-schemas`, type
+generation with `--schema public,reporting`, RUNBOOK "Hosted Supabase"),
+because `reporting.public_items` is the anonymous surface (§15).
+`authenticated` has USAGE; `anon` gets USAGE together with `public_items`
+(Phase 4 step 2). The stock views are security_invoker, so the base tables'
+staff-only RLS applies. `private` is never exposed.
+
 | View | Purpose |
 |---|---|
 | `financial_lines` | Union of non-voided `work_order_line_items` (recognised at `work_orders.completed_at`) and `sale_lines` (recognised at `sales.recognized_at`): source, recognized_at, sale, cost, yield, cult_commons_share, ownership_type, product/service/category, mechanic. |
 | `daily_summary` | One row per day: appointments, arrivals, no-shows, jobs by status transition that day, gross sales, COGS, yield, CC share, yield after CC, parts consumed, adjustments, consignment sales, new liabilities. |
 | `work_order_activity` | Per job: check-in, start, completion, collection dates and durations; drives the board and overdue filters. |
 | `work_order_totals` / `work_order_totals_staff` | Running totals per job; the staff variant includes cost and yield. |
-| `stock_levels` | On-hand per product/location from the ledger. |
+| `stock_levels` | Built (Phase 4): on-hand (`sum(quantity_delta)`) and `last_movement_at` per product and location from the ledger. security_invoker, SELECT to authenticated (staff rows only through RLS). |
+| `product_stock` | Built (Phase 4): every product with on-hand across locations (0 when none), available and held units, `negative_locations` (locations below zero) and `below_reorder` (quantity product, reorder point set, on_hand <= reorder_point). security_invoker. |
 | `stock_reconciliation` | Ledger-derived vs cached balance when the cache exists. |
-| `low_stock` | Products under `reorder_point`. |
+| `low_stock` | Built (Phase 4): active, non-archived quantity products AT OR BELOW their reorder point (`on_hand <= reorder_point`), or below zero in total or at any location regardless of reorder point (D23); `shortfall = coalesce(reorder_point, 0) - on_hand`, largest first. security_invoker. |
 | `consignor_ledger` / `consignor_item_ledger` | Owed, paid, outstanding. |
 | `purchase_order_progress` | Ordered vs received per line. |
 | `shopify_sync_status` | Per published product. |
@@ -1037,9 +1202,14 @@ security-definer function. Blank = no access.
 | cult_commons_rates | P(view_costs) | RPC `schedule_cult_commons_rate` (A) | RPC `cancel_cult_commons_rate` (A, future rates only) | never |
 | work_order_line_items | S sale columns only; P(view_costs) everything via `work_order_line_items_staff`; C own job's live lines (description, quantity, unit price, total) via `my_work_order_lines()` | RPC `add_service_line`, `add_manual_line` (cost needs P(view_costs)) | RPC `void_line` (voided_* only) | never |
 | work_order_totals / work_order_totals_staff (views) | S sale totals / P(view_costs) cost, yield, Cult Commons | — | — | — |
-| products | S; anon/C via `public_items` only | P(manage_inventory) | P(manage_inventory) | — |
-| inventory_units | S (cost col gated) | RPC | RPC | — |
-| inventory_movements | S (cost col gated) | RPC | — | — |
+| locations | S | P(manage_inventory) (id, name, kind, active, sort_order) | P(manage_inventory) (name, kind, active, sort_order; `location_has_stock`) | — (deactivate) |
+| products | S, every column except `default_direct_cost`; anon/C via `public_items` only | P(manage_inventory) (no short_id, publication, slug, ownership or Shopify ids; a cost needs P(view_costs): `products_cost_write_guard`) | P(manage_inventory) (sku, name, description, brand, category, prices, reorder point, active, archived_at; cost guard as insert); publication via RPC (step 2) | — (archive) |
+| inventory_units | S, every column except `direct_cost` | RPC `create_unique_unit` (P(manage_inventory); cost needs P(view_costs)) | P(manage_inventory) serial, condition, prices, notes, archived_at (cost guard); status, location, bike, ownership only by RPCs and triggers | — (archive) |
+| inventory_movements | S, every column except `unit_cost_snapshot` | RPCs only (`private.record_movement`) | never (`movement_append_only`) | never |
+| product_events, inventory_unit_events | S | triggers only | never | never |
+| product_costs, inventory_unit_costs, inventory_movement_costs (definer views) | P(view_costs): costs, expected yield and Cult Commons | — | — | — |
+| selling_prices (definer view) | S: effective selling price per product and unit (`private.selling_price`) | — | — | — |
+| reporting.stock_levels, product_stock, low_stock | S (security_invoker over staff-only RLS) | — | — | — |
 | sales, sale_lines, sale_refunds | P(view_financial_reports) or P(view_costs) | RPC | RPC | — |
 | consignors, consignment_items, charges | S; values gated | P(manage_consignments) | same | — |
 | consignment_settlements, settlement_lines | P(manage_consignments) | RPC | — | — |
@@ -1129,18 +1299,19 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `unassign_staff(work_order_id, staff_id)` → `work_order_assignments` | S | Closes the active row and returns it; null when none (no event). `work_order_closed`. |
 | `add_service_line(line_id, work_order_id, service_id, quantity line_quantity = 1, unit_sale_price = null, unit_direct_cost = null, description = null)` → `uuid` | S; a cost needs P(view_costs) (D14) | Locks the job, then `private.insert_service_line`: replay by line id first (same job, type and service → id; else `line_conflict`), then `work_order_locked`, P0002 / `service_unavailable`, snapshots (description, price, cost, `cult_commons_rate_at(now)`), insert. Returns the id only. |
 | `add_manual_line(line_id, work_order_id, description, unit_sale_price, quantity line_quantity = 1, unit_direct_cost = null)` → `uuid` | S; a cost needs P(view_costs) (D14) | Same order (replay, `work_order_locked`); cost null → 0 with `cost_pending` (D14). Returns the id only. |
-| `void_line(line_id, reason)` → `uuid` | S | `reason_required` / `reason_too_long`; locks the job, then the line; already voided → id (no event); `work_order_locked`; inventory lines `line_type_unsupported` until Phase 4 replaces it with the reversal branch. Sets `voided_*`; never deletes. |
+| `void_line(line_id, reason)` → `uuid` | S | `reason_required` / `reason_too_long`; locks the job, then the line; already voided → id (no event); `work_order_locked`. Sets `voided_*`; never deletes. Phase 4 replaced it (same signature, order and wrapper) with the inventory branch below. |
 | `work_order_timeline(work_order_id, max_rows = 200)` | S | Events newest first with actor and (assignment events) subject display names; 1..2000 rows (the job page asks one more than it shows, to say older events exist). |
 | `create_service(service_id, name, default_sale_price, description = null, category_id = null, default_direct_cost = null, is_active = true, is_public = false)` → `uuid` | P(manage_inventory); a cost needs P(view_costs) | Replay by id with the same name → id; else `service_conflict`; `category_kind_mismatch`; 23505 `services_active_name_key`. |
 | `update_service(service_id, name, default_sale_price, description = null, category_id = null, is_active = true, is_public = false, default_direct_cost = null)` → `uuid` | same | Replaces every field; cost null keeps it. P0002. |
 | `set_service_archived(service_id, archived)` → `uuid` | P(manage_inventory) | Replay-safe. |
 | `schedule_cult_commons_rate(rate_id, rate, effective_from = null)` → `cult_commons_rates` | A | Replay by `rate_id` first (same rate → the row as it is now; else `rate_conflict`). Null = now; earlier than now → `rate_backdated` (D21); 23505 on a taken start time. |
 | `cancel_cult_commons_rate(rate_id)` → `cult_commons_rates` | A | Only before it starts (`cult_commons_rate_in_effect`); replay returns the row. |
-| `add_inventory_line(work_order_id, product_id, unit_id, quantity, location_id)` | S | Phase 4: `private.lock_work_order`, then the replay lookup, then `private.require_open_work_order` (lock order §4, §7). Snapshots; locks unit/stock; inserts line + `job_consumption` movement; unit → `held`/`sold` per D6; events. Replay = no-op by unique index. |
-| `void_line(line_id, reason)` inventory branch | S | Phase 4 (create or replace, keeping the lock order and the open check: `private.lock_work_order`, then the line and the replay check, then the open check): sets `voided_*`; inserts `reversal` movement linked by `reversal_of_id`; unit back to `available`; events. Replay = no-op. |
-| `adjust_stock(product_id, location_id, delta, movement_type, reason, unit_cost)` | P(adjust_stock) | Manual movement with mandatory reason. |
-| `transfer_stock(product_id, from, to, qty, reason)` | P(manage_inventory) | Paired movements with `transfer_group_id`. |
-| `create_unique_unit(product_id, location_id, ownership, cost, consignment)` | P(manage_inventory) | Unit + `consignment_received`/`stock_adjustment` movement. |
+| `add_inventory_line(line_id, work_order_id, product_id, quantity integer = 1, location_id = null, inventory_unit_id = null, unit_sale_price money_amount = null)` → `inventory_line_result (line_id, movement_id, location_id, on_hand_after, replayed)` | S | Built (Phase 4). 22004 on null ids/quantity. Order: `private.lock_work_order` (P0002); `private.lock_stock(product)` and the unit FOR UPDATE (P0002); replay by line id before the open check (same job, inventory, product, unit, quantity → the line, its job_consumption movement and current on-hand, `replayed = true`; else `line_conflict`); `work_order_locked` (D15); `quantity_invalid` (1..999; unique: 1); P0002 / `product_archived` / `product_inactive`; `currency_mismatch`; `ownership_not_saleable` (product or unit not shop_owned, D27). Quantity: `unit_product_mismatch` if a unit is given; default location (lowest active sort_order, name) or `location_required`; `location_inactive`; on-hand may go negative (D23). Unique: `unit_required`, `unit_product_mismatch`, `unit_not_available`, `unit_location_mismatch`. `part_price_missing` / `part_cost_missing` (D24). Inserts the line (snapshots price, cost, rate; `cost_pending` false; description = name, or name · U-… · S/N …), the `job_consumption` movement (−quantity, cost snapshot), unit → held_for_customer and publication refresh, `stock_consumed`. Never returns a cost. |
+| `void_line(line_id, reason)` inventory branch | S | Built (Phase 4, create or replace keeping Phase 3's signature, guard, reason rules, error order, effects, lock order and wrapper; `line_type_unsupported` is gone): already voided → id before the open check; `work_order_locked` (reopen first, D25); after `voided_*`: `lock_stock`, the unit FOR UPDATE, one `reversal` of the line's job_consumption (`reversal_of_id`, same product, unit, location and cost snapshot; allowed at a location deactivated since), held unit → available, `refresh_unique_publication` (sold → public, no requirement check), `stock_reversed`. Concurrent voids serialise on the job; the unique `reversal_of_id` is the backstop. |
+| `adjust_stock(request_id, product_id, location_id, quantity_delta integer, movement_type, reason, unit_cost money_amount = null)` → `table(movement_id bigint, on_hand integer)` | P(adjust_stock) | Built (Phase 4). `movement_type_not_manual` (only stock_adjustment ±, damaged −), `reason_required` / `reason_too_long`, `quantity_invalid`; a unit cost needs P(view_costs) (42501) and a positive delta (22023). `lock_stock`, then replay by request_id (same product, location, delta, type → that row; else `request_conflict`); P0002; `product_unit_tracked`; `product_archived`; `location_inactive`; `insufficient_stock` if a negative delta leaves the location below zero. Snapshot = unit_cost else the product default. Records actor and time (SPEC §23). |
+| `transfer_stock(request_id, product_id, from_location_id, to_location_id, quantity integer, reason = null, inventory_unit_id = null)` → `table(movement_id bigint, location_id uuid, quantity_delta integer)` | P(manage_inventory) | Built (Phase 4). `transfer_same_location`; `lock_stock` and the unit FOR UPDATE; replay by request_id (both rows; else `request_conflict`); `location_inactive`; `product_archived`. Quantity: `quantity_invalid`, `insufficient_stock`. Unique: `unit_required`, quantity 1, `unit_not_available` (available or reserved only), `unit_location_mismatch`; moves `location_id` (unit `moved` event). Two `transfer` rows sharing request_id. |
+| `create_unique_unit(unit_id, product_id, location_id, serial_number = null, condition = null, sale_price = null, direct_cost = null, bike_id = null, reason = null)` → `unique_unit_result (unit_id, short_id)` | P(manage_inventory); a cost needs P(view_costs) | Built (Phase 4). `lock_stock` before the replay (unit id exists with the same product → it; else `unit_conflict`); `product_not_unique`, `product_archived`, `product_inactive`, `location_inactive`; a bike is locked FOR UPDATE and must exist, not be archived (`bike_archived`), have no owner (`bike_has_owner`) and no unit (`bike_already_linked`). `private.register_unit` (shop_owned, D27), then a +1 `stock_adjustment` (reason default "Registered as a unique item", request_id = unit id). |
+| `write_off_unit(request_id, unit_id, reason)` → `unit_status_result (unit_id, status)` | P(adjust_stock) | Built (Phase 4). `reason_required`; P0002; `lock_stock`, the unit FOR UPDATE; replay: a damaged movement with this request_id for this unit → current state, the key used for anything else → `request_conflict`; already written off → no-op; available or reserved → written_off plus a `damaged` −1; else `unit_not_available`. |
 | `set_publication_status(product_id, status)` | P(manage_inventory) | State-machine check; enqueues Shopify sync if linked. |
 | `record_retail_sale(lines[], customer_id, recognized_at, idempotency_key)` | S | Sale + lines + movements; unit/consignment → sold. |
 | `restock_unit(unit_id, location_id, reason)` | P(adjust_stock) | `return` movement; unit → available; product status back from `sold`. |
@@ -1243,3 +1414,53 @@ strictly increasing and no line change after completion; (d) J-000007's
 `transferred` event. Still no attachments. (The seeded bikes themselves are
 registered at seed time, after the backdated check-ins; only the jobs'
 timelines are backdated.)
+
+Phase 4 part (done, step 1): the 'Shop floor' location
+(`1c000000-…-000000000001`, sort 10) comes from the inventory migration's
+one-shop bootstrap; the seed re-inserts it with `on conflict do nothing` and
+adds 'Workshop store' (`…0002`, workshop, sort 20) (`LOCATION`). Product
+categories `ca000000-…-000000000006`…`…012` (kind product: Brakes, Tyres &
+tubes, Drivetrain, Cables & hoses, Care, Cockpit, Bikes; `PRODUCT_CATEGORY`).
+Products `9a000000-…-0000000000NN` (`PRODUCT`, `PRODUCT_SHORT_ID`) are
+inserted directly as the owner with `request.jwt.claims` naming the admin
+(so `created_by` and the history name an actor), in order, giving
+`P-000001`…`P-000016`; stock, units and the job go through the real RPCs
+as the admin, every request id used once.
+
+| Short ID | Product | Price / cost | Reorder | On hand after the seed |
+|---|---|---|---|---|
+| P-000001 | Road disc brake pads, resin (pair) | 28.00 / 13.50 | 10 | 34 Shop floor |
+| P-000002 | Grand Prix 5000 700x25c tyre | 89.00 / 52.00 | 4 | 12 Shop floor |
+| P-000003 | Road inner tube 700x23-28c Presta 60mm | 9.00 / 3.80 | 20 | 40 Shop floor + 20 Workshop store |
+| P-000004 | Marathon Racer 16x1.35 tyre | 55.00 / 30.00 | 3 | 6 Shop floor (one consumed by J-000010, then reversed) |
+| P-000005 | Inner tube 16in Schrader | 14.00 / 6.00 | 6 | 14 Shop floor (15 opening, one on J-000010) |
+| P-000006 | X11 11-speed chain | 45.00 / 24.00 | 5 | 8 Shop floor |
+| P-000007 | 105 CS-R7000 11-34 cassette (draft) | 109.00 / 68.00 | 2 | 3 Shop floor |
+| P-000008 | Pro brake cable kit | 35.00 / 16.00 | 4 | 2 Shop floor (low) |
+| P-000009 | SM-BH90 hydraulic hose 1000mm | 28.00 / 12.00 | 5 | 1 Shop floor (low) |
+| P-000010 | Dry chain lube 120ml | 16.00 / 7.00 | 6 | 18 Shop floor |
+| P-000011 | DSP 3.2mm bar tape | 49.00 / 26.00 | 4 | 7 Shop floor |
+| P-000012 | Tubeless sealant 237ml | 32.00 / 17.00 | 3 | 1 Shop floor + 1 Workshop store (low) |
+| P-000013 | Colnago C64 Disc 52s (pre-owned), unique | 6800.00 / 4200.00 | — | unit U-000001 (bike B-000011) |
+| P-000014 | Brompton C Line Explore (ex-demo), unique | 1950.00 / 1400.00 | — | unit U-000002 (bike B-000012) |
+| P-000015 | Surly Bridge Club 27.5 M (new old stock), unique | 1650.00 / 1100.00 | — | unit U-000003 (bike B-000013) |
+| P-000016 | X10 10-speed chain (discontinued), archived | 35.00 / 18.00 | — | none |
+
+All are internal_only except P-000007 (draft); none is public and there are
+no attachments. Opening stock is `adjust_stock` with request ids
+`9c000000-…-0000000000NN` per product at its first location and
+`9c000000-…-0000000001NN` for the Workshop store rows of P-000003 and
+P-000012 ("Opening stock count"). Three shop bikes without an owner,
+`b1000000-…-000000000011`…`…013` (`BIKE.shopColnago`, `shopBrompton`,
+`shopSurly`; B-000011…B-000013), are in stock as units
+`9b000000-…-00000000000N` (`UNIT`, U-000001…U-000003, created by
+`create_unique_unit` at the Shop floor with their bikes linked).
+`reporting.low_stock` lists exactly P-000009, P-000008 and P-000012.
+
+The inventory job `9e000000-…-000000000001` (`INVENTORY_JOB`, J-000010) is
+Hafiz's Brompton (D18; his only other job, J-000003, is completed), lead
+Asha, left `received`: line `9d000000-…-000000000001` is one Inner tube 16in
+Schrader from the Shop floor (live), and line `…0002`, one Marathon Racer
+tyre, was voided ("Customer brought their own tyre"), so the ledger shows a
+`job_consumption` and its linked `reversal` (`SEED_LINE`). It is kept out of
+`WORK_ORDER` / `JOB_NUMBER`, which list Phase 3's nine jobs.

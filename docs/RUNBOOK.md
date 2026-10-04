@@ -55,7 +55,7 @@ Differences from the devstack:
   (short IDs are never reused) skip themselves:
   `BICII_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run test:db`.
 - **Types:** `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run db:types`
-  (or `npx supabase@2.119.0 gen types typescript --local --schema public`,
+  (or `npx supabase@2.119.0 gen types typescript --local --schema public,reporting`,
   then `npx prettier --write src/lib/database.types.ts`). `-- --fresh`
   needs the devstack.
 - **E2E:** `npx supabase@2.119.0 db reset && E2E_EXTERNAL_STACK=1 npm run test:e2e`.
@@ -89,8 +89,16 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
 3. Authentication → URL Configuration: Site URL is the Admin's URL on that
    environment (production domain, or the staging alias). Add redirect URLs
    for Vercel previews on staging, e.g. `https://*-<vercel-team>.vercel.app/**`.
-4. Data API: exposed schemas `public` only (plus the default
-   `graphql_public`). Do not expose `private` or `reporting`. Hosted Supabase
+4. Data API: exposed schemas `public` and `reporting` (plus the default
+   `graphql_public`); never `private`. `reporting` is exposed from Phase 4
+   because `reporting.public_items` is the anonymous surface of the public
+   site's QR pages (DATA-MODEL §14, §15), and staff read the stock views
+   (`stock_levels`, `product_stock`, `low_stock`) there; the migrations
+   grant `authenticated` USAGE (and, from Phase 4 step 2, `anon` USAGE
+   with `public_items` only), and the views are security_invoker over the
+   staff-only tables, so nothing else in the schema is reachable. This is
+   the same list as `supabase/config.toml` `[api] schemas` and the
+   devstack's PostgREST `db-schemas`. Hosted Supabase
    grants ALL on every new `public` table, sequence and function to
    `anon`/`authenticated`/`service_role`; our migrations revoke and grant
    explicitly on every object so those defaults never reach the API. The
@@ -101,6 +109,10 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    reaching production.
 5. Do **not** run `supabase/seed.sql` on a hosted project: its logins have a
    published password. Create the first admin as below.
+   The inventory migration (`…1800_inventory`) inserts one stock location,
+   'Shop floor' (SPEC §11: the MVP starts with one shop), so stock can be
+   counted and parts used without the seed; add more in Settings →
+   Locations.
 6. Storage: do not create buckets by hand. The `…0800_media_storage`
    migration creates `media-internal` (private) and `media-public` (public),
    photo types only, 20 MiB, plus their `storage.objects` policies; it

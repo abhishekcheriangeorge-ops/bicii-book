@@ -276,6 +276,45 @@ Tests: consume once (idempotent + concurrent); reversal; unit cannot sell
 twice; adjustments need reason; anon `public_items` only; publication state
 machine; E2E journeys 1 (complete) and 3 (without labels).
 
+Scope notes (decided while building; none changes business semantics):
+
+- The database layer is built in two steps (ledger, jobs, stock RPCs and
+  seed; then `set_publication_status`, `reporting.public_items`,
+  `split_unit_from_stock` and product/unit search), so Phase 4 has four
+  build steps.
+- `supplier_products` moves to Phase 7: `suppliers` does not exist until
+  then.
+- `inventory_movements.request_id` replaces DATA-MODEL's
+  `transfer_group_id`: it is each RPC call's idempotency key and a
+  transfer's pairing key. No RPC reuses another entity's id or another
+  call's key as its request_id; `create_unique_unit` (and Step 2's
+  `split_unit_from_stock`) use the client's new unit id, created for that
+  one call.
+- Phase 3's option "Phase 4 replaces `private.work_orders_enforce_rules`"
+  is resolved with a separate AFTER trigger, `work_orders_sell_held_units`
+  (`AFTER UPDATE … WHEN (old.completed_at is distinct from
+  new.completed_at)`), so the Phase 3 function stays as it is.
+- `reporting` is exposed to PostgREST (config.toml, devstack, type
+  generation, RUNBOOK) because `reporting.public_items` is the anonymous
+  surface DATA-MODEL §15 names; `private` stays unexposed.
+- The inventory migration inserts the bootstrap location 'Shop floor'
+  (SPEC §11: one shop), so a hosted database works without the seed.
+
+Shipped (database, part 1): migrations `20261004001800_inventory.sql`
+(enums, locations, products, inventory_units, the ledger with its
+idempotency indexes and deferred unit-consistency check, product and unit
+history, the cost views and `public.selling_prices`, the private helpers,
+the stock-photo rule, the shop-bike guard and `adjust_stock`,
+`transfer_stock`, `create_unique_unit`, `write_off_unit`),
+`20261004001900_inventory_jobs.sql` (line FKs and
+`work_order_line_items_unit_once`, `add_inventory_line`, the `void_line`
+inventory branch, `work_orders_sell_held_units`) and
+`20261004002000_inventory_reporting.sql` (`reporting.stock_levels`,
+`product_stock`, `low_stock`); the Phase 4 seed; `src/lib/inventory.ts`
+(state machines); tests `tests/db/inventory-ledger.test.ts` and
+`tests/db/inventory-catalog.test.ts` on `tests/db/inventory-fixtures.ts`.
+Decisions D23-D28.
+
 ### Phase 5 — Financial engine
 
 Mostly landed inside Phases 3–4 by design (generated columns, rate table).
@@ -437,7 +476,7 @@ build proceeds with; confirm or change before the phase that uses it.
 | D3 | Recognition date for workshop revenue in reports | `work_orders.completed_at` (not collected_at, not check-in). Reports also offer check-in and collection as alternative bases. | Phase 5 |
 | D4 | Consignment charges (services done on a consigned bike before sale) | Entered per charge with an explicit bearer: `consignor` (deducted at settlement) or `shop` (added to direct cost). No default bearer; the UI requires a choice. | Phase 6 |
 | D5 | What a purchase receipt does to `products.default_direct_cost` | Sets it to the latest actual unit cost received (last-cost). No averaging. | Phase 7 |
-| D6 | Unique unit added to a job as a part | Unit becomes `held_for_customer` on add, `sold` when the job is completed; voiding before completion returns it to `available`. Interacts with D15 (reopen): the unit follows `completed_at`, with no stock movement — whenever `completed_at` goes from non-null to null (a reopen) every unit on a non-voided inventory line of the job goes sold -> held_for_customer, and whenever it goes from null to non-null (including re-completion after a reopen) they go held_for_customer -> sold. | Phase 4 |
+| D6 | Unique unit added to a job as a part | Unit becomes `held_for_customer` on add, `sold` when the job is completed; voiding before completion returns it to `available`. Interacts with D15 (reopen): the unit follows `completed_at`, with no stock movement — whenever `completed_at` goes from non-null to null (a reopen) every unit on a non-voided inventory line of the job goes sold -> held_for_customer, and whenever it goes from null to non-null (including re-completion after a reopen) they go held_for_customer -> sold. Refined by SOLD-AT-COMPLETION (D25). | Phase 4 |
 | D7 | Refund of an online sale | Financial `sale_refunds` row only; stock and unit status untouched until staff runs `restock_unit`. | Phase 10 |
 | D8 | Customer-visible timeline | Customers (later, public site) see status changes, completion, collection and `customer`/`public` photos; never notes, lines' costs, or assignments. | Phase 11 |
 | D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. | Phase 1 |
@@ -454,6 +493,12 @@ build proceeds with; confirm or change before the phase that uses it.
 | D20 | Overdue | A job is overdue while it is open (before completed: received … paused) and `now() - checked_in_at > interval '7 days'` (7 × 24 hours) (board badge and age filter; `OVERDUE_AFTER_DAYS = 7` and `isOverdue` exported from `src/lib/workshop.ts`; Phase 5's overdue_job exception and Today tile and Phase 9 reporting import or reuse exactly this rule). | Phase 3 |
 | D21 | Cult Commons rate changes | Admin only, effective now or in the future (never backdated); rate rows are append-only except that an admin may cancel a rate whose effective_from is still in the future (`cancel_cult_commons_rate` sets cancelled_at/cancelled_by; cancelled rows are ignored by `private.cult_commons_rate_at`); every line snapshots the rate in force when it is added, so history never changes. The base 0.30 row (effective 1970-01-01) ships in the migration, not the seed. | Phase 3 |
 | D22 | Assignments | Any active staff member may assign or unassign anyone on a job that is not collected or cancelled; making someone lead removes the previous lead from the job (not demoted to additional); only active staff can be assigned. | Phase 3 |
+| D23 | NEG-CONSUMPTION: can a job part take stock below zero? | Yes: adding a quantity part to a job may take a location's ledger on-hand below zero, because the part was physically used; the UI warns. Negative balances show in `reporting.low_stock` and `reporting.product_stock.negative_locations` regardless of reorder_point. Manual adjustments and transfers may never leave a location below zero (`insufficient_stock`). | Phase 4 |
+| D24 | PART-PRICE-COST: a part with no known price or cost | A part can be added to a job only when its sale price (default `private.selling_price`: the unit price, else the product default; any staff may override it, as D14 allows for every line) and its direct cost (the unit cost, else the product default; never overridden) are known. Missing values raise `part_price_missing` or `part_cost_missing`, because a silent zero cost would overstate yield and Cult Commons (SPEC §10). Inventory lines are therefore never `cost_pending` (D14's `cost_pending` is for manual lines only). | Phase 4 |
+| D25 | SOLD-AT-COMPLETION (refines D6): when a unit on a job is sold | A unit on a job is `held_for_customer` on add and becomes `sold` whenever `work_orders.completed_at` goes from null to set, including re-completion after a reopen (trigger `work_orders_sell_held_units`, AFTER UPDATE WHEN completed_at changes). On reopen (completed_at cleared) every unit on the job's non-voided inventory lines goes sold -> held_for_customer, with inventory_unit_events and no stock movement; the product's publication stays 'sold' until the line is voided (`private.refresh_unique_publication` then restores public) or the job completes again. `add_inventory_line` and `void_line` refuse on a job that is not open (D15, `work_order_locked`); to return a part from a completed job, reopen it, then void the line. Both lock the work order FOR UPDATE through `private.lock_work_order`, so completion, reopen and cancellation cannot race an add or a void. Cancelling a job with parts follows D16. | Phase 4 |
+| D26 | PUBLICATION-MACHINE: publication states | Transitions draft -> internal_only, archived; internal_only -> public, archived; public -> internal_only, sold, archived; sold -> public, archived; archived -> internal_only. 'sold' is set only by sale paths (job completion now; Phases 6 and 10 later), never manually, and only for unique products; leaving 'sold' manually is allowed only to archived. sold -> public is a system restore by `refresh_unique_publication` that skips the requirements, so a void is never blocked. Any other entry into public requires a name, a selling price (`private.selling_price`), at least one public photo (product, unit or linked bike) and, for unique products, an available unit; the products trigger enforces this for every writer. `public_slug` is assigned at first publish (name slug + short ID, with an 'item' fallback) and never changes. low_stock means on_hand <= reorder_point, or any negative stock. | Phase 4 |
+| D27 | SHOP-OWNED-ONLY: whose stock can be a job part | Phase 4 creates shop-owned units only. Consignment and customer_owned stock is never a job part: `add_inventory_line` refuses it with `ownership_not_saleable`, and Phase 6 keeps that refusal (its backstop trigger raises the same code; it does not replace `add_inventory_line`). Consigned units are created only by Phase 6's `create_consignment_item` (through `private.register_unit`), so a consigned item never exists without its liability record. customer_owned stays reserved and never saleable. | Phase 4 |
+| D28 | SPLIT-COST: turning one counted item into a unique item | One RPC, `split_unit_from_stock` (Phase 4 step 2). It decrements the source by one (a `stock_adjustment` with a reason) and creates a new draft unique product and unit at the same location; the new unit's direct cost is the source's `default_direct_cost`. | Phase 4 |
 
 ## 7. Out of scope (restated from SPEC §30)
 
