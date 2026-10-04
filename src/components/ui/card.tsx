@@ -10,7 +10,13 @@ export type CardProps = ComponentPropsWithoutRef<"section"> & {
   flush?: boolean;
 };
 
-/** White panel lifted off paper by a hairline. Headings are h2. */
+/**
+ * White panel lifted off paper by a hairline. Headings are h2.
+ *
+ * It never clips its content: a SearchPicker's results, a focus ring or a
+ * menu inside a Card must be able to extend past its edge. Flush content
+ * that paints its own background rounds its own corners (see RowList).
+ */
 export function Card({
   title,
   eyebrow,
@@ -22,10 +28,7 @@ export function Card({
 }: CardProps) {
   const hasHeader = title || eyebrow || actions;
   return (
-    <section
-      className={cn("overflow-hidden rounded-2xl border border-hairline bg-card", className)}
-      {...props}
-    >
+    <section className={cn("rounded-2xl border border-hairline bg-card", className)} {...props}>
       {hasHeader ? (
         <header className="flex items-start justify-between gap-3 px-4 pt-4 pb-2 sm:px-5">
           <div className="flex min-w-0 flex-col gap-1">

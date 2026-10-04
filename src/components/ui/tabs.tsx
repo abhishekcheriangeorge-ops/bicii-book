@@ -82,7 +82,10 @@ export function Tabs({ label, items, value, defaultValue, onValueChange, classNa
               onClick={() => select(i)}
               onKeyDown={(e) => onKeyDown(e, i)}
               className={cn(
-                "relative -mb-0.5 inline-flex min-h-tap shrink-0 cursor-pointer items-center px-4 font-display text-sm font-bold tracking-wide whitespace-nowrap uppercase",
+                // focus-inset: the tablist scrolls horizontally, which also
+                // clips vertically, so an outside ring would lose its top
+                // and bottom.
+                "relative -mb-0.5 inline-flex min-h-tap shrink-0 cursor-pointer items-center px-4 font-display text-sm font-bold tracking-wide whitespace-nowrap uppercase focus-inset",
                 "border-b-[3px] transition-colors duration-150",
                 selected
                   ? "border-ink text-ink"

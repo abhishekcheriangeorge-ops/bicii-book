@@ -100,7 +100,8 @@ export function SegmentedControl<V extends string = string>({
             onClick={() => select(i)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "inline-flex min-h-tap shrink-0 cursor-pointer items-center gap-2 rounded-full px-4 font-display text-xs font-bold tracking-wide whitespace-nowrap uppercase",
+              // Inset ring: the group scrolls horizontally and so clips.
+              "inline-flex min-h-tap shrink-0 cursor-pointer items-center gap-2 rounded-full px-4 font-display text-xs font-bold tracking-wide whitespace-nowrap uppercase focus-inset",
               "transition-colors duration-150",
               checked ? "bg-ink text-paper" : "text-ink hover:bg-dust-100",
             )}

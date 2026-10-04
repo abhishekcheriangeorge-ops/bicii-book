@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { ChevronRightIcon, ShareIcon, UserIcon, UsersIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
+import { RowLink, RowList } from "@/components/ui/row-list";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 
@@ -37,33 +37,28 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" />
-      <ul className="overflow-hidden rounded-2xl border border-hairline bg-card">
-        {items.map((item, i) => {
+      <RowList>
+        {items.map((item) => {
           const Icon = item.icon;
           return (
-            <li key={item.href} className={i > 0 ? "border-t border-hairline" : undefined}>
-              <Link
-                href={item.href}
-                className="flex min-h-16 items-center gap-4 px-4 py-3 transition-colors hover:bg-dust-100"
+            <RowLink key={item.href} href={item.href}>
+              <span
+                aria-hidden="true"
+                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sunken"
               >
-                <span
-                  aria-hidden="true"
-                  className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sunken"
-                >
-                  <Icon className="size-5" />
+                <Icon className="size-5" />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="font-display text-base font-bold tracking-wide uppercase">
+                  {item.label}
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-display text-base font-bold tracking-wide uppercase">
-                    {item.label}
-                  </span>
-                  <span className="truncate text-sm text-dust-500">{item.description}</span>
-                </span>
-                <ChevronRightIcon className="size-5 shrink-0 text-dust-500" />
-              </Link>
-            </li>
+                <span className="truncate text-sm text-dust-500">{item.description}</span>
+              </span>
+              <ChevronRightIcon className="size-5 shrink-0 text-dust-500" />
+            </RowLink>
           );
         })}
-      </ul>
+      </RowList>
     </>
   );
 }
