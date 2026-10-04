@@ -11,6 +11,7 @@
     "format:check": "prettier --check .",
     "typecheck": "next typegen && tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run format:check",
+    "check:types": "node scripts/devstack/db.mjs types --fresh && git diff --exit-code -- src/lib/database.types.ts",
     "test:unit": "vitest run --project unit",
     "test": "vitest run",
     "tokens:contrast": "node scripts/contrast.mjs",

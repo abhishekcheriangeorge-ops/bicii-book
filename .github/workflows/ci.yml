@@ -7,8 +7,12 @@
 #          with the real Supabase Auth/PostgREST/Storage from the devstack
 #          (so the live-stack smoke test runs too).
 #   build  next build with placeholder public env.
-#   e2e    Playwright (phone + iPad) against next start + the devstack. Runs on
-#          workflow_dispatch, nightly, and on pull requests labelled "e2e".
+#
+# These three are the required checks on `main` (RUNBOOK "CI"). Playwright
+# lives in e2e.yml: this workflow never runs on `labeled`, because a run
+# triggered by a label would post SKIPPED `check`/`test`/`build` check runs
+# on the head commit, and GitHub counts a skipped required check as passing,
+# which could make a PR with a failed test mergeable.
 #
 # No Docker beyond the Postgres service container, and no secrets: the
 # devstack uses the well-known Supabase local demo JWT secret and keys.
@@ -17,17 +21,13 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    # 18:23 UTC = 02:23 in Singapore (the shop's timezone).
-    - cron: "23 18 * * *"
 
-# Adding a label starts a separate group so it never cancels the PR's run.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.action == 'labeled' && 'label' || 'run' }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -46,8 +46,6 @@ env:
 jobs:
   check:
     name: check
-    # Labelling a PR re-triggers the workflow; only e2e cares about that.
-    if: github.event.action != 'labeled'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -73,15 +71,13 @@ jobs:
         run: npm run tokens:contrast
       - name: Generated database types match the migrations
         run: |
-          npm run db:types -- --fresh
-          if ! git diff --exit-code -- src/lib/database.types.ts; then
+          if ! npm run check:types; then
             echo "::error file=src/lib/database.types.ts::Out of date. Run 'npm run db:types' after changing supabase/migrations and commit the result."
             exit 1
           fi
 
   test:
     name: test (unit + db)
-    if: github.event.action != 'labeled'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -118,7 +114,6 @@ jobs:
 
   build:
     name: build
-    if: github.event.action != 'labeled'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -131,53 +126,3 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
           NEXT_PUBLIC_PUBLIC_SITE_URL: https://bicii.example
-
-  e2e:
-    name: e2e (Playwright)
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule' ||
-      (github.event_name == 'pull_request' &&
-       contains(github.event.pull_request.labels.*.name, 'e2e') &&
-       (github.event.action != 'labeled' || github.event.label.name == 'e2e'))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/prepare
-        with:
-          devstack: "true"
-      - name: Install Chromium for Playwright
-        run: npx playwright install --with-deps chromium
-      - name: Build bicii_dev and start the devstack
-        run: |
-          npm run db:reset
-          npm run devstack:start
-      # playwright.config.mts builds the app and runs next start on :3100;
-      # global setup resets bicii_dev again and checks a seeded login works.
-      - name: Playwright
-        run: npm run test:e2e
-      - name: Upload Playwright report and traces
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            playwright-report/
-            test-results/
-            .devstack/logs/
-          retention-days: 14
-          if-no-files-found: ignore
-          include-hidden-files: true
