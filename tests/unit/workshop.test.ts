@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BOARD_GROUPS,
   OVERDUE_AFTER_DAYS,
+  STATUS_LABELS,
   WORK_ORDER_STATUSES,
+  allowedTransitions,
   isClosedStatus,
   isOpenStatus,
   isOverdue,
   nextStatuses,
+  primaryActions,
+  statusTone,
   transitionRule,
   type WorkOrderStatus,
 } from "@/lib/workshop";
@@ -124,5 +129,127 @@ describe("isOverdue (D20)", () => {
 
   it("ignores an unreadable date", () => {
     expect(isOverdue({ status: "received", checkedInAt: "not a date" }, now)).toBe(false);
+  });
+});
+
+describe("status labels, tones and board groups", () => {
+  it("labels every status in staff words", () => {
+    expect(STATUS_LABELS).toEqual({
+      received: "Received",
+      diagnosing: "Diagnosing",
+      awaiting_customer: "Waiting on customer",
+      awaiting_parts: "Waiting on parts",
+      ready_to_start: "Ready to start",
+      in_progress: "In progress",
+      paused: "Paused",
+      completed: "Completed",
+      ready_for_collection: "Ready for collection",
+      collected: "Collected",
+      cancelled: "Cancelled",
+    });
+  });
+
+  it("maps each status onto one of the five status tones or neutral", () => {
+    const byTone = (tone: string) => WORK_ORDER_STATUSES.filter((s) => statusTone(s) === tone);
+    expect(byTone("info")).toEqual(["received", "diagnosing", "ready_to_start"]);
+    expect(byTone("waiting")).toEqual(["awaiting_customer", "awaiting_parts", "paused"]);
+    expect(byTone("progress")).toEqual(["in_progress"]);
+    expect(byTone("done")).toEqual(["completed", "ready_for_collection"]);
+    expect(byTone("neutral")).toEqual(["collected"]);
+    expect(byTone("danger")).toEqual(["cancelled"]);
+  });
+
+  it("puts every status in exactly one board group, in SPEC §7.2 order", () => {
+    expect(BOARD_GROUPS.map((g) => g.id)).toEqual([
+      "received",
+      "waiting",
+      "ready",
+      "in_progress",
+      "completed",
+      "ready_for_collection",
+      "closed",
+    ]);
+    const all = BOARD_GROUPS.flatMap((g) => g.statuses);
+    expect([...all].sort()).toEqual([...WORK_ORDER_STATUSES].sort());
+    expect(new Set(all).size).toBe(all.length);
+    expect(BOARD_GROUPS.find((g) => g.id === "received")?.statuses).toEqual([
+      "received",
+      "diagnosing",
+    ]);
+    expect(BOARD_GROUPS.find((g) => g.id === "waiting")?.statuses).toEqual([
+      "awaiting_customer",
+      "awaiting_parts",
+      "paused",
+    ]);
+    expect(BOARD_GROUPS.find((g) => g.id === "closed")?.statuses).toEqual([
+      "collected",
+      "cancelled",
+    ]);
+  });
+});
+
+describe("allowedTransitions", () => {
+  it("is exactly the moves transitionRule allows, with their reason rule", () => {
+    for (const from of WORK_ORDER_STATUSES) {
+      const moves = allowedTransitions(from);
+      expect(moves.map((m) => m.to)).toEqual(nextStatuses(from));
+      for (const m of moves) {
+        expect(m.needsReason).toBe(transitionRule(from, m.to) === "reason_required");
+      }
+    }
+  });
+
+  it("calls cancelling a cancel and needs a reason for it", () => {
+    const cancel = allowedTransitions("in_progress").find((m) => m.to === "cancelled");
+    expect(cancel).toEqual({ to: "cancelled", needsReason: true, kind: "cancel" });
+  });
+
+  it("calls going back to in progress after completion a reopen, with a reason", () => {
+    expect(allowedTransitions("completed")).toEqual([
+      { to: "in_progress", needsReason: true, kind: "reopen" },
+      { to: "ready_for_collection", needsReason: false, kind: "forward" },
+      { to: "collected", needsReason: false, kind: "forward" },
+    ]);
+    expect(allowedTransitions("ready_for_collection")).toEqual([
+      { to: "in_progress", needsReason: true, kind: "reopen" },
+      { to: "collected", needsReason: false, kind: "forward" },
+    ]);
+  });
+
+  it("offers nothing from a final status, and resuming from paused is a forward move", () => {
+    expect(allowedTransitions("collected")).toEqual([]);
+    expect(allowedTransitions("cancelled")).toEqual([]);
+    expect(allowedTransitions("paused").find((m) => m.to === "in_progress")?.kind).toBe("forward");
+  });
+});
+
+describe("primaryActions", () => {
+  const labels = (s: Parameters<typeof primaryActions>[0]) =>
+    primaryActions(s).map((a) => `${a.label} -> ${a.to}`);
+
+  it("offers the usual next steps as one-tap buttons", () => {
+    expect(labels("received")).toEqual(["Start work -> in_progress", "Diagnose -> diagnosing"]);
+    expect(labels("diagnosing")).toEqual([
+      "Start work -> in_progress",
+      "Waiting on parts -> awaiting_parts",
+    ]);
+    for (const s of ["awaiting_customer", "awaiting_parts", "ready_to_start"] as const) {
+      expect(labels(s)).toEqual(["Start work -> in_progress"]);
+    }
+    expect(labels("in_progress")).toEqual(["Complete -> completed", "Pause -> paused"]);
+    expect(labels("paused")).toEqual(["Resume -> in_progress", "Complete -> completed"]);
+    expect(labels("completed")).toEqual([
+      "Ready for collection -> ready_for_collection",
+      "Collected -> collected",
+    ]);
+    expect(labels("ready_for_collection")).toEqual(["Collected -> collected"]);
+    expect(labels("collected")).toEqual([]);
+    expect(labels("cancelled")).toEqual([]);
+  });
+
+  it("never offers a move that needs a reason or is not allowed", () => {
+    for (const s of WORK_ORDER_STATUSES) {
+      for (const a of primaryActions(s)) expect(transitionRule(s, a.to)).toBe("allowed");
+    }
   });
 });
