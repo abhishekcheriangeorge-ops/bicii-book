@@ -9,6 +9,7 @@ import {
   isPhotoEntity,
   isUndecodedOriginal,
   otherBucket,
+  isStockEntity,
   visibilityOptions,
 } from "@/lib/attachments";
 
@@ -53,10 +54,29 @@ describe("photo storage rules", () => {
     );
   });
 
+  it("offers internal and public for stock, never customer (D13 extended, like D19)", () => {
+    for (const entity of ["product", "inventory_unit"] as const) {
+      const stock = visibilityOptions(entity);
+      expect(stock.map((o) => o.value)).toEqual(["internal", "public"]);
+      expect(stock.every((o) => o.blocked === null)).toBe(true);
+      expect(stock.find((o) => o.value === "public")?.description).toBe(
+        "Public photos appear on the QR page once the item is published.",
+      );
+      expect(stock.map((o) => o.description).join(" ")).not.toMatch(/owner/);
+      expect(
+        visibilityOptions(entity, { original: true }).find((o) => o.value === "public")?.blocked,
+      ).toMatch(/original file/);
+    }
+    expect(isStockEntity("product")).toBe(true);
+    expect(isStockEntity("bike")).toBe(false);
+  });
+
   it("knows which records hold photos", () => {
-    expect(PHOTO_ENTITIES).toEqual(["bike", "customer", "work_order"]);
+    expect(PHOTO_ENTITIES).toEqual(["bike", "customer", "work_order", "product", "inventory_unit"]);
     expect(isPhotoEntity("work_order")).toBe(true);
-    expect(isPhotoEntity("product")).toBe(false);
+    expect(isPhotoEntity("product")).toBe(true);
+    expect(isPhotoEntity("inventory_unit")).toBe(true);
+    expect(isPhotoEntity("consignment_item")).toBe(false);
   });
 
   it("never offers public for an original stored without dimensions (it may carry GPS)", () => {

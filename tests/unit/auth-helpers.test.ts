@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MORE_ITEMS, TABS, isActive, isMoreActive } from "@/components/shell/nav";
+import { MORE_ITEMS, TABS, isActive, isItemActive, isMoreActive } from "@/components/shell/nav";
 import {
   PERMISSIONS,
   accessChangeBlocker,
@@ -111,6 +111,18 @@ describe("navigation", () => {
     expect(isActive("/jobsx", "/jobs")).toBe(false);
     expect(isMoreActive("/settings/staff")).toBe(true);
     expect(isMoreActive("/inventory")).toBe(false);
+  });
+
+  it("keeps the Inventory tab active on products, units and movements", () => {
+    const inventory = TABS.find((t) => t.label === "Inventory")!;
+    for (const path of ["/inventory", "/inventory/movements", "/products/p1", "/units/u1"]) {
+      expect(isItemActive(path, inventory)).toBe(true);
+      expect(isMoreActive(path)).toBe(false);
+    }
+    expect(isItemActive("/productsx", inventory)).toBe(false);
+    expect(isItemActive("/jobs", inventory)).toBe(false);
+    const jobs = TABS.find((t) => t.label === "Jobs")!;
+    expect(isItemActive("/jobs/1", jobs)).toBe(true);
   });
 });
 

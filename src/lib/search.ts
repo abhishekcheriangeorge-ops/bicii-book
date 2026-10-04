@@ -3,8 +3,18 @@
  * Pure: the grouping and links are shared by the /search page and tests.
  */
 
-/** Kinds staff_search knows (Phase 1 customers and bikes, Phase 3 jobs). Later phases add theirs here and in the RPC. */
-export const SEARCH_KINDS = ["customer", "bike", "work_order"] as const;
+/**
+ * Kinds staff_search knows: customers and bikes (Phase 1), jobs (Phase 3),
+ * products and unique units (Phase 4). Later phases add theirs here and in
+ * the RPC; the order is the tie-break order of the /search groups.
+ */
+export const SEARCH_KINDS = [
+  "customer",
+  "bike",
+  "work_order",
+  "product",
+  "inventory_unit",
+] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 
 export function isSearchKind(value: unknown): value is SearchKind {
@@ -25,6 +35,8 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
   customer: "Customers",
   bike: "Bikes",
   work_order: "Jobs",
+  product: "Products",
+  inventory_unit: "Units",
 };
 
 /** Where a hit opens in the staff app. */
@@ -36,6 +48,10 @@ export function hrefForHit(hit: Pick<SearchHit, "kind" | "id">): string {
       return `/bikes/${hit.id}`;
     case "work_order":
       return `/jobs/${hit.id}`;
+    case "product":
+      return `/products/${hit.id}`;
+    case "inventory_unit":
+      return `/units/${hit.id}`;
   }
 }
 
@@ -44,7 +60,8 @@ export type SearchGroup = { kind: SearchKind; label: string; hits: SearchHit[] }
 /**
  * Hits grouped by kind, keeping the database's order inside each group.
  * The group holding the best hit comes first (an exact short ID or serial
- * number puts Bikes above Customers, an exact J- number puts Jobs first);
+ * number puts Bikes above Customers, an exact J- number puts Jobs first,
+ * an exact P- number or SKU puts Products first);
  * ties keep SEARCH_KINDS order.
  */
 export function groupHits(hits: readonly SearchHit[]): SearchGroup[] {

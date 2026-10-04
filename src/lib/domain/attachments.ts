@@ -205,7 +205,9 @@ export async function listPhotos(supabase: ServerSupabase, target: PhotoTarget):
 }
 
 /** The table holding each kind of record a photo can belong to. */
-function tableFor(entityType: PhotoEntity): "bikes" | "customers" | "work_orders" {
+function tableFor(
+  entityType: PhotoEntity,
+): "bikes" | "customers" | "work_orders" | "products" | "inventory_units" {
   switch (entityType) {
     case "bike":
       return "bikes";
@@ -213,6 +215,10 @@ function tableFor(entityType: PhotoEntity): "bikes" | "customers" | "work_orders
       return "customers";
     case "work_order":
       return "work_orders";
+    case "product":
+      return "products";
+    case "inventory_unit":
+      return "inventory_units";
     default: {
       const unknown: never = entityType;
       throw new Error(`No table for photo entity ${String(unknown)}`);

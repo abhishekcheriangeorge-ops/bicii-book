@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 
 import { LinkPending } from "./link-pending";
-import { TABS, isActive, isMoreActive } from "./nav";
+import { TABS, isItemActive, isMoreActive } from "./nav";
 
 /**
  * Phone navigation: fixed to the bottom, clear of the iPhone home indicator
@@ -24,7 +24,7 @@ export function TabBar() {
       <ul className="mx-auto grid max-w-lg grid-cols-5 items-end px-[max(0.25rem,env(safe-area-inset-left))]">
         {TABS.map((tab) => {
           const active =
-            tab.href === "/more" ? isMoreActive(pathname) : isActive(pathname, tab.href);
+            tab.href === "/more" ? isMoreActive(pathname) : isItemActive(pathname, tab);
           const Icon = tab.icon;
           if (tab.href === "/scan") {
             return (

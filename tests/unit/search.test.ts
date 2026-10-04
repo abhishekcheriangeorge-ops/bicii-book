@@ -37,6 +37,16 @@ describe("groupHits", () => {
     expect(groups.map((g) => g.label)).toEqual(["Jobs", "Customers", "Bikes"]);
   });
 
+  it("puts Products first for an exact P- number or SKU", () => {
+    const groups = groupHits([
+      hit("customer", "c1", 0.6),
+      hit("bike", "b1", 0.7),
+      hit("inventory_unit", "u1", 0.5),
+      hit("product", "p1", 1),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["Products", "Bikes", "Customers", "Units"]);
+  });
+
   it("leaves out empty groups", () => {
     expect(groupHits([])).toEqual([]);
     expect(groupHits([hit("bike", "b1", 1)]).map((g) => g.kind)).toEqual(["bike"]);
@@ -48,8 +58,12 @@ describe("hrefForHit", () => {
     expect(hrefForHit({ kind: "customer", id: "x" })).toBe("/customers/x");
     expect(hrefForHit({ kind: "bike", id: "y" })).toBe("/bikes/y");
     expect(hrefForHit({ kind: "work_order", id: "z" })).toBe("/jobs/z");
+    expect(hrefForHit({ kind: "product", id: "p" })).toBe("/products/p");
+    expect(hrefForHit({ kind: "inventory_unit", id: "u" })).toBe("/units/u");
     expect(isSearchKind("work_order")).toBe(true);
-    expect(isSearchKind("product")).toBe(false);
+    expect(isSearchKind("product")).toBe(true);
+    expect(isSearchKind("inventory_unit")).toBe(true);
+    expect(isSearchKind("supplier")).toBe(false);
   });
 });
 

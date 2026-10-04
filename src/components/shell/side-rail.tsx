@@ -7,10 +7,10 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 
 import { LinkPending } from "./link-pending";
-import { MORE_ITEMS, TABS, isActive, type NavItem } from "./nav";
+import { MORE_ITEMS, TABS, isItemActive, type NavItem } from "./nav";
 
 function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const active = isActive(pathname, item.href);
+  const active = isItemActive(pathname, item);
   const Icon = item.icon;
   const scan = item.href === "/scan";
   return (

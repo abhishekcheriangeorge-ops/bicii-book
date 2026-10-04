@@ -72,3 +72,201 @@ export function manualPublicationTargets(
     (to) => to !== "sold" && !(to === "public" && trackingType === "unique" && availableUnits < 1),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Display helpers for the stock screens (Phase 4 app). Pure; the database
+// computes every figure, these only name and colour it.
+// ---------------------------------------------------------------------------
+
+export type MovementType = Database["public"]["Enums"]["movement_type"];
+
+/** The status tones of DESIGN.md (StatusPill, Badge). */
+export type StockTone = "done" | "waiting" | "danger" | "progress" | "info" | "neutral";
+
+/**
+ * How healthy a product's stock is: danger when there is none (or less
+ * than none) or any location is below zero (D23 NEG-CONSUMPTION, "recount
+ * needed"); waiting at or below the reorder point (reporting.low_stock's
+ * rule); done otherwise.
+ */
+export function stockTone(
+  onHand: number,
+  reorderPoint: number | null,
+  negativeLocations = 0,
+): "danger" | "waiting" | "done" {
+  if (onHand <= 0 || negativeLocations > 0) return "danger";
+  if (reorderPoint != null && onHand <= reorderPoint) return "waiting";
+  return "done";
+}
+
+/** A real minus sign (U+2212), so a negative count reads as one. */
+const MINUS = "−";
+
+const count = (n: number) =>
+  n < 0 ? `${MINUS}${Math.abs(n).toLocaleString("en-SG")}` : n.toLocaleString("en-SG");
+
+/** "34 in stock", "Out of stock", or "−2 (recount needed)" (D23). */
+export function stockLabel(onHand: number): string {
+  if (onHand < 0) return `${count(onHand)} (recount needed)`;
+  if (onHand === 0) return "Out of stock";
+  return `${count(onHand)} in stock`;
+}
+
+/** "+3", "−2" or "0": a ledger delta with a real minus sign. */
+export function signedQuantity(delta: number): string {
+  if (delta > 0) return `+${count(delta)}`;
+  return count(delta);
+}
+
+export const UNIT_STATUS_LABELS: Record<UnitStatus, string> = {
+  available: "Available",
+  reserved: "Reserved",
+  held_for_customer: "On a job",
+  sold: "Sold",
+  written_off: "Written off",
+  returned_to_consignor: "Returned to consignor",
+};
+
+const UNIT_STATUS_TONES: Record<UnitStatus, StockTone> = {
+  available: "done",
+  reserved: "info",
+  held_for_customer: "waiting",
+  sold: "progress",
+  written_off: "danger",
+  returned_to_consignor: "info",
+};
+
+/** The words staff_search uses for a unit's status too ("On a job" while held, D25). */
+export function unitStatusLabel(status: UnitStatus): string {
+  return UNIT_STATUS_LABELS[status];
+}
+
+export function unitStatusTone(status: UnitStatus): StockTone {
+  return UNIT_STATUS_TONES[status];
+}
+
+export const PUBLICATION_LABELS: Record<PublicationStatus, string> = {
+  draft: "Draft",
+  internal_only: "Internal only",
+  public: "Public",
+  sold: "Sold",
+  archived: "Archived",
+};
+
+const PUBLICATION_TONES: Record<PublicationStatus, StockTone> = {
+  draft: "neutral",
+  internal_only: "info",
+  public: "done",
+  sold: "progress",
+  archived: "neutral",
+};
+
+export function publicationLabel(status: PublicationStatus): string {
+  return PUBLICATION_LABELS[status];
+}
+
+export function publicationTone(status: PublicationStatus): StockTone {
+  return PUBLICATION_TONES[status];
+}
+
+/**
+ * What a ledger row was, in staff words. A transfer is two rows (out of
+ * one location, into the other); a `reversal` written by voiding a part
+ * line (it carries the job) is "Returned from job".
+ */
+export function movementLabel(
+  type: MovementType,
+  delta: number,
+  { onJob = false }: { onJob?: boolean } = {},
+): string {
+  switch (type) {
+    case "purchase_received":
+      return "Received";
+    case "job_consumption":
+      return "Used on job";
+    case "retail_sale":
+      return "Sold in shop";
+    case "online_sale":
+      return "Sold online";
+    case "stock_adjustment":
+      return "Adjustment";
+    case "damaged":
+      return "Damaged";
+    case "return":
+      return "Customer return";
+    case "consignment_received":
+      return "Consignment received";
+    case "consignment_returned":
+      return "Returned to consignor";
+    case "transfer":
+      return delta >= 0 ? "Transfer in" : "Transfer out";
+    case "reversal":
+      return onJob ? "Returned from job" : "Reversal";
+  }
+}
+
+/** The movement filter chips on /inventory/movements. */
+export const MOVEMENT_FILTERS = {
+  all: { label: "All", types: null },
+  jobs: { label: "Jobs", types: ["job_consumption", "reversal"] },
+  adjustments: { label: "Adjustments", types: ["stock_adjustment", "damaged"] },
+  transfers: { label: "Transfers", types: ["transfer"] },
+} as const satisfies Record<string, { label: string; types: readonly MovementType[] | null }>;
+
+export type MovementFilter = keyof typeof MOVEMENT_FILTERS;
+
+export function isMovementFilter(value: unknown): value is MovementFilter {
+  return typeof value === "string" && Object.hasOwn(MOVEMENT_FILTERS, value);
+}
+
+export type LocationLike = { id: string; name: string; active: boolean; sortOrder: number };
+
+/**
+ * Where stock goes when nobody says: the active location with the lowest
+ * sort order, then name (the rule add_inventory_line applies in SQL), or
+ * null when there is no active location (location_required).
+ */
+export function defaultLocation<L extends LocationLike>(locations: readonly L[]): L | null {
+  const active = locations.filter((l) => l.active);
+  active.sort(
+    (a, b) => a.sortOrder - b.sortOrder || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+  );
+  return active[0] ?? null;
+}
+
+/**
+ * The adjustment sheet's live preview: the count after adding `delta`
+ * (negative to remove), and whether that would go below zero, which a
+ * manual adjustment may never do (insufficient_stock; only a part used on
+ * a job may, D23).
+ */
+export function adjustmentPreview(
+  onHand: number,
+  delta: number,
+): { after: number; wouldGoNegative: boolean } {
+  const after = onHand + delta;
+  return { after, wouldGoNegative: after < 0 };
+}
+
+/** The NEG-CONSUMPTION warning (D23) for adding `quantity` where `onHand` are counted, or null. */
+export function overdrawWarning(
+  quantity: number,
+  onHand: number,
+  locationName: string,
+): string | null {
+  if (!(quantity > onHand)) return null;
+  const have =
+    onHand <= 0 ? `None counted at ${locationName}` : `Only ${count(onHand)} at ${locationName}`;
+  return `${have}. Adding ${count(quantity)} takes the count below zero; ask whoever does stock counts to recount.`;
+}
+
+/** D25 SOLD-AT-COMPLETION: what a reopen does to the job's sold units. */
+export function reopenUnitNote(units: readonly string[]): string {
+  const names =
+    units.length === 1
+      ? units[0]
+      : `${units.slice(0, -1).join(", ")} and ${units[units.length - 1]}`;
+  return units.length === 1
+    ? `${names} goes back on hold for this job. To return it to stock, void its line after reopening.`
+    : `${names} go back on hold for this job. To return one to stock, void its line after reopening.`;
+}
