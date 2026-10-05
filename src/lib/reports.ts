@@ -82,8 +82,8 @@ export type TodayDashboard = {
     linesRecognised: number;
     /** Recognised lines with no cost entered (D14): the cost side is provisional while > 0. */
     costPendingLines: number;
-    /** Null until Phase 6 fills the consignment columns. */
-    consignmentSales: null | { count: number; total: string };
+    /** Documents with a consigned line recognised that day, and their sale totals (Phase 6). */
+    consignmentSales: { count: number; total: string };
     /** Null without view_costs (D30). */
     costs: null | {
       cogs: string;
@@ -93,8 +93,8 @@ export type TodayDashboard = {
       /** ≤ 0: the sum of the loss-making lines' yields. */
       lossTotal: string;
       lossLines: number;
-      /** Null until Phase 6. */
-      newConsignorLiability: string | null;
+      /** What that day's consigned lines owe their consignors (D46; view_costs, D30). */
+      newConsignorLiability: string;
     };
   };
   stock: {
@@ -124,7 +124,6 @@ export function toTodayDashboard(row: TodayDashboardRow): TodayDashboard {
     row.appointments_scheduled !== null ||
     row.appointments_arrived !== null ||
     row.appointments_no_show !== null;
-  const consignmentTracked = row.consignment_sales !== null || row.consignment_sales_total !== null;
   return {
     day: row.day,
     isToday,
@@ -165,12 +164,10 @@ export function toTodayDashboard(row: TodayDashboardRow): TodayDashboard {
             grossSales: amount(row.gross_sales, currency)!,
             linesRecognised: int(row.lines_recognised),
             costPendingLines: int(row.cost_pending_lines),
-            consignmentSales: consignmentTracked
-              ? {
-                  count: int(row.consignment_sales),
-                  total: amount(row.consignment_sales_total ?? 0, currency)!,
-                }
-              : null,
+            consignmentSales: {
+              count: int(row.consignment_sales),
+              total: amount(row.consignment_sales_total ?? 0, currency)!,
+            },
             costs:
               costs && row.cogs !== null
                 ? {
@@ -180,7 +177,7 @@ export function toTodayDashboard(row: TodayDashboardRow): TodayDashboard {
                     biciiAfterCc: amount(row.bicii_yield_after_cc ?? 0, currency)!,
                     lossTotal: amount(row.loss_total ?? 0, currency)!,
                     lossLines: int(row.loss_lines),
-                    newConsignorLiability: amount(row.new_consignor_liability, currency),
+                    newConsignorLiability: amount(row.new_consignor_liability ?? 0, currency)!,
                   }
                 : null,
           }
@@ -579,9 +576,11 @@ export function groupEntries(
   return [...groups.values()];
 }
 
-/** Where an entry's document opens (a workshop line: its job). */
+/** Where an entry's document opens (a workshop line: its job; a sale line: its sale). */
 export function documentHref(entry: Pick<FinancialEntry, "source" | "documentId">): string | null {
-  return entry.source === "work_order" ? hrefForRecord("work_order", entry.documentId) : null;
+  if (entry.source === "work_order") return hrefForRecord("work_order", entry.documentId);
+  if (entry.source === "sale") return hrefForRecord("sale", entry.documentId);
+  return null;
 }
 
 /** One job's economics from public.work_order_yield (view_costs only). */

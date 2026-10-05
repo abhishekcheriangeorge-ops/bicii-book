@@ -76,7 +76,7 @@ Server components unless they need state or browser APIs.
 | `SearchPicker` (client) | ARIA 1.2 combobox + listbox; async `search(query)` (may be a Server Action), debounce, stale-response guard, ↑/↓/Enter/Escape, hidden input for forms. `action` adds a last option ("Create new customer") reached with the arrows and Enter like any result. Optional pickers (`clearable`, default `!required`) can go back to nothing: a 44px clear button, emptying the field and leaving it, or Escape on an empty field; `onSelect(null)` reports it. Inside a `Sheet` (`InSheetBodyContext`, `src/components/ui/sheet-context.ts`) the results take space in the flow and are scrolled into view, because the sheet body clips an absolute popup behind its footer when the sheet is short (Add part on a phone); elsewhere they float under the input. SPEC §22: use it instead of any large `<select>`. |
 | `Chip`, `ChipRadioGroup` (client) | A 48px choice chip: a toggle button (`aria-pressed`) for several choices. `ChipRadioGroup` for one choice (the intake's lead, Assign's who, the board's mechanic filter): a radio group with one Tab stop (the chosen chip, or the first) and Arrow / Home / End moving and choosing, like `SegmentedControl`. |
 | `Select` (client) | A native select styled like `Input`, wired by `Field`. Only for short fixed lists (fewer than 15 options: a service's category); anything that grows uses `SearchPicker`. |
-| `SegmentedControl`, `Tabs` (client) | Radiogroup and tablist with roving tabindex and arrow keys. A segment can be `disabled` (`aria-disabled`, skipped by the arrow keys, ignores clicks, muted text and a not-allowed cursor); say why next to the control (photo visibility: never public on a customer record, or for an undecoded original). Each state has its own class branch: `cn()` does not resolve conflicting utilities. |
+| `SegmentedControl`, `Tabs` (client) | Radiogroup and tablist with roving tabindex and arrow keys. A segment can be `disabled` (`aria-disabled`, skipped by the arrow keys, ignores clicks, muted text and a not-allowed cursor); say why next to the control (photo visibility: never public on a customer record, or for an undecoded original). Each state has its own class branch: `cn()` does not resolve conflicting utilities. `value={null}` is a choice with no default (the charge bearer, D4): nothing is checked, the hidden input is empty and the first enabled segment takes the Tab stop. |
 
 Class strings are joined with `cn()` (`src/lib/cn.ts`), which does not merge
 conflicting utilities; prefer a variant prop over overriding colours with
@@ -203,7 +203,7 @@ upload itself, below).
 | `BikeSheet`, `NewBikeButton`, `EditBikeButton` | New/edit bike. A new bike's owner is preset (from a customer's page), picked (`CustomerPicker`), or none (shop and consigned bikes). The edit form has no owner: ownership changes only by transfer. Creating opens the bike, ready for photos. |
 | `TransferOwnershipButton` | Sheet: new owner (a customer via `CustomerPicker`, or the shop) and a required reason, kept in the bike's ownership history. The current owner is listed but not choosable. |
 | `CustomerPicker` | `SearchPicker` over active customers (`staff_search`), via a Server Action. |
-| `ArchiveControl` | Archive (confirmed) / unarchive a customer, bike, service or product (refused while public or holding stock), with what archiving does in a sentence. |
+| `ArchiveControl` | Archive (confirmed) / unarchive a customer, bike, service, product (refused while public or holding stock) or consignor (refused with items for sale or a balance other than 0, D47; the toast carries the mapped refusal with D46's remedies), with what archiving does in a sentence. |
 | `CaptureButton` | The camera control for every photo (intake reuses it): "Take photo" (`<input type=file accept="image/*" capture="environment">`, opens the rear camera on phones) and "Choose photos" (library, several at once). Each file is decoded with its EXIF orientation (`createImageBitmap(…, { imageOrientation: "from-image" })`, `<img>` fallback), scaled to at most 2048 px on the long edge and re-encoded as JPEG 0.85 (`prepare-photo.ts`, sizing in `src/lib/images.ts`); re-encoding also drops EXIF, GPS included. A file the browser cannot decode (HEIC outside Safari) is uploaded as is when it is an accepted photo type. Then: a signed upload URL from the server, upload with the browser Supabase client straight to Storage with byte progress, record. Optimistic thumbnails with status and progress; up to two photos in flight. The queue lives above the pages (`PhotoUploadsProvider` in the staff layout, `upload-store.ts`), so uploads finish after leaving the record and their tiles are there again on coming back. A failure keeps the photo and its preview on its tile (Retry, Discard); one error toast per record ("3 photos not saved", Retry all) updates in place and is never pushed out; the header shows "N photos not saved" on every screen, linking to the record; closing or reloading the tab while any photo is unsaved asks first. Retry resumes at the failed step: once the object is in Storage only recording is retried (unless the server says it is missing). Photos are labelled "New photo 3", not by file name (iPhone captures are all image.jpg). A file Storage refuses (type, size) is not retried and says to save it as JPEG. The page refreshes once when a record's queue drains, not once per photo (each refresh re-signs every photo). A photo picked before hydration is picked up when React attaches. An undecodable original keeps its metadata, so it is recorded without dimensions and can never be made public. |
 | `PhotoGrid` | A record's photos: thumbnails (visibility badge when not internal) that open `PhotoViewer`, with `CaptureButton` under them (hidden for archived records). |
 | `ReasonConfirm` | The two-step destructive pattern with a required reason (below, "Forms"), shared by voiding a line and cancelling or reopening a job: focus in the reason field, the confirm button in a new position with a new key, presses ignored for 400 ms, and a dismiss button that returns focus to the first button. The dismiss button says what it keeps where "Cancel" would be ambiguous: "Keep job" beside "Cancel job", "Keep line" beside "Void line", "Back" for a reopen. `onConfirmingChange` lets a sheet hide its own submit while the confirmation is open. The first button's label ends with "…"; `startAccessibleName` gives it a distinct name where a list has one per row ("Delete the Tue 13 Oct closure…"). |
@@ -216,7 +216,7 @@ upload itself, below).
 | `ManualLineButton` / `ManualLineSheet` | Description, quantity, unit price and (view_costs only) cost, with the same preview, key and lock. Left without a cost, the line is marked cost pending (D14); the sheet says so (to view_costs holders: "Enter 0 when there is no direct cost"). |
 | `TotalsSummary` (server) — the job yield panel | The compact summary row under the lines (SPEC §22, not a modal): the running sale total for everyone; with view_costs also Cost, Yield, Cult Commons (with the rate when every line shares it) and BICII yield after Cult Commons, from `work_order_totals_staff`, marked "Provisional" while a live line has no cost entered (D14), with what to do about it. It is PLAN Phase 5's job yield panel (no second economics block): for view_costs holders the job page also reads `work_order_yield` (`getWorkOrderYield`, in its `Promise.all`) and passes it as `report`, which labels Cult Commons with the lines' snapshot rates ("30%", or "25–30%" when they differ, `formatRateRange`), adds the loss note shared with Today ("1 line sold at a loss: −$15.00. Losses don't reduce Cult Commons on other lines.", D1) and says when the job counts in reports: "Counted in reports on Sat, 3 Oct 2026 (completed)" from its current completion (D32), "Counted in reports once the job is completed" while open or after a reopen, or "Not counted in reports (cancelled)" on a cancelled job (final, D15; never recognised, D32). Without view_costs: the sale total only, and no recognition text anywhere on the page. |
 | `Timeline` (server, `job-timeline.tsx`) | A job's events newest first: `describeEvent` titles (`src/lib/workshop-timeline.ts`), notes and reasons quoted, the actor ("Recorded outside the app" when none) and the time. Payloads carry no costs. The page shows the newest 200 (`?events=all`: 1,000); when older ones exist it says so ("Earlier ones, including the check-in, are not shown") with "Show earlier events". |
-| `PhotoViewer` | Sheet: the photo enlarged (tap for full size), who can see it (`SegmentedControl` Internal / Customer / Public, applied immediately with `useOptimistic` and a toast; each level explained; Public disabled on a customer record, PLAN D13, and on a job, D19), caption, and delete with a reason (two steps; Cancel returns focus to "Delete photo…"). A change that went through but could not remove the old copy from Storage is reported as done, with "Finish" (toast and inline), not as a failure; the next showing of the record finishes it anyway. |
+| `PhotoViewer` | Sheet: the photo enlarged (tap for full size), who can see it (`SegmentedControl` Internal / Customer / Public, applied immediately with `useOptimistic` and a toast; each level explained; Public disabled on a customer record, PLAN D13, and on a job, D19; Customer and Public disabled on a consignment item, D52, with "Agreement photos show the consignor's terms, so they stay internal." shown once), caption, and delete with a reason (two steps; Cancel returns focus to "Delete photo…"). A change that went through but could not remove the old copy from Storage is reported as done, with "Finish" (toast and inline), not as a failure; the next showing of the record finishes it anyway. |
 | `LinkSegments`, `GroupChips`, `ActiveFilterChips`, `JobRow` (server, `workshop-board.tsx`) | The board's pieces as links, so every view is a URL and works before hydration: the All / My jobs / Unassigned switch (styled like `SegmentedControl`, `aria-current` on the current one); the groups as a horizontally scrolling chip row with counts ("All open" first; wraps from `sm`); the active filters as removable chips (`Remove filter: …`) and "Clear"; and the job row (whole row tappable, ≥ 64px): J- number, `StatusPill` (text + tone), bike, customer, lead or "Unassigned" (waiting tone), age ("3 d") and, for D20, a solid danger "Overdue" badge with its word. No money on the board. |
 | `BoardFiltersButton` / `BoardFilterSheet` | "Filters (n)": a Sheet with statuses as checkboxes under their board group (several at once, e.g. only "Waiting on parts", which the Waiting group otherwise merges with the customer and paused), mechanic chips ("Anyone" first; jobs they are on as lead or additional), customer and bike `SearchPicker`s (the intake search action), checked in (Any, Today, Last 7 days, Last 30 days; Singapore time) and age (Any, Over 3 days, Overdue). "Show jobs" writes them to the URL (`boardQuery`); Reset clears the sheet. |
 | `AssignmentsCard` | The job's "People": the lead and "Also on the job", each with Remove (toast "… removed from the job"), and "Assign": a Sheet with active staff as radio chips (their current role noted) and Lead / Additional; choosing Lead says "Replaces <lead> as lead; they leave the job." (D22), moving the lead to Additional says the job will have no lead. Read-only on collected and cancelled jobs. |
@@ -232,7 +232,7 @@ upload itself, below).
 | `StockTransferButton` / `StockTransferSheet` (`stock-transfer-sheet.tsx`) | manage_inventory: From (locations holding stock, with counts), To (the other active locations), quantity (or the unit, fixed) and an optional reason; "Move stock". Not `transfer-sheet.tsx`, the bike ownership transfer. Counted products from the product page; a unit from its own page while available or reserved. |
 | `ProductSheet`, `NewProductButton`, `EditProductButton` | manage_inventory. New: Quantity / Unique first (read-only afterwards), name, SKU, brand, category (`Select` of `product` categories), description, sale price, cost (view_costs only; on edit, empty keeps it), reorder point (counted only), Active. Unique adds the first unit on the same sheet (`UnitFields`: location, serial, "Condition (shown publicly when published)", unit sale price, unit cost with view_costs, and an optional "This is a complete bike" `SearchPicker` over shop bikes with no owner and no unit, saying customer bikes must be transferred first); both the product and the unit carry their own `newId()`, and a refused unit leaves the product, whose page offers Add unit (the swallowed failure is still logged, at error level when it is not a refusal). With Unique chosen and no active location, Add product is disabled (the unit fields show `NoActiveLocation`); Quantity stays possible. Creating opens the product. |
 | `AddUnitButton` / `AddUnitSheet`, `EditUnitButton`, `WriteOffUnitControl` (`unit-sheet.tsx`) | Add unit: `UnitFields` with the unit id as key. Edit details (manage_inventory): serial, condition (public once published), own price, cost (view_costs; empty keeps), internal notes. Write off (adjust_stock, units in stock): `ReasonConfirm` whose request id is made when the confirmation opens. |
-| `AddPartButton` / `AddPartSheet` | "Add part" beside Add service and Add manual line, locked the same way (D15). A `SearchPicker` over saleable stock (archived, inactive, consigned and unavailable units left out, D27; a unique product found by name offers its available units), each option with name, P-/U- number, SKU, price and a `StockBadge`. Then a counted part: quantity with steppers and "Take from" segments with their counts (default location chosen); a unit: quantity 1 at its own location. The selling price, an optional "Price each" for anyone (D14; required when the part has none, D24), a cost and yield preview only with view_costs, a line total. More than the location holds shows the non-blocking D23 warning ("Only 1 at Shop floor. Adding 2 takes the count below zero; …"). Success toast "Added 2 × Road inner tube. 37 left at Shop floor." With no active location, the sheet (like Adjust stock, the unique part of New product and the product page's Stock card) shows `NoActiveLocation`: "No active stock location. Ask someone with inventory access to add one in Settings → Locations", the last words linking to `/settings/locations`. |
+| `AddPartButton` / `AddPartSheet` | "Add part" beside Add service and Add manual line, locked the same way (D15). A `SearchPicker` over saleable stock (archived, inactive, customer-owned and unavailable units left out; consigned stock offered since Phase 6 step 3, D27 as changed, D44; a unique product found by name offers its available units), each option with name, P-/U- number, SKU, price, a `StockBadge` and, for consigned stock, an info `Badge` "Consigned · <consignor>" (counted stock adds the FIFO-head C- number, D45) and a note in the sheet that the consignor is owed their agreed amount once the job is completed. Consigned counted stock never goes below zero: instead of the D23 warning the sheet says "Only N of this consigned item at <location>. Consigned stock can't go below zero." (the database refuses). Then a counted part: quantity with steppers and "Take from" segments with their counts (default location chosen); a unit: quantity 1 at its own location. The selling price, an optional "Price each" for anyone (D14; required when the part has none, D24), a cost and yield preview only with view_costs, a line total. More than the location holds shows the non-blocking D23 warning ("Only 1 at Shop floor. Adding 2 takes the count below zero; …"). Success toast "Added 2 × Road inner tube. 37 left at Shop floor." With no active location, the sheet (like Adjust stock, the unique part of New product and the product page's Stock card) shows `NoActiveLocation`: "No active stock location. Ask someone with inventory access to add one in Settings → Locations", the last words linking to `/settings/locations`. |
 | `MovementList`, `HistoryList` (server, `movement-list.tsx`) | Movements newest first: signed quantity first (tabular, `text-done-deep` in, `text-danger-deep` out, a real minus sign), the label (`movementLabel`: "Used on job", "Returned from job", "Adjustment", "Damaged", "Transfer in/out", "Received"), the J- link and `#id`, the product and unit (linked; left out on the product's own page), location · actor · time (Singapore), the reason quoted, "Reverses #n" / "Reversed by #m" anchors to `#movement-{id}` (to the movements list when the other row is not on the page), and the unit cost only when the DTO carries it. `HistoryList` renders product and unit events through `describeProductEvent` / `describeUnitEvent` (`src/lib/inventory-history.ts`): "Cost changed" never shows a value; a unit's job-driven status reads "Put on job J-…", "Sold when J-… was completed", "Back on hold: J-… was reopened". |
 | `PublicationControls` (`publication-card.tsx`) | The product page's Publication card (D26): status pill and what it means; the manual moves as buttons from `publicationActions` (over `manualPublicationTargets`): Make internal, Publish, Unpublish, Archive listing, Restore; never Sold; a sold product offers only Archive listing with "Sold items return to public automatically if the sale is reversed."; no Publish for a unique product without an available unit. Buttons are keyed by status and disabled for 400 ms after each change (`useArmedAfter`). While not public: "Publishing needs" with a tick or cross per requirement (`publicationChecklist`: a name, a sale price, a public photo, and for unique products an available unit, computed from the loaded data; the database stays the authority), Publish disabled and described by "Still needed: …". Refusals (`publication_requires_*`, `publication_sold_by_sale`) show their mapped message inline and as a toast. Then the QR label URL (`CopyText`) and `PublicPreviewPanel`. Moves only for manage_inventory; everyone sees the status, URL and preview. |
 | `PublicPreviewPanel` (server or client, `public-preview.tsx`) | "What the public sees": the record's `reporting.public_items` row as staff read it (name, price, availability, condition for a unit, the public photo count), or "Not public. Anonymous scans show nothing." Read-only, also on the unit page. |
@@ -305,6 +305,104 @@ upload itself, below).
   note that it cannot go to a customer or be archived while in stock. The
   transfer sheet and `ArchiveControl` show the `bike_in_stock` message when
   that is refused.
+
+### Consignment
+
+Phase 6 step 3 (SPEC §13; D4, D44–D48, D50–D52). Every screen is readable
+by every active staff member; consignment money (balances, amounts owed,
+charges, payments, history, agreement photos) renders only for
+`canViewConsignmentMoney` (manage_consignments or view_costs, D48) and
+is absent, not greyed, otherwise; the yield preview only for
+`canViewSaleCosts`. Writes need manage_consignments; their buttons are
+absent without it.
+
+| Status or balance | Pill tone | Words (`src/lib/consignment.ts`) |
+|---|---|---|
+| Item active | info | For sale |
+| Item sold, outstanding > 0 | waiting | Sold, awaiting payment |
+| Item sold, outstanding = 0 | done | Settled |
+| Item sold, outstanding < 0 | info | Overpaid |
+| Item sold, money hidden | done | Sold |
+| Item returned / withdrawn | neutral | Returned / Withdrawn |
+| Balance > 0 (`outstandingLabel`) | waiting | $300.00 owed |
+| Balance = 0 after something was owed or paid | done | Settled |
+| Balance = 0, nothing ever owed or paid (`outstandingLabel` with the owed and paid history) | neutral | Nothing owed yet |
+| Balance < 0 | info | Overpaid $40.00 (consignor owes the shop), never "credit" (D46), with one line of remedies |
+
+| Component | Notes |
+|---|---|
+| `ConsignorSheet`, `NewConsignorButton`, `EditConsignorButton` | Name (required), phone, email, an optional `CustomerPicker` link that prefills empty fields, payout details (never shown back: on edit, empty keeps them), internal notes; `newId()` key; creating opens the consignor. |
+| `ConsignorPicker` | `SearchPicker` over active consignors (`searchConsignorsAction`); its action row "New consignor "<typed>"" hands the text to the intake. |
+| `ReceiveItemButton` / `ConsignmentIntakeSheet` | Four fieldsets, each `min-w-0` so a segmented control scrolls inside its row instead of widening the sheet past a phone screen: consignor (preset, picker, or a new consignor with an optional customer link, created by the intake RPC in the same transaction with its own id, so a refused intake leaves no consignor); what (One item (bike, frame, wheelset) / Several identical; a shop bike `SearchPicker` for one item (no owner, not in stock; prefills name, brand, serial; D51 hint), name, brand, description, category, serial and condition or a quantity stepper, "Kept at" as segments for up to 4 active locations, else a select); money (amount owed per item, 0 allowed, D24; asking price; a "If it sells at the asking price: yield · Cult Commons · BICII keeps" preview for view_costs); paperwork (received date sent as NULL when left at today, notes). Item, product, unit and consignor ids are made when the sheet opens; every value is state, so a retry sends the same request. Toast "C-000123 received", then the item page. |
+| `ConsignmentItemRow` (server) | A RowList row: C- number and status pill on the first line, the name on its own line (never squeezed out on a phone), details, and the amount owed for money users. |
+| `EditTermsButton` | Amount owed and asking price; a "Why is the amount owed changing?" field appears (required) once the amount owed differs. |
+| `AddChargeButton` / `ChargeSheet`, `VoidChargeControl` | Description, amount (> 0) and "Who pays?" as a `SegmentedControl` with nothing chosen; "Add charge" is disabled until one is (D4), with one explanation line per bearer; Shop pays disabled with the reason for quantity items (D45) and once the unit is on a job or sold. Void is a `ReasonConfirm`. |
+| `ReturnToConsignorControl` | The `ReasonConfirm` pattern with a `newId()` return id made when it opens; quantity items add where from (the locations holding this item's own stock, D54) and How many (by default all of this item's stock there, "N here, M left with the shop"); the confirm button names the effect ("Return 1 to consignor"). |
+| `RecordPaymentButton` / `SettlementSheet` | Amount paid, paid on (today: NULL; else noon Singapore, `paidAtFromDate`), reference, notes; one row per owed item, oldest sale first, with its `outstandingLabel` and an amount; Auto-fill (`autoAllocate`), "Add another item"; a live "Unallocated $x" / "Over by $x" / "Fully allocated" status (the done tone only once an amount is entered and allocated; before that "Enter the amount paid" in the neutral sunken style); a row above what is owed reveals a required "Why pay more than is owed?" (D47). The commit names the amount ("Record payment of $200.00") and is disabled while `allocationProblems` blocks. |
+| `ReverseSettlementControl` | `ReasonConfirm` on a payment; the reversal id is made when it opens. A reversed payment stays listed, struck through, with "Reversed: <reason> · <who> · <date>". |
+| `PayoutDetailsReveal` | "Show payout details" (manage_consignments) fetches them on demand and shows them inline with Hide; they are never in the page's data. |
+
+Pages: `/consignment` (`LinkSegments` Consignors / Items as `?view=`; the
+items' status filter For sale / Sold / Returned / All as links; a
+consignor row reads "N for sale · N awaiting payment" for money users and
+"N for sale · N sold" otherwise, never who is owed money),
+`/consignment/consignors/[id]` (contact, payout details, Balance card,
+items grouped Awaiting payment / For sale / Settled and returned (for
+staff without money access: Sold / For sale / Returned), Payments,
+Archive) and `/consignment/items/[id]` (C- header with consignor, U-/P-
+and B- links; Details with "Sold through" jobs and sales; Money card with
+the hint "What we pay the consignor when it sells. It is the cost of the
+sale."; Charges; Listing photos on the product; Agreement photos;
+Return; History as a "Timeline" list, newest first). Phase 4 pages: a
+consigned product or unit hides Adjust stock, Split, Add unit and Write
+off and says "Consigned stock changes through sale, restock, a job or
+return to the consignor." (D50); a consigned unit's Edit details keeps
+its price and cost (they are the consignment's terms) and the unit page
+gains a Consignment card; a consigned product lists its consignments; a
+job's consigned part links "Consigned · <consignor>" to its item.
+
+#### Sales (Phase 6)
+
+Sale status (`saleStatusLabel` / `saleStatusTone` in `src/lib/sales.ts`;
+a refund changes only the status, D49):
+
+| State | Tone | Label |
+|---|---|---|
+| `recorded` | done | Recorded |
+| `partially_refunded` | waiting | Partly refunded |
+| `refunded` | danger | Refunded |
+| `voided` (reserved, never written) | neutral | Voided |
+| A line restocked | info badge | Restocked |
+
+| Component | Notes |
+|---|---|
+| `RecordSaleButton` / `RecordSaleSheet` | "New sale" on `/sales`, "Sell" on the consignment item, unit and product pages (any staff, D48; a Sell entry point presets its item by searching its short ID). Lines: title, short ID, "3 in stock at Shop floor" (a unit: "At Shop floor"), "Consigned · <consignor>" (a consigned quantity row is one consignment and the line sends its `consignment_item_id`, D45), a money `NumberInput` prefilled with the database selling price (`unit_price`), a quantity stepper capped at what the row holds, Remove. `priceWarnings` under the price: "Below the asking price" for everyone, "Below cost: this sale loses money" for view_costs (D53; never blocks). Add item reveals the picker again; Customer (optional `CustomerPicker`, walk-in otherwise); "Sold earlier?" reveals a shop-time `datetime-local` (max now; NULL while closed or empty); Notes. A view_costs "Preview" (cost, yield, Cult Commons) per line and in total, through `previewSale` (`lineEconomics`). Footer: the Decimal running total and "Record sale · $X". The sale id is made when the sheet opens; errors show as an alert, the lines stay, and a unit sold meanwhile is outlined with "Already sold or taken. Remove this line.". A refusal is shown where it applies: Sold at, Customer and Notes carry their field errors (a time after the moment of submitting is caught in the sheet with "Enter a date and time that is not in the future."; the database's `sale_recognized_in_future` and `sale_before_stock` land on Sold at too), the first marked field takes the focus (`useFocusFirstInvalid`), and a refusal with no field scrolls the alert into view and focuses it. A preset whose search fails (a dropped connection) falls back to the picker with the "no longer available" note instead of "Finding the item…". Success: toast "S-000123 recorded" and the sale page. |
+| `SaleablePicker` | `SearchPicker` over `searchSaleableAction` (`saleable_stock`): U-, P- and C- numbers, SKU, serial, name. Each result: title and price, short ID, a `StockBadge` with where and how many, the consignor badge; a unit already on the sale is disabled. |
+| `RecordRefundButton` / `RefundSheet` | Admins only (`canRecordRefund`, D49), shown while something is left to refund. Amount defaults to `refundableAmount` and is capped at it; the info note "A refund does not put anything back in stock. If the item came back, restock it separately." (D7); the reason through `ReasonConfirm` ("Record refund of $5.00…" then "Refund $5.00"); the refund id is made when the sheet opens. |
+| `RestockControl` | `ReasonConfirm` "Restock… U-000123" on a unit line still sold on this sale (`unit_sold_sale_line_id` = the line) and on the unit page's Restock card; for adjust_stock holders, and for a consigned unit only with manage_consignments too (D46). It always sends this line's id; "Back to" location segments (default: where it was sold) while confirming when there is more than one active location; a consigned unit says "It goes back on sale for the consignor and is no longer owed to them." |
+
+Pages: `/sales` (`PageHeader` "Sales" with New sale; range links Today /
+7 days (default) / 30 days as `?range=`, Singapore shop days; a
+`SearchField` whose query searches every date; rows with the S- number
+and time, Partly refunded / Refunded, Restocked and Consigned badges, the
+first item "+N more", the customer or "Walk-in", the total and, for
+view_costs, "Yield $x · Cult Commons $y"; empty state "No sales in this
+period") and `/sales/[id]` (the S- number as the h1, status, date and
+time, "In store", the customer link or Walk-in, "Recorded by …", Record
+refund; Items: each line linked to its unit, consignment or product,
+quantity × price and total, "Consigned by <name> · C-…" and, for
+consignment money users, "owed $500.00, paid separately", a bike line's
+link and "Ownership is not transferred automatically; use Transfer on the
+bike page." (D51), Restocked with when and by whom, per-line cost, yield
+and Cult Commons for view_costs, Restock; a "Yield" card for view_costs:
+Sale, Direct cost (incl. consignor payout), Yield, Cult Commons (30% of
+positive yield), BICII after Cult Commons; Refunds with what is left to
+refund; Notes). The unit page shows "Sold on S-…" and a Restock card when
+a sale sold it. Today's "Consignment sales" tile links to that shop
+day's sales, `/sales?day=YYYY-MM-DD` (today or a past day; the Sales
+page's heading names the day and no range is current), and "New
+consignor liability" (view_financial_reports and view_costs, D30) to
+`/consignment`; both always show an amount now.
 
 ### Scanning
 
@@ -438,8 +536,8 @@ upload itself, below).
   active staff; an adjustment's value at cost only with View costs.
 - **Money notes.** Danger: the loss note (D1). Warning: "Provisional: N
   lines have no cost entered…" (D14). On a past day, muted: "Counts jobs
-  completed on this day. If one is reopened, it moves to the day it is
-  completed again." (D32; words, not colour).
+  completed and sales recorded on this day. If a job is reopened, it moves
+  to the day it is completed again." (D32; words, not colour).
 - **Appointments** (Phase 2, D30, D41). `AppointmentsSection`: Scheduled
   ("Booked for this day"), Arrived ("Including checked in") and No-shows
   from `today_dashboard`, by scheduled day and current status, for every
@@ -451,9 +549,16 @@ upload itself, below).
   "10:30, Hafiz Rahman, Service drop-off, late"; "See all" opens
   `/appointments?date=<day>`; "N more expected later"; empty: "No more
   arrivals expected today" with Book. A past day shows only the counts.
-- **Placeholders are extension points.** Consignment sales and New
-  consignor liability say "Arrives with consignment" until Phase 6. The
-  `ExceptionList` is the list Phase 9 links from `/reports/exceptions`.
+- **Consignment tiles (Phase 6).** "Consignment sales" (the day's sales
+  and completed jobs with a consigned line, count and total; the hint says
+  "N sales or jobs with consigned items"; links to that day's Sales list,
+  `/sales?day=`, where the sales are; the jobs are under Jobs completed) and,
+  for view_costs, "New consignor liability" (what the day's consigned
+  lines owe their consignors; links to Consignment) always show an amount.
+  Money also counts in-store sales: Gross sales is jobs completed and
+  sales recorded on the day.
+- **Placeholders are extension points.** The `ExceptionList` is the list
+  Phase 9 links from `/reports/exceptions`.
 - **Streaming.** The dashboard row loads first; each list (financial
   entries, adjustments, low stock, exceptions, activity, last 7 days) is a
   `SectionLoader` (async) in its own `<Suspense>` with a `SectionSkeleton`,

@@ -178,6 +178,56 @@ describe("mapDbError", () => {
     ).toBe("Stock photos have no customer; choose Internal or Public.");
   });
 
+  it("maps the consignment errors, keys and checks (Phase 6: D4, D44-D52)", () => {
+    expect(mapDbError(pgrst("P0001", "charge_bearer_required"))).toEqual({
+      message: "Choose who bears the charge: the consignor or the shop.",
+      kind: "business",
+      code: "P0001",
+      reason: "charge_bearer_required",
+    });
+    expect(mapDbError(pgrst("P0001", "consignment_stock_adjust_blocked")).message).toBe(
+      "Consigned stock can't be adjusted, damaged, split or received by hand. Return it to the consignor or sell it.",
+    );
+    expect(mapDbError(pgrst("P0001", "consignment_quantity_unavailable")).message).toBe(
+      "No single consignor has that many of this item at that location. Use fewer, or one consignor's stock at a time.",
+    );
+    // D55: a sale dated before its stock came in; an intake's new consignor
+    // whose id is already someone else's.
+    expect(mapDbError(pgrst("P0001", "sale_before_stock")).message).toMatch(
+      /before the item came into the shop/,
+    );
+    expect(mapDbError(pgrst("P0001", "consignor_conflict")).message).toMatch(
+      /already saved with other details/,
+    );
+    // An internal guard: never explained to the user.
+    expect(mapDbError(pgrst("P0001", "consignment_quantity_negative")).message).toBe(GENERIC_ERROR);
+    // Since D27 changed, only customer-owned stock (and splits of
+    // non-shop stock) reach this code.
+    expect(mapDbError(pgrst("P0001", "ownership_not_saleable")).message).toMatch(
+      /belongs to a customer/,
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "consignors_customer_id_key" })
+        .message,
+    ).toBe("That customer is already a consignor.");
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "attachments_consignment_item_internal_only",
+      }).message,
+    ).toBe(
+      "Photos on a consignment item stay internal. Put listing photos on the product or unit.",
+    );
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "work_order_line_items_consignment_shape",
+      }).message,
+    ).toBe("A consigned part needs both its consignment and what the consignor is owed.");
+  });
+
   it("maps the reporting range error (Phase 5)", () => {
     expect(mapDbError(pgrst("P0001", "report_range_invalid"))).toMatchObject({
       kind: "business",

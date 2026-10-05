@@ -72,11 +72,34 @@ describe("photo storage rules", () => {
   });
 
   it("knows which records hold photos", () => {
-    expect(PHOTO_ENTITIES).toEqual(["bike", "customer", "work_order", "product", "inventory_unit"]);
+    expect(PHOTO_ENTITIES).toEqual([
+      "bike",
+      "customer",
+      "work_order",
+      "product",
+      "inventory_unit",
+      "consignment_item",
+    ]);
     expect(isPhotoEntity("work_order")).toBe(true);
     expect(isPhotoEntity("product")).toBe(true);
     expect(isPhotoEntity("inventory_unit")).toBe(true);
-    expect(isPhotoEntity("consignment_item")).toBe(false);
+    expect(isPhotoEntity("consignment_item")).toBe(true);
+    expect(isPhotoEntity("sale")).toBe(false);
+  });
+
+  it("keeps consignment agreement photos internal: customer and public shown blocked (D52)", () => {
+    const agreement = visibilityOptions("consignment_item");
+    expect(agreement.map((o) => o.value)).toEqual(["internal", "customer", "public"]);
+    expect(agreement.find((o) => o.value === "internal")?.blocked).toBeNull();
+    for (const value of ["customer", "public"] as const) {
+      expect(agreement.find((o) => o.value === value)?.blocked).toBe(
+        "Agreement photos show the consignor's terms, so they stay internal.",
+      );
+    }
+    expect(isStockEntity("consignment_item")).toBe(false);
+    expect(attachmentPath("consignment_item", BIKE, ID, "image/jpeg")).toBe(
+      `consignment_item/${BIKE}/${ID}.jpg`,
+    );
   });
 
   it("never offers public for an original stored without dimensions (it may carry GPS)", () => {

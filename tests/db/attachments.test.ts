@@ -311,7 +311,7 @@ describe("record_attachment", () => {
     }
   });
 
-  it("rejects unknown records and entity types this phase cannot attach to", async () => {
+  it("rejects unknown records of every attachable entity type", async () => {
     const id = randomUUID();
     const nowhere = randomUUID();
     await expect(
@@ -320,8 +320,9 @@ describe("record_attachment", () => {
         (tx) => record(tx, { id, entityId: nowhere }),
       ),
     ).rejects.toMatchObject({ code: "P0002" });
-    // Products and units are attachable from Phase 4: an unknown one is P0002.
-    for (const entityType of ["product", "inventory_unit"]) {
+    // Products and units are attachable from Phase 4, consignment items from
+    // Phase 6 (internal only, D52): an unknown one is P0002.
+    for (const entityType of ["product", "inventory_unit", "consignment_item"]) {
       await expect(
         asMechanic(
           (tx) => upload(tx, { id, entityType, entityId: nowhere }),
@@ -329,13 +330,6 @@ describe("record_attachment", () => {
         ),
       ).rejects.toMatchObject({ code: "P0002" });
     }
-    // Consignment items arrive with Phase 6.
-    await expect(
-      asMechanic(
-        (tx) => upload(tx, { id, entityType: "consignment_item", entityId: nowhere }),
-        (tx) => record(tx, { id, entityType: "consignment_item", entityId: nowhere }),
-      ),
-    ).rejects.toMatchObject({ code: "P0001", message: "attachment_entity_unsupported" });
   });
 
   it("rejects files that are not photos, and photos whose stored type differs", async () => {

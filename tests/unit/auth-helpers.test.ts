@@ -91,12 +91,13 @@ describe("navigation", () => {
     expect(TABS.map((t) => t.label)).toEqual(["Today", "Jobs", "Scan", "Inventory", "More"]);
   });
 
-  it("lists the eight More destinations", () => {
+  it("lists the nine More destinations, Sales right after Consignment", () => {
     expect(MORE_ITEMS.map((i) => i.label)).toEqual([
       "Customers",
       "Bikes",
       "Appointments",
       "Consignment",
+      "Sales",
       "Purchasing",
       "Labels",
       "Reports",
@@ -111,6 +112,7 @@ describe("navigation", () => {
     expect(isActive("/jobsx", "/jobs")).toBe(false);
     expect(isMoreActive("/settings/staff")).toBe(true);
     expect(isMoreActive("/inventory")).toBe(false);
+    expect(isMoreActive("/sales/123")).toBe(true);
   });
 
   it("keeps the Inventory tab active on products, units and movements", () => {

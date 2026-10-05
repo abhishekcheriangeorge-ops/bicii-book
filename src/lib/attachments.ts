@@ -14,7 +14,7 @@ export type Visibility = Database["public"]["Enums"]["attachment_visibility"];
 /**
  * Entity types that can hold photos so far (private.attachment_entity_exists):
  * bikes and customers (Phase 1), jobs (Phase 3), products and unique units
- * (Phase 4).
+ * (Phase 4), consignment items (Phase 6: the agreement, internal only, D52).
  */
 export const PHOTO_ENTITIES = [
   "bike",
@@ -22,6 +22,7 @@ export const PHOTO_ENTITIES = [
   "work_order",
   "product",
   "inventory_unit",
+  "consignment_item",
 ] as const;
 export type PhotoEntity = (typeof PHOTO_ENTITIES)[number];
 
@@ -88,6 +89,10 @@ export function isStockEntity(entityType: AttachmentEntity): boolean {
 
 export const STOCK_NEVER_CUSTOMER = "Stock photos have no customer.";
 
+/** D52 CONS-PHOTOS-INTERNAL: why a consignment item's photos are never shared. */
+export const CONSIGNMENT_INTERNAL_ONLY =
+  "Agreement photos show the consignor's terms, so they stay internal.";
+
 export const ORIGINAL_NEVER_PUBLIC =
   "This photo was stored as its original file, which may carry where it was taken, so it can't be public. Add it again as a JPEG to share it publicly.";
 
@@ -98,7 +103,9 @@ export const ORIGINAL_NEVER_PUBLIC =
  * carry its GPS position. Stock (products and units) has no customer, so
  * its photos are offered Internal and Public only (the database's
  * attachment_stock_never_customer, D13 extended); a public stock photo
- * shows on the item's QR page once it is published (D26).
+ * shows on the item's QR page once it is published (D26). A consignment
+ * item's photos are internal only (D52): Customer and Public are shown
+ * blocked, with the reason.
  */
 export function visibilityOptions(
   entityType: AttachmentEntity,
@@ -110,6 +117,26 @@ export function visibilityOptions(
     description: "Staff only.",
     blocked: null,
   };
+  if (entityType === "consignment_item") {
+    // D52 (the D13/D19 pattern): the signed agreement, ID or condition
+    // notes carry the consignor's terms and amounts. Listing photos belong
+    // on the product or unit.
+    return [
+      internal,
+      {
+        value: "customer",
+        label: "Customer",
+        description: "Not offered for consignment agreements.",
+        blocked: CONSIGNMENT_INTERNAL_ONLY,
+      },
+      {
+        value: "public",
+        label: "Public",
+        description: "Not offered for consignment agreements.",
+        blocked: CONSIGNMENT_INTERNAL_ONLY,
+      },
+    ];
+  }
   if (isStockEntity(entityType)) {
     return [
       internal,

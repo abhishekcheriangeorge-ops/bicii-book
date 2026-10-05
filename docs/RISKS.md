@@ -118,9 +118,10 @@ URLs, or customer data in this file.
   which OTP needs, is not configured anywhere.
 - Evidence and confidence: high for the current behaviour
   (`src/app/(staff)/settings/staff/new/invite-form.tsx` shows the
-  temporary password); no `feat/auth-email-otp` ref exists locally or on
-  origin on 2026-10-05, so the OTP work was not inspected. Whether OTP
-  removes the residual risk is unverified.
+  temporary password). The OTP work is on `feat/auth-email-otp` (4b3eadd,
+  local and on origin, equal; checked out in the second worktree
+  `bicii-book-wt`), not on this branch; it was not inspected or verified
+  here. Whether OTP removes the residual risk is unverified.
 - Why accepted: MVP default ([ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).
 - Workaround or containment: only admins and trusted `manage_staff` holders
   invite; the D11 ceiling limits what an inviter can grant.
@@ -129,8 +130,8 @@ URLs, or customer data in this file.
   stays; integrate the OTP work, revise RUNBOOK's hosted Auth steps, and
   configure SMTP for staging.
 - Revisit trigger: the OTP branch is integrated into this line.
-- Last checked: 2026-10-05, `git for-each-ref`, `git ls-remote --heads
-  origin`, the invite form.
+- Last checked: 2026-10-05 (Phase 6 review fixes), `git for-each-ref
+  refs/heads refs/remotes`, `git worktree list`, the invite form.
 
 ## R-005 — Cost-pending lines overstate yield and Cult Commons
 
@@ -160,46 +161,63 @@ URLs, or customer data in this file.
 ## R-006 — No test proves a zero-price or zero-cost part is accepted
 
 - Category: validation gap.
-- Status and owner: open; build agent.
+- Status and owner: resolved 2026-10-05 by Phase 6 step 1 (`feat/p6-consignment`,
+  commit fe6ac53, local only); build agent. The heading is kept so links
+  stay valid.
 - Trigger: adding a part whose price or cost is 0 (a free part).
-- Impact: the owner amended D24 on 2026-10-05: 0 is a known price or cost
-  and only NULL counts as missing. `add_inventory_line`
-  (`supabase/migrations/20261004001900_inventory_jobs.sql`) already does
-  this: it takes `coalesce(...)` of the override and defaults and raises
-  `part_price_missing` / `part_cost_missing` only when the result IS NULL.
-  No test covers the 0 cases, so a regression would go unnoticed.
-- Evidence and confidence: high; `tests/db/inventory-ledger.test.ts` tests
-  only the NULL cases, and a search of the DB tests for a 0 price or 0 cost
-  part fixture found none.
-- Workaround or containment: none needed; the behaviour is correct today.
-- Next action: add DB tests that a part with price 0 and a part with cost 0
-  are accepted with 0 snapshots and not `cost_pending`.
-- Revisit trigger: next change to `add_inventory_line`.
-- Last checked: 2026-10-05, the migration and test file above.
+- Impact (before): the owner amended D24 on 2026-10-05: 0 is a known price
+  or cost and only NULL counts as missing. `add_inventory_line` already did
+  this, but no test covered the 0 cases.
+- Evidence and confidence: high. `tests/db/consignment-job-parts.test.ts`
+  "D24: a part priced 0 and a part costing 0 are accepted with 0 snapshots
+  and are not cost_pending; so is a consigned part agreed at 0" (a
+  shop-owned part priced 0, one costing 0, a 0 price override and a
+  consigned part agreed at 0), and `tests/db/consignment.test.ts` "D24: an
+  agreed amount of 0 and an asking price of 0 are known values, stored as
+  0"; both pass in `npm test` (86 files, 1225 tests) on 2026-10-05.
+- Workaround or containment: none needed.
+- Next action: none. Phase 6 step 2 added the same 0 test for sale lines:
+  `tests/db/sales.test.ts` "D24 (amended): a price of 0 and a cost of 0
+  are known values, snapshotted as 0" (passed in `npm test` on
+  2026-10-05).
+- Revisit trigger: next change to `add_inventory_line` or a new part or
+  sale path.
+- Last checked: 2026-10-05, the tests above.
 
 ## R-007 — Consigned stock cannot be a job part yet
 
 - Category: known defect (owner change not yet implemented).
-- Status and owner: open; build agent, Phase 6.
-- Trigger: staff try to use a consigned item as a part on a job.
-- Impact: the owner changed D27 on 2026-10-05 so that consigned stock may be
-  a job part. On this branch `add_inventory_line` still refuses consigned
-  and `customer_owned` stock with `ownership_not_saleable`. Consignment
-  itself is not built (Phase 6). `customer_owned` is not covered by the
-  change and stays never saleable.
-- Evidence and confidence: high; the refusal is in
-  `20261004001900_inventory_jobs.sql` and its backstop in
-  `20261004002100_inventory_publication.sql`. The comment above that
-  refusal and the D27 rule text in PLAN §6 still say Phase 6 keeps the
-  refusal and does not replace `add_inventory_line`: they describe the rule
-  before the owner's change (found 2026-10-05 while writing
-  ARCHITECTURE.md), so Phase 6 must not follow them.
-- Workaround or containment: none; consignment is not built.
-- Next action: Phase 6 builds the consigned-part path with consignor
-  liability intact, plus its database tests, and updates PLAN D27.
-- Revisit trigger: Phase 6 starts.
-- Last checked: 2026-10-05, the migrations above
-  ([ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md)).
+- Status and owner: resolved 2026-10-05 by Phase 6 step 1 (`feat/p6-consignment`,
+  commits 13fe3f3 and fe6ac53, local only; D44); build agent. The heading is
+  kept so links stay valid.
+- Trigger: staff use a consigned item as a part on a job.
+- Impact (before): the owner changed D27 on 2026-10-05 so that consigned
+  stock may be a job part, while `add_inventory_line` still refused it.
+  Now `add_inventory_line` (replaced in
+  `supabase/migrations/20261004003400_consignment_job_parts.sql`, same
+  signature) accepts consigned stock under D44 and refuses only
+  customer-owned stock (`ownership_not_saleable`), with the backstop
+  trigger `work_order_line_items_consignment_rules` for every writer; the
+  old comment saying Phase 6 keeps the refusal is gone with the replaced
+  function, and PLAN's D27 row was rewritten in 34783d6.
+- Evidence and confidence: high. `tests/db/consignment-job-parts.test.ts`
+  (held on add, sold at completion with liability = the agreed amount,
+  reopen and re-completion, void on the open job, FIFO quantity parts, no
+  negative consigned stock, customer-owned refusals),
+  `tests/db/consignment-concurrency.test.ts` (two completions create one
+  liability; a unit on two jobs or on a job while it is returned has one
+  winner); all pass in `npm test` on 2026-10-05.
+- Workaround or containment: none needed. Since Phase 6 step 3 the Add
+  part sheet offers consigned stock ("Consigned · <consignor>",
+  `searchParts` in `src/lib/domain/inventory.ts`), proven end to end by
+  `tests/e2e/consignment.spec.ts` (a consigned bike added to a job and
+  sold at completion).
+- Next action: none.
+- Revisit trigger: a change to `add_inventory_line` or
+  `work_orders_sell_held_units`.
+- Last checked: 2026-10-05, the migrations and tests above
+  ([ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md),
+  [ADR-016](decisions/ADR-016-consignment-and-sales.md)).
 
 ## R-008 — Correcting a job whose sold bike reached its buyer is multi-step
 
@@ -226,16 +244,22 @@ URLs, or customer data in this file.
 - Status and owner: open; owner (merges), build agent (integration).
 - Trigger: merging the stack and integrating the parallel tracks.
 - Impact: PRs #1–#7 are open drafts stacked on each other; `main` holds only
-  the initial commit 1594c78. `feat/p7-purchasing` (local only, not on
-  origin) forks from PR #6's head d3e2101, so it has no appointments
-  (Phase 2). Expected conflict points: PLAN §6 (it adds D60–D66 after
-  D35), migration order (its `20261005…` files after this line's
-  `20261004…` files), `tests/fixtures/api-surface.ts`,
+  the initial commit 1594c78. `feat/p7-purchasing` (a0fc1d2, local and on
+  origin, equal: pushed) forks from PR #6's head d3e2101, so it has no
+  appointments (Phase 2). Expected conflict points: PLAN §6 (it adds
+  D60–D66 after D35), migration order (its `20261005…` files after this
+  line's `20261004…` files), `tests/fixtures/api-surface.ts`,
   `src/lib/database.types.ts` and `src/lib/db-errors.ts`. The email OTP
-  work is also not yet visible.
+  work is on `feat/auth-email-otp` (4b3eadd, local and on origin, equal),
+  checked out in the second worktree; neither track was verified here.
+  `feat/p6-consignment` has no origin branch; origin holds an
+  orchestrator auto-save of it, `wip/feat/p6-consignment`.
 - Evidence and confidence: high; GitHub REST pull list, `git branch -vv`,
   `git merge-base feat/p7-purchasing feat/p2-appointments` = d3e2101 and
-  `git show feat/p7-purchasing:docs/PLAN.md` on 2026-10-05.
+  `git show feat/p7-purchasing:docs/PLAN.md` on 2026-10-05; the heads and
+  pushed state re-read with `git for-each-ref refs/heads refs/remotes`
+  and `git worktree list` at the Phase 6 review fixes (the remote refs
+  are as last fetched; their reflogs record the pushes).
 - Workaround or containment: each PR head is green in CI (R-010).
 - Next action: owner reviews and merges the stack bottom-up; the build agent
   integrates purchasing and OTP afterwards, regenerating types and the
@@ -381,7 +405,8 @@ URLs, or customer data in this file.
 - Workaround or containment: none.
 - Next action: owner decides a retention and deletion policy; the build
   agent then designs a deletion or anonymisation path that keeps financial
-  snapshots intact.
+  snapshots intact. Consignors' personal and payout details have the same
+  gap ([R-026](#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history)).
 - Revisit trigger: before customers sign in (Phase 11).
 - Last checked: 2026-10-05.
 
@@ -405,15 +430,17 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phases 6–9).
-- Trigger: staff open Consignment, Purchasing, Labels or Reports.
+- Status and owner: open; build agent (Phases 7–9). Consignment stopped
+  being a placeholder in Phase 6 step 3 (`feat/p6-consignment`, local
+  only); the heading is kept so links stay valid.
+- Trigger: staff open Purchasing, Labels or Reports.
 - Impact: those pages render the `ComingSoon` component
   (`src/components/shell/coming-soon.tsx`), which reads "Arrives in Phase
   N (…)"; none of their features exist on
   this branch.
-- Evidence and confidence: high; `src/app/(staff)/{consignment,purchasing,labels,reports}/page.tsx`.
+- Evidence and confidence: high; `src/app/(staff)/{purchasing,labels,reports}/page.tsx`.
 - Workaround or containment: none.
-- Next action: Phases 6, 7 (parallel track), 8 and 9.
+- Next action: Phases 7 (parallel track), 8 and 9.
 - Revisit trigger: each phase ends.
 - Last checked: 2026-10-05.
 
@@ -433,4 +460,242 @@ URLs, or customer data in this file.
 - Next action: none; a later decision record supersedes ADR-001 A1 only if
   the stack choice itself changes.
 - Revisit trigger: a QR rendering library is chosen (Phase 8).
+- Last checked: 2026-10-05.
+
+## R-020 — A bike record consigned once cannot be consigned again
+
+- Category: deliberate shortcut.
+- Status and owner: accepted (D51, build default, owner to confirm); owner.
+- Trigger: a consignor takes a consigned bike back (or buys it back) and
+  later brings the same bike to be consigned again.
+- Impact: a unit keeps its link to its bike for life, both ways
+  (`inventory_units.bike_id`, `bikes.inventory_unit_id`), so the returned
+  unit still holds the bike record and a new intake of that bike record is
+  refused with `bike_already_linked` (D51). The same is true of a sold shop
+  bike that comes back.
+- Evidence and confidence: high; `create_consignment_item` applies Phase 4's
+  bike rules (`supabase/migrations/20261004003300_consignment.sql`) and
+  `tests/db/consignment.test.ts` "a consigned bike links a shop bike record
+  both ways; a customer's, archived or already linked bike is refused"
+  (D51) proves the link stays after a return and that the same bike record
+  is then refused with `bike_already_linked`; it passes in `npm test` on
+  2026-10-05 (commit 13fe3f3).
+- Workaround or containment: register a new bike record for the second
+  consignment (the old record keeps its history and photos).
+- Next action: none until the revisit trigger; then decide whether a unit
+  that left stock may release its bike link.
+- Revisit trigger: the first bike consigned a second time.
+- Last checked: 2026-10-05, the migration and test above.
+
+## R-021 — Reports overstate net sales after a refund or restock
+
+- Category: deliberate shortcut.
+- Status and owner: accepted (D49, build default, owner to confirm);
+  owner, with Phase 9's refund-reporting row (working name DR5).
+- Trigger: an admin records a refund on a sale (`record_sale_refund`), or
+  staff restock a sold unit (`restock_unit`).
+- Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
+  Today and the financial reports) keep every sale line at its snapshot:
+  a refunded or restocked sale still counts in gross sales, yield and Cult
+  Commons on its recognition day. Net sales, yield and the Cult Commons
+  share are overstated by the refunded amount until Phase 9 decides
+  netting and Cult Commons claw-back. The consignor ledger is not affected
+  (a restock removes the liability; a refund alone does not change it,
+  D46).
+- Evidence and confidence: high; the sale branch of `financial_lines` in
+  `supabase/migrations/20261004003700_consignment_reporting.sql` subtracts
+  nothing; `tests/db/consignment-reporting.test.ts` asserts that S-000002
+  keeps its full 28.00 entry after its 14.00 refund, and `SEED_DAYS` day 4
+  includes it (passed in `npm test` on 2026-10-05).
+- Workaround or containment: refunds and restocks show on the sale, in
+  `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
+  ledger; refunds are admin-only and capped at the sale total (D49). Since
+  Phase 6 step 4 the sale page's Yield card says "Refunds and restocks do
+  not change these figures yet", the Sales list marks Partly refunded /
+  Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
+  refund on the sale and in the list.
+- Next action: Phase 9 decides the refund-reporting row (DR5) for retail
+  and online refunds together.
+- Revisit trigger: the first real refund, or Phase 9's reports.
+- Last checked: 2026-10-05, the migration and tests above.
+
+## R-022 — Agreement photos are hidden by the app, not by the database
+
+- Category: uncertainty (access design).
+- Status and owner: open; owner to confirm, build agent.
+- Trigger: a staff member without Manage consignments or View costs reads
+  a consignment item's agreement photos outside the item page (for
+  example through the attachments API with their own session).
+- Impact: agreement photos (D52) are internal, and `attachments` RLS lets
+  every active staff member read internal photos. A signed agreement
+  shows the amount owed to the consignor, which D48 otherwise reveals only
+  to Manage consignments or View costs. The item page loads and shows
+  agreement photos only to those staff (`getConsignmentItem` in
+  `src/lib/domain/consignment.ts` with `canSeeMoney`); the database does
+  not enforce it.
+- Evidence and confidence: high; `src/app/(staff)/consignment/items/[id]/page.tsx`
+  ("Agreement photos" card), the attachments policies in
+  `supabase/migrations/20261004000900_attachments.sql`;
+  `tests/e2e/consignment.spec.ts` covers the admin path only
+  (passed on 2026-10-05).
+- Workaround or containment: the app never sends the photos to other
+  staff; customers and anonymous users never read them (D52's trigger and
+  CHECK keep them internal).
+- Next action: owner decides whether agreement photos are consignment
+  money (then a later migration gates `consignment_item` attachments by
+  `private.can_view_consignment_money()`, a new D-row from D54) or ordinary
+  internal photos (then the item page shows them to all staff).
+- Revisit trigger: the owner's answer, or Phase 11's attachment access
+  review.
+- Last checked: 2026-10-05.
+
+## R-023 — A consigned unit's cost preview leaves out shop-paid charges
+
+- Category: known defect (display).
+- Status and owner: open; build agent.
+- Trigger: a View costs holder opens a consigned unit's or product's page
+  after a shop-paid charge was added to its consignment.
+- Impact: the unit page's "Cost and yield" reads `public.inventory_unit_costs`
+  (Phase 4), whose cost is the unit's direct cost, the agreed amount
+  only; D44 snapshots agreed amount plus shop-paid charges when it goes on
+  a job or a sale. The preview overstates expected yield and Cult Commons
+  by the charges; nothing stored is wrong. The consignment item page and
+  the Add part sheet use agreed amount plus shop-paid charges.
+- Evidence and confidence: high; the seeded C-000001 (agreed 2,400.00 and
+  a 120.00 shop charge) shows cost $2,400.00 on its unit page (screenshot
+  on 2026-10-05) against the 2,520.00 its line would snapshot; the rule
+  that a shop charge raises the part's cost is proven by
+  `tests/db/consignment-job-parts.test.ts` "a shop charge raises the
+  part's cost (D4) …".
+- Workaround or containment: read the consignment item's Money card. The
+  sale sheet's "Below cost" warning and preview (Phase 6 step 4) also use
+  agreed amount plus shop-paid charges (`searchSaleable` reads
+  `consignor_statement`), so only the unit page's Phase 4 card is affected.
+- Next action: a later migration adds shop-paid charges to
+  `inventory_unit_costs` for consigned units (same columns).
+- Revisit trigger: the next migration touching `inventory_unit_costs`, or
+  Phase 9's reports.
+- Last checked: 2026-10-05.
+
+## R-024 — A consigned item can be sold below what the consignor is owed
+
+- Category: unverified assumption (owner question).
+- Status and owner: open; owner (D53's open question), build agent for
+  any change.
+- Trigger: any staff member lowers a consigned line's price in the sale
+  sheet (D53 lets any active staff member override a price, with no
+  database floor).
+- Impact: a consigned item sold under its agreed amount plus shop-paid
+  charges makes a loss for the shop: the consignor is still owed the
+  agreed amount (D46), the line's yield is negative and its Cult Commons
+  share is 0 (D1). Nothing is wrong in the ledger; the shop simply loses
+  money on the sale.
+- Evidence and confidence: high; `private.sell_line` in
+  `supabase/migrations/20261004003500_sales.sql` takes any price of 0 or
+  more; the sheet only warns ("Below the asking price" for everyone,
+  "Below cost: this sale loses money" for View costs), proven by
+  `tests/unit/sales.test.ts` (`priceWarnings`) and
+  `tests/e2e/sales.spec.ts` (both warnings on a unique unit priced under
+  its cost; only the first for a member without cost access).
+- Workaround or containment: the warnings; the sale page shows the loss to
+  View costs holders; a loss line contributes no Cult Commons.
+- Next action: the owner answers D53's question (should a price below the
+  agreed amount plus shop charges need `manage_consignments`?); if yes, a
+  migration adds the check to `private.sell_line` with a new P0001 code.
+- Revisit trigger: the owner's answer, or the first consigned sale at a
+  loss.
+- Last checked: 2026-10-05.
+
+## R-025 — A transfer of consigned stock cannot choose whose stock moves
+
+- Category: known limitation.
+- Status and owner: open; owner (whether it matters), build agent.
+- Trigger: staff move consigned quantity stock between locations when two
+  or more consignors have the same product at the source location.
+- Impact: since D54 every consigned movement names its consignment item,
+  so each consignor's stock is known per location and a sale or job part
+  is charged to the consignor whose stock is there. `transfer_stock` kept
+  its signature (no item argument), so a transfer of consigned quantity
+  stock moves the oldest active item that has the whole quantity at the
+  source location; a quantity no single consignor has there is refused
+  (`consignment_quantity_unavailable`: move one consignor's stock at a
+  time). If staff physically move another consignor's goods, the books
+  attribute the move to the older consignor; sales then follow the books,
+  not the shelf, which matters only if the goods can be told apart.
+- Evidence and confidence: high;
+  `supabase/migrations/20261004003300_consignment.sql`
+  (`private.consignment_item_on_hand`, the replaced `transfer_stock`, the
+  D50 movement trigger), `tests/db/consignment-locations.test.ts`.
+- Workaround or containment: sell or return by naming the item (the sale
+  sheet lists each consignor at the location that holds their stock);
+  move consignors' stock one at a time in FIFO order.
+- Next action: if the owner wants staff to choose, add an optional item
+  argument to `transfer_stock` (a new signature, so a migration, types,
+  the API-surface fixture and the transfer sheet change).
+- Revisit trigger: the first complaint that a transfer moved the wrong
+  consignor's stock, or a second shop location.
+- Last checked: 2026-10-05.
+
+## R-026 — Consignor personal and payout details are kept indefinitely with no change history
+
+- Category: unverified assumption (owner question) / operational gap.
+- Status and owner: open; owner (retention decision), build agent.
+- Trigger: a consignor asks for their data to be deleted, a legal or
+  business retention limit applies, or someone needs to know who changed
+  a consignor's bank or PayNow details.
+- Impact: Phase 6 stores consignors' names, email, phone and
+  `payout_details` (bank or PayNow details). Consignors are archived,
+  never deleted (D47: there is no DELETE grant or policy), so this data is
+  kept indefinitely. `payout_details` has no change history: the
+  consignors table has triggers for `updated_at`, normalisation and the
+  archive rules, and no event table, so a changed bank detail leaves no
+  record of who changed it or what it was before. Read access is limited
+  (D48: `manage_consignments` only, through a column grant and
+  `consignor_payout_details`).
+- Evidence and confidence: high for the behaviour;
+  `supabase/migrations/20261004003300_consignment.sql` (the consignors
+  table and its comment "Archived, never deleted", the column comment on
+  `payout_details`, the grants without DELETE and the select/insert/update
+  policies, the three consignors triggers); whether any legal obligation
+  applies has not been checked.
+- Workaround or containment: only `manage_consignments` holders read or
+  write payout details; staff can blank them on an archived consignor.
+- Next action: the owner decides retention for consignor data together
+  with R-016; the build agent then adds an append-only consignor history
+  (at least who changed `payout_details` and when, without storing the
+  old value in clear) and a deletion or anonymisation path that keeps
+  sales and settlements intact.
+- Revisit trigger: before any hosted deployment with real consignors.
+- Last checked: 2026-10-05.
+
+## R-027 — A sale can be backdated without limit by any staff member
+
+- Category: unverified assumption (owner question, D55).
+- Status and owner: open; owner (D55's open question), build agent for
+  any change.
+- Trigger: a staff member records a sale with "Sold earlier?" dated days,
+  weeks or months back.
+- Impact: D55 refuses a date before the stock was with the shop
+  (`sale_before_stock`: a consigned item's intake, a unit's latest
+  restock) and after now + 5 minutes; otherwise any active staff member
+  may date an in-store sale in the past. The sale is recognised on that
+  shop day, so it changes that day's gross sales, yield and Cult Commons
+  in reports and on Today, with the rate in force then. There is no
+  period lock (the brief has none), no permission tier and no window, and
+  shop-owned stock has no lower bound, because its registration date is
+  when it was entered, not when it arrived.
+- Evidence and confidence: high; `record_retail_sale` and
+  `private.sell_line` in `supabase/migrations/20261004003500_sales.sql`;
+  `tests/db/sales.test.ts` ("when a sale may be dated (D55 SALE-DATE)");
+  the Phase 6 review reproduced a sale dated 400 days before its consigned
+  item was received, now refused.
+- Workaround or containment: the sale keeps who recorded it and when
+  (`created_by`, `created_at`) next to its `recognized_at`; reports
+  separate sale and recognition dates (SPEC §14, §22).
+- Next action: the owner answers D55's question (should backdating beyond
+  a window need `view_financial_reports` or admin?); if yes, a migration
+  adds the check to `record_retail_sale` with a new P0001 code and the
+  sheet hides "Sold earlier?" beyond it.
+- Revisit trigger: the owner's answer, Phase 9 reporting, or the first
+  closed-period request.
 - Last checked: 2026-10-05.

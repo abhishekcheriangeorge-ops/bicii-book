@@ -238,7 +238,8 @@ export const PRODUCT_CATEGORY = {
  * Workshop store):
  *   brakePads 34 SF; gp5000Tyre 12 SF; roadTube 40 SF + 20 WS;
  *   marathonRacer 6 SF (one consumed by INVENTORY_JOB, then reversed);
- *   bromptonTube 14 SF (15 opening, one on INVENTORY_JOB); chainX11 8 SF;
+ *   bromptonTube 12 SF (15 opening, one on INVENTORY_JOB, two sold on
+ *   Phase 6's S-000002); chainX11 8 SF;
  *   cassette 3 SF; cableKit 2 SF (low, reorder 4); hydraulicHose 1 SF (low,
  *   reorder 5); chainLube 18 SF; barTape 7 SF; sealant 1 SF + 1 WS (low,
  *   reorder 3); colnago, brompton, surly 1 SF each (their units);
@@ -542,3 +543,311 @@ export const CUSTOMER_LOGIN = {
     email: "chloe.lim@example.com",
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Phase 6: consignment and sales (supabase/seed.sql "Phase 6"). Written
+// through the RPCs as the admin; days are counted from the seed's anchor as
+// in tests/fixtures/reporting.ts. Short IDs are those of a freshly built
+// database (C-000001 .. C-000004, S-000001 .. S-000004; the intake products
+// P-000023 .. P-000026 and units U-000004 .. U-000006).
+// ---------------------------------------------------------------------------
+
+/**
+ * public.consignors.id: kelvin (no customer record, phone +65 9876 5432,
+ * payout "PayNow +65 9876 5432"), daniel (CUSTOMER.daniel, his email and
+ * phone, payout "PayNow +65 9567 8901"), chloe (CUSTOMER.chloe, payout
+ * "Bank transfer, details on the signed agreement", internal notes).
+ */
+export const CONSIGNOR = {
+  kelvin: "6a000000-0000-4000-8000-000000000001",
+  daniel: "6a000000-0000-4000-8000-000000000002",
+  chloe: "6a000000-0000-4000-8000-000000000003",
+} as const;
+
+export type SeedConsignor = keyof typeof CONSIGNOR;
+
+/**
+ * public.consignment_items.id, in intake order:
+ *   colnago   C-000001 Kelvin, unique, agreed 2400.00, asking 4200.00, a
+ *             120.00 shop-borne charge; active (available at the Shop floor).
+ *   cervelo   C-000002 Daniel, unique, agreed 500.00, asking 1000.00, a
+ *             45.00 consignor-borne charge; sold on S-000003.
+ *   jerseys   C-000003 Chloe, quantity 6, agreed 35.00, asking 70.00; 3 sold
+ *             (S-000001, S-000004), 3 left; active.
+ *   crankset  C-000004 Kelvin, unique, agreed 300.00, asking 520.00;
+ *             returned to him (CONSIGNMENT_RETURN.crankset).
+ */
+export const CONSIGNMENT_ITEM = {
+  colnago: "6b000000-0000-4000-8000-000000000001",
+  cervelo: "6b000000-0000-4000-8000-000000000002",
+  jerseys: "6b000000-0000-4000-8000-000000000003",
+  crankset: "6b000000-0000-4000-8000-000000000004",
+} as const;
+
+export type SeedConsignmentItem = keyof typeof CONSIGNMENT_ITEM;
+
+export const CONSIGNMENT_ITEM_SHORT_ID: Record<SeedConsignmentItem, string> = {
+  colnago: "C-000001",
+  cervelo: "C-000002",
+  jerseys: "C-000003",
+  crankset: "C-000004",
+};
+
+/**
+ * public.products.id of the intake products (new draft consignment-owned
+ * products, D45): colnago "Colnago C64 Disc (2019), 54 cm" (Bikes), cervelo
+ * "Cervélo R3 (2017), 56 cm" (Bikes), jersey "Rapha Pro Team jersey, size M
+ * (as new)" (quantity), crankset "Shimano Dura-Ace R9100 crankset, 172.5
+ * mm" (Drivetrain; archived publication after the return).
+ */
+export const CONSIGNMENT_PRODUCT = {
+  colnago: "6c000000-0000-4000-8000-000000000001",
+  cervelo: "6c000000-0000-4000-8000-000000000002",
+  jersey: "6c000000-0000-4000-8000-000000000003",
+  crankset: "6c000000-0000-4000-8000-000000000004",
+} as const;
+
+/**
+ * public.inventory_units.id of the consigned units: colnago (serial
+ * C64D-19-0412, available), cervelo (serial CV-R3-17-5521, sold),
+ * crankset (returned_to_consignor).
+ */
+export const CONSIGNMENT_UNIT = {
+  colnago: "6d000000-0000-4000-8000-000000000001",
+  cervelo: "6d000000-0000-4000-8000-000000000002",
+  crankset: "6d000000-0000-4000-8000-000000000004",
+} as const;
+
+/** public.consignment_item_charges.id (D4: explicit bearer). */
+export const CONSIGNMENT_CHARGE = {
+  /** C-000001, "Full service and new bar tape before listing", 120.00, shop. */
+  colnagoService: "6e000000-0000-4000-8000-000000000001",
+  /** C-000002, "Tubeless conversion requested by the consignor", 45.00, consignor. */
+  cerveloTubeless: "6e000000-0000-4000-8000-000000000002",
+} as const;
+
+/**
+ * public.sales.id (record_retail_sale, source retail):
+ *   jerseys      S-000001 day 5 11:20, Priya, 2 x jersey from C-000003.
+ *   tubes        S-000002 day 4 15:05, walk-in, 2 x PRODUCT.bromptonTube
+ *                (shop-owned, 14.00 / 6.00); one tube refunded (14.00).
+ *   cervelo      S-000003 day 3 16:40, Hafiz, CONSIGNMENT_UNIT.cervelo at its
+ *                selling price.
+ *   jerseyToday  S-000004 day 0 10:30, walk-in, 1 x jersey (FIFO: C-000003).
+ */
+export const SALE = {
+  jerseys: "6f000000-0000-4000-8000-000000000001",
+  tubes: "6f000000-0000-4000-8000-000000000002",
+  cervelo: "6f000000-0000-4000-8000-000000000003",
+  jerseyToday: "6f000000-0000-4000-8000-000000000004",
+} as const;
+
+export type SeedSale = keyof typeof SALE;
+
+export const SALE_NUMBER: Record<SeedSale, string> = {
+  jerseys: "S-000001",
+  tubes: "S-000002",
+  cervelo: "S-000003",
+  jerseyToday: "S-000004",
+};
+
+/** public.sale_refunds.id: one tube of S-000002, 14.00 (D49). */
+export const SALE_REFUND = {
+  tube: "7a000000-0000-4000-8000-000000000001",
+} as const;
+
+/**
+ * public.consignment_settlements.id, both Chloe's, to C-000003:
+ * reversed (30.00, paid day 3 18:00, "PayNow 2991", reversed by
+ * SETTLEMENT_REVERSAL.wrongAmount) and chloe (40.00, paid day 2 12:00,
+ * "PayNow 3002").
+ */
+export const SETTLEMENT = {
+  reversed: "7b000000-0000-4000-8000-000000000001",
+  chloe: "7b000000-0000-4000-8000-000000000002",
+} as const;
+
+/** public.consignment_settlement_reversals.id ("Wrong amount; the transfer was $40."). */
+export const SETTLEMENT_REVERSAL = {
+  wrongAmount: "7c000000-0000-4000-8000-000000000001",
+} as const;
+
+/** return_consignment_item's return id (the movement's request_id). */
+export const CONSIGNMENT_RETURN = {
+  crankset: "7e000000-0000-4000-8000-000000000001",
+} as const;
+
+export type LedgerExpectation = {
+  items_total: number;
+  active_items: number;
+  awaiting_settlement_items: number;
+  returned_items: number;
+  /** Items whose status is sold (D48: the count staff without money access see). */
+  sold_items: number;
+  liability: string;
+  consignor_charges: string;
+  owed: string;
+  paid: string;
+  outstanding: string;
+};
+
+/**
+ * reporting.consignor_ledger per seeded consignor (D46, D47), worked out by
+ * hand: owed = liability - consignor charges; paid excludes the reversed
+ * 30.00; outstanding = owed - paid. Money is fixed-2.
+ */
+export const EXPECTED_CONSIGNOR_LEDGER: Record<SeedConsignor, LedgerExpectation> = {
+  // C-000001 unsold (its 120.00 charge is the shop's), C-000004 returned.
+  kelvin: {
+    items_total: 2,
+    active_items: 1,
+    awaiting_settlement_items: 0,
+    returned_items: 1,
+    sold_items: 0,
+    liability: "0.00",
+    consignor_charges: "0.00",
+    owed: "0.00",
+    paid: "0.00",
+    outstanding: "0.00",
+  },
+  // C-000002 sold at 1000.00 against 500.00; his 45.00 charge is deducted.
+  daniel: {
+    items_total: 1,
+    active_items: 0,
+    awaiting_settlement_items: 1,
+    returned_items: 0,
+    sold_items: 1,
+    liability: "500.00",
+    consignor_charges: "45.00",
+    owed: "455.00",
+    paid: "0.00",
+    outstanding: "455.00",
+  },
+  // C-000003: 3 of 6 sold at 35.00 each, 3 left; paid 40.00.
+  chloe: {
+    items_total: 1,
+    active_items: 1,
+    awaiting_settlement_items: 1,
+    returned_items: 0,
+    sold_items: 0,
+    liability: "105.00",
+    consignor_charges: "0.00",
+    owed: "105.00",
+    paid: "40.00",
+    outstanding: "65.00",
+  },
+};
+
+/** C-000003's quantities after the seed. */
+export const EXPECTED_JERSEYS_POSITION = {
+  quantity: 6,
+  sold_qty: 3,
+  restocked_qty: 0,
+  remaining_qty: 3,
+} as const;
+
+export type SaleExpectation = {
+  id: string;
+  sale_number: string;
+  /** Shop days before the anchor of its recognized_at. */
+  daysAgo: 0 | 3 | 4 | 5;
+  status: "recorded" | "partially_refunded";
+  customer_id: string | null;
+  /** The line's consignment item, null for shop-owned stock. */
+  consignment_item_id: string | null;
+  ownership_type: "consignment" | "shop_owned";
+  quantity: number;
+  unit_sale_price: string;
+  unit_direct_cost: string;
+  consignor_payout: string | null;
+  sale_total: string;
+  cost_total: string;
+  yield_total: string;
+  cult_commons_share: string;
+  bicii_yield_after_cc: string;
+  refunded_total: string;
+};
+
+/**
+ * Each seeded sale has one line, at the 0.3000 Cult Commons rate (D1).
+ * Cult Commons is 30% of the positive yield after the consignor payout:
+ * S-000003 is SPEC §10's consignment example (1000.00 against 500.00 owed).
+ */
+export const EXPECTED_SALE: Record<SeedSale, SaleExpectation> = {
+  jerseys: {
+    id: SALE.jerseys,
+    sale_number: "S-000001",
+    daysAgo: 5,
+    status: "recorded",
+    customer_id: CUSTOMER.priya,
+    consignment_item_id: CONSIGNMENT_ITEM.jerseys,
+    ownership_type: "consignment",
+    quantity: 2,
+    unit_sale_price: "70.00",
+    unit_direct_cost: "35.00",
+    consignor_payout: "35.00",
+    sale_total: "140.00",
+    cost_total: "70.00",
+    yield_total: "70.00",
+    cult_commons_share: "21.00",
+    bicii_yield_after_cc: "49.00",
+    refunded_total: "0.00",
+  },
+  tubes: {
+    id: SALE.tubes,
+    sale_number: "S-000002",
+    daysAgo: 4,
+    status: "partially_refunded",
+    customer_id: null,
+    consignment_item_id: null,
+    ownership_type: "shop_owned",
+    quantity: 2,
+    unit_sale_price: "14.00",
+    unit_direct_cost: "6.00",
+    consignor_payout: null,
+    sale_total: "28.00",
+    cost_total: "12.00",
+    yield_total: "16.00",
+    cult_commons_share: "4.80",
+    bicii_yield_after_cc: "11.20",
+    refunded_total: "14.00",
+  },
+  cervelo: {
+    id: SALE.cervelo,
+    sale_number: "S-000003",
+    daysAgo: 3,
+    status: "recorded",
+    customer_id: CUSTOMER.hafiz,
+    consignment_item_id: CONSIGNMENT_ITEM.cervelo,
+    ownership_type: "consignment",
+    quantity: 1,
+    unit_sale_price: "1000.00",
+    unit_direct_cost: "500.00",
+    consignor_payout: "500.00",
+    sale_total: "1000.00",
+    cost_total: "500.00",
+    yield_total: "500.00",
+    cult_commons_share: "150.00",
+    bicii_yield_after_cc: "350.00",
+    refunded_total: "0.00",
+  },
+  jerseyToday: {
+    id: SALE.jerseyToday,
+    sale_number: "S-000004",
+    daysAgo: 0,
+    status: "recorded",
+    customer_id: null,
+    consignment_item_id: CONSIGNMENT_ITEM.jerseys,
+    ownership_type: "consignment",
+    quantity: 1,
+    unit_sale_price: "70.00",
+    unit_direct_cost: "35.00",
+    consignor_payout: "35.00",
+    sale_total: "70.00",
+    cost_total: "35.00",
+    yield_total: "35.00",
+    cult_commons_share: "10.50",
+    bicii_yield_after_cc: "24.50",
+    refunded_total: "0.00",
+  },
+};

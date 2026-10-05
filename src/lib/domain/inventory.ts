@@ -12,7 +12,7 @@ import {
   type TrackingType,
   type UnitStatus,
 } from "@/lib/inventory";
-import { toMoneyString } from "@/lib/money";
+import { sumMoney, toMoneyString } from "@/lib/money";
 import type { Database } from "@/lib/database.types";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import type { WorkOrderStatus } from "@/lib/workshop";
@@ -100,6 +100,7 @@ const UNIT_FIELDS: Record<string, string> = {
 
 const STOCK_FIELDS: Record<string, string> = {
   insufficient_stock: "quantity",
+  consignment_quantity_unavailable: "quantity",
   quantity_invalid: "quantity",
   reason_required: "reason",
   reason_too_long: "reason",
@@ -1457,14 +1458,28 @@ export type PartOption = {
   defaultLocationId: string | null;
   /** Direct cost for the preview; view_costs only (absent otherwise; null: none set). */
   cost?: Money | null;
+  /**
+   * Consigned stock (D44): whose it is and which consignment it comes
+   * from. A unit's own item; for a quantity product the FIFO head (the
+   * oldest active item with stock left, D45), which add_inventory_line
+   * draws from when it covers the quantity. Absent for shop-owned stock.
+   */
+  consigned?: { consignorName: string; itemId: string; itemShortId: string };
 };
 
 /**
  * Parts for the job's Add part picker: products and units matching `q`
- * (staff_search), with their stock and selling price. Left out: archived or
- * inactive products, stock that is not shop-owned (D27 SHOP-OWNED-ONLY) and
- * units that are not available (on another job, sold, written off). A
- * unique product found by name is offered as its available units.
+ * (staff_search), with their stock and selling price. Consigned stock is
+ * offered too (D27 as changed by the owner, D44), marked with its
+ * consignor and C- number; customer-owned stock never is. Left out:
+ * archived or inactive products, units that are not available (on another
+ * job, sold, written off), consigned units whose item is no longer active
+ * and consigned quantity products with nothing left. A unique product
+ * found by name is offered as its available units.
+ *
+ * For a view_costs holder, a consigned part's cost preview is what
+ * add_inventory_line snapshots (D44): a unit's agreed amount plus its
+ * shop-paid charges, a quantity product's FIFO-head agreed amount.
  */
 export async function searchParts(
   supabase: ServerSupabase,
@@ -1477,7 +1492,7 @@ export async function searchParts(
   const hitUnitIds = hits.items.filter((h) => h.kind === "inventory_unit").map((h) => h.id);
 
   const unitColumns =
-    "id, short_id, product_id, location_id, status, ownership_type, serial_number, archived_at";
+    "id, short_id, product_id, location_id, status, ownership_type, consignment_item_id, serial_number, archived_at";
   const [hitUnitsResult, productUnitsResult] = await Promise.all([
     hitUnitIds.length > 0
       ? supabase.from("inventory_units").select(unitColumns).in("id", hitUnitIds)
@@ -1499,6 +1514,7 @@ export async function searchParts(
     location_id: string;
     status: UnitStatus;
     ownership_type: string;
+    consignment_item_id: string | null;
     serial_number: string | null;
     archived_at: string | null;
   };
@@ -1568,16 +1584,18 @@ export async function searchParts(
     locationId && active.some((l) => l.id === locationId)
       ? locationId
       : locations.defaultLocationId;
+  // D27 (changed) / D44: shop-owned and consigned stock; never customer-owned.
+  const saleableOwnership = (o: string) => o === "shop_owned" || o === "consignment";
   const saleable = (
     p: { active: boolean; archived_at: string | null; ownership_type: string } | undefined,
-  ) => !!p && p.active && p.archived_at === null && p.ownership_type === "shop_owned";
+  ) => !!p && p.active && p.archived_at === null && saleableOwnership(p.ownership_type);
 
   const options: PartOption[] = [];
   const seenUnits = new Set<string>();
   const unitOption = (u: UnitRow) => {
     const p = products.get(u.product_id);
     if (!saleable(p) || !p || seenUnits.has(u.id)) return;
-    if (u.status !== "available" || u.archived_at !== null || u.ownership_type !== "shop_owned")
+    if (u.status !== "available" || u.archived_at !== null || !saleableOwnership(u.ownership_type))
       return;
     seenUnits.add(u.id);
     const option: PartOption = {
@@ -1598,6 +1616,7 @@ export async function searchParts(
       defaultLocationId: u.location_id,
     };
     if (viewCosts) option.cost = money(unitCost.get(u.id));
+    if (u.consignment_item_id) option.consigned = consignedRef(u.consignment_item_id);
     options.push(option);
   };
 
@@ -1636,10 +1655,104 @@ export async function searchParts(
     if (viewCosts) option.cost = money(productCost.get(p.id));
     options.push(option);
   }
-  return options;
+  return withConsignments(supabase, options, products, { viewCosts });
 }
 
-export type ShopBikeOption = { id: string; shortId: string; title: string; detail: string | null };
+/** A consigned option's consignment, filled in by withConsignments. */
+const consignedRef = (itemId: string) => ({ consignorName: "", itemId, itemShortId: "" });
+
+/**
+ * Fills in the consignor and C- number of consigned options, picks a
+ * consigned quantity product's FIFO-head item (D45: the oldest active item
+ * by received_at, then short_id, with stock left; none -> the product is
+ * not offered) and, for view_costs, the cost add_inventory_line snapshots
+ * (D44). Reads consignor_statement, so money stays gated by the database.
+ */
+async function withConsignments(
+  supabase: ServerSupabase,
+  options: PartOption[],
+  products: ReadonlyMap<string, { ownership_type: string; tracking_type: string }>,
+  { viewCosts }: { viewCosts: boolean },
+): Promise<PartOption[]> {
+  const quantityIds = options
+    .filter(
+      (o) => o.kind === "product" && products.get(o.productId)?.ownership_type === "consignment",
+    )
+    .map((o) => o.productId);
+  const unitItemIds = options.flatMap((o) => (o.consigned ? [o.consigned.itemId] : []));
+  if (quantityIds.length === 0 && unitItemIds.length === 0) return options;
+
+  const filters = [
+    quantityIds.length > 0 ? `product_id.in.(${quantityIds.join(",")})` : null,
+    unitItemIds.length > 0 ? `id.in.(${unitItemIds.join(",")})` : null,
+  ].filter(Boolean);
+  const items =
+    unwrap(
+      await supabase
+        .from("consignment_items")
+        .select("id, short_id, product_id, consignor_id, status, received_at")
+        .or(filters.join(","))
+        .eq("status", "active")
+        .order("received_at", { ascending: true })
+        .order("short_id", { ascending: true }),
+    ) ?? [];
+  const consignorIds = [...new Set(items.map((i) => i.consignor_id))];
+  const statements = await Promise.all(
+    consignorIds.map(
+      async (id) =>
+        unwrap(await supabase.rpc("consignor_statement", { target_consignor_id: id })) ?? [],
+    ),
+  );
+  const ledger = new Map(statements.flat().map((r) => [r.item_id, r]));
+
+  const out: PartOption[] = [];
+  for (const option of options) {
+    const consignedProduct =
+      option.kind === "product" && products.get(option.productId)?.ownership_type === "consignment";
+    if (!consignedProduct && !option.consigned) {
+      out.push(option);
+      continue;
+    }
+    const item = consignedProduct
+      ? items.find(
+          (i) => i.product_id === option.productId && (ledger.get(i.id)?.remaining_qty ?? 0) > 0,
+        )
+      : items.find((i) => i.id === option.consigned?.itemId);
+    // No active item with stock left (or the unit's item left the shop).
+    if (!item) continue;
+    const row = ledger.get(item.id);
+    const next: PartOption = {
+      ...option,
+      consigned: {
+        consignorName: row?.consignor_name ?? "",
+        itemId: item.id,
+        itemShortId: item.short_id,
+      },
+    };
+    if (viewCosts) {
+      const agreed = row?.agreed_amount_owed;
+      // D44: a unit's line cost is its agreed amount plus its shop-paid
+      // charges; a quantity line's is the item's agreed amount.
+      next.cost =
+        agreed === null || agreed === undefined
+          ? null
+          : option.kind === "unit"
+            ? toMoneyString(sumMoney([agreed, row?.shop_charges ?? 0]))
+            : toMoneyString(agreed);
+    }
+    out.push(next);
+  }
+  return out;
+}
+
+export type ShopBikeOption = {
+  id: string;
+  shortId: string;
+  title: string;
+  detail: string | null;
+  brand: string | null;
+  serialNumber: string | null;
+};
 
 /**
  * Shop bikes that can become a unique item: no owner (customer bikes must
@@ -1671,7 +1784,16 @@ export async function searchShopBikes(
     const detail = [r.colour, r.serial_number ? `S/N ${r.serial_number}` : null]
       .filter(Boolean)
       .join(" · ");
-    return [{ id: r.id, shortId: r.short_id, title: bikeTitle(r), detail: detail || null }];
+    return [
+      {
+        id: r.id,
+        shortId: r.short_id,
+        title: bikeTitle(r),
+        detail: detail || null,
+        brand: r.brand,
+        serialNumber: r.serial_number,
+      },
+    ];
   });
 }
 

@@ -188,6 +188,16 @@ export function TagIcon(props: IconProps) {
   );
 }
 
+/** A till receipt with a torn foot: in-store sales. */
+export function ReceiptIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5z" />
+      <path d="M9 8h6M9 11.5h6M9 15h3.5" />
+    </Icon>
+  );
+}
+
 export function TruckIcon(props: IconProps) {
   return (
     <Icon {...props}>

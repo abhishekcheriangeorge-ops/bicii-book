@@ -60,3 +60,40 @@ describe("SegmentedControl looks", () => {
     expect(enabled).not.toContain("cursor-not-allowed");
   });
 });
+
+describe("SegmentedControl with nothing chosen (value null, D4's bearer)", () => {
+  const bearers = [
+    { value: "consignor", label: "Consignor pays" },
+    { value: "shop", label: "Shop pays" },
+  ];
+
+  it("checks no option, keeps one tab stop and submits nothing until a choice", () => {
+    const onValueChange = vi.fn();
+    const { container } = render(
+      <SegmentedControl
+        label="Who pays"
+        name="bearer"
+        options={bearers}
+        value={null}
+        onValueChange={onValueChange}
+      />,
+    );
+    const radios = screen.getAllByRole("radio");
+    expect(radios.every((r) => r.getAttribute("aria-checked") === "false")).toBe(true);
+    expect(radios.map((r) => r.tabIndex)).toEqual([0, -1]);
+    expect(container.querySelector('input[name="bearer"]')).toHaveValue("");
+    fireEvent.click(screen.getByRole("radio", { name: "Shop pays" }));
+    expect(onValueChange).toHaveBeenCalledWith("shop");
+  });
+
+  it("starts on the first enabled option when the first is disabled", () => {
+    render(
+      <SegmentedControl
+        label="Who pays"
+        options={[bearers[0], { ...bearers[1], disabled: true }].reverse()}
+        value={null}
+      />,
+    );
+    expect(screen.getAllByRole("radio").map((r) => r.tabIndex)).toEqual([-1, 0]);
+  });
+});

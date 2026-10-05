@@ -45,7 +45,7 @@ export function isPhone(page: Page): boolean {
 }
 
 /** A toast with this text (polite confirmations or errors), not the same words elsewhere on the page. */
-export function toast(page: Page, text: string): Locator {
+export function toast(page: Page, text: string | RegExp): Locator {
   return page
     .getByRole("list", { name: "Notifications" })
     .or(page.getByRole("alert", { name: "Errors" }))

@@ -126,6 +126,7 @@ const RECORD_PATH: Record<PhotoTarget["entityType"], string> = {
   work_order: "/jobs",
   product: "/products",
   inventory_unit: "/units",
+  consignment_item: "/consignment/items",
 };
 
 const hrefFor = (t: PhotoTarget) => `${RECORD_PATH[t.entityType]}/${t.entityId}`;

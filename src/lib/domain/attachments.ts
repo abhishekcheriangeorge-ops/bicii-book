@@ -207,7 +207,7 @@ export async function listPhotos(supabase: ServerSupabase, target: PhotoTarget):
 /** The table holding each kind of record a photo can belong to. */
 function tableFor(
   entityType: PhotoEntity,
-): "bikes" | "customers" | "work_orders" | "products" | "inventory_units" {
+): "bikes" | "customers" | "work_orders" | "products" | "inventory_units" | "consignment_items" {
   switch (entityType) {
     case "bike":
       return "bikes";
@@ -219,6 +219,8 @@ function tableFor(
       return "products";
     case "inventory_unit":
       return "inventory_units";
+    case "consignment_item":
+      return "consignment_items";
     default: {
       const unknown: never = entityType;
       throw new Error(`No table for photo entity ${String(unknown)}`);
@@ -363,6 +365,10 @@ export async function setPhotoVisibility(
   // trigger and CHECK are the backstop).
   if (visibility === "public" && row.entity_type === "work_order") {
     throw new DomainError(BUSINESS_ERRORS.attachment_work_order_never_public);
+  }
+  // D52: an agreement photo is never shared (the trigger and CHECK are the backstop).
+  if (visibility !== "internal" && row.entity_type === "consignment_item") {
+    throw new DomainError(BUSINESS_ERRORS.attachment_consignment_internal_only);
   }
   if (visibility === "public" && isUndecodedOriginal(row)) {
     throw new DomainError(BUSINESS_ERRORS.attachment_original_never_public);

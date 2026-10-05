@@ -6,6 +6,9 @@ Status: per row below (D24 amended, D27 changed, D29 owner-confirmed; the
 rest accepted). Decision owner: Abhishek Cherian George (owner) for business
 meaning; defaults proposed by the build agent.
 
+Status update 2026-10-05 (D27): changed by the owner; implemented by Phase 6,
+see [ADR-016](ADR-016-consignment-and-sales.md) / D44.
+
 ## Context
 
 SPEC §11, §12 and §23 require a movement ledger in which a part consumes

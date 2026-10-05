@@ -540,7 +540,7 @@ describe.skipIf(!isolated)("financial engine on test-built rows", () => {
         }
         // D41: the appointment columns are integers equal to
         // appointment_daily's booked / arrived / no_shows (0 on days without
-        // appointments); Phase 6's columns are still NULL.
+        // appointments). Phase 6 fills the consignment columns (below).
         const counts = (
           await tx.query<{ booked: number; arrived: number; no_shows: number }>(
             "select booked, arrived, no_shows from public.appointment_daily($1, $1)",
@@ -560,8 +560,23 @@ describe.skipIf(!isolated)("financial engine on test-built rows", () => {
         });
         for (const p of ["appointments_scheduled", "appointments_arrived", "appointments_no_show"])
           expect(Number.isInteger(r[p])).toBe(true);
-        for (const p of ["consignment_sales", "consignment_sales_total", "new_consignor_liability"])
-          expect(r[p]).toBeNull();
+        // Filled by Phase 6 (D44, D46): an integer and two numerics, zero-filled
+        // like every measure. These test-built jobs sell no consigned stock,
+        // so every day's are 0, as the consigned entries say.
+        const consigned = mine.filter((e) => e.consignment_item_id !== null);
+        expect(consigned).toEqual([]);
+        expect(Number.isInteger(r.consignment_sales)).toBe(true);
+        expect({
+          day: r.day,
+          sales: r.consignment_sales,
+          total: money(r.consignment_sales_total),
+          liability: money(r.new_consignor_liability),
+        }).toEqual({
+          day: r.day,
+          sales: new Set(consigned.map((e) => e.document_id)).size,
+          total: money(consigned.reduce((s, e) => s + Number(e.sale_total), 0)),
+          liability: "0.00",
+        });
       }
       const byDay = Object.fromEntries(rows.map((r) => [r.day, r]));
       expect(byDay[d1]).toMatchObject({

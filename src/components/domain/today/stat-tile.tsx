@@ -116,6 +116,7 @@ export function MoneyTile({
   amount,
   currency,
   hint,
+  href,
   large = false,
   tone = "neutral",
   className,
@@ -125,6 +126,8 @@ export function MoneyTile({
   amount: string;
   currency: string;
   hint?: ReactNode;
+  /** The whole tile links here, named "Label: amount". */
+  href?: string | null;
   large?: boolean;
   tone?: TileTone;
   className?: string;
@@ -136,6 +139,8 @@ export function MoneyTile({
       large={large}
       tone={tone}
       hint={hint}
+      href={href}
+      valueText={text}
       className={className}
       value={
         <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
