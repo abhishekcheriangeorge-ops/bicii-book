@@ -100,7 +100,8 @@ const EXPECTED: Record<SeedWorkOrder, Expected> = {
     bike: BIKE.hafizBrompton,
     lead: STAFF.mechanic1,
     started: 1 * D,
-    completed: 2 * D - 2 * H,
+    // Started at 10:00 the day before the reset, completed at 16:00 that day.
+    completed: 1 * D + 6 * H,
     ready: null,
     collected: null,
     events: {
@@ -336,9 +337,10 @@ describe("the seeded jobs", () => {
     expect(total.rows).toEqual([{ line_count: 1, sale_total: "80.00" }]);
   });
 
-  // Check-ins are backdated from the seed's now(), so the rule is applied at
-  // seed time (J-000007 is checked in then), not today: an existing seeded
-  // database ages by the day and J-000005 (6 days) would cross the line.
+  // Check-ins are dated relative to the reset day, so the rule is applied
+  // at seed time (J-000007 is checked in then), not today: an existing
+  // seeded database ages by the day and J-000005 (6 days) would cross the
+  // line. Phase 3's jobs only (Phase 5's REPORT_JOB.overdue is the other).
   it("exactly one job is overdue under D20 at seed time: J-000006", async () => {
     const byId = await jobs();
     const seededAt = byId.get(WORK_ORDER.nurulBianchiReceived)!.checked_in_at;

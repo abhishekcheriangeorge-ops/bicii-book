@@ -135,10 +135,14 @@ export const SERVICE = {
 
 /**
  * public.work_orders.id (Phase 3): bike and status in the key, inserted in
- * this order (JOB_NUMBER). Every timeline is backdated to read true
- * (DATA-MODEL §18 "Phase 3 part"). danielCannondaleAwaitingCustomer is the
- * one overdue job (D20: open, checked in 8 days ago); nurulBianchiReceived
- * was checked in at seed time, after the Bianchi's sale to Nurul.
+ * this order (JOB_NUMBER). Every timeline is dated on the nine shop days
+ * before the reset day (pg_temp.seed_at, 10:00 local time plus offsets) so
+ * it reads true (DATA-MODEL §18 "Phase 3 part"); hafizBromptonCompleted
+ * was started at 10:00 and completed at 16:00 the day before the reset.
+ * danielCannondaleAwaitingCustomer is Phase 3's one overdue job (D20:
+ * open, checked in 8 days ago; Phase 5's REPORT_JOB.overdue is the other);
+ * nurulBianchiReceived was checked in at seed time, after the Bianchi's
+ * sale to Nurul.
  */
 export const WORK_ORDER = {
   tanTarmacCollected: "f1000000-0000-4000-8000-000000000001",
@@ -211,7 +215,8 @@ export const PRODUCT_CATEGORY = {
 } as const;
 
 /**
- * public.products.id (Phase 4), inserted in this order (PRODUCT_SHORT_ID).
+ * public.products.id (Phase 4), inserted in this order (PRODUCT_SHORT_ID),
+ * with their opening stock and units dated 30 days before the reset day.
  * SGD price / default direct cost, reorder point; internal_only except
  * cassette (draft); chainX10Archived is archived with no stock. colnago,
  * brompton and surly are unique-tracked (one unit each, UNIT); the rest are
@@ -304,4 +309,124 @@ export const INVENTORY_JOB = {
 export const SEED_LINE = {
   bromptonTube: "9d000000-0000-4000-8000-000000000001",
   marathonRacerVoided: "9d000000-0000-4000-8000-000000000002",
+} as const;
+
+/**
+ * public.work_orders.id (Phase 5): the reporting cases, inserted in this
+ * order (REPORT_JOB_NUMBER). Every time is relative to the shop day the
+ * seed ran (the anchor, day 0; DATA-MODEL §18 "Phase 5 part"); the figures
+ * they produce are in tests/fixtures/reporting.ts. Kept out of WORK_ORDER /
+ * JOB_NUMBER, which list Phase 3's nine jobs exactly.
+ *
+ *   serviceOnly      H1  Tan's Tarmac, Full Service 200.00; completed and
+ *                        ready day 6, collected day 5 (SPEC §10 example 1).
+ *   partsOnly        H2  Chloe's Giant, wheelset 800.00 / 400.00; completed
+ *                        day 4, collected day 3 (example 2).
+ *   combined         H3  Daniel's Cannondale, Full Service + wheelset;
+ *                        completed day 3, collected day 2 (example 3).
+ *   lossLine         H4  Tan's Tarmac, Wheel True 40.00 + tyre 20.00 at a
+ *                        35.00 cost; completed day 2, collected day 1 (D1).
+ *   rounding         H5  Tan's Brompton, manual 3 x 33.33 / 10.00 and
+ *                        1 x 12.05 / 12.00; completed day 1, ready, not
+ *                        collected.
+ *   uncollected      H6  Priya's Tern, ready since day 9 (uncollected_job).
+ *   overdue          H7  Priya's Domane, checked in day 11, awaiting parts
+ *                        (overdue_job, D20); never recognised.
+ *   cancelled        H8  Hafiz's Brompton, cancelled day 2, no lines.
+ *   todayInProgress  T1  Daniel's Cannondale, in progress today (open).
+ *   todayCollected   T2  Chloe's Surly, checked in day 1, collected today.
+ *   todayReceived    T3  Chloe's Giant, received today: its checked_in_at
+ *                        is the seed's anchor day (seedToday()).
+ *
+ * Leads: Marcus (mechanic1) on H1, H3, H4, H7, T1, T2; Nur (mechanic2) on
+ * H2, H5, H6, H8, T3.
+ */
+export const REPORT_JOB = {
+  serviceOnly: "d5000000-0000-4000-8000-000000000001",
+  partsOnly: "d5000000-0000-4000-8000-000000000002",
+  combined: "d5000000-0000-4000-8000-000000000003",
+  lossLine: "d5000000-0000-4000-8000-000000000004",
+  rounding: "d5000000-0000-4000-8000-000000000005",
+  uncollected: "d5000000-0000-4000-8000-000000000006",
+  overdue: "d5000000-0000-4000-8000-000000000007",
+  cancelled: "d5000000-0000-4000-8000-000000000008",
+  todayInProgress: "d5000000-0000-4000-8000-000000000009",
+  todayCollected: "d5000000-0000-4000-8000-000000000010",
+  todayReceived: "d5000000-0000-4000-8000-000000000011",
+} as const;
+
+export type ReportJob = keyof typeof REPORT_JOB;
+
+/** Job numbers of the Phase 5 jobs, in insert order after J-000010. */
+export const REPORT_JOB_NUMBER: Record<ReportJob, string> = {
+  serviceOnly: "J-000011",
+  partsOnly: "J-000012",
+  combined: "J-000013",
+  lossLine: "J-000014",
+  rounding: "J-000015",
+  uncollected: "J-000016",
+  overdue: "J-000017",
+  cancelled: "J-000018",
+  todayInProgress: "J-000019",
+  todayCollected: "J-000020",
+  todayReceived: "J-000021",
+};
+
+/**
+ * public.work_order_line_items.id (Phase 5), job in the key; all at the
+ * 0.3000 rate, sale / cost per unit. Inventory lines (wheelset, tyre,
+ * chain) each have exactly one job_consumption movement at their time.
+ */
+export const REPORT_LINE = {
+  serviceOnlyFullService: "d5100000-0000-4000-8000-000000000001", // 1 x 200.00 / 0.00
+  partsOnlyWheelset: "d5100000-0000-4000-8000-000000000002", // 1 x 800.00 / 400.00
+  combinedFullService: "d5100000-0000-4000-8000-000000000003", // 1 x 200.00 / 0.00
+  combinedWheelset: "d5100000-0000-4000-8000-000000000004", // 1 x 800.00 / 400.00
+  lossLineWheelTrue: "d5100000-0000-4000-8000-000000000005", // 1 x 40.00 / 0.00
+  lossLineTyre: "d5100000-0000-4000-8000-000000000006", // 1 x 20.00 / 35.00 (loss)
+  roundingRackKit: "d5100000-0000-4000-8000-000000000007", // manual 3 x 33.33 / 10.00
+  roundingBell: "d5100000-0000-4000-8000-000000000008", // manual 1 x 12.05 / 12.00
+  uncollectedLabour: "d5100000-0000-4000-8000-000000000009", // 1 x 120.00 / 0.00
+  overdueBuild: "d5100000-0000-4000-8000-000000000010", // 1 x 150.00 / 0.00
+  todayInProgressDrivetrain: "d5100000-0000-4000-8000-000000000011", // 1 x 90.00 / 10.00
+  todayCollectedDrivetrain: "d5100000-0000-4000-8000-000000000012", // 1 x 120.00 / 0.00
+  todayCollectedChain: "d5100000-0000-4000-8000-000000000013", // 1 x 45.00 / 22.00
+} as const;
+
+/**
+ * public.products.id (Phase 5): quantity products at the Shop floor, so
+ * Phase 4's on-hand figures are untouched. Opening stock 30 days back;
+ * price / default direct cost, reorder point, on-hand after the seed:
+ *   wheelset  849.00 / 400.00, reorder 1, 4 opening - H2 - H3 = 2
+ *   tyre       95.00 /  35.00, reorder 2, 6 - H4 = 5
+ *   chain      45.00 /  22.00, reorder 3, 10 - T2 = 9
+ *   brakePads  32.00 /  15.00, reorder 5, 20 - A1 = 19
+ *   innerTube  12.00 /   5.00, reorder 10, 30 - A2 (6, damaged) = 24
+ *   co2        6.00 /   3.00, no reorder point, 10 + A3 = 12
+ * None is low, so reporting.low_stock still lists exactly cableKit,
+ * hydraulicHose and sealant.
+ */
+export const REPORT_PRODUCT = {
+  wheelset: "d5300000-0000-4000-8000-000000000001",
+  tyre: "d5300000-0000-4000-8000-000000000002",
+  chain: "d5300000-0000-4000-8000-000000000003",
+  brakePads: "d5300000-0000-4000-8000-000000000004",
+  innerTube: "d5300000-0000-4000-8000-000000000005",
+  co2: "d5300000-0000-4000-8000-000000000006",
+} as const;
+
+export type ReportProduct = keyof typeof REPORT_PRODUCT;
+
+export const REPORT_PRODUCT_SHORT_ID: Record<ReportProduct, string> = {
+  wheelset: "P-000017",
+  tyre: "P-000018",
+  chain: "P-000019",
+  brakePads: "P-000020",
+  innerTube: "P-000021",
+  co2: "P-000022",
+};
+
+/** public.categories.id (Phase 5): the 'Wheels' product category, sort_order 8. */
+export const REPORT_PRODUCT_CATEGORY = {
+  wheels: "ca000000-0000-4000-8000-000000000013",
 } as const;

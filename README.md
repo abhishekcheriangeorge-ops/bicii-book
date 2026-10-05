@@ -81,7 +81,7 @@ shell before any of the commands (they do not read `.env.local`). `npm run devst
 | `npm run devstack:setup` | Download and build the devstack components (idempotent; `-- --force` rebuilds). |
 | `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321. |
 | `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. |
-| `npm run db:reset` | Drop and rebuild the dev database, then seed it. |
+| `npm run db:reset` | Drop and rebuild the dev database, then seed it (the demo history is relative to the shop day of the reset: reset to move "today"). |
 | `npm run db:migrate` | Apply pending migrations without a reset. |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database from the migrations first; CI diffs that). |
 

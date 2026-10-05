@@ -1496,17 +1496,19 @@ not public) and Suspension Fork Service 120/25 (inactive, archived 30 days
 ago). Nine jobs `f1000000-…-00000000000N` (`WORK_ORDER`, job numbers
 `J-000001`…`J-000009` in insert order, `JOB_NUMBER`), lines
 `f2000000-…-0000000000NN` (`LINE`, all at rate 0.3000) and assignments
-`f3000000-…-0000000000NN`. Times are offsets from the seed's `now()`
-(d = days, h = hours):
+`f3000000-…-0000000000NN`. Times are relative to the shop day the seed
+runs: `pg_temp.seed_at(N, '10:00')` plus the same minute/hour offsets (one
+base local time per job, all between 08:00 and 18:00 Singapore time; see
+"Phase 5 part"); d = shop days before the reset day, h = hours:
 
 | Job | Customer, bike | Status | What it demonstrates |
 |---|---|---|---|
 | J-000001 | Tan, Tarmac | collected | The full walk: checked in −9d, in progress −8d, completed −7d, ready −7d+1h, collected −6d; lead Marcus; Full Service + Brake Bleed ×2: sale 290.00, cost 16.00, yield 274.00, Cult Commons 82.20; intake and completion notes. |
 | J-000002 | Priya, Domane | ready_for_collection | Money the E2E tests assert: Basic Service, Tyre Installation ×2 and a manual "Continental GP5000 700×28c tyre" ×2 at 95.00 (cost 62.00): sale 300.00, cost 124.00, yield 176.00, CC 52.80, BICII after CC 123.20; approval flag with one `approval_flagged` event (Asha, −5d+1h); lead Nur. |
-| J-000003 | Hafiz, Brompton | completed | Completed two hours ago, not yet ready; lead Marcus with Nur as additional staff; Drivetrain Service. |
+| J-000003 | Hafiz, Brompton | completed | Started −1d 10:00, completed −1d 16:00, not yet ready; lead Marcus with Nur as additional staff; Drivetrain Service. |
 | J-000004 | Chloe, Giant | in_progress | Diagnosing −3d+1h then in progress −1d (a received → diagnosing step the customer never sees); Wheel True ×2. |
 | J-000005 | Chloe, Surly | awaiting_parts | A note (Nur, −5d−1h) before waiting for the customer's part; Custom Labour ×1.5. |
-| J-000006 | Daniel, Cannondale | awaiting_customer | The one overdue job (D20: open, checked in −8d); a diagnosis (Marcus, −8d+2h); no lines. |
+| J-000006 | Daniel, Cannondale | awaiting_customer | Phase 3's one overdue job (D20: open, checked in −8d; Phase 5's H7 is the other); a diagnosis (Marcus, −8d+2h); no lines. |
 | J-000007 | Nurul, Bianchi | received | Just checked in, unassigned, no lines: checked in at seed time, after the Bianchi's sale from Daniel. |
 | J-000008 | Tan, Brompton | cancelled | Cancelled an hour after check-in with a reason (hidden from the customer, D17). |
 | J-000009 | Priya, Tern | diagnosing | A voided line: Asha quoted a bottom bracket (45.00, cost 28.00), Nur voided it at −1d+3h; live total 80.00. |
@@ -1539,8 +1541,14 @@ tubes, Drivetrain, Cables & hoses, Care, Cockpit, Bikes; `PRODUCT_CATEGORY`).
 Products `9a000000-…-0000000000NN` (`PRODUCT`, `PRODUCT_SHORT_ID`) are
 inserted directly as the owner with `request.jwt.claims` naming the admin
 (so `created_by` and the history name an actor), in order, giving
-`P-000001`…`P-000016`; stock, units and the job go through the real RPCs
-as the admin, every request id used once.
+`P-000001`…`P-000016`, dated −30d 07:00. The opening stock and the units
+are dated −30d (from 08:00, a minute apart): owner statements writing
+exactly the rows `adjust_stock` and `create_unique_unit` write (same request
+ids, quantities, movement type, reason, cost snapshot, currency, actor), so
+they never show as today's adjustments; history events written by triggers
+(product and unit `created`, the bikes' stock link) keep seed time. The
+inventory job goes through the real RPCs as the admin, at seed time (today),
+every request id used once.
 
 | Short ID | Product | Price / cost | Reorder | On hand after the seed |
 |---|---|---|---|---|
@@ -1562,14 +1570,15 @@ as the admin, every request id used once.
 | P-000016 | X10 10-speed chain (discontinued), archived | 35.00 / 18.00 | — | none |
 
 All are internal_only except P-000007 (draft); none is public and there are
-no attachments. Opening stock is `adjust_stock` with request ids
+no attachments. Opening stock is written as `adjust_stock` would, with request ids
 `9c000000-…-0000000000NN` per product at its first location and
 `9c000000-…-0000000001NN` for the Workshop store rows of P-000003 and
 P-000012 ("Opening stock count"). Three shop bikes without an owner,
 `b1000000-…-000000000011`…`…013` (`BIKE.shopColnago`, `shopBrompton`,
 `shopSurly`; B-000011…B-000013), are in stock as units
-`9b000000-…-00000000000N` (`UNIT`, U-000001…U-000003, created by
-`create_unique_unit` at the Shop floor with their bikes linked).
+`9b000000-…-00000000000N` (`UNIT`, U-000001…U-000003, written as
+`create_unique_unit` would: shop-owned at the Shop floor, bike linked, a +1
+'Registered as a unique item' movement at the unit's direct cost).
 `reporting.low_stock` lists exactly P-000009, P-000008 and P-000012.
 
 The inventory job `9e000000-…-000000000001` (`INVENTORY_JOB`, J-000010) is
@@ -1579,3 +1588,84 @@ Schrader from the Shop floor (live), and line `…0002`, one Marathon Racer
 tyre, was voided ("Customer brought their own tyre"), so the ledger shows a
 `job_consumption` and its linked `reversal` (`SEED_LINE`). It is kept out of
 `WORK_ORDER` / `JOB_NUMBER`, which list Phase 3's nine jobs.
+
+Phase 5 part (done): **history relative to the reset day.** Every Phase 3,
+4 and 5 timestamp is written through the session-temporary
+`pg_temp.seed_at(days_ago integer, local_time time) returns timestamptz`,
+defined before the first Phase 3 statement: for `days_ago > 0` it is
+`((private.shop_today() - days_ago) + local_time) at time zone
+'Asia/Singapore'`; for day 0 it maps `local_time` proportionally into the
+part of today that has already passed (`shop_day_start(today) + (now() −
+shop_day_start(today)) × local_time / 24 h`), so today's rows keep their
+order and are never in the future at any time of day. The seed runs in one
+session and one transaction (`now()` is the same everywhere); Singapore has
+no DST, so `seed_at(n, t) − seed_at(m, t)` is exactly (m − n) × 24 h. Phase
+3 keeps its day offsets (not moved to days 7–13, which would make every
+open Phase 3 job overdue); J-000007 and J-000010 stay at seed time; Phase
+4's opening stock and units are at day 30; trigger-written history events
+keep their own (seed) time where the seed does not write them by hand.
+No migration was needed: no Phase 3/4 trigger overwrites an owner's
+timestamps.
+
+Eleven jobs `d5000000-…-0000000000NN` (`REPORT_JOB`, J-000011…J-000021 in
+insert order, `REPORT_JOB_NUMBER`), lines `d5100000-…` (`REPORT_LINE`, all at
+rate 0.3000), assignments `d5200000-…`, written as Phase 3's are (owner
+inserts, explicit times, claims naming whoever acts; a part from stock is
+the line, one `job_consumption` movement at the line's time with −quantity
+and cost snapshot = the line's unit cost, and a hand-written
+`stock_consumed` event one second later). d = shop days before the reset
+day; times are Singapore time:
+
+| Case | Job | Customer, bike, lead | Timeline | Lines (qty × sale / cost) → sale / cost / yield / CC / after CC |
+|---|---|---|---|---|
+| H1 service only (SPEC §10 ex. 1) | J-000011 | Tan, Tarmac, Marcus | in d6 09:30, start d6 10:15, done d6 16:40, ready 16:45, collected d5 11:10 | Full Service 1 × 200.00 / 0.00 → 200 / 0 / 200 / 60.00 / 140.00 |
+| H2 parts (ex. 2) | J-000012 | Chloe, Giant, Nur | in d5 10:00, start d5 13:00, done d4 15:30, ready 15:35, collected d3 10:20 | wheelset 1 × 800.00 / 400.00 → 800 / 400 / 400 / 120.00 / 280.00 |
+| H3 combined (ex. 3) | J-000013 | Daniel, Cannondale, Marcus | in d4 09:45, start d4 11:00, done d3 17:10, ready 17:15, collected d2 12:00 | Full Service 200.00 + wheelset 800.00 / 400.00 → 1000 / 400 / 600 / 180.00 / 420.00 |
+| H4 loss line (D1) | J-000014 | Tan, Tarmac, Marcus | in d3 10:30, start d3 14:00, done d2 15:00, ready 15:05, collected d1 09:40 | Wheel True 1 × 40.00 / 0.00 + tyre 1 × 20.00 / 35.00 (yield −15.00, CC 0) → 60 / 35 / 25 / 12.00 (not 7.50) / 13.00 |
+| H5 rounding | J-000015 | Tan, Brompton, Nur (Asha prices) | in d2 10:00, start d2 15:00, done d1 14:00, ready 14:05 | manual 3 × 33.33 / 10.00 (CC 21.00) + 1 × 12.05 / 12.00 (CC 0.02, 0.015 half up) → 112.04 / 42.00 / 70.04 / 21.02 / 49.02 |
+| H6 uncollected (D34) | J-000016 | Priya, Tern, Nur | in d12 09:00, start d11 10:00, done d9 16:00, ready d9 16:05 | Custom Labour 1 × 120.00 |
+| H7 overdue (D20) | J-000017 | Priya, Domane, Marcus | in d11 11:00, start d10 10:00, awaiting parts d10 15:00 | Bike Build 1 × 150.00 (open, never recognised) |
+| H8 cancelled (D16) | J-000018 | Hafiz, Brompton, Nur | in d2 11:30, cancelled d2 12:15 "Customer declined the quote" | none |
+| T1 in progress today | J-000019 | Daniel, Cannondale, Marcus | in d0 09:00, start d0 09:30 | Drivetrain Service 1 × 90.00 / 10.00 (open) |
+| T2 collected today | J-000020 | Chloe, Surly, Marcus | in d1 17:00, start d0 09:15, done 11:30, ready 11:35, collected 12:10 | Drivetrain Service 1 × 120.00 / 0.00 + chain 1 × 45.00 / 22.00 → 165 / 22 / 143 / 42.90 / 100.10 |
+| T3 received today (the anchor) | J-000021 | Chloe, Giant, Nur | in d0 10:00 | none |
+
+Six quantity products `d5300000-…-00000000000N` (`REPORT_PRODUCT`,
+`REPORT_PRODUCT_SHORT_ID`, P-000017…P-000022) in a new product category
+'Wheels' (`ca000000-…-000000000013`, sort 8) and the existing ones, with
+opening stock at the Shop floor at d30 08:30 (request ids
+`d5400000-…-00000000000N`), so Phase 4's figures are untouched: Carbon disc
+wheelset 700c, 45mm (Hunt, 849.00 / 400.00, reorder 1, 4 → 2 after H2, H3),
+Corsa Pro 700x28c tyre (Vittoria, 95.00 / 35.00, reorder 2, 6 → 5), SLA-110
+11-speed chain (YBN, 45.00 / 22.00, reorder 3, 10 → 9), Disc 34 RS brake
+pads (SwissStop, 32.00 / 15.00, reorder 5, 20 → 19), Butyl inner
+700x25-32c, Presta 48mm (Panaracer, 12.00 / 5.00, reorder 10, 30 → 24) and
+CO2 cartridge 25g, threaded (Genuine Innovations, 6.00 / 3.00, no reorder
+point, 10 → 12). None is low: `reporting.low_stock` still lists exactly
+P-000008, P-000009 and P-000012. Stock adjustments by Asha (request ids
+`d5400000-…-00000000001N`): A1 d2 11:00, brake pads −1 `stock_adjustment`
+"Damaged packaging, written off" (not significant); A2 d1 16:30, inner −6
+`damaged` "Water damage in storage" (significant, D33: ≥ 5 units; 30.00 at
+cost); A3 d0 (08:30 scaled), CO2 +2 `stock_adjustment` "Recount found two in
+the workshop drawer" (not significant). No open job is checked in on d7, so
+which jobs are overdue never depends on the time of day the reset ran.
+
+At the anchor the snapshot is received 4 (J-000007, J-000009, J-000010,
+T3), waiting 3 (J-000005, J-000006, H7), ready to start 0, in progress 2
+(J-000004, T1), awaiting collection 4 (J-000002, J-000003, H5, H6), open 9,
+overdue 2 (J-000006, H7), low stock 3 and exceptions 3 (overdue J-000006 and
+H7, uncollected H6). The per-day figures for d0…d6 (Phase 3/4 rows
+included) are `SEED_DAYS` in `tests/fixtures/reporting.ts`, written by hand
+together with `SPEC_EXAMPLE_JOBS`, `SEED_SNAPSHOT`, `SEED_EXCEPTIONS` and
+`SEED_ADJUSTMENTS`; `tests/db/reporting-seed.test.ts` proves the views
+reproduce them exactly.
+
+**The anchor rule.** The seed is anchored to the shop day `db:reset` ran,
+which need not be today (the DB test template is built once per run, an
+existing database keeps its seed, a run can cross Singapore midnight).
+Tests read the anchor from T3's check-in without the functions under test
+(`seedToday()` in `tests/db/reporting-fixtures.ts`; `E2E_SEED_ANCHOR`, set
+by `tests/e2e/global-setup.mts`, with `seedAnchor()` / `anchorDay(n)` in
+`tests/e2e/helpers.ts`), count days back from it, and skip with a message
+the assertions that need the anchor to be today. Reset (`npm run
+db:reset`) to move the demo's "today".

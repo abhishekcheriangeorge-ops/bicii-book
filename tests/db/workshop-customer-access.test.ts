@@ -30,6 +30,8 @@ import {
   CUSTOMER,
   JOB_NUMBER,
   LINE,
+  REPORT_JOB,
+  REPORT_JOB_NUMBER,
   STAFF,
   WORK_ORDER,
 } from "../fixtures/ids";
@@ -56,6 +58,17 @@ const JOB_COLUMNS = [
   "sale_total",
   "status",
 ].sort();
+
+/**
+ * Tan's non-cancelled jobs, newest first (checked_in_at desc): H5 on the
+ * Brompton, H4 and H1 on the Tarmac (Phase 5), J-000001 on the Tarmac.
+ */
+const TAN_JOBS = [
+  REPORT_JOB.rounding,
+  REPORT_JOB.lossLine,
+  REPORT_JOB.serviceOnly,
+  WORK_ORDER.tanTarmacCollected,
+];
 
 const LINE_COLUMNS = [
   "currency",
@@ -165,10 +178,12 @@ describe("a signed-in customer and the workshop tables", () => {
 describe("my_work_orders", () => {
   it("lists exactly the caller's non-cancelled jobs, with customer-safe columns only", async () => {
     const rows = await asCustomer(CUSTOMER.tan, myJobs);
-    // Tan's Brompton job (J-000008) was cancelled.
-    expect(rows.map((r) => r.id)).toEqual([WORK_ORDER.tanTarmacCollected]);
-    expect(Object.keys(rows[0]).sort()).toEqual(JOB_COLUMNS);
-    expect(rows[0]).toMatchObject({
+    // Tan's Brompton job J-000008 was cancelled; the rest are his, newest
+    // first (Phase 5 adds H1, H4 on the Tarmac and H5 on the Brompton).
+    expect(rows.map((r) => r.id)).toEqual(TAN_JOBS);
+    const tarmac = rows.find((r) => r.id === WORK_ORDER.tanTarmacCollected)!;
+    for (const row of rows) expect(Object.keys(row).sort()).toEqual(JOB_COLUMNS);
+    expect(tarmac).toMatchObject({
       job_number: JOB_NUMBER.tanTarmacCollected,
       bike_id: BIKE.tanTarmac,
       bike_short_id: BIKE_SHORT_ID.tanTarmac,
@@ -183,7 +198,7 @@ describe("my_work_orders", () => {
       "ready_for_collection_at",
       "collected_at",
     ]) {
-      expect(rows[0][stamp]).toBeInstanceOf(Date);
+      expect(tarmac[stamp]).toBeInstanceOf(Date);
     }
     expect(JSON.stringify(rows)).not.toMatch(NEVER_SHOWN);
   });
@@ -196,14 +211,21 @@ describe("my_work_orders", () => {
       // Diagnosing reads as received; the voided bottom bracket is not in the total.
       [JOB_NUMBER.priyaTernDiagnosing, "received", "80.00", true],
       [JOB_NUMBER.priyaDomaneReady, "ready_for_collection", "300.00", false],
+      [REPORT_JOB_NUMBER.overdue, "awaiting_parts", "150.00", true],
+      [REPORT_JOB_NUMBER.uncollected, "ready_for_collection", "120.00", false],
     ]);
     const chloe = await asCustomer(CUSTOMER.chloe, myJobs);
     expect(chloe.map((r) => [r.job_number, r.status])).toEqual([
+      [REPORT_JOB_NUMBER.todayReceived, "received"],
+      [REPORT_JOB_NUMBER.todayCollected, "collected"],
       [JOB_NUMBER.chloeGiantInProgress, "in_progress"],
+      [REPORT_JOB_NUMBER.partsOnly, "collected"],
       [JOB_NUMBER.chloeSurlyAwaitingParts, "awaiting_parts"],
     ]);
     const daniel = await asCustomer(CUSTOMER.daniel, myJobs);
     expect(daniel.map((r) => [r.job_number, r.status, r.sale_total])).toEqual([
+      [REPORT_JOB_NUMBER.todayInProgress, "in_progress", "90.00"],
+      [REPORT_JOB_NUMBER.combined, "collected", "1000.00"],
       [JOB_NUMBER.danielCannondaleAwaitingCustomer, "awaiting_customer", "0.00"],
     ]);
   });
@@ -435,12 +457,18 @@ describe("D17: a job stays with the customer it was for", () => {
       ]);
 
       await actAs(tx, customerClaims(tan));
-      expect(await myJobIds(tx)).toEqual([WORK_ORDER.tanTarmacCollected]);
+      expect(await myJobIds(tx)).toEqual(TAN_JOBS);
       expect(await myLines(tx, WORK_ORDER.tanTarmacCollected)).toHaveLength(2);
       expect(await myTimeline(tx, WORK_ORDER.tanTarmacCollected)).toHaveLength(5);
 
       await actAs(tx, customerClaims(priya));
-      expect(await myJobIds(tx)).not.toContain(WORK_ORDER.tanTarmacCollected);
+      for (const tarmacJob of [
+        WORK_ORDER.tanTarmacCollected,
+        REPORT_JOB.serviceOnly,
+        REPORT_JOB.lossLine,
+      ]) {
+        expect(await myJobIds(tx)).not.toContain(tarmacJob);
+      }
       expect(await myLines(tx, WORK_ORDER.tanTarmacCollected)).toEqual([]);
       expect(await myTimeline(tx, WORK_ORDER.tanTarmacCollected)).toEqual([]);
     });
@@ -448,6 +476,8 @@ describe("D17: a job stays with the customer it was for", () => {
 
   it("on the seeded sale: Daniel sees only his own job, Nurul only the Bianchi's", async () => {
     expect(await asCustomer(CUSTOMER.daniel, myJobIds)).toEqual([
+      REPORT_JOB.todayInProgress,
+      REPORT_JOB.combined,
       WORK_ORDER.danielCannondaleAwaitingCustomer,
     ]);
     expect(await asCustomer(CUSTOMER.nurul, myJobIds)).toEqual([WORK_ORDER.nurulBianchiReceived]);
@@ -471,7 +501,7 @@ describe("D17: a job stays with the customer it was for", () => {
       },
     );
     expect(result).toEqual({
-      jobs: [WORK_ORDER.tanTarmacCollected],
+      jobs: TAN_JOBS,
       lines: 2,
       photos: [photo],
       // The bike itself is gone from the customer's bikes (Phase 1 rule).
