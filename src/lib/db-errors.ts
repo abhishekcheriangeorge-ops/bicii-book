@@ -139,7 +139,7 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   part_cost_missing:
     "This part has no cost yet, so its yield cannot be worked out. Ask someone with cost access to set it.",
   ownership_not_saleable:
-    "This item is not shop stock, so it can't be used on a job or split into a unique item.",
+    "This item belongs to a customer, or is not shop stock that can be split, so it can't be used here.",
   currency_mismatch: "That item is priced in another currency than the job.",
   publication_transition_invalid:
     "The item can't move to that publication status from where it is now.",
@@ -157,6 +157,45 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   product_events_append_only: "Product history can't be changed.",
   inventory_unit_events_append_only: "Unit history can't be changed.",
   attachment_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
+  // Consignment (Phase 6: D4, D44-D52)
+  consignment_item_conflict:
+    "That consignment clashes with another intake. Start the intake again.",
+  consignor_archived: "That consignor is archived. Unarchive them first.",
+  consignor_has_open_items:
+    "This consignor still has items with the shop. Sell or return them before archiving.",
+  consignment_product_required: "Choose a consignment product or name a new one.",
+  product_not_consignment: "Consigned stock goes on a consignment product, never on shop stock.",
+  consignment_tracking_mismatch: "That product is tracked differently (unique or by quantity).",
+  consignment_unique_quantity_one: "A unique item is taken in one at a time.",
+  consignment_quantity_invalid: "Take in between 1 and 9,999.",
+  consignment_received_in_future: "The intake date can't be in the future.",
+  consignment_item_not_active: "That consigned item is no longer with the shop.",
+  consignment_return_quantity_invalid: "Return at least one, and no more than the shop still has.",
+  consignment_return_conflict: "That return clashes with another stock change. Start again.",
+  consignment_quantity_unavailable:
+    "No single consignment of this item has that many left. Add fewer, or one consignor's stock at a time.",
+  consignment_quantity_negative: GENERIC_ERROR,
+  consignment_unit_write_off_blocked:
+    "A consigned unit isn't the shop's to write off. Return it to the consignor or sell it.",
+  consignment_stock_adjust_blocked:
+    "Consigned stock can't be adjusted, damaged, split or received by hand. Return it to the consignor or sell it.",
+  consignment_bike_requires_unique: "Only a unique item can be a bike.",
+  consignment_item_immutable:
+    "A consignment keeps its consignor, product, unit, quantity and intake date.",
+  consignment_item_short_id_immutable: "A consignment item keeps its ID for life.",
+  consignment_history_append_only: "Consignment history can't be changed.",
+  consignment_charges_immutable: "A charge can't be edited or deleted, only voided with a reason.",
+  consignment_charge_conflict: "That charge clashes with another one. Add it again.",
+  charge_bearer_required: "Choose who bears the charge: the consignor or the shop.",
+  shop_charge_unique_only: "A shop-borne charge goes on a unique item only.",
+  shop_charge_unit_not_available:
+    "That unit's cost is already fixed on a job or a sale. Change shop charges only while it is available.",
+  product_ownership_immutable:
+    "A product with stock history keeps its owner. Consigned stock lives on its own products.",
+  line_consignment_mismatch:
+    "That consigned part doesn't match its consignment. Refresh and try again.",
+  attachment_consignment_internal_only:
+    "Photos on a consignment item stay internal. Put listing photos on the product or unit.",
   // Reporting (Phase 5; Phase 9 reuses it)
   report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
   // Appointments and schedule (Phase 2)
@@ -244,6 +283,13 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   inventory_movements_sale_line_once: "That sale has already taken its stock.",
   inventory_movements_receipt_line_once: "That delivery has already been received.",
   inventory_movements_reversal_of_id_key: "That stock change has already been reversed.",
+  // Consignment (Phase 6)
+  consignors_pkey: "That consignor has already been saved.",
+  consignors_customer_id_key: "That customer is already a consignor.",
+  consignment_items_pkey: "That consignment has already been taken in.",
+  consignment_items_short_id_key: "That consignment ID is already taken. Try again.",
+  consignment_items_inventory_unit_id_key: "That unit already belongs to another consignment.",
+  consignment_item_charges_pkey: "That charge has already been added.",
   // Appointments and schedule (Phase 2)
   appointments_pkey: "That appointment has already been booked.",
   work_orders_appointment_id_key: "That appointment already has a job.",
@@ -373,6 +419,38 @@ export const CHECK_ERRORS: Record<string, string> = {
   product_events_payload_object: "That product history entry is not consistent.",
   inventory_unit_events_payload_object: "That unit history entry is not consistent.",
   attachments_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
+  // Consignment (Phase 6)
+  consignors_display_name_check: "Enter the consignor's name, under 200 characters.",
+  consignors_email_check: "Enter a valid email address.",
+  consignors_phone_check: "Keep the phone number under 40 characters.",
+  consignors_payout_details_check: "Keep the payout details under 2,000 characters.",
+  consignors_internal_notes_check: "Keep the notes under 10,000 characters.",
+  consignment_items_short_id_format: "A consignment ID looks like C-000123.",
+  consignment_items_quantity_check: "Take in between 1 and 9,999.",
+  consignment_items_agreed_amount_owed_check: "The amount owed can't be negative.",
+  consignment_items_asking_price_check: "Prices can't be negative.",
+  consignment_items_currency_check: "Use a three-letter currency code.",
+  consignment_items_return_reason_check: "Keep the reason under 500 characters.",
+  consignment_items_agreement_notes_check: "Keep the agreement notes under 2,000 characters.",
+  consignment_items_internal_notes_check: "Keep the notes under 10,000 characters.",
+  consignment_items_unit_quantity_one: "A unique item is taken in one at a time.",
+  consignment_items_returned_has_date: "A returned item needs its return date.",
+  consignment_items_sold_has_date:
+    "The consignment's sale date doesn't match its status. Refresh and try again.",
+  consignment_item_charges_description_check: "Describe the charge in under 200 characters.",
+  consignment_item_charges_amount_check: "A charge must be more than 0.",
+  consignment_item_charges_currency_check: "Use a three-letter currency code.",
+  consignment_item_charges_void_reason_check: "Keep the reason under 500 characters.",
+  consignment_charges_void_has_reason: "A voided charge needs a reason.",
+  consignment_item_events_payload_object: "That consignment history entry is not consistent.",
+  consignment_item_events_reason_check: "Keep the reason under 500 characters.",
+  inventory_units_consignment_item_ownership: "Only a consigned unit has a consignment record.",
+  work_order_line_items_consignment_shape:
+    "A consigned part needs both its consignment and what the consignor is owed.",
+  work_order_line_items_consignment_inventory_only: "Only a part can come from a consignment.",
+  work_order_line_items_consignor_payout_check: "The amount owed can't be negative.",
+  attachments_consignment_item_internal_only:
+    "Photos on a consignment item stay internal. Put listing photos on the product or unit.",
   // Appointments and schedule (Phase 2)
   shop_settings_singleton: "There is only one settings row.",
   shop_settings_currency_check: "Use a three-letter currency code.",

@@ -122,6 +122,14 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   // appointment counts (D41) are operational, every active staff member (D30)
   "public.appointment_daily(date, date)",
   "public.check_in_appointment(uuid, uuid, uuid, boolean, text, text, uuid)",
+  // Consignment (Phase 6): manage_consignments takes items in, changes
+  // their terms and charges (D4, D45) and returns them (D50, D51); consigned
+  // parts go through add_inventory_line above (D44)
+  "public.add_consignment_charge(uuid, uuid, text, money_amount, charge_bearer, uuid)",
+  "public.create_consignment_item(uuid, uuid, uuid, money_amount, money_amount, uuid, text, text, text, uuid, tracking_type, integer, text, text, timestamp with time zone, text, text, uuid, uuid, uuid)",
+  "public.return_consignment_item(uuid, uuid, text, integer, uuid)",
+  "public.update_consignment_terms(uuid, money_amount, money_amount, text)",
+  "public.void_consignment_charge(uuid, text)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -201,6 +209,16 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "public.schedule_events": ["SELECT"],
   "public.shop_hours": ["SELECT"],
   "public.shop_settings": ["SELECT"],
+  // Consignment (Phase 6, D48): staff read consignors and items (no payout
+  // details, agreed amount or request fingerprint: column grants);
+  // manage_consignments inserts and updates consignors and edits item
+  // notes; charges and item history are row-gated by consignment money
+  // access (manage_consignments or view_costs) and written only by RPCs
+  // and triggers. reporting.consignment_item_position has no API grant.
+  "public.consignment_item_charges": ["SELECT"],
+  "public.consignment_item_events": ["SELECT"],
+  "public.consignment_items": ["SELECT", "UPDATE"],
+  "public.consignors": ["INSERT", "SELECT", "UPDATE"],
 };
 
 /**

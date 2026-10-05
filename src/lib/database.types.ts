@@ -547,6 +547,317 @@ export type Database = {
           },
         ];
       };
+      consignment_item_charges: {
+        Row: {
+          amount: number;
+          bearer: Database["public"]["Enums"]["charge_bearer"];
+          consignment_item_id: string;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          description: string;
+          id: string;
+          void_reason: string | null;
+          voided_at: string | null;
+          voided_by: string | null;
+          work_order_id: string | null;
+        };
+        Insert: {
+          amount: number;
+          bearer: Database["public"]["Enums"]["charge_bearer"];
+          consignment_item_id: string;
+          created_at?: string;
+          created_by?: string | null;
+          currency: string;
+          description: string;
+          id: string;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          work_order_id?: string | null;
+        };
+        Update: {
+          amount?: number;
+          bearer?: Database["public"]["Enums"]["charge_bearer"];
+          consignment_item_id?: string;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          description?: string;
+          id?: string;
+          void_reason?: string | null;
+          voided_at?: string | null;
+          voided_by?: string | null;
+          work_order_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consignment_item_charges_consignment_item_id_fkey";
+            columns: ["consignment_item_id"];
+            isOneToOne: false;
+            referencedRelation: "consignment_items";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignment_item_charges_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignment_item_charges_voided_by_fkey";
+            columns: ["voided_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignment_item_charges_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "consignment_item_charges_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_order_totals_staff";
+            referencedColumns: ["work_order_id"];
+          },
+          {
+            foreignKeyName: "consignment_item_charges_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      consignment_item_events: {
+        Row: {
+          actor_staff_id: string | null;
+          consignment_item_id: string;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["consignment_item_event_type"];
+          id: string;
+          payload: NonNullable<Json>;
+          reason: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          consignment_item_id: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["consignment_item_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          consignment_item_id?: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["consignment_item_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consignment_item_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignment_item_events_consignment_item_id_fkey";
+            columns: ["consignment_item_id"];
+            isOneToOne: false;
+            referencedRelation: "consignment_items";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      consignment_items: {
+        Row: {
+          agreed_amount_owed: number;
+          agreement_notes: string | null;
+          asking_price: number | null;
+          consignor_id: string;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          id: string;
+          internal_notes: string | null;
+          inventory_unit_id: string | null;
+          product_id: string;
+          quantity: number;
+          received_at: string;
+          request_fingerprint: string | null;
+          return_reason: string | null;
+          returned_at: string | null;
+          short_id: string;
+          sold_at: string | null;
+          status: Database["public"]["Enums"]["consignment_status"];
+          updated_at: string;
+        };
+        Insert: {
+          agreed_amount_owed: number;
+          agreement_notes?: string | null;
+          asking_price?: number | null;
+          consignor_id: string;
+          created_at?: string;
+          created_by?: string | null;
+          currency: string;
+          id: string;
+          internal_notes?: string | null;
+          inventory_unit_id?: string | null;
+          product_id: string;
+          quantity?: number;
+          received_at?: string;
+          request_fingerprint?: string | null;
+          return_reason?: string | null;
+          returned_at?: string | null;
+          short_id?: string;
+          sold_at?: string | null;
+          status?: Database["public"]["Enums"]["consignment_status"];
+          updated_at?: string;
+        };
+        Update: {
+          agreed_amount_owed?: number;
+          agreement_notes?: string | null;
+          asking_price?: number | null;
+          consignor_id?: string;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          id?: string;
+          internal_notes?: string | null;
+          inventory_unit_id?: string | null;
+          product_id?: string;
+          quantity?: number;
+          received_at?: string;
+          request_fingerprint?: string | null;
+          return_reason?: string | null;
+          returned_at?: string | null;
+          short_id?: string;
+          sold_at?: string | null;
+          status?: Database["public"]["Enums"]["consignment_status"];
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consignment_items_consignor_id_fkey";
+            columns: ["consignor_id"];
+            isOneToOne: false;
+            referencedRelation: "consignors";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignment_items_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "inventory_unit_costs";
+            referencedColumns: ["unit_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "inventory_units";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignment_items_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      consignors: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          customer_id: string | null;
+          display_name: string;
+          email: string | null;
+          id: string;
+          internal_notes: string | null;
+          payout_details: string | null;
+          phone: string | null;
+          phone_digits: string | null;
+          search_text: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          customer_id?: string | null;
+          display_name: string;
+          email?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          payout_details?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          updated_at?: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          customer_id?: string | null;
+          display_name?: string;
+          email?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          payout_details?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consignors_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consignors_customer_id_fkey";
+            columns: ["customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       cult_commons_rates: {
         Row: {
           cancelled_at: string | null;
@@ -711,6 +1022,13 @@ export type Database = {
           work_order_line_item_id?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: "inventory_movements_consignment_item_id_fkey";
+            columns: ["consignment_item_id"];
+            isOneToOne: false;
+            referencedRelation: "consignment_items";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "inventory_movements_created_by_fkey";
             columns: ["created_by"];
@@ -932,6 +1250,13 @@ export type Database = {
             columns: ["bike_id"];
             isOneToOne: true;
             referencedRelation: "bikes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_units_consignment_item_id_fkey";
+            columns: ["consignment_item_id"];
+            isOneToOne: false;
+            referencedRelation: "consignment_items";
             referencedColumns: ["id"];
           },
           {
@@ -1591,6 +1916,8 @@ export type Database = {
       };
       work_order_line_items: {
         Row: {
+          consignment_item_id: string | null;
+          consignor_payout_snapshot: number | null;
           cost_pending: boolean;
           cost_total: number | null;
           created_at: string;
@@ -1615,6 +1942,8 @@ export type Database = {
           yield_total: number | null;
         };
         Insert: {
+          consignment_item_id?: string | null;
+          consignor_payout_snapshot?: number | null;
           cost_pending?: boolean;
           cost_total?: never;
           created_at?: string;
@@ -1639,6 +1968,8 @@ export type Database = {
           yield_total?: never;
         };
         Update: {
+          consignment_item_id?: string | null;
+          consignor_payout_snapshot?: number | null;
           cost_pending?: boolean;
           cost_total?: never;
           created_at?: string;
@@ -1663,6 +1994,13 @@ export type Database = {
           yield_total?: never;
         };
         Relationships: [
+          {
+            foreignKeyName: "work_order_line_items_consignment_item_id_fkey";
+            columns: ["consignment_item_id"];
+            isOneToOne: false;
+            referencedRelation: "consignment_items";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "work_order_line_items_created_by_fkey";
             columns: ["created_by"];
@@ -1970,6 +2308,8 @@ export type Database = {
       };
       work_order_line_items_staff: {
         Row: {
+          consignment_item_id: string | null;
+          consignor_payout_snapshot: number | null;
           cost_pending: boolean | null;
           cost_total: number | null;
           created_at: string | null;
@@ -1994,6 +2334,8 @@ export type Database = {
           yield_total: number | null;
         };
         Insert: {
+          consignment_item_id?: string | null;
+          consignor_payout_snapshot?: number | null;
           cost_pending?: boolean | null;
           cost_total?: number | null;
           created_at?: string | null;
@@ -2018,6 +2360,8 @@ export type Database = {
           yield_total?: number | null;
         };
         Update: {
+          consignment_item_id?: string | null;
+          consignor_payout_snapshot?: number | null;
           cost_pending?: boolean | null;
           cost_total?: number | null;
           created_at?: string | null;
@@ -2042,6 +2386,13 @@ export type Database = {
           yield_total?: number | null;
         };
         Relationships: [
+          {
+            foreignKeyName: "work_order_line_items_consignment_item_id_fkey";
+            columns: ["consignment_item_id"];
+            isOneToOne: false;
+            referencedRelation: "consignment_items";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "work_order_line_items_created_by_fkey";
             columns: ["created_by"];
@@ -2146,6 +2497,36 @@ export type Database = {
       };
     };
     Functions: {
+      add_consignment_charge: {
+        Args: {
+          amount: unknown;
+          bearer: Database["public"]["Enums"]["charge_bearer"];
+          charge_id: string;
+          description: string;
+          item_id: string;
+          work_order_id?: string;
+        };
+        Returns: {
+          amount: number;
+          bearer: Database["public"]["Enums"]["charge_bearer"];
+          consignment_item_id: string;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          description: string;
+          id: string;
+          void_reason: string | null;
+          voided_at: string | null;
+          voided_by: string | null;
+          work_order_id: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "consignment_item_charges";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       add_inventory_line: {
         Args: {
           inventory_unit_id?: string;
@@ -2410,6 +2791,37 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "appointment_check_in";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_consignment_item: {
+        Args: {
+          agreed_amount_owed: unknown;
+          agreement_notes?: string;
+          asking_price?: unknown;
+          bike_id?: string;
+          brand?: string;
+          category_id?: string;
+          condition?: string;
+          consignor_id: string;
+          description?: string;
+          internal_notes?: string;
+          item_id: string;
+          location_id: string;
+          new_product_id?: string;
+          new_unit_id?: string;
+          product_id?: string;
+          product_name?: string;
+          quantity?: number;
+          received_at?: string;
+          serial_number?: string;
+          tracking_type?: Database["public"]["Enums"]["tracking_type"];
+        };
+        Returns: Database["public"]["CompositeTypes"]["consignment_item_result"];
+        SetofOptions: {
+          from: "*";
+          to: "consignment_item_result";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -2864,6 +3276,22 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "attachments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      return_consignment_item: {
+        Args: {
+          item_id: string;
+          location_id?: string;
+          quantity?: number;
+          reason: string;
+          return_id: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["consignment_item_result"];
+        SetofOptions: {
+          from: "*";
+          to: "consignment_item_result";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -3359,6 +3787,21 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      update_consignment_terms: {
+        Args: {
+          agreed_amount_owed?: unknown;
+          asking_price?: unknown;
+          item_id: string;
+          reason?: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["consignment_item_result"];
+        SetofOptions: {
+          from: "*";
+          to: "consignment_item_result";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_my_profile: {
         Args: { display_name?: string; first_name?: string; last_name?: string; phone?: string };
         Returns: Database["public"]["CompositeTypes"]["customer_profile"];
@@ -3479,6 +3922,29 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      void_consignment_charge: {
+        Args: { charge_id: string; reason: string };
+        Returns: {
+          amount: number;
+          bearer: Database["public"]["Enums"]["charge_bearer"];
+          consignment_item_id: string;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          description: string;
+          id: string;
+          void_reason: string | null;
+          voided_at: string | null;
+          voided_by: string | null;
+          work_order_id: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "consignment_item_charges";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       void_line: { Args: { line_id: string; reason: string }; Returns: string };
       work_order_activity_on: {
         Args: { on_day?: string };
@@ -3576,7 +4042,16 @@ export type Database = {
       attachment_visibility: "internal" | "customer" | "public";
       bike_ownership_event_type: "registered" | "transferred";
       category_kind: "service" | "product";
+      charge_bearer: "consignor" | "shop";
       closure_kind: "closed" | "custom_hours";
+      consignment_item_event_type:
+        | "received"
+        | "terms_changed"
+        | "charge_added"
+        | "charge_voided"
+        | "status_changed"
+        | "stock_returned";
+      consignment_status: "active" | "sold" | "returned" | "withdrawn";
       customer_job_status:
         | "received"
         | "awaiting_customer"
@@ -3687,6 +4162,13 @@ export type Database = {
         job_number: string | null;
         created: boolean | null;
       };
+      consignment_item_result: {
+        item_id: string | null;
+        short_id: string | null;
+        status: Database["public"]["Enums"]["consignment_status"] | null;
+        product_id: string | null;
+        inventory_unit_id: string | null;
+      };
       customer_profile: {
         id: string | null;
         first_name: string | null;
@@ -3756,6 +4238,43 @@ export type Database = {
           no_shows: number | null;
         };
         Relationships: [];
+      };
+      consignment_item_position: {
+        Row: {
+          consignment_item_id: string | null;
+          consignor_charges: number | null;
+          consignor_id: string | null;
+          inventory_unit_id: string | null;
+          job_held_qty: number | null;
+          job_sold_qty: number | null;
+          last_returned_at: string | null;
+          last_sale_at: string | null;
+          liability: number | null;
+          owed_qty: number | null;
+          product_id: string | null;
+          quantity: number | null;
+          remaining_qty: number | null;
+          restocked_qty: number | null;
+          returned_qty: number | null;
+          shop_charges: number | null;
+          sold_qty: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consignment_items_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "low_stock";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_stock";
+            referencedColumns: ["product_id"];
+          },
+        ];
       };
       daily_summary: {
         Row: {
@@ -4111,7 +4630,17 @@ export const Constants = {
       attachment_visibility: ["internal", "customer", "public"],
       bike_ownership_event_type: ["registered", "transferred"],
       category_kind: ["service", "product"],
+      charge_bearer: ["consignor", "shop"],
       closure_kind: ["closed", "custom_hours"],
+      consignment_item_event_type: [
+        "received",
+        "terms_changed",
+        "charge_added",
+        "charge_voided",
+        "status_changed",
+        "stock_returned",
+      ],
+      consignment_status: ["active", "sold", "returned", "withdrawn"],
       customer_job_status: [
         "received",
         "awaiting_customer",
