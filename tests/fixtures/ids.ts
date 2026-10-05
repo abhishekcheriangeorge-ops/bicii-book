@@ -3,9 +3,6 @@
  * IDs, never by name (TESTING.md "Seed data"). Keep in sync with the seed.
  */
 
-/** Local-only password shared by every seeded login. */
-export const SEED_PASSWORD = "bicii-dev-password";
-
 /** auth.users.id of each seeded login. */
 export const AUTH_USER = {
   admin: "a0000000-0000-4000-8000-000000000001",
@@ -535,9 +532,10 @@ export const APPOINTMENT = {
 export type SeedAppointment = keyof typeof APPOINTMENT;
 
 /**
- * The one seeded customer login (Phase 2): Chloe Lim, password
- * SEED_PASSWORD, linked to CUSTOMER.chloe (E2E journey 2, customer-access
- * tests). Tests must not link another login to CUSTOMER.chloe.
+ * The one seeded customer login (Phase 2): Chloe Lim, linked to
+ * CUSTOMER.chloe (E2E journey 2, customer-access tests). Like the staff
+ * logins she has no usable password (PLAN D10): tests sign her in with an
+ * email code (tests/e2e/api.ts signInApi). Tests must not link another login to CUSTOMER.chloe.
  */
 export const CUSTOMER_LOGIN = {
   chloe: {

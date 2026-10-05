@@ -1,7 +1,9 @@
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 
 import { parseShopDay, shiftShopDay } from "../../src/lib/dates";
-import { SEED_PASSWORD, STAFF_EMAIL, type SeedStaff } from "../fixtures/ids";
+import { STAFF_EMAIL, type SeedStaff } from "../fixtures/ids";
+
+import { mailCursor, waitForCode } from "./mail";
 
 /**
  * The seed's anchor: the shop day the database was reset and seeded
@@ -26,16 +28,70 @@ export function anchorDay(n: number): string {
   return shiftShopDay(seedAnchor(), -n);
 }
 
-/** Signs in through the real login form and waits until the app is open. */
+/** Signs a seeded staff member in through the real login form and waits until the app is open. */
 export async function signIn(page: Page, who: SeedStaff, next?: string) {
-  await page.goto(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
-  await signInOnForm(page, who);
+  await signInAs(page, STAFF_EMAIL[who], next);
 }
 
-/** Fills and submits the login form already on screen. */
+/** Signs in on the login form already on screen (a seeded staff member). */
 export async function signInOnForm(page: Page, who: SeedStaff) {
-  await page.getByLabel("Email").fill(STAFF_EMAIL[who]);
-  await page.getByLabel("Password").fill(SEED_PASSWORD);
+  await signInOnFormAs(page, STAFF_EMAIL[who]);
+}
+
+/** signIn() for any address with a login (an invited colleague). */
+export async function signInAs(page: Page, email: string, next?: string) {
+  await page.goto(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
+  await signInOnFormAs(page, email);
+}
+
+/** When this worker last asked for a code for each address (requestCodeOnForm). */
+const lastAsked = new Map<string, number>();
+
+/** Records that Auth just issued a code for `email` (api.ts signInApi), so the next request waits out the interval. */
+export function noteCodeIssued(email: string): void {
+  lastAsked.set(email, Date.now());
+}
+
+/** Auth's per-address interval on the devstack (max_frequency 1s), plus a margin. */
+const PER_ADDRESS_INTERVAL_MS = 1100;
+
+/**
+ * The email step of the login form already on screen: asks for a code and
+ * returns it, read from the mail catcher (PLAN D10). The cursor is taken
+ * BEFORE the click, so an older email to the same address is never used.
+ *
+ * Auth emails one address at most once per second here (max_frequency;
+ * raised limits otherwise, TESTING.md). Within that interval it refuses to
+ * send, and the Admin shows "Check your email" anyway, exactly as for an
+ * unknown address (D70), so the refusal cannot be seen on screen: the
+ * helper waits out the interval since this worker last asked for the same
+ * address, and if no email arrives it goes back ("Use a different email"),
+ * waits again and asks again, up to 5 times.
+ */
+export async function requestCodeOnForm(page: Page, email: string): Promise<string> {
+  const cursor = await mailCursor(email);
+  const checkEmail = page.getByRole("heading", { name: "Check your email" });
+  for (let attempt = 1; ; attempt++) {
+    const wait = (lastAsked.get(email) ?? 0) + PER_ADDRESS_INTERVAL_MS - Date.now();
+    if (wait > 0) await page.waitForTimeout(wait);
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: "Email me a code" }).click();
+    await expect(checkEmail).toBeVisible();
+    lastAsked.set(email, Date.now());
+    try {
+      return await waitForCode({ to: email, after: cursor, timeoutMs: 5000 });
+    } catch (error) {
+      if (attempt >= 5) throw error;
+    }
+    await page.getByRole("button", { name: "Use a different email" }).click();
+    await expect(page.getByLabel("Email")).toHaveValue(email);
+  }
+}
+
+/** Signs `email` in on the login form already on screen, with an emailed code. */
+export async function signInOnFormAs(page: Page, email: string) {
+  const code = await requestCodeOnForm(page, email);
+  await page.getByLabel("Code").fill(code);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }

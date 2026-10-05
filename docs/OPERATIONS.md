@@ -33,7 +33,7 @@ commands in [ENGINEERING.md](ENGINEERING.md).
 | Supabase hosted projects `bicii-staging`, `bicii-prod` | Database, Auth, Storage for previews and production | **Not set up** | n/a | n/a until created |
 | Vercel project | Hosting the Admin | **Not set up** | n/a | n/a |
 | Domain, DNS | Admin and public site addresses | None known for the Admin | Unknown | n/a |
-| Email delivery (SMTP) | Auth email, needed by the planned email OTP sign-in | None | n/a | OTP cannot work ([R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp)) |
+| Email delivery (SMTP) | Auth email: staff sign-in codes (D10), later customer codes (Phase 11) | **Not set up**; a custom SMTP provider is required on every hosted project ([RUNBOOK](RUNBOOK.md#hosted-supabase-projects-staging-and-production)) | Unknown | Nobody can sign in ([R-039](RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)) |
 | Shopify store | Phase 10 integration | None connected | Unknown | n/a ([R-011](RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only)) |
 | Label printer | Phase 8 and 12 | Models unknown | Unknown | n/a ([R-012](RISKS.md#r-012--label-printer-hardware-is-unknown)) |
 
@@ -82,15 +82,17 @@ task says so. Labels are as on screen.
 **Invite staff** (admin, or `manage_staff` within the D11 ceiling:
 non-admins invite role Staff only;
 [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).
-Settings → Staff → Invite staff; fill Name and Email, choose the Role
-(admins only), press Invite. Expected: "<email> can now sign in." and a
-"Temporary password: shown once" with Copy password; give it to the person
-through a private channel. Verify: they sign in and change it under
-Settings → Your profile (Current password, New password, Repeat new
-password, Change password). Refused with "An account with that email
-already exists." when the email is taken. (`tests/e2e/staff.spec.ts`.)
-This changes to email sign-in when the OTP work merges
-([R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp)).
+Settings → Staff → Invite staff; fill Name and Email (their real mailbox:
+they sign in with it), choose the Role (admins only), press Invite.
+Expected: "<email> can now sign in." and "They open BICII Admin, enter this
+email and type the 6-digit code we email them. No password needed." No
+password is created or shown (D10,
+[ADR-019](decisions/ADR-019-staff-email-sign-in.md)); tell the person to
+open the Admin and ask for a code. Verify: they sign in with the emailed
+code and Today opens; then **Set permissions**. Refused with "An account
+with that email already exists." when the email is taken (a deactivated
+colleague is reactivated instead). Whoever controls the invited mailbox
+controls that login. (`tests/e2e/staff.spec.ts`, `tests/e2e/auth.spec.ts`.)
 
 **Grant or remove a permission** (same roles). Settings → Staff → the
 person → the switch for the permission. Expected: toast "… granted" or
@@ -101,8 +103,9 @@ Manage staff. (`tests/e2e/staff.spec.ts`.)
 
 **Deactivate or reactivate** (same roles; never an admin by a non-admin).
 Settings → Staff → the person → Deactivate…, give the reason, confirm
-"Deactivate <name>". Expected: "<name> deactivated"; their open session
-loses access at once; the reason is in Staff history. The database refuses
+"Deactivate <name>". Expected: "<name> deactivated"; their Auth sessions
+are ended in the same step and any page they still have open loses access
+at once (D71); the reason is in Staff history. The database refuses
 to leave the shop without an active admin. (`tests/e2e/staff.spec.ts`.)
 
 **Services and prices** (`manage_inventory`). Settings → Services → New
@@ -229,8 +232,21 @@ and Labels and Reports are placeholders
 Each procedure is in RUNBOOK. Last exercised: **never** for every hosted
 procedure (no hosted project exists, 2026-10-05).
 
-- [Hosted Supabase projects: staging and production](RUNBOOK.md#hosted-supabase-projects-staging-and-production)
-- [Applying migrations to a hosted project](RUNBOOK.md#applying-migrations-to-a-hosted-project)
+- [Hosted Supabase projects: staging and production](RUNBOOK.md#hosted-supabase-projects-staging-and-production):
+  for staff sign-in by emailed code (D10, D70–D72) it covers the custom
+  SMTP provider (required; the built-in sender mails only the project's
+  team), the code-only email templates in `supabase/templates`, OTP length
+  6 and expiry 600 s, sign-ups off, Auth's rate limits (60 s between
+  emails to one address; per-IP sign-in and verification limits of at
+  least 150 per 5 minutes, above the Admin's own D72 limits), "Secure
+  password change" on, and the **required pre-deploy password reset**:
+  before the release that switches sign-in to codes, replace every staff
+  login's password with a random secret's hash and end their sessions,
+  after SMTP has delivered a code to the owner
+  ([R-035](RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset)).
+- [Applying migrations to a hosted project](RUNBOOK.md#applying-migrations-to-a-hosted-project),
+  including what to do if `20261005005000_staff_session_revocation`
+  refuses to apply (its role must be able to delete Auth sessions, D71).
 - [Creating the first admin in a hosted project](RUNBOOK.md#creating-the-first-admin-in-a-hosted-project)
 - [Rotating keys and passwords](RUNBOOK.md#rotating-keys-and-passwords)
 - [Vercel environment setup](RUNBOOK.md#vercel-environment-setup)
@@ -263,14 +279,16 @@ outage would be noticed by a user. There is no incident record location
   ([ADR-001 A8](ADR-001-architecture.md#a8-observability)). To trace one
   request, match the log line's id with the event rows' correlation id.
 - **Local devstack:** `npm run devstack:status`; logs in
-  `.devstack/logs/{auth,rest,storage,gateway}.log`. Common local failures:
+  `.devstack/logs/{mail,auth,rest,storage,gateway}.log`; sign-in codes
+  sent locally are in `.devstack/mail/`. Common local failures:
   [ENGINEERING.md](ENGINEERING.md#debugging-and-common-setup-failures).
 - **CI:** a failed `test` job prints the last devstack log lines; a failed
   `e2e` uploads the Playwright report, traces and devstack logs for 14 days.
 
 | Symptom | User impact | Where to look | First safe diagnostic | Escalation |
 |---|---|---|---|---|
-| "Sign-in is unavailable right now. Try again in a minute." | Nobody can sign in | Auth log (`.devstack/logs/auth.log` locally) | `npm run devstack:status` | Engineering |
+| "Sign-in is unavailable right now. Try again in a minute." | Nobody can sign in | The Admin's errors `auth.request_code` / `auth.verify_code` with `limit: "admin"`: their `cause` is `no_service_role_key` (`SUPABASE_SERVICE_ROLE_KEY` unset), `rpc_error` with a code (a wrong key gives `42501` or an API-key error; otherwise the `note_sign_in_attempt` RPC or the database failed) or `request_failed`; without `limit: "admin"`, the Auth log (`.devstack/logs/auth.log` locally) | Hosted: check `SUPABASE_SERVICE_ROLE_KEY` in Vercel matches the project's current secret key, then the Supabase status; locally: `npm run devstack:status` | Engineering |
+| Staff report that no sign-in code arrives | That person cannot sign in | Auth logs for `over_email_send_rate_limit`; the Admin's warnings `auth.request_code`; the SMTP provider's sending log (hosted) | Send a code to the owner's address (hosted: Users → Send magic link; locally: the mail catcher) | Engineering, then the owner (SMTP provider) |
 | "You don't have permission to do that." or a 403 page | One task blocked | The person's permissions in Settings → Staff | Compare with [USER-GUIDE "Roles and limits"](USER-GUIDE.md#roles-and-limits) | Admin |
 | CI `check:types` fails | PR cannot merge cleanly | Job log | `npm run db:types` locally | Engineering |
 
@@ -288,8 +306,9 @@ All of the following is **untested**. No recovery has ever been exercised.
   a database restore would not restore them (inferred). No backup. Never
   exercised.
 - **Configuration and external state:** none hosted. Hosted Auth settings
-  and environment variables would have to be re-entered from RUNBOOK and the
-  password manager.
+  (SMTP, email templates, rate limits) and environment variables would have
+  to be re-entered from RUNBOOK and the password manager; until SMTP works
+  again nobody can sign in.
 - **Acceptable data loss and recovery time:** not agreed (owner question 6
   in [PRODUCT.md](PRODUCT.md#open-assumptions-and-owner-questions)).
 - **Last isolated recovery exercise:** never.
@@ -314,8 +333,9 @@ cleanup.
   machine; it has no effect anywhere else.
 - **Paused state:** nothing hosted runs, so nothing costs money for the
   Admin itself; GitHub plan and Actions billing were not checked (unknown).
-  The stack and Phase 6 are merged into `main`; purchasing (PR #9),
-  email OTP and labels are on their own branches
+  The stack and Phase 6 are merged into `main`; purchasing (PR #9) and
+  email sign-in (PR #10, which contains purchasing) are integrated but
+  unmerged, and labels and Shopify are on their own branches
   ([R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 
 ## Responsibility boundaries

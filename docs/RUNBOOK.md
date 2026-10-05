@@ -88,9 +88,18 @@ Differences from the devstack:
   (or `npx supabase@2.119.0 gen types typescript --local --schema public,reporting`,
   then `npx prettier --write src/lib/database.types.ts`). `-- --fresh`
   needs the devstack.
-- **E2E:** `npx supabase@2.119.0 db reset && E2E_EXTERNAL_STACK=1 npm run test:e2e`.
+- **Sign-in codes:** Auth's emails (staff sign-in codes, PLAN D10) go to
+  the CLI's Mailpit, not the devstack's mail catcher: open
+  `http://127.0.0.1:54324` to read a code. `config.toml` gives it the same
+  templates (`supabase/templates`), 6-digit codes valid for 600 s and raised
+  local rate limits.
+- **E2E:** `npx supabase@2.119.0 db reset && E2E_EXTERNAL_STACK=1 BICII_MAIL_KIND=mailpit npm run test:e2e`.
   Playwright then skips its own reset and devstack start and only checks
-  that the seeded admin can sign in (and reads the seed's anchor day).
+  that the seeded admin can sign in (and reads the seed's anchor day);
+  `BICII_MAIL_KIND=mailpit` makes the tests read codes from Mailpit
+  (`scripts/devstack/mail-client.mjs`; written from Mailpit's API
+  documentation and not yet run, as there is no Docker in the build
+  container).
 - `config.toml` sets `[db] major_version = 17`, so Docker runs Postgres 17
   while the devstack and CI run 16. Keep migrations to SQL both accept.
   When the hosted projects exist, set `major_version` to theirs (`show
@@ -105,19 +114,91 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    `bicii-staging` (then repeat for `bicii-prod`). Region: Southeast Asia
    (Singapore). Generate a strong database password and store it in the
    password manager; it is needed for `supabase link` and `db push`.
-2. Authentication → Sign In / Providers: Email enabled (PLAN D10: staff use
-   email + password, no magic links; staff sign-in is changing to email OTP,
-   [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md), and this
-   step must be revised when that work merges). Turn **off** "Allow new users to sign
-   up" until the public site's customer sign-in ships (Phase 11); staff
-   logins are created by admins through the Auth admin API, which works with
-   sign-ups off. Minimum password length: 12 (what the Admin's password
-   form requires; invites generate 20-character temporary passwords that
-   always contain upper and lower case, digits and symbols, so any
-   "Password requirements" setting accepts them). Leave "Secure password
-   change" as it is: the Admin itself requires the current password before
-   a change (Settings → Profile), which also covers sessions signed in
-   less than a day ago, where Supabase's reauthentication would not ask.
+2. Authentication: staff sign in with emailed one-time codes (PLAN D10,
+   D70), so email delivery is part of signing in. Set up, in this order:
+   - **Emails → SMTP Settings: a custom SMTP provider is REQUIRED.**
+     Supabase's built-in sender only mails the project's team members and
+     is heavily rate-limited, so staff would get no codes. Enter the
+     provider's host, port, user, sender name and sender address; the SMTP
+     password is typed into the dashboard only (never into the repository,
+     an env file or a chat).
+   - **Emails → Templates → Magic Link** (and **Confirm signup**): paste
+     `supabase/templates/magic_link.html` (and `confirmation.html`), which
+     contain `{{ .Token }}` and no link (codes only: a link would open in
+     the mail app's browser, not the installed Admin). Subjects: "Your BICII
+     sign-in code" (Magic Link) and "Your BICII code" (Confirm signup), as
+     in `supabase/config.toml`.
+   - **Sign In / Providers → Email**: enabled; OTP length **6**; OTP expiry
+     **600** seconds (`OTP_LENGTH`, `OTP_EXPIRY_MINUTES` in
+     `src/lib/auth/otp.ts`). Turn **off** "Allow new users to sign up" (keep
+     it off at least until the public site's customer sign-in ships in
+     Phase 11): invites create logins through the Auth admin API, which
+     works with sign-ups off, and sign-in asks for a code with
+     `shouldCreateUser: false`, so it never creates an account.
+   - **Rate Limits**: the minimum interval between emails to one address
+     **60** seconds (it matches "Send a new code", `RESEND_COOLDOWN_SECONDS`).
+     The Admin asks Auth from its server, so Auth's per-IP limits count the
+     Admin's server address for every staff member and visitor together:
+     they are one shared bucket, not a per-person limit. The Admin applies
+     its own per-client and per-email limits first (PLAN D72: per 5
+     minutes, 10 code requests and 20 verifications per client address, 5
+     and 10 per email), so set Auth's **sign-ins and sign-ups** and **token
+     verifications** (per 5 minutes per IP) well above those, at least
+     **150** each, so one visitor cannot fill them; emails per hour sized
+     for the staff with headroom (the provider's own sending limit is the
+     real ceiling). Auth's per-address interval and hourly email cap are
+     shown on the sign-in screen as "Check your email" (only an address with
+     a login can reach them, D70), and logged as warnings
+     (`auth.request_code`, code `over_email_send_rate_limit`): watch for
+     them if staff report missing codes.
+   - **Sign In / Providers → Email → Secure password change: ON.** The
+     Admin has no password path, but Auth's password change is reachable
+     with any session; with this on, a session older than 24 h needs an
+     emailed nonce to set a password (config.toml `secure_password_change`,
+     the devstack's `GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION`).
+   - The Admin's server must see each visitor's own address in
+     `x-forwarded-for` (Vercel sets it and overwrites what the client sent).
+     A host that passes on a client's own `x-forwarded-for` would let a
+     visitor pick a fresh per-client bucket for every attempt (the
+     per-email limits still hold).
+   - **Configure SMTP and test it with the owner's own address BEFORE
+     deploying the release that switches sign-in to codes**: on the Users
+     page, "Send magic link" to the owner's login must deliver a mail with a
+     6-digit code and no link. Without working email nobody can sign in.
+   - **REQUIRED before deploying the release that switches sign-in to
+     codes: replace every staff login's password and end its sessions.**
+     The Admin has no password form, but Supabase Auth's password grant
+     (`/auth/v1/token?grant_type=password`, callable with the public anon
+     key while the Email provider is on, which codes need) still signs a
+     login in with its password. Logins created by the old invite flow have
+     the temporary password their inviter saw (PLAN D11). In the SQL editor
+     (runs as `postgres`), once per project:
+
+     ```sql
+     begin;
+     -- The hash of a random secret nobody holds, as the seed and Auth's
+     -- own passwordless createUser store.
+     update auth.users u
+     set encrypted_password = extensions.crypt(
+           encode(extensions.gen_random_bytes(48), 'base64'),
+           extensions.gen_salt('bf', 10)),
+         updated_at = now()
+     where u.id in (select s.auth_user_id from public.staff s);
+     -- Sessions signed in with an old password end; everyone signs in
+     -- again with a code.
+     delete from auth.sessions where user_id in (select auth_user_id from public.staff);
+     delete from auth.refresh_tokens
+     where user_id in (select auth_user_id::text from public.staff);
+     commit;
+     ```
+
+     The update must report as many rows as there are staff (`select
+     count(*) from public.staff;`). Run it after SMTP works (step above):
+     everyone, the owner included, then signs in with a code.
+   - Accepted residual risk (D70): Auth's own `/otp` endpoint, callable by
+     anyone with the public anon key, answers an unknown email with 422
+     `otp_disabled`, so a direct API caller can learn whether an address
+     has a login. The Admin's screens never reveal it.
 3. Authentication → URL Configuration: Site URL is the Admin's URL on that
    environment (production domain, or the staging alias). Add redirect URLs
    for Vercel previews on staging, e.g. `https://*-<vercel-team>.vercel.app/**`.
@@ -141,8 +222,9 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    `anon` and `authenticated` can reach with the allow-list in
    `tests/fixtures/api-surface.ts`, so a forgotten revoke fails CI instead of
    reaching production.
-5. Do **not** run `supabase/seed.sql` on a hosted project: its logins have a
-   published password. Create the first admin as below.
+5. Do **not** run `supabase/seed.sql` on a hosted project: it is test data
+   with fixed, published UUIDs and `.test` logins, not the shop's. Create
+   the first admin as below.
    The inventory migration (`…1800_inventory`) inserts one stock location,
    'Shop floor' (SPEC §11: the MVP starts with one shop), so stock can be
    counted and parts used without the seed; add more in Settings →
@@ -194,13 +276,40 @@ npx supabase@2.119.0 db push                        # apply pending migrations, 
   check `migration list` before every push so you know which project you
   are pointed at.
 
+### If `20261005005000_staff_session_revocation` refuses to apply
+
+Deactivating a staff member deletes their Supabase Auth sessions at once
+(PLAN D71). The trigger function that does it runs with the rights of the
+role that applies migrations, so the migration checks first and fails
+loudly, before it changes anything, with "role … cannot delete from
+auth.sessions and auth.refresh_tokens" when that role lacks DELETE on
+either table.
+
+- Do not edit the migration, and do not drop the check. Resolve the grant
+  with Supabase (support or the project's database settings) so the
+  migration role (`postgres` on hosted projects) may delete from
+  `auth.sessions` and `auth.refresh_tokens`, then run `db push` again. The
+  migration runs in one transaction, so nothing half-applied is left
+  behind.
+- Until it is resolved, deactivation still blocks every page, Server
+  Action and RPC for the deactivated person (`requireStaff` answers 403;
+  RLS and the RPC guards check `staff.active`), but their devices can keep
+  refreshing their session, so they keep seeing the 403 page instead of
+  the sign-in page. Later migrations stay blocked behind this one.
+- Even when it is applied, a hosted project that verifies JWTs locally
+  (asymmetric signing keys) accepts an access token already issued until
+  it expires: at most `jwt_expiry` (Authentication > Sessions, 3600 s
+  here). The inactive check covers that window; nothing else needs doing.
+
 ## Creating the first admin in a hosted project
 
 Every later staff member is invited from Settings → Staff by an admin. The
 very first admin has to be created by hand:
 
 1. Authentication → Users → Add user → Create new user. Enter the owner's
-   email and a strong temporary password, and tick **Auto Confirm User**.
+   email, tick **Auto Confirm User**, and give no usable password: staff
+   sign in with emailed codes (PLAN D10). If the dashboard insists on a
+   password, use a long random one and discard it without storing it.
 2. SQL Editor (runs as `postgres`, which owns the tables, so RLS does not
    block it), with the same email:
 
@@ -217,7 +326,8 @@ very first admin has to be created by hand:
    staff. The staff email must be the login's email (a trigger refuses
    anything else, `staff_email_mismatch`). The insert is recorded in staff
    history as "created" with no actor ("set up outside the app").
-3. Sign in to the Admin, change the password (Settings → Profile), and
+3. Sign in to the Admin with a code (enter the email, then the 6-digit
+   code from the email; custom SMTP must already work, step 2 above), and
    invite everyone else from Settings → Staff.
 
 The `staff_keep_an_active_admin` trigger then refuses any change that would
@@ -232,10 +342,11 @@ everywhere it is used, verify, then revoke the old one.
 
 | Secret | Used by | How to rotate |
 |---|---|---|
-| Service-role / secret API key | Vercel (server only), never CI | Project Settings → API Keys: create a new secret key (or, on legacy JWT keys, rotate the JWT secret, see below). Update `SUPABASE_SERVICE_ROLE_KEY` in Vercel for that environment, redeploy, check Settings → Staff → Invite works, then delete the old key. |
+| Service-role / secret API key | Vercel (server only), never CI | Project Settings → API Keys: create a new secret key (or, on legacy JWT keys, rotate the JWT secret, see below). Update `SUPABASE_SERVICE_ROLE_KEY` in Vercel for that environment, redeploy, then from a fresh private browser window sign in with an email code (every sign-in needs this key, D72: a missing or wrong key locks everyone out) and check Settings → Staff → Invite works; only then delete the old key. |
 | Anon / publishable key | Vercel (public), the public site | New publishable key in API Keys; update `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel **and** the public site's env; redeploy both (the value is inlined at build time); then delete the old key. |
 | JWT secret (legacy keys) | signs every session and the legacy anon/service keys | Rotating it invalidates the legacy anon and service-role keys and signs every user out. Prefer moving to asymmetric JWT signing keys and publishable/secret keys, which rotate one at a time. If you must, do it in a quiet hour and update both keys everywhere straight after. |
 | Database password | `supabase link` / `db push` on admins' machines | Project Settings → Database → Reset database password. Store the new one; re-run `supabase link`. The app does not use it. |
+| SMTP password (sign-in codes) | Supabase Auth's mailer (dashboard only) | Create a new credential at the mail provider, paste it in Authentication → Emails → SMTP Settings, send a code to the owner's address (Users → Send magic link) and check it arrives, then revoke the old credential. Until mail works nobody can sign in. |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Vercel | `openssl rand -base64 32`, set it, redeploy. Open browser tabs holding pages built before the deploy get a failed Server Action once and must reload. |
 | Shopify tokens (Phase 10) | Vercel | Rotate the Admin API token and webhook secret in the Shopify custom app; update Vercel; redeploy. |
 
@@ -257,7 +368,7 @@ One Vercel project for the Admin, connected to this repository.
    | `NEXT_PUBLIC_SUPABASE_URL` | prod project URL | staging project URL | public |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | prod anon/publishable key | staging key | public |
    | `NEXT_PUBLIC_PUBLIC_SITE_URL` | public site production URL | public site URL | QR base (PLAN D9) |
-   | `SUPABASE_SERVICE_ROLE_KEY` | prod service/secret key | staging key | Sensitive; server only |
+   | `SUPABASE_SERVICE_ROLE_KEY` | prod service/secret key | staging key | Sensitive; server only; required: without it nobody can sign in (D72) |
    | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | own value | own value | Sensitive; `openssl rand -base64 32` |
    | `LOG_LEVEL` | `info` | `debug` | optional |
    | `SHOPIFY_*` | Phase 10 | Phase 10 | Sensitive |
@@ -272,6 +383,11 @@ One Vercel project for the Admin, connected to this repository.
 5. Deploy order for a change with a migration: `supabase db push` to
    staging → preview check → `db push` to production → promote or merge to
    `main`.
+6. After every deploy and every change to a server-only variable: from a
+   fresh private browser window, sign in with an email code. Every sign-in
+   counts its attempt with `SUPABASE_SERVICE_ROLE_KEY` first (PLAN D72), so
+   a missing or wrong key shows "Sign-in is unavailable right now" to
+   everyone ([OPERATIONS](OPERATIONS.md) incident table).
 
 ## The camera scanner on phones and iPads
 

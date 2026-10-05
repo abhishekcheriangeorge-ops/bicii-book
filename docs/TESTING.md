@@ -77,9 +77,43 @@ reused, so they would burn IDs in a database you keep).
 
 `tests/db/stack.smoke.test.ts` goes one step further when the devstack is
 running (`npm run db:reset && npm run devstack:start`): it signs in through
-the gateway with supabase-js as `admin@bicii.test`, calls
-`rpc('my_staff_profile')`, and round-trips an object through Storage with
-the service key. `tests/db/photo-moves.stack.test.ts` runs the app's own
+the gateway with supabase-js as `admin@bicii.test` the way staff do (PLAN
+D10, D70: `signInWithOtp` with `shouldCreateUser: false`, the code read
+from the devstack's mail catcher with `scripts/devstack/mail-client.mjs`,
+`verifyOtp` with type `email`), checks the email carries our subject ("Your
+BICII sign-in code") and template, calls `rpc('my_staff_profile')`, and
+round-trips an object through Storage with the service key. It also pins
+the code rules Auth enforces: an unknown address with `shouldCreateUser:
+false` gets 422 `otp_disabled` (the Admin will show it as sent, D70),
+creates no `auth.users` row and receives no email; asked again while Auth's
+per-address interval is held open (`recovery_sent_at` set ahead, as the
+hosted 60 s would), an address with a login gets 429
+`over_email_send_rate_limit` and an unknown one 422 `otp_disabled` again,
+and `classifyCodeRequestError` makes "sent" of every one of them (D70); a
+code works once (the second `verifyOtp` is 403 `otp_expired`); a newer
+code voids the older one; and setting a password on a session aged past
+24 h is refused with `reauthentication_needed` (secure password change,
+PLAN D10).
+Those cases use unique throwaway `.test` logins made with the admin API and
+deleted after the file. Every other live test signs in with
+`tests/db/stack.ts`: `otpClient(email)` gets the code from the service-role
+admin API (`auth.admin.generateLink({ type: 'magiclink' })` returns
+`properties.email_otp` and sends no email) and verifies it with
+`verifyOtp`; `staffClient(who)` is `otpClient` for a seeded login and
+`serviceClient()` is the service-role client.
+`tests/db/staff-sessions.stack.test.ts` invites a uniquely named throwaway
+staff login, signs it in and deactivates it (PLAN D71); staff rows are
+history and are never deleted, so it stays, deactivated, until the next
+`npm run db:reset`. `tests/db/sign-in-throttle.stack.test.ts` drives the
+Admin's own sign-in limits (PLAN D72) through the app's module
+(`countSignInAttempt` in `src/lib/admin/sign-in-throttle.ts`) and
+PostgREST with the real limits: an email past its limit is refused from
+any client while other emails and its verifications are not; a client
+past its limit is refused for any email while other clients are not; a
+staff email reaches its limit no later than an unknown one; the anon key
+and a staff session get 42501, and the anon key in the service role's
+place makes `checkSignInAttempt` answer "unavailable" with the cause the
+login actions log (`rpc_error`, 42501, never the email). `tests/db/photo-moves.stack.test.ts` runs the app's own
 photo domain code (`src/lib/domain/attachments.ts`, loaded with
 `server-only` aliased to its empty module in the db project) as mechanic2
 against real Storage: moves between buckets, deletes, refused moves and
@@ -127,8 +161,8 @@ fixed 2031 dates) and `tests/fixtures/appointment-transitions.ts` (the
 status machine); step 3's TypeScript mirror uses both. Check-in tests
 (`appointment-check-in.test.ts`) build their own customer, bike, type and
 appointment as the owner and call `check_in_appointment` as staff. One
-customer login is seeded (`CUSTOMER_LOGIN.chloe`, Chloe Lim, the local
-password): read-only customer checks may act as her
+customer login is seeded (`CUSTOMER_LOGIN.chloe`, Chloe Lim, no usable
+password since the email sign-in integration): read-only customer checks may act as her
 (`customerClaims(CUSTOMER_LOGIN.chloe.authUserId)`); tests that change a
 customer's login or bookings link a fresh login to a fresh customer
 (`linkCustomerLogin`), never to `CUSTOMER.chloe`.
@@ -164,6 +198,183 @@ The devstack and database commands (`devstack:setup`, `devstack:start` /
 are described in one place:
 [ENGINEERING.md "Commands"](ENGINEERING.md#commands).
 
+### The devstack mail catcher
+
+Staff sign in with emailed codes (PLAN D10, D70), so the devstack runs a
+mail catcher, `scripts/devstack/mailcatcher.mjs` (dependency-free; Phase 11
+reuses it for customer codes). It listens on 127.0.0.1 only: SMTP on
+`BICII_SMTP_PORT` (2525) and a JSON API on `BICII_MAIL_HTTP_PORT` (8025).
+Supabase Auth sends to it (`GOTRUE_SMTP_*` in `scripts/devstack/services.mjs`:
+no credentials, no TLS, sender `no-reply@bicii.test`) and fetches its email
+templates from it (`GOTRUE_MAILER_TEMPLATES_*` point at
+`/templates/<name>.html`, served from `supabase/templates`). The devstack's
+Auth also gets 6-digit codes valid for 600 s (`GOTRUE_MAILER_OTP_*`), a 1 s
+per-address interval and local-only rate limits of 100000
+(`GOTRUE_RATE_LIMIT_EMAIL_SENT`, `_VERIFY`, `_OTP`, `_TOKEN_REFRESH`) so
+E2E can sign in hundreds of times. Messages are kept in `.devstack/mail/`
+as `<id>.json` (parsed) and `<id>.eml` (raw); ids keep increasing across
+restarts and the newest 1000 are kept.
+
+| Request | Answer |
+|---|---|
+| `GET /health` | `{ok:true}` |
+| `GET /messages?to=&after=&limit=` | `{messages:[…]}`, newest first: id, receivedAt, envelopeFrom, envelopeTo, from, to, subject, code |
+| `GET /messages/latest?to=&after=` | the newest full message (adds text and html) to that recipient with id > after, else 404 `{error:'not_found'}` |
+| `GET /messages/:id`, `GET /messages/:id/raw` | one message as JSON, or its raw `.eml` |
+| `DELETE /messages[?to=]` | `{deleted:n}` |
+| `GET /templates/<name>.html` | a template file; only `^[a-z0-9_-]+\.html$`, anything else 404 |
+
+`to` matches the envelope recipients (RCPT TO), case-insensitively. `code`
+is the first standalone run of 6–10 digits in the text part, else in the
+tag-stripped HTML (`scripts/devstack/mail-parse.mjs`), so templates must
+not contain another run of six or more digits. By hand:
+`curl "http://127.0.0.1:${BICII_MAIL_HTTP_PORT:-8025}/messages/latest?to=admin@bicii.test"`.
+
+Tests read codes with `scripts/devstack/mail-client.mjs`: take
+`mailCursor(email)` before asking for a code, then
+`waitForCode({ to: email, after: cursor })` (or `waitForMessage` for the
+whole message; both poll every 200 ms for up to 15 s and name the address
+and mail URL when nothing arrives); `clearMail(to?)` deletes. The base URL
+is `BICII_MAIL_URL`, else the devstack's. With `supabase start`
+(`E2E_EXTERNAL_STACK=1`) set `BICII_MAIL_KIND=mailpit`: the client then
+reads Mailpit on :54324 through its documented API (`GET
+/api/v1/search?query=to:"<addr>"`, `GET /api/v1/message/<ID>`). That
+adapter is written from Mailpit's documentation and has **not been run**
+(no Docker here).
+
+Verification of the mail catcher step (2026-10-05, OTP phase step 1, in
+a second worktree with the ports moved by `BICII_*_PORT`):
+
+- `npm run devstack:stop && npm run devstack:start`: mail on its HTTP and
+  SMTP ports, then Auth, PostgREST, Storage, gateway; `devstack:status`
+  all ok: **pass**.
+- A code requested by hand (`POST /auth/v1/otp`, `create_user: false`)
+  arrived with subject "Your BICII sign-in code", our template and a
+  6-digit code; an unknown address got 422 `otp_disabled`: **pass**.
+- 40 rapid code requests for 40 new throwaway addresses: all 200, 40
+  emails, no 429: **pass**.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 71 files, 942
+  tests: **pass**.
+- `npm run test:e2e -- tests/e2e/auth.spec.ts` (global setup signs in with
+  a generated code and needs the mail catcher; the password form is still
+  the app's sign-in until the next step): 24 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
+Verification of the code sign-in step (2026-10-05, OTP phase step 2: the
+`/login` form asks for an emailed code, invites create no password, the
+password paths are gone), same worktree and ports:
+
+- Established on the devstack (Auth 2.178) before writing the specs: a
+  login made by `auth.admin.createUser` without a password stores the
+  bcrypt hash of a random secret (`$2a$10$…`, not `''` or NULL; the seed
+  now writes the same shape); a wrong code leaves the real one usable; an
+  email code's expiry is read from `auth.users.recovery_sent_at` (ageing
+  `auth.one_time_tokens.created_at` alone left the code valid); an unknown
+  email gets 422 `otp_disabled`.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 71 files, 951
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, every spec signing in with codes
+  from the mail catcher): 98 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
+Verification of the deactivation step (2026-10-05, OTP phase step 3:
+deactivation deletes the person's Auth sessions, PLAN D71; final sweep of
+the phase), same worktree and ports:
+
+- Established on the devstack before writing the specs: after the
+  trigger deletes the sessions, Auth 2.178 answers the old access token
+  with 403 `session_not_found` (supabase-js turns it into
+  `AuthSessionMissingError`) and the refresh token with
+  `refresh_token_not_found`; PostgREST still accepts the unexpired token
+  on its own. `staff-sessions.test.ts` fails (3 of its tests) with the
+  migration removed.
+- `npm run devstack:status` lists mail, auth, rest, storage and gateway,
+  all ok: **pass**.
+- The final sweep's grep (password, temporary, `SEED_PASSWORD`,
+  `signInWithPassword`, `grant_type=password`, "Change password",
+  "one-time password" over `src/`, `tests/`, `scripts/`, `supabase/`,
+  `docs/`, README and `.github/`) finds only generic secret handling,
+  `PGPASSWORD`/`POSTGRES_PASSWORD`, the `roles.sql` service-role
+  passwords, the invite's "No password needed." copy, Auth's own password
+  settings in `config.toml` and the devstack (commented: unused) and
+  history in these notes: **pass**.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 73 files, 960
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet): 98 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
+Verification of the review fixes (2026-10-05, OTP phase: per-address
+limit shown as sent, D70; the Admin's own sign-in limits, D72; the
+inactive-session 403 tests, D71; secure password change; devstack
+restarts on a changed configuration), same worktree and ports:
+
+- Established on the devstack before the fix (`POST /auth/v1/otp`,
+  `create_user: false`, twice in a row): an address with a login got 200
+  then 429 `over_email_send_rate_limit`, an unknown one 422 `otp_disabled`
+  both times.
+- `npm run devstack:start` after the change restarted every service whose
+  recorded configuration differed (here all five, none had a record yet);
+  a second run left all five running; with `rest` and `auth` marked stale
+  it restarted them and the services after them, gateway first: **pass**.
+  (Before stopping the clients first, a restarted PostgREST failed to bind
+  its port: TIME_WAIT from the gateway's connections.)
+- Mutation checks: with `guard()`'s `!staff.active` removed,
+  `session-guard.test.ts` (2 tests) and the E2E "hosted window" test
+  fail; with the per-address code classified as before, the E2E "asking
+  twice in a row" test fails: **pass** (both restored).
+- `npm run check`: **pass**. `npm run check:types` (fresh database):
+  **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 77 files, 986
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet): 102 tests: **pass**.
+- Hosted steps (password reset SQL, "Secure password change", Auth's
+  per-IP limits): **not run** (no hosted project; owner's step).
+
+Verification of the integration with main and purchasing (2026-10-06,
+`origin/feat/p7-purchasing` merged into `feat/auth-email-otp`; second
+worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
+
+- Before the gates: main's `tests/e2e/api.ts` `signInApi(email,
+  password)` (Auth's password grant, used by `appointments.spec.ts` and
+  `appointment-settings.spec.ts` for the admin and the seeded customer)
+  became `signInApi(email)` with a generated code; Chloe Lim's seeded
+  login got a random secret's hash. A grep over `src/`, `tests/`,
+  `scripts/` and `supabase/` for `SEED_PASSWORD`, `signInWithPassword`,
+  `grant_type=password` and `bicii-dev-password` finds only
+  `seed-logins.test.ts`, which asserts that the former password matches
+  no seeded login: **pass**.
+- `npm run db:reset`: 44 migrations, `44|20261005006000`, seed applied;
+  `npm run db:types`: no diff: **pass**.
+- `npm run check`: **pass**. `npm run check:types` (fresh database):
+  **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 111 files, 1585
+  tests (unit 56 / 686, database 55 / 899): **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, every spec signing in with codes):
+  152 passed in 18.2 min, no failures, flaky or skipped: **pass** (run
+  before `seed-logins.test.ts` and the documentation were added; neither
+  touches the app or the specs).
+- Docs link check: **pass** (counts in [NOW.md](../NOW.md)).
+- After the integration review fixes (the sign-in throttle's logged
+  `cause`, the stack test's wrong-key case, docs): `npm run check`
+  **pass**, `npm run check:types` **pass** (no diff),
+  `BICII_REQUIRE_STACK=1 npm test` 111 files / 1585 tests **pass**,
+  `npm run build` **pass**, `npm run test:e2e` 152 passed in 15.7 min
+  **pass** (the first run, while the other worktree's E2E suite shared the
+  CPUs, had 151 passed and 1 failed: the phone run of
+  `consignment.spec.ts` "a consigned bike is received…" timed out because
+  the click on "Void… the charge" right after "Charge added" did not open
+  the reason field; the rerun passed unchanged), docs link check **pass**.
+
 ## What is tested where
 
 ### Unit (SPEC §27.1)
@@ -177,6 +388,29 @@ are described in one place:
   function mirrored from the SQL, tested against the same fixtures).
 - Publication state machine transitions.
 - Permission resolution (`admin` implies all; inactive staff has none).
+- Staff sign-in codes (PLAN D10, D70): `otp.test.ts` (6 digits, 10
+  minutes, 60 s cooldown; `normaliseCode` drops spaces and hyphens from a
+  pasted code and refuses anything else; `resendSecondsLeft` rounds up and
+  never exceeds the cooldown; the countdown text) and
+  `sign-in-errors.test.ts` (asking for a code: Auth's per-address
+  `over_email_send_rate_limit` counts as sent, exactly like 422
+  `otp_disabled` for an unknown email and every other 4xx; per-IP
+  `over_request_rate_limit`, a bare 429 and outages say so; verifying:
+  every other 4xx is one invalid-code failure; the agreed messages).
+- The Admin's own sign-in limits (PLAN D72, `sign-in-limits.test.ts`):
+  the client address (first `x-forwarded-for` entry, else `x-real-ip`;
+  IPv6 per /64, IPv4-mapped as IPv4, ports dropped, anything else null),
+  buckets per client and per email holding SHA-256 digests (email
+  lower-cased; no address in clear; clients without an address share one
+  bucket), requests and verifications apart, the multiplier, and "over the
+  limit" only past it. `env.test.ts`: `SIGN_IN_LIMIT_MULTIPLIER` defaults
+  to 1 and takes whole numbers 1-100000.
+- The staff guard (PLAN D71, `session-guard.test.ts`, with Next's
+  `forbidden`/`redirect` and the Supabase client mocked): `authorizeStaff`,
+  `requireStaff` and `requireAdmin` answer 403 for an inactive person
+  whose session still verifies, even with no permission required and even
+  for an inactive admin; a login with no staff row is 403, a signed-out
+  caller goes to `/login`, active staff pass.
 - Label template rendering (QR payload is exactly the public URL).
 - Shopify payload mapping (variant → product; unmapped → structured error).
 - Short ID formatting and scanner URL parsing.
@@ -306,6 +540,20 @@ are described in one place:
   390 × 844 (the page never scrolls sideways, so nothing else catches a
   figure running into the next card), that "Right now" says "Awaiting
   collection", and that a `?day=` before `EARLIEST_SHOP_DAY` shows today.
+- OTP phase, the devstack mail catcher: `mail-parse.test.ts` (pure:
+  folded headers, RFC 2047 B and Q words, quoted-printable with soft
+  breaks, nested multipart with base64 and iso-8859-1 parts, attachments
+  skipped, raw 8-bit utf-8, `htmlToText`, `extractCode` taking only
+  standalone 6–10 digit runs from the text part, else the tag-stripped
+  HTML, never a colour or a digit inside a tag) and `mailcatcher.test.ts`
+  (node environment, ports 0, a temp directory: two messages on one raw
+  SMTP connection, pipelined and split mid-terminator, with a dot-stuffed
+  line and mixed-case recipients; EHLO without STARTTLS, AUTH PLAIN and
+  LOGIN, 503 / 502 / 252 replies, 552 above 10 MB with the connection kept;
+  `/messages/latest` with and without `after`, `/messages`, `/raw`,
+  `/templates` refusing traversal, ids continuing after a restart,
+  `DELETE`, and `mail-client.mjs` cursors, `waitForCode` and its timeout
+  error, `clearMail`).
 - Phase 2 (appointments, step 3): the slot mirror's parity with SQL
   (`appointment-slots.test.ts`): every `slotCases` case of
   `tests/fixtures/appointment-slot-cases.ts` through `availableSlots`
@@ -432,6 +680,9 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
+| The Admin's sign-in limits (PLAN D72) | `sign-in-throttle.test.ts`: `note_sign_in_attempt` adds one per bucket per call (a bucket named twice counts once) and returns the counts; a new window starts a new count, windows are aligned, counters older than a day are deleted; 6 concurrent committed calls count 6; anon and staff get 42501 on the function and the table, the service role on the table; malformed arguments (no, 0 or 9 buckets, an empty, null or 201-character key, a window under 60 s, over 3600 s or null) are 22023. Live: `sign-in-throttle.stack.test.ts` (above). |
+| No seeded login has a usable password (PLAN D10) | `seed-logins.test.ts`: every seeded staff login and the seeded customer login store a bcrypt hash (cost 10) that is not the shared local password the seed used before email codes, and no two share a hash. |
+| Deactivation ends Auth sessions (PLAN D71) | `staff-sessions.test.ts`, with sessions and refresh tokens inserted for mechanic1 and mechanic2: the admin deactivating mechanic2 (with a reason) deletes mechanic2's sessions and refresh tokens (with and without a session) and leaves mechanic1's; a replayed deactivation (with or without a reason) neither errors nor deletes; reactivation deletes nothing; a `manage_staff` holder who is not an admin deactivating a non-admin has the same effect; a refused deactivation (P0001 `reason_required`) leaves the sessions intact; a direct superuser `update staff set active = false` revokes too (false over false and updates of other columns do not); the migration's first statement passes for the migration role and fails, naming RUNBOOK, for a role without DELETE on `auth.sessions`. Live (`staff-sessions.stack.test.ts`): a throwaway staff login (admin API without a password, then `create_staff` as the admin) signs in with a code and is deactivated by the admin; Auth then answers its access token with 403 `session_not_found` (supabase-js: `AuthSessionMissingError`), its refresh token gets `refresh_token_not_found`, PostgREST still accepts the unexpired token but `my_staff_profile` says `active = false` (the hosted window), and a fresh code still verifies at Auth while `my_staff_profile` says `active = false`, which the Admin's `verifyCode` and `requireStaff` refuse. |
 | RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. Phase 3: a signed-in customer reads nothing of their own job (job, assignments, events, lines, line and totals views, services, categories, rates) and cannot call the workshop RPCs (42501); their projection is tested in `workshop-customer-access.test.ts` (row below). Phase 2 (`appointment-customer-access.test.ts`): a signed-in customer with their own booking reads zero rows from `appointments`, `appointment_events`, `appointment_types`, `shop_hours`, `closure_overrides`, `shop_settings` and `schedule_events`; `my_appointments()` returns only their own upcoming rows soonest first and `my_appointments(true)` the past ones after them, latest first, with exactly the `my_appointment` keys (D42: never `internal_note`, `cancellation_reason`, capacity units, source or actors); after the bike is archived or transferred (D12) its fields are NULL for them; `book_my_appointment` books for themselves only (source customer, their login), another customer's or an unknown bike → `appointment_bike_not_owned` with a neutral detail; `cancel_my_appointment` on someone else's id → NULL and nothing changes. |
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
 | Stable physical identity | bike short IDs are server-assigned `B-######`, increasing, unique, never client-supplied (42501) and immutable (`bike_short_id_immutable`). |
@@ -509,7 +760,10 @@ Harness (`playwright.config.mts`, `tests/e2e/`): Chromium only, two projects
 (so `.env.local` does not matter). `tests/e2e/global-setup.mts` resets and
 seeds the dev database, `PGDATABASE` (default `bicii_dev`; `E2E_RESET=0`
 skips), starts the devstack if needed, and waits until the
-seeded admin can sign in through the gateway and call `my_staff_profile`.
+seeded admin can sign in through the gateway and call `my_staff_profile`
+(with an email code: the service-role admin API generates it, Auth
+verifies it, no email is sent) and the mail catcher answers `GET /health`
+(skipped for `E2E_EXTERNAL_STACK=1` unless `BICII_MAIL_KIND` is set).
 Tests run serially (one shared database). The browser is
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when set, else `/opt/pw-browsers/chromium`
 when it exists (the build agent's container, where browsers are never
@@ -535,20 +789,78 @@ inherit it); specs use `seedAnchor()` and `anchorDay(n)` from
 `E2E_EXTERNAL_STACK=1` or a run across Singapore midnight the anchor is not
 today.
 
+Signing in (PLAN D10, D70; `tests/e2e/helpers.ts`): every spec signs in
+through the real `/login` form with an emailed code. `signIn(page, who,
+next?)` and `signInOnForm(page, who)` (seeded staff) and `signInAs(page,
+email, next?)` / `signInOnFormAs(page, email)` (any login) all end off
+`/login`. Underneath, `requestCodeOnForm(page, email)` takes a mail cursor
+(`mailCursor`) BEFORE pressing "Email me a code", expects "Check your
+email" and returns `waitForCode({ to, after: cursor })` from the mail
+catcher, so an older email to the same address is never used. Auth sends
+at most one email per address per second (`max_frequency` 1s, kept in the
+devstack and config.toml) and the Admin shows a refusal there as "Check
+your email" (D70), so the helper waits until 1.1 s have passed since this
+worker last asked for that address, and if no email arrives within 5 s it
+goes back with "Use a different email", waits again and asks again, up to
+5 times. The app runs with `SIGN_IN_LIMIT_MULTIPLIER=1000`
+(`playwright.config.mts`): the suite signs in hundreds of times from one
+address, past the Admin's own limits (D72), which the unit and stack
+tests cover. Specs reach the mail client through
+`tests/e2e/mail.ts` (a dynamic import: Playwright compiles specs to
+CommonJS) and the database through `tests/e2e/db.ts` (`sql()` on
+`devDatabaseUrl()`, for the two assertions no screen can make).
+
 Phase 0 specs (`auth.spec.ts`, `staff.spec.ts`): signed-out `/` redirects to
 `/login`; `?next=` deep links survive sign-in and cannot leave the origin
 (absolute, `//host`, `/\host`, dot segments such as `/.//host`, including
-the server-side redirect a signed-in visit to `/login` makes); wrong
-password gives one generic error; the admin lands on Today with the tab
-bar (phone) or rail (iPad); sign-out ends the session; mechanic2 gets a
-real 403 on `/settings/staff`; a permission the admin grants shows on
-mechanic2's profile and in the staff history (then is revoked), and on a
-phone the confirmation toast leaves the Scan tab tappable; a rejected
-invite keeps the typed name and email; an invited colleague signs in with
-the temporary password as active staff with no granted permissions (Today
-opens; `/settings/staff` is 403), must give the current password to change
-it, and when the admin deactivates them (a reason is required and shows in
-their history) their open session loses access.
+the server-side redirect a signed-in visit to `/login` makes); an unknown
+email (`e2e-unknown-<project>-<time>@bicii.test`) gets exactly the "Check
+your email" text a staff email gets (compared with the address
+substituted), no `auth.users` row and no email within 2 s; a wrong code
+(a six-digit value that differs from the real one) gets the one
+invalid-code message, keeps the email, is not echoed and puts focus back
+on Code, and the real code (pasted as "123 456") then signs in (Auth
+2.178 does NOT void a code after a wrong attempt); an expired code is
+refused (the spec moves `auth.users.recovery_sent_at` back 11 minutes:
+for an email code to an existing confirmed login Auth 2.178 times the
+code from `recovery_sent_at` and ignores `auth.one_time_tokens.created_at`,
+established on the devstack by ageing each separately); a used code is
+refused in a second browser context that asked for a newer code; "Send a
+new code" is disabled with a live countdown ("Send a new code in 0:59"),
+"Use a different email" returns to the email step with the email kept
+and focused, and after the countdown (the page clock fast-forwarded)
+"Send a new code" announces "We've sent a new code.", restarts the
+countdown, and only the newest code works; a confirmed login with no
+staff row gets the not-staff message after its code and keeps no session;
+the admin lands on Today with the tab bar (phone) or rail (iPad);
+sign-out ends the session; mechanic2 gets a real 403 on
+`/settings/staff`; asking twice in a row ("Use a different email", then
+the same address) gives an address with a login and an unknown address
+the same "Check your email" screen both times (the main region's markup
+compared with the address, React ids and countdown digits normalised,
+plus the focused field), while Auth's per-address interval is held open
+for the login (`recovery_sent_at` set ahead; a direct `/otp` call then
+gets 429 `over_email_send_rate_limit`, D70); a permission the admin grants shows on mechanic2's
+profile and in the staff history (then is revoked), and on a phone the
+confirmation toast leaves the Scan tab tappable; a rejected invite keeps
+the typed name and email; the invite's success view says how to sign in
+and shows no credential; the invited colleague (unique per project and
+run) signs in with an emailed code as active staff with no granted
+permissions (Today opens; `/settings/staff` is 403), and when the admin
+deactivates them (a reason is required and shows in their history) their
+open session ends at once (PLAN D71: the deactivation deleted their Auth
+sessions, and on the devstack's HS256 keys `getClaims` asks Auth, so their
+next navigation lands on `/login?next=…`); they can still ask for a code
+and see the same "Check your email" screen, but after typing the emailed
+code they stay on `/login` with the not-staff message, and `/` still
+redirects to `/login`. The hosted window of D71 is driven too: a second
+invited colleague signs in, is deactivated with `staff_revoke_sessions`
+disabled inside that one transaction (`sqlTransaction` in
+`tests/e2e/db.ts`), so their session still verifies at Auth, and `/` and
+`/settings/profile` (no permission needed) show the 403 page ("403 · No
+access", "You can't open this") and none of their data. The HTTP status
+is not asserted there: a page whose shell has started streaming keeps
+200 (Next's `forbidden()` docs).
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
 tag made of the project name and a timestamp, so the phone and iPad runs and
@@ -726,12 +1038,17 @@ exceptions are relative to it): J-000017 overdue and J-000016 waiting for
 collection, each opening its job.
 
 Phase 2 spec (`appointments.spec.ts`, step 3; API helpers in
-`tests/e2e/api.ts`: `signInApi(email, password)` through the gateway's
-Auth, `rpc(token, name, args)` and `select(token, pathAndQuery)` through
-PostgREST as that user, throwing with PostgREST's error; global setup
-hands them the gateway URL and anon key as `E2E_GATEWAY_URL` /
-`E2E_ANON_KEY`, because specs load as CommonJS and cannot import
-`scripts/devstack/config.mjs`). These tests use the live shop day
+`tests/e2e/api.ts`: `signInApi(email)` signs in with an email code
+without sending email (the service-role admin API generates it, Auth
+verifies it, as `tests/db/stack.ts` `otpClient` does; it tells the UI
+helper the address just had a code, so the next form request waits out
+Auth's per-address interval), `rpc(token, name, args)` and
+`select(token, pathAndQuery)` through PostgREST as that user, throwing
+with PostgREST's error; global setup hands them the gateway URL and keys
+as `E2E_GATEWAY_URL`, `E2E_ANON_KEY` and `E2E_SERVICE_ROLE_KEY`, because
+specs load as CommonJS and cannot import `scripts/devstack/config.mjs`.
+Until the email sign-in integration (2026-10-06) it used Auth's password
+grant with the shared seed password; no password path remains). These tests use the live shop day
 (`shopToday()`), not the seed's anchor: a customer books ahead of now.
 `beforeAll`, as the admin through the API and idempotent for the second
 project or a retry, sets the online notice to 0 and the capacity to 4,
@@ -770,8 +1087,7 @@ accessible name starts with the booked time and Chloe Lim, "Still
 expected" is at least 1, and Arrived is read; after check-in Today's
 Arrived is exactly one higher (read before and after with `readCount`,
 never absolute counts, D41) and the booking left the arrivals list. Chloe
-Lim (`CUSTOMER_LOGIN.chloe`, the seed password in
-[ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)) is the one
+Lim (`CUSTOMER_LOGIN.chloe`, signed in with `signInApi`, an email code) is the one
 seeded customer login, used here and in the customer-access tests. "Staff
 book for a customer and capacity closes the slot": mechanic2 (no
 permissions), on the first Tuesday at least 21 days after `shopToday()`
@@ -963,8 +1279,8 @@ one job are listed (a bike awaiting collection may take a newer job).
 Since Phase 2 the seed also holds the shop's schedule (settings, weekly
 hours with an inactive Monday and a split Saturday, four appointment types
 with one staff-only, two closures within 14 days), **one customer login**
-(Chloe Lim, `CUSTOMER_LOGIN.chloe`: chloe.lim@example.com with the local
-password, linked to `CUSTOMER.chloe`, for E2E journey 2 and read-only
+(Chloe Lim, `CUSTOMER_LOGIN.chloe`: chloe.lim@example.com, no usable
+password like every seeded login, `seed-logins.test.ts`; linked to `CUSTOMER.chloe`, for E2E journey 2 and read-only
 customer checks) and nine appointments from three days back to at most 14
 days ahead (`APPOINTMENT`; Tan's linked to J-000014 and completed with it).
 `SEED_DAYS` carries their D41 counts. Guarantees other tests rely on,
@@ -1019,7 +1335,10 @@ fine).
   so a label can never post skipped required checks): `npx playwright install --with-deps chromium`, the devstack on the
   service database, then `npm run test:e2e` (production build on :3100,
   phone + iPad projects, one retry in CI). On failure the HTML report,
-  traces and devstack logs are uploaded as an artifact.
+  traces, devstack logs and the mail catcher's messages (`.devstack/mail/`,
+  local codes only) are uploaded as an artifact. `devstack:start` brings the
+  mail catcher up in both workflows; `ci.yml`'s "Devstack logs" step prints
+  `mail.log` with the others.
 
 Secrets in CI: none. E2E runs against the devstack (real Supabase Auth,
 PostgREST and Storage with the local demo keys), not staging, so it works

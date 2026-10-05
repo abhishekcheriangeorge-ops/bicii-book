@@ -4,14 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { formatClock } from "../../src/lib/appointments/format";
 import { shiftShopDay, shopToday } from "../../src/lib/dates";
-import {
-  APPOINTMENT_TYPE,
-  BIKE,
-  CUSTOMER,
-  CUSTOMER_LOGIN,
-  SEED_PASSWORD,
-  STAFF_EMAIL,
-} from "../fixtures/ids";
+import { APPOINTMENT_TYPE, BIKE, CUSTOMER, CUSTOMER_LOGIN, STAFF_EMAIL } from "../fixtures/ids";
 import { rpc, select, signInApi } from "./api";
 import { clearDay, pickTime, readCount, section, signIn, tagFor, toast } from "./helpers";
 
@@ -73,7 +66,7 @@ async function cancelLeftovers(token: string) {
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
-  adminToken = await signInApi(STAFF_EMAIL.admin, SEED_PASSWORD);
+  adminToken = await signInApi(STAFF_EMAIL.admin);
   await rpc(adminToken, "update_shop_settings", {
     booking_min_notice_minutes: 0,
     intake_capacity_units: 4,
@@ -83,7 +76,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  const token = adminToken || (await signInApi(STAFF_EMAIL.admin, SEED_PASSWORD));
+  const token = adminToken || (await signInApi(STAFF_EMAIL.admin));
   await rpc(token, "update_shop_settings", {
     booking_min_notice_minutes: 120,
     intake_capacity_units: 2,
@@ -109,7 +102,7 @@ test("Journey 2: a customer's booking is arrived, checked in and becomes a linke
   const note = `Gears skipping ${tag}`;
 
   // The customer books online (the public site's job from Phase 11) through the API.
-  const chloe = await signInApi(CUSTOMER_LOGIN.chloe.email, SEED_PASSWORD);
+  const chloe = await signInApi(CUSTOMER_LOGIN.chloe.email);
   const slots = await rpc<Array<{ slot_start: string; remaining_units: number | null }>>(
     chloe,
     "available_slots",
@@ -404,7 +397,7 @@ test("The week agenda keeps every day's rows inside its column and flags online 
       appointment_id: staffId,
       status: "confirmed",
     });
-    const chloe = await signInApi(CUSTOMER_LOGIN.chloe.email, SEED_PASSWORD);
+    const chloe = await signInApi(CUSTOMER_LOGIN.chloe.email);
     await rpc(chloe, "book_my_appointment", {
       appointment_id: onlineId,
       appointment_type_id: APPOINTMENT_TYPE.serviceDropOff,

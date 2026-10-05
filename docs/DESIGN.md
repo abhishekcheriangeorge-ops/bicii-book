@@ -242,6 +242,38 @@ upload itself, below).
 | `CameraPermission` (`camera-permission.tsx`) | The camera's state when there is no picture: Phase 0's messages (checking, allow, allowed, blocked with the iPhone Settings path, unsupported) plus "needs a secure connection" and "would not start", with "Allow camera" / "Try again" where pressing helps. `cameraErrorState` maps getUserMedia errors onto them. |
 | `Scanner` (`scanner.tsx`) | The Scan screen; see "Scanning" below. |
 
+### Sign-in
+
+- **`/login`** (`src/app/(auth)/login/`, PLAN D10, D70): two steps on one
+  page, no navigation between them, so it behaves the same in a browser
+  tab and in the installed app (codes, never links). Step 1: Email
+  (`autocomplete="email"`, email keyboard) and "Email me a code". Step 2:
+  "Check your email", "If {email} belongs to BICII staff, we've emailed a
+  6-digit code. It expires in 10 minutes." (identical for unknown and staff
+  emails), Code (`inputMode="numeric"`, `autocomplete="one-time-code"` so
+  iOS offers the code from Mail; a pasted "123 456" is accepted), "Sign
+  in", "Send a new code" (disabled with a live "Send a new code in 0:59"
+  countdown for 60 s after each send, counted on the device's clock; a
+  resend says "We've sent a new code." in a polite status) and "Use a
+  different email" (back to step 1, email kept). One action state for both
+  steps (`signInStep` routes on `intent`), every form carries `next`.
+  Errors show in one `role="alert"` above the step. Only an error about
+  what was typed marks the field `aria-invalid` and points its
+  `aria-describedby` at the alert: an email that is not an email, an
+  email without access ("This email doesn't have access to BICII Admin.
+  Ask an admin to invite or reactivate you."), a missing or malformed
+  code, a refused code. "Too many attempts. Wait a minute and try again."
+  and "Sign-in is unavailable right now…" mark nothing, because retyping
+  cannot help. Focus goes to Code when step 2 opens or a code is refused,
+  and to Email after an error there, either way. Asking again for an
+  address Auth will not email yet (its per-address interval) shows "Check
+  your email" exactly as for any other address (D70). The code is never
+  echoed back. Under the form: "No access? Ask an admin to invite or
+  reactivate you in Settings → Staff." Full-width 56px primary buttons, 48px secondary ones.
+- **Invites** (Settings → Staff → Invite): the success view says "{email}
+  can now sign in." and how (the email, then the emailed code; no password
+  to hand over), with "Invite another" and "Set permissions".
+
 ### Inventory
 
 - **Screens.** `/inventory` (search by P- number, SKU, name or brand;

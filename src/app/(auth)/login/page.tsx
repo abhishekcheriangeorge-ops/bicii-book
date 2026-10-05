@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       </div>
       <LoginForm next={nextPath === "/" ? undefined : nextPath} />
       <p className="text-sm text-dust-500">
-        No account? Ask an admin to invite you from Settings → Staff.
+        No access? Ask an admin to invite or reactivate you in Settings → Staff.
       </p>
     </div>
   );

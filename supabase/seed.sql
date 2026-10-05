@@ -5,8 +5,10 @@
 -- tests/fixtures/ids.ts, so tests never query by name. Applied to local and
 -- preview databases only; NEVER to production.
 --
--- Phase 0 contents: three staff with working Supabase Auth logins, all with
--- the local-only password `bicii-dev-password`:
+-- Phase 0 contents: three staff with working Supabase Auth logins. They have
+-- no usable password (PLAN D10): sign in with a code emailed to the address,
+-- which the devstack's mail catcher shows (docs/ENGINEERING.md, "Clean
+-- checkout to running application", says how to read a code). The logins:
 --   admin@bicii.test      role admin (implies every permission)
 --   mechanic1@bicii.test  role staff, view_costs
 --   mechanic2@bicii.test  role staff, no permissions
@@ -52,7 +54,7 @@
 -- public_site_url http://localhost:4000; Tuesday-Friday 10:00-19:00, a split
 -- Saturday, a short Sunday, Mondays closed), four appointment types (one
 -- staff-only), two closures within the next 14 days, Chloe Lim's customer
--- login (chloe.lim@example.com, the same local password) and nine
+-- login (chloe.lim@example.com, no usable password either) and nine
 -- appointments from 3 days ago to at most 14 days ahead, one in each
 -- interesting status; Tan's is linked to J-000014 (D40) and completed with
 -- it (D36). Today and the daily summary count them by D41.
@@ -101,7 +103,11 @@ select
   'authenticated',
   'authenticated',
   u.email,
-  extensions.crypt('bicii-dev-password', extensions.gen_salt('bf')),
+  -- What auth.admin.createUser writes for a login created without a
+  -- password (Auth v2.178): the bcrypt hash of a random secret nobody knows.
+  extensions.crypt(
+    encode(extensions.gen_random_bytes(48), 'base64'), extensions.gen_salt('bf', 10)
+  ),
   now(), null,
   '{"provider": "email", "providers": ["email"]}'::jsonb,
   jsonb_build_object('display_name', u.display_name),
@@ -1790,8 +1796,9 @@ values
    '12:00', '16:00', 'Short day for stocktake', '5a000000-0000-4000-8000-000000000001',
    pg_temp.seed_at(6, '18:35'));
 
--- Chloe Lim's customer login (the staff logins' shape; E2E journey 2 and
--- the customer-access tests sign in as her).
+-- Chloe Lim's customer login (the staff logins' shape, so no usable
+-- password: PLAN D10; E2E journey 2 and the customer-access tests sign in as
+-- her with an email code).
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, last_sign_in_at,
@@ -1806,7 +1813,10 @@ insert into auth.users (
   'authenticated',
   'authenticated',
   'chloe.lim@example.com',
-  extensions.crypt('bicii-dev-password', extensions.gen_salt('bf')),
+  -- The bcrypt hash of a random secret nobody knows, as for the staff.
+  extensions.crypt(
+    encode(extensions.gen_random_bytes(48), 'base64'), extensions.gen_salt('bf', 10)
+  ),
   now(), null,
   '{"provider": "email", "providers": ["email"]}'::jsonb,
   jsonb_build_object('display_name', 'Chloe Lim'),

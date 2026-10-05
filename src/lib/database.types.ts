@@ -4430,6 +4430,13 @@ export type Database = {
           status: Database["public"]["Enums"]["customer_job_status"];
         }[];
       };
+      note_sign_in_attempt: {
+        Args: { buckets: string[]; window_seconds: number };
+        Returns: {
+          bucket_key: string;
+          hit_count: number;
+        }[];
+      };
       operational_exceptions: {
         Args: { max_rows?: number };
         Returns: {

@@ -9,8 +9,6 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { PERMISSION_LABELS } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 
-import { PasswordForm } from "./password-form";
-
 export const metadata: Metadata = { title: "Your profile" };
 
 export default async function ProfilePage() {
@@ -44,9 +42,6 @@ export default async function ProfilePage() {
             ))}
           </ul>
         )}
-      </Card>
-      <Card title="Password">
-        <PasswordForm />
       </Card>
       <form action={signOut}>
         <SubmitButton

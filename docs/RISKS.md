@@ -78,8 +78,11 @@ URLs, or customer data in this file.
   - `supabase/devstack/roles.sql` recreates the platform roles and default
     grants that hosted Supabase provides;
   - Auth settings in `scripts/devstack/services.mjs` (sign-up enabled,
-    mailer autoconfirm, no SMTP, password minimum 6) differ from the hosted
-    settings RUNBOOK prescribes (sign-ups off, minimum 12);
+    mailer autoconfirm, mail to the local catcher instead of an SMTP
+    provider, a 1-second per-address interval and raised rate limits) differ
+    from the hosted settings RUNBOOK prescribes (sign-ups off, custom SMTP,
+    60 seconds, sized limits;
+    [R-039](#r-039--hosted-email-delivery-and-auth-settings-are-unverified));
   - the devstack and CI run Postgres 16, `supabase/config.toml` sets
     `major_version = 17` for the Docker CLI, and the hosted version is
     unknown;
@@ -106,32 +109,29 @@ URLs, or customer data in this file.
 ## R-004 — Staff sign-in change pending (email OTP)
 
 - Category: deliberate shortcut / unverified assumption.
-- Status and owner: open; owner (decision), build agent (integration).
-- Trigger: any staff invitation on this branch.
-- Impact: the owner changed staff sign-in to Supabase email OTP on
-  2026-10-05 (recorded as D10 here). This branch still uses email +
-  password, and the inviter sees the new login's temporary password, so a
-  manager could keep a second login at their own permission level (D11's
-  residual risk). OTP is being built on the parallel track and is not on
-  this branch. RUNBOOK's hosted Auth steps describe the password settings
-  and will need revising when OTP merges. Hosted email delivery (SMTP),
-  which OTP needs, is not configured anywhere.
-- Evidence and confidence: high for the current behaviour
-  (`src/app/(staff)/settings/staff/new/invite-form.tsx` shows the
-  temporary password). The OTP work is on `feat/auth-email-otp` (4b3eadd,
-  local and on origin, equal; checked out in the second worktree
-  `bicii-book-wt`), not on this branch; it was not inspected or verified
-  here. Whether OTP removes the residual risk is unverified.
-- Why accepted: MVP default ([ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).
-- Workaround or containment: only admins and trusted `manage_staff` holders
-  invite; the D11 ceiling limits what an inviter can grant.
-- Next action: owner confirms that the note "D11 changed (staff email OTP)"
-  meant the sign-in method (D10 on this branch) and that the D11 ceiling
-  stays; integrate the OTP work, revise RUNBOOK's hosted Auth steps, and
-  configure SMTP for staging.
-- Revisit trigger: the OTP branch is integrated into this line.
-- Last checked: 2026-10-05 (Phase 6 review fixes), `git for-each-ref
-  refs/heads refs/remotes`, `git worktree list`, the invite form.
+- Status and owner: closed 2026-10-06 by the integration of
+  `feat/auth-email-otp` into this line; what remains is tracked in R-035 to
+  R-039.
+- Trigger: any staff invitation (before the integration).
+- Impact (as recorded on 2026-10-05): the owner changed staff sign-in to
+  Supabase email OTP; this line still used email + password and the
+  inviter saw the new login's temporary password (D11's residual risk).
+- Resolution: staff now sign in with emailed codes (D10 rewritten,
+  D70–D72, [ADR-019](decisions/ADR-019-staff-email-sign-in.md)); invites
+  create no password and show none; RUNBOOK's hosted Auth step describes
+  SMTP, the code templates, the rate limits and the REQUIRED password reset
+  for logins created before the switch
+  ([R-035](#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset));
+  hosted email delivery is still unverified
+  ([R-039](#r-039--hosted-email-delivery-and-auth-settings-are-unverified)).
+  The owner's note "D11 changed" is read as the sign-in method, as the
+  orchestrator's owner-decision list records.
+- Evidence: `tests/e2e/auth.spec.ts`, `tests/e2e/staff.spec.ts`,
+  `tests/db/stack.smoke.test.ts`, `tests/db/seed-logins.test.ts`; no test
+  or helper signs in with a password (`grep` for the password grant and
+  `signInWithPassword` finds none, 2026-10-06).
+- Last checked: 2026-10-06, merge of `origin/feat/p7-purchasing` into
+  `feat/auth-email-otp`.
 
 ## R-005 — Cost-pending lines overstate yield and Cult Commons
 
@@ -250,8 +250,11 @@ URLs, or customer data in this file.
   rebase) with every conflict resolved keeping both sides, `staff_search`
   carrying both tracks' kinds, and the seed's Phase 7 part after Phase 6's.
   That integration is local only until pushed, and its PR (#9) still has
-  to be reviewed and merged. The email OTP work (`feat/auth-email-otp`)
-  and labels (`feat/p8-labels`, on the other worktree) are not on `main`
+  to be reviewed and merged. The email sign-in work (`feat/auth-email-otp`,
+  PR #10, forked from Phase 5's head) now has `origin/feat/p7-purchasing`
+  merged into it (2026-10-06, a merge commit, local only), so PR #10 is
+  main + purchasing + email codes and merges after #9. Labels
+  (`feat/p8-labels`) and Shopify, on the other worktree, are not on `main`
   yet.
 - Evidence and confidence: high; `git log --oneline origin/main`,
   `git merge-base` before the merge (d3e2101) and the merge commit's two
@@ -259,10 +262,11 @@ URLs, or customer data in this file.
   [NOW.md](../NOW.md).
 - Workaround or containment: each integration reruns every gate on the
   merged tree.
-- Next action: push `feat/p7-purchasing`, let CI and the `e2e` label run on
-  PR #9, merge it; then integrate OTP and labels the same way.
-- Revisit trigger: PR #9 merges.
-- Last checked: 2026-10-05.
+- Next action: push `feat/p7-purchasing` and `feat/auth-email-otp`, let CI
+  and the `e2e` label run on PRs #9 and #10, merge #9 then #10; then
+  integrate labels the same way.
+- Revisit trigger: PR #9 or #10 merges.
+- Last checked: 2026-10-06.
 
 ## R-010 — E2E is not a required check, and branch protection is unverified
 
@@ -365,19 +369,21 @@ URLs, or customer data in this file.
 - Category: security concern (non-exploitable summary).
 - Status and owner: mitigated by procedure; operator.
 - Trigger: running `supabase/seed.sql` on a hosted project.
-- Impact: the seed creates staff logins and one customer login whose
-  shared password is published: in the docs only in
-  [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)
-  (other docs link there), and in the public code (`supabase/seed.sql`,
-  `scripts/devstack/db.mjs`, `tests/fixtures/ids.ts`). Seeding a hosted
-  project would therefore open it to anyone.
-- Evidence and confidence: high; RUNBOOK "Hosted Supabase projects" step 5
-  says never to run it on a hosted project.
+- Impact: the seed creates staff logins (one of them an admin) and one
+  customer login at published `.test` and `example.com` addresses, with
+  fixed, published UUIDs. Since email codes (D10) none of them has a usable
+  password (the hash of a random secret), so on a hosted project they
+  would open nothing by themselves, but a seeded admin row would be an
+  admin whose mailbox the shop does not control, and the demo data would
+  mix with the shop's.
+- Evidence and confidence: high; `tests/db/seed-logins.test.ts`; RUNBOOK
+  "Hosted Supabase projects" step 5 says never to run the seed on a hosted
+  project.
 - Workaround or containment: create the first hosted admin as RUNBOOK
   describes.
 - Next action: follow RUNBOOK when the first hosted project is created.
 - Revisit trigger: R-001.
-- Last checked: 2026-10-05, RUNBOOK.
+- Last checked: 2026-10-06, RUNBOOK, `supabase/seed.sql`.
 
 ## R-016 — No retention or deletion policy for customer personal data
 
@@ -823,3 +829,131 @@ URLs, or customer data in this file.
   the exception to hide costs (a buyer would then order blind).
 - Revisit trigger: the staff roles land, or the owner objects.
 - Last checked: 2026-10-05.
+
+## R-035 — Logins created before email codes keep a known password until the pre-deploy reset
+
+- Category: security concern (non-exploitable summary; D10, D11).
+- Status and owner: mitigated by procedure; operator.
+- Trigger: deploying the release that switches sign-in to codes on a
+  project whose staff logins were created by the old password flow.
+- Impact: the Admin has no password form, but Supabase Auth's password
+  grant stays callable with the public anon key while the Email provider
+  is on (codes need it). A login invited before the switch has the
+  temporary password its inviter saw, so the inviter could still sign in
+  as that person, which was D11's residual risk. Nothing is hosted yet
+  (R-001), so no such login exists outside developer machines; the local
+  seed's logins already have no usable password.
+- Evidence and confidence: high for the mechanism (`tests/db/stack.smoke.test.ts`
+  shows the seeded logins have no usable password; RUNBOOK "Hosted
+  Supabase projects" step 2 holds the reset); the reset SQL itself has not
+  run on a hosted project.
+- Workaround or containment: RUNBOOK's REQUIRED step replaces every staff
+  login's password with the hash of a random secret and ends their
+  sessions, after SMTP works and before the code release is deployed.
+- Next action: run the step on each hosted project when it exists and
+  record the row count.
+- Revisit trigger: the first hosted project (R-001).
+- Last checked: 2026-10-06, RUNBOOK, `supabase/seed.sql`.
+
+## R-036 — Auth's password grant and password change stay reachable
+
+- Category: security concern (non-exploitable summary; D10).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: anyone holding a staff session, or Auth's API called directly
+  with the public anon key.
+- Impact: Supabase Auth serves codes and passwords through one Email
+  provider, so its password grant and its password change endpoint stay
+  on even though the Admin offers neither. With "Secure password change"
+  on (config.toml `secure_password_change`, the devstack's
+  `GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION`, RUNBOOK's
+  hosted step), setting a password needs an emailed nonce once a session is
+  more than 24 hours old; a session younger than 24 hours can set one
+  without it. Someone who set a password could later sign in without the
+  mailbox. Deactivation still blocks them (D71: `requireStaff`, RLS and the
+  RPC guards check `staff.active`).
+- Evidence and confidence: high; `tests/db/stack.smoke.test.ts` ("setting
+  a password needs reauthentication once a session is a day old").
+- Why accepted: the Email provider cannot serve codes without also
+  serving passwords; staff are trusted with their own login.
+- Workaround or containment: keep "Secure password change" on; deactivate
+  people who leave.
+- Next action: revisit if Supabase allows codes without the password grant,
+  or if the owner wants passwords disabled by an Auth hook.
+- Revisit trigger: an Auth version bump; the staff roles (D90–D99).
+- Last checked: 2026-10-06, `scripts/devstack/services.mjs`,
+  `supabase/config.toml`.
+
+## R-037 — Auth's OTP endpoint reveals whether an address has a login
+
+- Category: security concern (non-exploitable summary; D70).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: a direct call to Supabase Auth's code request with the public
+  anon key.
+- Impact: Auth answers an unknown email differently from one with a login,
+  so a direct API caller can learn whether an address has a login. The
+  Admin's screens never show it (an unknown email gets the same "Check your
+  email" screen and no account is created), and staff addresses are not
+  secret.
+- Evidence and confidence: high; `src/lib/auth/sign-in-errors.ts`
+  (`otp_disabled` treated as sent), `tests/unit/sign-in-errors.test.ts`,
+  `tests/e2e/auth.spec.ts`.
+- Why accepted: it is Auth's behaviour, outside the Admin's control.
+- Workaround or containment: none needed for staff addresses.
+- Next action: revisit before Phase 11 signs customers in, whose addresses
+  may be private.
+- Revisit trigger: Phase 11; an Auth version that changes the answer.
+- Last checked: 2026-10-06.
+
+## R-038 — A visitor who knows a staff email can delay its sign-in
+
+- Category: security concern (non-exploitable summary; D72).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: repeated code requests or verifications for one staff email, or
+  from many client addresses at once.
+- Impact: the Admin's own per-email limits (D72) can be used up by someone
+  who knows the address, keeping its owner waiting up to 5 minutes at a
+  time; many client addresses together can still fill Auth's shared
+  per-IP limit, which counts the Admin's server. The per-client limits
+  rely on the host setting the client's address in `x-forwarded-for` and
+  overwriting what the client sent (Vercel does; another host might not).
+- Evidence and confidence: high for the design (`src/lib/auth/sign-in-limits.ts`,
+  `tests/unit/sign-in-limits.test.ts`, `tests/db/sign-in-throttle.test.ts`);
+  never observed in use.
+- Why accepted: MVP; the window is short and staff can ask an admin.
+- Workaround or containment: Auth's hosted per-IP limits sized well above
+  the Admin's (RUNBOOK); logs show `auth.request_code` warnings.
+- Next action: revisit if it is ever observed, or before moving off
+  Vercel.
+- Revisit trigger: a report of locked-out staff; a hosting change.
+- Last checked: 2026-10-06.
+
+## R-039 — Hosted email delivery and Auth settings are unverified
+
+- Category: unverified assumption / operational gap (D10, D70, D71).
+- Status and owner: open; owner (SMTP provider and hosted projects), build
+  agent (procedure).
+- Trigger: the first hosted project; any change of mail provider.
+- Impact: without working email nobody can sign in. The hosted SMTP
+  provider, the code-only templates, OTP length and expiry, the
+  per-address interval, Auth's per-IP limits, sign-ups off and "Secure
+  password change" are described in RUNBOOK but never applied. The
+  session-revocation migration needs DELETE on Auth's session tables and
+  refuses to apply without it, and a project that verifies JWTs locally
+  accepts an access token already issued for up to `jwt_expiry` after
+  deactivation (the guards refuse it). The Docker CLI path
+  (`BICII_MAIL_KIND=mailpit`, Mailpit) was written from Mailpit's API
+  documentation and has never run (no Docker here). Every sign-in also
+  needs `SUPABASE_SERVICE_ROLE_KEY` (the D72 counters run first), so a
+  missing or wrong key in Vercel locks everyone out while Auth's own log
+  looks healthy; the login actions log the cause (`limit: "admin"`,
+  `cause`), and RUNBOOK's deploy and rotation steps now end with a code
+  sign-in from a fresh browser (2026-10-06 review).
+- Evidence and confidence: high for absence (R-001); the devstack path is
+  covered by `tests/db/stack.smoke.test.ts` and `tests/e2e/auth.spec.ts`
+  through the mail catcher.
+- Workaround or containment: RUNBOOK says to test SMTP with the owner's own
+  address before deploying the code release.
+- Next action: owner chooses an SMTP provider; the build agent follows
+  RUNBOOK step 2 against staging and records what differs.
+- Revisit trigger: R-001.
+- Last checked: 2026-10-06, RUNBOOK.

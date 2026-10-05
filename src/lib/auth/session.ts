@@ -64,6 +64,15 @@ async function readStaff(supabase: ServerSupabase): Promise<StaffDTO | null> {
 }
 
 /**
+ * The staff record of whoever `supabase` is signed in as (readStaff), for
+ * the sign-in action: right after a code is verified, it admits only
+ * active staff (PLAN D70). Null when the login is not staff.
+ */
+export async function readStaffProfile(supabase: ServerSupabase): Promise<StaffDTO | null> {
+  return readStaff(supabase);
+}
+
+/**
  * The verified signed-in user, or null.
  *
  * Memoised with React cache(), which deduplicates only while a Server

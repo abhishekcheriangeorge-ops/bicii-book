@@ -25,7 +25,7 @@ Not run:
 - docs/ENGINEERING.md / docs/TESTING.md:
 - docs/OPERATIONS.md / docs/RUNBOOK.md:
 - docs/RISKS.md:
-- docs/PLAN.md §6: new D-number (D43–D59 on the main line) and its record, or none
+- docs/PLAN.md §6: new D-number from the track's allocated range (AGENTS.md item 2) and its record, or none
 - Business semantics (AGENTS.md, "Rules that are not negotiable"): unchanged, or the change and why
 
 ## Release considerations

@@ -23,7 +23,7 @@ export default async function SettingsPage() {
     {
       href: "/settings/profile",
       label: "Your profile",
-      description: "Role, permissions, password and sign out",
+      description: "Role, permissions and sign out",
       icon: UserIcon,
     },
     ...(hasPermission(staff, "manage_staff")

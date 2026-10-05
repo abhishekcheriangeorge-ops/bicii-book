@@ -1,11 +1,6 @@
 import "server-only";
 
-import {
-  LoginExistsError,
-  WeakPasswordError,
-  createStaffLogin,
-  deleteStaffLogin,
-} from "@/lib/admin/staff-logins";
+import { LoginExistsError, createStaffLogin, deleteStaffLogin } from "@/lib/admin/staff-logins";
 import {
   isPermissionKey,
   permissionChangeBlocker,
@@ -96,16 +91,16 @@ export async function listStaffHistory(
 }
 
 export type InviteInput = { displayName: string; email: string; role: StaffRole };
-export type InviteResult = { staffId: string; email: string; temporaryPassword: string };
+export type InviteResult = { staffId: string; email: string };
 
 /**
  * Invite a colleague: create their Supabase Auth login (service-role admin
- * API, src/lib/admin) with a one-time temporary password, then link the
- * staff row through create_staff AS THE INVITING USER, so the database
- * checks manage_staff (and admin-only for admins) itself and records the
- * `created` event with the inviter as actor. If linking fails the login is
- * deleted again. The password is returned once for the inviter to hand
- * over; it is not stored or logged.
+ * API, src/lib/admin) with no credential, then link the staff row through
+ * create_staff AS THE INVITING USER, so the database checks manage_staff
+ * (and admin-only for admins) itself and records the `created` event with
+ * the inviter as actor. If linking fails the login is deleted again. The
+ * invitee signs in with a code emailed to them (PLAN D10); the inviter
+ * never holds a credential for the new login (D11).
  */
 export async function inviteStaff(
   supabase: ServerSupabase,
@@ -118,7 +113,7 @@ export async function inviteStaff(
       role: ["Only an admin can invite another admin."],
     });
   }
-  let login: { userId: string; temporaryPassword: string };
+  let login: { userId: string };
   try {
     login = await createStaffLogin({ email: input.email, displayName: input.displayName });
   } catch (err) {
@@ -126,13 +121,6 @@ export async function inviteStaff(
       throw new DomainError("An account with that email already exists.", {
         email: ["An account with that email already exists."],
       });
-    }
-    if (err instanceof WeakPasswordError) {
-      // Not the user's input: the project's password rules are stricter
-      // than the generated password (RUNBOOK "Hosted Supabase projects").
-      throw new DomainError(
-        "Supabase Auth refused the temporary password. Ask an admin to check the project's password rules.",
-      );
     }
     throw err;
   }
@@ -146,7 +134,7 @@ export async function inviteStaff(
       }),
     );
     if (!row) throw new Error("create_staff returned no row");
-    return { staffId: row.id, email: input.email, temporaryPassword: login.temporaryPassword };
+    return { staffId: row.id, email: input.email };
   } catch (err) {
     await deleteStaffLogin(login.userId).catch((cleanupError) =>
       onCleanupError(cleanupError, login.userId),

@@ -4,7 +4,8 @@ Owner: the build agent, reviewed by the product owner (Abhishek Cherian
 George). Implementation inspected: `c6bf6d0` on 2026-10-05 (application code
 identical to `b34bbcd`, the head of PR #7); the Phase 6 and Phase 7 rows were
 added at their phases, Phase 7's at its integration with the main line on
-`feat/p7-purchasing`.
+`feat/p7-purchasing`, and the staff email sign-in rows at its integration
+on `feat/auth-email-otp` (2026-10-06).
 
 This page describes the system as it is built. The decision of record is
 [ADR-001](ADR-001-architecture.md), whose body stays as written in PR #1;
@@ -31,13 +32,15 @@ flowchart LR
   public["Public site, repo bicii<br/>(not integrated yet, Phase 11)"] -.-> rest
   shopify["Shopify<br/>(planned, Phase 10)"] -.-> app
   printer["Label printer<br/>(planned, Phases 8 and 12)"] -.- app
+  auth --> mail["Email (SMTP)<br/>sign-in codes; hosted provider not set up"]
 ```
 
 Dashed lines are planned, not built. Nothing is deployed: there is no
 hosted Supabase project and no Vercel project
 ([R-001](RISKS.md#r-001--nothing-is-deployed)). Locally and in CI the
 Supabase services run without Docker on the devstack
-([ADR-002](decisions/ADR-002-devstack.md)): Auth on :9999, PostgREST on
+([ADR-002](decisions/ADR-002-devstack.md)): a local mail catcher on :8025
+(SMTP :2525) that receives Auth's emails, Auth on :9999, PostgREST on
 :3001, Storage on :5000 behind a gateway on :54321, and Postgres 16.
 
 Installed versions (from `package.json` and `node_modules`, 2026-10-05):
@@ -112,7 +115,9 @@ replay, never a second movement.
 | Responsibility | Location | Dependency | Failure consequence |
 |---|---|---|---|
 | Staff screens and Server Actions | `src/app/(staff)/` (`page.tsx`, `actions.ts` per area) | domain modules, `requireStaff` | the screen or action errors; data stays consistent because the database enforces the rules |
-| Sign-in | `src/app/(auth)/login/` | Supabase Auth (email + password on this branch) | staff cannot sign in |
+| Sign-in | `src/app/(auth)/login/` (`requestCode`, `verifyCode`), [src/lib/auth/otp.ts](../src/lib/auth/otp.ts), [sign-in-errors.ts](../src/lib/auth/sign-in-errors.ts) | Supabase Auth email codes (`signInWithOtp` without creating users, `verifyOtp`; D10, D70), SMTP | staff cannot sign in |
+| Sign-in limits | [src/lib/auth/sign-in-limits.ts](../src/lib/auth/sign-in-limits.ts), [src/lib/admin/sign-in-throttle.ts](../src/lib/admin/sign-in-throttle.ts) | `note_sign_in_attempt` (service role, so `SUPABASE_SERVICE_ROLE_KEY`; D72) | sign-in says it is unavailable for everyone; the error log's `cause` says why (`no_service_role_key`, `rpc_error` with its code, `request_failed`) |
+| Session revocation | trigger `staff_revoke_sessions` (`20261005005000_staff_session_revocation.sql`) | `auth.sessions`, `auth.refresh_tokens` (D71) | a deactivated device can refresh, but every guard still refuses it |
 | Session refresh and redirect | [src/proxy.ts](../src/proxy.ts) | `@supabase/ssr` | stale sessions, missing `x-request-id`; it is not the guard |
 | Staff guard | [src/lib/auth/session.ts](../src/lib/auth/session.ts) (`requireStaff`, `requireAdmin`, `authorizeStaff`) | `my_staff_profile` | pages and actions refuse to run |
 | Action wrapper | [src/lib/actions.ts](../src/lib/actions.ts) (`staffAction`, `ActionResult`) | zod, `db-errors`, logger | inconsistent errors or lost form values |
@@ -122,13 +127,13 @@ replay, never a second movement.
 | Purchasing (Phase 7) | [src/lib/domain/purchasing.ts](../src/lib/domain/purchasing.ts) (orders, lines, receipts, `receivePurchase` with the lookup `findReceiptByKey`, reorder, the product page's `getProductPurchasing`) and [suppliers.ts](../src/lib/domain/suppliers.ts); screens `src/app/(staff)/purchasing/` (the `(browse)` group: orders, `orders/[id]`, suppliers, `suppliers/[id]`; outside it, manage_purchasing only with a real 403, `receive/[id]` and `reorder`); components in `src/components/domain/purchasing/`; pure rules in [src/lib/purchasing.ts](../src/lib/purchasing.ts), [purchasing-forms.ts](../src/lib/purchasing-forms.ts) and [receive-form.ts](../src/lib/receive-form.ts) (the Receive screen's idempotency state machine); cost visibility mirrors `private.can_view_purchase_costs()` (D60) | RLS-scoped client; the purchasing RPCs and `reporting.purchase_order_progress` / `product_on_order` | nothing can be ordered or received; a delivery is still recorded once per submission key and stock moves only through `receive_purchase` |
 | Consigned job parts (D44) | `searchParts` in [inventory.ts](../src/lib/domain/inventory.ts) (consigned units and the FIFO-head consignment of quantity stock, D45), `loadParts` in [lines.ts](../src/lib/domain/lines.ts) (a line's consignment) | `consignor_statement` for the FIFO head and the cost preview | the part sheet does not offer consigned stock; `add_inventory_line` still applies D44 |
 | Supabase clients | [server.ts](../src/lib/supabase/server.ts), [browser.ts](../src/lib/supabase/browser.ts), [service.ts](../src/lib/supabase/service.ts) | anon key + session; service-role key (server only) | no data access |
-| Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API) | `SUPABASE_SERVICE_ROLE_KEY` | staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
+| Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API, created without a password; the sign-in counters) | `SUPABASE_SERVICE_ROLE_KEY` (required in every deployment) | without it, or with a wrong one, nobody can sign in (every code request and verification is counted with it first, D72; sign-in says it is unavailable and the error log names the cause) and staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
 | Error mapping | [src/lib/db-errors.ts](../src/lib/db-errors.ts) | P0001 codes, constraint names | users see the generic error |
 | Logging and server errors | [src/instrumentation.ts](../src/instrumentation.ts), [src/lib/logger.ts](../src/lib/logger.ts) | pino to stdout | no trace of failures (no retention or alerting, [R-002](RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery)) |
 | PWA shell | [public/sw.js](../public/sw.js), [src/app/manifest.ts](../src/app/manifest.ts) | browser | no install or offline page |
 | Schema, rules, RLS, RPCs | [supabase/migrations/](../supabase/migrations/) | Postgres | the authority for every invariant ([DATA-MODEL](DATA-MODEL.md#authority-applied-state-and-implementation-status)) |
 | Synthetic demo data | [supabase/seed.sql](../supabase/seed.sql) | migrations | tests and demos lose their fixtures |
-| Docker-free Supabase | [scripts/devstack/](../scripts/devstack/), [supabase/devstack/roles.sql](../supabase/devstack/roles.sql) | pinned Auth, PostgREST, Storage binaries | no local or CI backend ([R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase)) |
+| Docker-free Supabase | [scripts/devstack/](../scripts/devstack/), [supabase/devstack/roles.sql](../supabase/devstack/roles.sql), [supabase/templates/](../supabase/templates/) | pinned Auth, PostgREST, Storage binaries; a generic mail catcher (`mailcatcher.mjs`) | no local or CI backend ([R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase)) |
 | CI | [ci.yml](../.github/workflows/ci.yml) (check, test, build), [e2e.yml](../.github/workflows/e2e.yml) (Playwright, label `e2e`, nightly, manual) | GitHub Actions | regressions merge unseen ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) |
 
 ## Why this design
@@ -152,6 +157,7 @@ reasoning is ADR-001's; the "small team" point is inferred.
 | One shop time zone and currency in SQL | [ADR-012](decisions/ADR-012-shop-time-zone-and-currency.md) |
 | Consignment and in-store sales | [ADR-016](decisions/ADR-016-consignment-and-sales.md) |
 | Purchasing: cost visibility, last cost, receipts, reorder | [ADR-018](decisions/ADR-018-purchasing.md) |
+| Staff sign in with emailed one-time codes; deactivation ends sessions; the Admin's own sign-in limits | [ADR-019](decisions/ADR-019-staff-email-sign-in.md) |
 
 All records: [decisions/README.md](decisions/README.md).
 
@@ -246,9 +252,13 @@ All records: [decisions/README.md](decisions/README.md).
   re-creation.
 - [R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6):
   the stack is merged; purchasing is integrated with `main` on its branch
-  and waits for its PR; OTP and labels are still on their own branches.
-- [R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp): an owner
-  change not yet on this line (email OTP is on the parallel track); the D27
+  and waits for its PR; email sign-in is integrated on top of it
+  (`feat/auth-email-otp`, PR #10, merged after #9); labels and Shopify are
+  on their own branches.
+- [R-035](RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset)
+  to [R-039](RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified):
+  what email sign-in leaves open (the pre-deploy password reset, Auth's
+  password grant, hosted SMTP); the D27
   change ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet))
   was built in Phase 6 step 1.
 - [R-018](RISKS.md#r-018--four-sections-are-placeholder-pages):
