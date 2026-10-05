@@ -160,46 +160,59 @@ URLs, or customer data in this file.
 ## R-006 — No test proves a zero-price or zero-cost part is accepted
 
 - Category: validation gap.
-- Status and owner: open; build agent.
+- Status and owner: resolved 2026-10-05 by Phase 6 step 1 (`feat/p6-consignment`,
+  commit fe6ac53, local only); build agent. The heading is kept so links
+  stay valid.
 - Trigger: adding a part whose price or cost is 0 (a free part).
-- Impact: the owner amended D24 on 2026-10-05: 0 is a known price or cost
-  and only NULL counts as missing. `add_inventory_line`
-  (`supabase/migrations/20261004001900_inventory_jobs.sql`) already does
-  this: it takes `coalesce(...)` of the override and defaults and raises
-  `part_price_missing` / `part_cost_missing` only when the result IS NULL.
-  No test covers the 0 cases, so a regression would go unnoticed.
-- Evidence and confidence: high; `tests/db/inventory-ledger.test.ts` tests
-  only the NULL cases, and a search of the DB tests for a 0 price or 0 cost
-  part fixture found none.
-- Workaround or containment: none needed; the behaviour is correct today.
-- Next action: add DB tests that a part with price 0 and a part with cost 0
-  are accepted with 0 snapshots and not `cost_pending`.
-- Revisit trigger: next change to `add_inventory_line`.
-- Last checked: 2026-10-05, the migration and test file above.
+- Impact (before): the owner amended D24 on 2026-10-05: 0 is a known price
+  or cost and only NULL counts as missing. `add_inventory_line` already did
+  this, but no test covered the 0 cases.
+- Evidence and confidence: high. `tests/db/consignment-job-parts.test.ts`
+  "D24: a part priced 0 and a part costing 0 are accepted with 0 snapshots
+  and are not cost_pending; so is a consigned part agreed at 0" (a
+  shop-owned part priced 0, one costing 0, a 0 price override and a
+  consigned part agreed at 0), and `tests/db/consignment.test.ts` "D24: an
+  agreed amount of 0 and an asking price of 0 are known values, stored as
+  0"; both pass in `npm test` (86 files, 1225 tests) on 2026-10-05.
+- Workaround or containment: none needed.
+- Next action: none; Phase 6 step 2 adds the same 0 tests for sale lines
+  (D24).
+- Revisit trigger: next change to `add_inventory_line` or a new part or
+  sale path.
+- Last checked: 2026-10-05, the tests above.
 
 ## R-007 — Consigned stock cannot be a job part yet
 
 - Category: known defect (owner change not yet implemented).
-- Status and owner: open; build agent, Phase 6.
-- Trigger: staff try to use a consigned item as a part on a job.
-- Impact: the owner changed D27 on 2026-10-05 so that consigned stock may be
-  a job part. On this branch `add_inventory_line` still refuses consigned
-  and `customer_owned` stock with `ownership_not_saleable`. Consignment
-  itself is not built (Phase 6). `customer_owned` is not covered by the
-  change and stays never saleable.
-- Evidence and confidence: high; the refusal is in
-  `20261004001900_inventory_jobs.sql` and its backstop in
-  `20261004002100_inventory_publication.sql`. The comment above that
-  refusal and the D27 rule text in PLAN §6 still say Phase 6 keeps the
-  refusal and does not replace `add_inventory_line`: they describe the rule
-  before the owner's change (found 2026-10-05 while writing
-  ARCHITECTURE.md), so Phase 6 must not follow them.
-- Workaround or containment: none; consignment is not built.
-- Next action: Phase 6 builds the consigned-part path with consignor
-  liability intact, plus its database tests, and updates PLAN D27.
-- Revisit trigger: Phase 6 starts.
-- Last checked: 2026-10-05, the migrations above
-  ([ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md)).
+- Status and owner: resolved 2026-10-05 by Phase 6 step 1 (`feat/p6-consignment`,
+  commits 13fe3f3 and fe6ac53, local only; D44); build agent. The heading is
+  kept so links stay valid.
+- Trigger: staff use a consigned item as a part on a job.
+- Impact (before): the owner changed D27 on 2026-10-05 so that consigned
+  stock may be a job part, while `add_inventory_line` still refused it.
+  Now `add_inventory_line` (replaced in
+  `supabase/migrations/20261004003400_consignment_job_parts.sql`, same
+  signature) accepts consigned stock under D44 and refuses only
+  customer-owned stock (`ownership_not_saleable`), with the backstop
+  trigger `work_order_line_items_consignment_rules` for every writer; the
+  old comment saying Phase 6 keeps the refusal is gone with the replaced
+  function, and PLAN's D27 row was rewritten in 34783d6.
+- Evidence and confidence: high. `tests/db/consignment-job-parts.test.ts`
+  (held on add, sold at completion with liability = the agreed amount,
+  reopen and re-completion, void on the open job, FIFO quantity parts, no
+  negative consigned stock, customer-owned refusals),
+  `tests/db/consignment-concurrency.test.ts` (two completions create one
+  liability; a unit on two jobs or on a job while it is returned has one
+  winner); all pass in `npm test` on 2026-10-05.
+- Workaround or containment: none needed. The Admin has no screen for
+  consignment yet (Phase 6 step 3), so staff cannot reach the path from the
+  UI until then.
+- Next action: none for the database; step 3 builds the screens.
+- Revisit trigger: a change to `add_inventory_line` or
+  `work_orders_sell_held_units`.
+- Last checked: 2026-10-05, the migrations and tests above
+  ([ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md),
+  [ADR-016](decisions/ADR-016-consignment-and-sales.md)).
 
 ## R-008 — Correcting a job whose sold bike reached its buyer is multi-step
 
@@ -448,7 +461,11 @@ URLs, or customer data in this file.
   bike that comes back.
 - Evidence and confidence: high; `create_consignment_item` applies Phase 4's
   bike rules (`supabase/migrations/20261004003300_consignment.sql`) and
-  `tests/db/consignment.test.ts` (D51) proves the link stays after a return.
+  `tests/db/consignment.test.ts` "a consigned bike links a shop bike record
+  both ways; a customer's, archived or already linked bike is refused"
+  (D51) proves the link stays after a return and that the same bike record
+  is then refused with `bike_already_linked`; it passes in `npm test` on
+  2026-10-05 (commit 13fe3f3).
 - Workaround or containment: register a new bike record for the second
   consignment (the old record keeps its history and photos).
 - Next action: none until the revisit trigger; then decide whether a unit

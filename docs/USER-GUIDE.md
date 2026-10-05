@@ -123,8 +123,10 @@ Settings → Your profile.
     Void it and add it again with its cost." The figures stay overstated
     until then ([RISKS R-005](RISKS.md#r-005--cost-pending-lines-overstate-yield-and-cult-commons)).
   - "No part in stock matches. Archived, inactive and consigned items are
-    not offered." Consigned stock cannot be used on a job yet
-    ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet)).
+    not offered." The database accepts consigned parts since Phase 6 step 1
+    (D44), but this sheet does not offer them until the consignment screens
+    are built (Phase 6 step 3;
+    [R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet)).
   - "This job is completed or closed. Reopen it to change its lines."
 
 ### Adjust stock or move it between locations

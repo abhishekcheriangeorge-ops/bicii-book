@@ -61,21 +61,37 @@ are Phase 8; [R-019](RISKS.md#r-019--adr-001-names-versions-the-code-does-not-us
    the RPC `add_inventory_line` through PostgREST as the signed-in user.
 4. `public.add_inventory_line`
    ([20261004001900_inventory_jobs.sql](../supabase/migrations/20261004001900_inventory_jobs.sql),
-   security definer) runs in one transaction: `private.require_staff()`;
+   replaced with the same signature by
+   [20261004003400_consignment_job_parts.sql](../supabase/migrations/20261004003400_consignment_job_parts.sql)
+   for consigned parts, D44; security definer) runs in one transaction: `private.require_staff()`;
    `private.lock_work_order` (the job FOR UPDATE), `private.lock_stock` (a
    per-product advisory lock) and the unit FOR UPDATE, in the global lock
    order ([DATA-MODEL §7](DATA-MODEL.md#7-inventory-movement-ledger)); a
    replay of the same line id returns the existing line
    (`private.inventory_line_replay`); `private.require_open_work_order`;
-   validation (quantity, product, currency, `ownership_not_saleable`,
-   location or unit); the price is the override or
-   `private.selling_price`, the cost the unit's or product's, and only NULL
-   is missing (`part_price_missing`, `part_cost_missing`; D24); the line is
-   inserted with the price, cost and `private.cult_commons_rate_at(...)`
-   snapshotted; `private.record_movement` writes one `job_consumption`
-   ledger row; a unique unit becomes `held_for_customer`
-   (`private.set_unit_status`) and its product's publication is refreshed;
-   a `stock_consumed` event is written to the job's timeline.
+   validation (quantity, product, currency, `ownership_not_saleable` for
+   customer-owned stock only, location or unit); the price is the override
+   or `private.selling_price`, the cost the unit's or product's, and only
+   NULL is missing (`part_price_missing`, `part_cost_missing`; D24); the
+   line is inserted with the price, cost and
+   `private.cult_commons_rate_at(...)` snapshotted;
+   `private.record_linked_movement` writes one `job_consumption` ledger row
+   (for shop stock exactly what `private.record_movement` wrote before); a
+   unique unit becomes `held_for_customer` (`private.set_unit_status`) and
+   its product's publication is refreshed; a `stock_consumed` event is
+   written to the job's timeline.
+   Consigned stock (D44, the owner's D27 change): after the unit, the
+   consignment item is locked (lock order step 6; for a quantity product,
+   all its active items in id order, then the oldest item whose remaining
+   quantity covers the part, else `consignment_quantity_unavailable`); the
+   item must be active; the cost is the agreed amount (+ a unique item's
+   shop charges), the line also stores the item and
+   `consignor_payout_snapshot` (the agreed amount), consigned stock never
+   goes below zero (`insufficient_stock`), the movement names the item, and
+   `private.refresh_consignment_item_status` runs last. Completing the job
+   later marks the unit and the item sold (`work_orders_sell_held_units`);
+   the consignor liability is derived from the live line on the completed
+   job ([DATA-MODEL §9](DATA-MODEL.md#9-consignment)), never stored.
 5. Success: the action calls `refresh()`, the sheet shows the on-hand after
    the move, and `after()` logs `{ correlationId, actor, action, outcome }`.
 
@@ -172,7 +188,7 @@ All records: [decisions/README.md](decisions/README.md).
 
 | Concern | Measured fact | Assumption or unknown | Revisit trigger |
 |---|---|---|---|
-| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency` and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 (82 files, 1186 tests) | Behaviour under real shop load | First hosted use |
+| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 step 1; each case proves the second call waits on a lock) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 on `feat/p6-consignment` (86 files, 1225 tests) | Behaviour under real shop load | First hosted use |
 | Load and latency | Not measured | Single shop, a few staff | Slow screens reported, or Phase 9 reports |
 | Upload size | 20 MiB per object on both buckets (`file_size_limit` 20971520); photos are scaled to at most 2048 px and re-encoded as JPEG in the browser first (`prepare-photo.ts`) | Hosted Storage limits per plan | Hosted project created |
 | Hosted behaviour | None: everything runs on the devstack | Platform roles, Auth settings and versions may differ | [R-001](RISKS.md#r-001--nothing-is-deployed), [R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase) |
@@ -187,12 +203,15 @@ All records: [decisions/README.md](decisions/README.md).
   re-creation.
 - [R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6):
   the open PR stack and the parallel purchasing branch.
-- [R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp) and
-  [R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet): owner
-  changes not yet in the code.
+- [R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp): an owner
+  change not yet on this line (email OTP is on the parallel track); the D27
+  change ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet))
+  was built in Phase 6 step 1.
 - [R-018](RISKS.md#r-018--four-sections-are-placeholder-pages):
   consignment, purchasing, labels and reports are placeholders by design,
   not defects.
 - The lock order and the single helpers in
   [DATA-MODEL §7](DATA-MODEL.md#7-inventory-movement-ledger) before touching
-  any stock path.
+  any stock path: work order → line → stock → bikes → units → consignment
+  items (step 6, Phase 6) → products, after a request's own idempotency
+  lock and a consignor FOR SHARE.

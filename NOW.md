@@ -1,19 +1,26 @@
 # Current state
 
-Updated: 2026-10-05 16:10 SGT. Evidence checked: GitHub REST pull list and
-check runs for the seven PR heads, `git ls-remote --heads origin`, local
-refs and worktrees, all on 2026-10-05; local gates on application code
-b34bbcd (the head of PR #7; the docs commits on top change no code).
+Updated: 2026-10-05, Phase 6 step 1 checkpoint on `feat/p6-consignment`.
+Evidence checked: local refs, `git worktree list` and
+`git ls-remote --heads origin` on 2026-10-05; local gates on this branch
+at 365bdd7 (below). Earlier rows: GitHub REST pull list and check runs for
+the seven PR heads, local gates on b34bbcd (the head of PR #7).
 
 ## Return in two minutes
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
-- Current objective: land the docs retrofit, then continue the main line.
-- Next action: the orchestrator pushes `feat/docs-stack` and opens its PR on
-  top of PR #7; then [PLAN](docs/PLAN.md#2-phases) Phase 6, consignment and
-  sales, which also implements the D27 change
-  ([R-007](docs/RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet)).
+- Current objective: [PLAN](docs/PLAN.md#2-phases) Phase 6, consignment and
+  sales, in four steps on `feat/p6-consignment`. Step 1 (the consignment
+  core and consigned job parts in the database, the owner's D27 change via
+  D44) is built and committed locally.
+- Next action: Phase 6 step 2, from migration `20261004003500`: sales,
+  restocks, refunds, settlements and their reversals, the consignor ledgers,
+  reporting, read RPCs, search and the seed. It replaces the body of
+  `reporting.consignment_item_position` (same columns, same order) so
+  `sold_qty`, `restocked_qty`, the liability and `last_sale_at` include live
+  sale lines, and replaces `private.consignors_enforce_rules` to add the
+  balance rule (`consignor_has_balance`, D47).
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -33,7 +40,8 @@ a separate, label-triggered run. All listed results are success.
 | Docs stack | Yes, `feat/docs-stack` | Locally: docs link check, 33 files / 476 links, 0 problems; `npm run check` pass (after the review fixes) | Not deployed |
 | Purchasing (Phase 7) | On `feat/p7-purchasing` 59944d6 only | Not verified here | Not deployed |
 | Staff email OTP | Parallel track; no `feat/auth-email-otp` ref visible | Not verified | Not deployed |
-| Consignment and sales, labels, reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Consignment core and consigned job parts (Phase 6 step 1: D44, D45, D48, D50–D52) | Database only, `feat/p6-consignment` 13fe3f3, fe6ac53, 365bdd7; no screens yet | Locally on 365bdd7: `npm run db:reset` pass (34 migrations, `34\|20261004003400`), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 86 files / 1225 tests passed; `test:e2e` not run (no screen changed); docs link check 34 files / 506 links / 0 problems | Not deployed |
+| Sales, settlements, consignor ledgers (Phase 6 steps 2–4), labels, reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -42,7 +50,10 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 - PR stack: `main` (1594c78) ← `docs/build-plan` (#1) ← `feat/m1.1-foundation`
   (#2) ← … ← `feat/p2-appointments` (#7) ← `feat/docs-stack`. #1–#7 are open
   drafts, pushed and equal to origin.
-- `feat/docs-stack`: local only, not pushed.
+- `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
+- `feat/p6-consignment`: stacked on `feat/docs-stack`; local only, not
+  pushed (34783d6 decisions D44–D53, then step 1's commits and this
+  checkpoint). The orchestrator pushes.
 - Parallel track: a second worktree of this clone (`bicii-book-wt`, see
   `git worktree list`) with its own database builds purchasing and email
   OTP. `feat/p7-purchasing` is local

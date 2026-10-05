@@ -88,8 +88,8 @@ the one-line index with each decision's status is
 | D12, D15 (with its reopen deviation), D32 | Confirmed | [ADR-006](decisions/ADR-006-customer-and-public-visibility.md), [ADR-008](decisions/ADR-008-work-order-lifecycle.md), [ADR-011](decisions/ADR-011-recognition-and-financial-reporting.md) |
 | D14 | Confirmed with clarification: a line's totals use its own cost, including 0; zero-price lines are valid (free parts) | [ADR-009](decisions/ADR-009-line-pricing-and-cost-pending.md) |
 | D29 | Confirmed, revisit later (no trigger set) | [ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md) |
-| D24 | Amended: 0 is a known price or cost; only NULL is missing (the code already does this; a test is missing, [R-006](RISKS.md#r-006--no-test-proves-a-zero-price-or-zero-cost-part-is-accepted)) | [ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md) |
-| D27 | Changed: consigned stock may be a job part, built by Phase 6; customer-owned stock stays never saleable ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet)) | [ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md) |
+| D24 | Amended: 0 is a known price or cost; only NULL is missing (the code does this; tested since Phase 6 step 1, [R-006](RISKS.md#r-006--no-test-proves-a-zero-price-or-zero-cost-part-is-accepted) resolved) | [ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md) |
+| D27 | Changed: consigned stock may be a job part; customer-owned stock stays never saleable. Built in the database by Phase 6 step 1 (D44, [R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet) resolved); the part sheet offers consigned stock from Phase 6 step 3 | [ADR-010](decisions/ADR-010-stock-and-units-on-jobs.md), [ADR-016](decisions/ADR-016-consignment-and-sales.md) |
 | D10 (recorded from the note "D11 changed") | Changed: staff sign in with Supabase email OTP, built on a parallel track; this branch still uses email + password | [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md) |
 
 Every other D-row is a build default the owner has not individually
