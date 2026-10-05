@@ -52,7 +52,7 @@ beforeAll(async () => {
   conn = await connect();
 });
 
-const SHOP = LOCATION.shopFloor;
+const SHOP: string = LOCATION.shopFloor;
 const it7 = it.skipIf(!isolatedDatabase());
 
 const p0001 = (message: string) => ({ code: "P0001", message });

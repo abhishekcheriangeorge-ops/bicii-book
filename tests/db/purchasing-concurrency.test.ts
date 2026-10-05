@@ -38,7 +38,7 @@ import {
 
 let setup: pg.Client;
 
-const SHOP = LOCATION.shopFloor;
+const SHOP: string = LOCATION.shopFloor;
 const pause = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A committed, submitted PO (submitted two days ago) with one line per product. */
@@ -161,7 +161,7 @@ describe.skipIf(!isolatedDatabase())("purchasing under concurrency", () => {
       const [a, b] = await openConnections(2);
       await begin(a);
       await (receiveFirst ? doReceive(a) : doReduce(a));
-      const second = committed(b, receiveFirst ? doReduce : doReceive);
+      const second = committed<unknown>(b, receiveFirst ? doReduce : doReceive);
       expect(await waiting(second)).toBe(true);
       await a.query("commit");
       const result = await second;
@@ -254,7 +254,7 @@ describe.skipIf(!isolatedDatabase())("purchasing under concurrency", () => {
       const [a, b] = await openConnections(2);
       await begin(a);
       await (receiveFirst ? doReceive(a) : doPart(a));
-      const second = committed(b, receiveFirst ? doPart : doReceive);
+      const second = committed<unknown>(b, receiveFirst ? doPart : doReceive);
       expect(await waiting(second)).toBe(true);
       await a.query("commit");
       const result = await second;
