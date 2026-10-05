@@ -1,6 +1,30 @@
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 
+import { parseShopDay, shiftShopDay } from "../../src/lib/dates";
 import { SEED_PASSWORD, STAFF_EMAIL, type SeedStaff } from "../fixtures/ids";
+
+/**
+ * The seed's anchor: the shop day the database was reset and seeded
+ * ('YYYY-MM-DD'), read once by global-setup.mts into E2E_SEED_ANCHOR. The
+ * seeded history (tests/fixtures/reporting.ts) is relative to it, and it
+ * need not be today (E2E_RESET=0, E2E_EXTERNAL_STACK=1, a run across
+ * Singapore midnight).
+ */
+export function seedAnchor(): string {
+  const anchor = parseShopDay(process.env.E2E_SEED_ANCHOR);
+  if (anchor === null) {
+    throw new Error(
+      `E2E_SEED_ANCHOR is ${JSON.stringify(process.env.E2E_SEED_ANCHOR ?? null)}, not a YYYY-MM-DD day: ` +
+        "tests/e2e/global-setup.mts sets it; run the suite through `npm run test:e2e`.",
+    );
+  }
+  return anchor;
+}
+
+/** The shop day `n` days before the seed's anchor (anchorDay(0) is the anchor). */
+export function anchorDay(n: number): string {
+  return shiftShopDay(seedAnchor(), -n);
+}
 
 /** Signs in through the real login form and waits until the app is open. */
 export async function signIn(page: Page, who: SeedStaff, next?: string) {
