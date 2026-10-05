@@ -198,6 +198,7 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   purchase_receipt_immutable:
     "A recorded delivery can't be changed. Correct the stock with an adjustment.",
   purchase_order_history_append_only: "Purchase order history can't be changed.",
+  reorder_nothing_selected: "Choose at least one product to order.",
 };
 
 /** 23505 unique violations by constraint name. */

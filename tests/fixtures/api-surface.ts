@@ -119,6 +119,10 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.set_supplier_product(uuid, uuid, text, integer, boolean)",
   "public.submit_purchase_order(uuid)",
   "public.update_purchase_order(uuid, uuid, date, text, text)",
+  // Purchasing (Phase 7) reorder (D66 D-REORDER): suggestions for active
+  // staff (no costs); the one-tap draft needs manage_purchasing
+  "public.create_purchase_order_from_low_stock(uuid, uuid, uuid[])",
+  "public.reorder_suggestions(uuid)",
 ];
 
 /**

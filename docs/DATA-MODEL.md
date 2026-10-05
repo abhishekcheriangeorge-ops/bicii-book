@@ -1418,6 +1418,7 @@ never exposed.
 | `consignor_ledger` / `consignor_item_ledger` | Owed, paid, outstanding. |
 | `purchase_order_progress` | Built (Phase 7). One row per PO line: `purchase_order_id`, `po_number`, `supplier_id`, `po_status`, `purchase_order_line_id`, `product_id`, `quantity_ordered`, `quantity_received` (sum of receipt lines, 0 when none), `quantity_outstanding` (ordered − received, ≥ 0, for draft/submitted/partially_received, else 0), `quantity_cancelled` (the same remainder when cancelled, D61), `expected_at` (the line's, else the PO's), `last_received_at` (latest receipt `received_at`), `is_overdue` (submitted/partially_received, outstanding > 0 and expected_at < `private.purchasing_shop_today()`). security_invoker, SELECT to authenticated, no cost column. `private.purchasing_shop_today()` is a security definer wrapper of Phase 5's `private.shop_today()` (EXECUTE to authenticated), not a competing calendar helper: authenticated has no EXECUTE on the Phase 5 helpers. |
 | `product_on_order` | Built (Phase 7). Per product with something outstanding on submitted or partially received POs (never drafts, D66): `product_id`, `quantity_on_order`, `open_purchase_orders`, `next_expected_at`. security_invoker, SELECT to authenticated. |
+| `low_stock` + `product_on_order` → `public.reorder_suggestions` | Built (Phase 7, D66 D-REORDER). Not a view: the staff RPC in §16 joins `low_stock` (the products), `product_on_order` (on order, submitted and partially received only) and `supplier_products`, and computes `private.suggested_reorder_quantity(reorder_point, on_hand, on_order)` = max(2 × reorder_point − on_hand − on_order, 0), NULLs as 0 (immutable SQL, no grant). No cost column. |
 | `shopify_sync_status` | Per published product. |
 | `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at`; price from `private.selling_price`; public photos only. Definer view, security_barrier, SELECT for anon and authenticated. Rules in §11. |
 
@@ -1626,6 +1627,8 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `purchase_cost_defaults(supplier_id, product_ids uuid[])` → `table(product_id, unit_cost, source)` | P(manage_purchasing) | ≤ 200 ids (22023); per known product the supplier's last cost (`supplier_last`), else the product's (`product`, 0 included), else 0 (`none`). The PO line sheet's prefill (D60, D66). |
 | `set_supplier_product(supplier_id, product_id, supplier_sku = null, lead_days = null, preferred = false)` → `supplier_products` | P(manage_purchasing) | Locks the product row, then upserts the link (never the last cost; a new link takes the product's currency); `preferred` clears the product's other preferred row. P0002 / `supplier_archived`. |
 | `remove_supplier_product(supplier_id, product_id)` → setof `supplier_products` | P(manage_purchasing) | Deletes the link; no row on a replay. |
+| `reorder_suggestions(supplier_id = null)` → `table(product_id, short_id, sku, name, on_hand, reorder_point, on_order, suggested_quantity, supplier_linked, preferred_supplier_id, supplier_sku, draft_po_numbers text[])` | S | Built (Phase 7, D66 D-REORDER; `20261005000500_purchasing_reorder.sql`). The `reporting.low_stock` products; `on_order` from `reporting.product_on_order` (submitted and partially received POs, never drafts); `suggested_quantity` = max(2 × reorder_point − on_hand − on_order, 0); `supplier_linked` / `supplier_sku` relative to the given supplier (false / null without one); `preferred_supplier_id` whatever was asked; `draft_po_numbers` the draft POs (any supplier) already holding the product, ascending, `{}` when none. Ordered by supplier_linked desc, suggested_quantity desc, name. No cost column (D60). |
+| `create_purchase_order_from_low_stock(id, supplier_id, product_ids uuid[])` → `purchase_orders` | P(manage_purchasing) | Built (Phase 7, D66). 22004 for a null id/supplier or a null element; null or empty selection → `reorder_nothing_selected`; more than 100 ids → 22023. Replay by id with `create_purchase_order`'s mechanism (FOR UPDATE first, insert only when absent, `purchase_orders_pkey` unique_violation fallback, never ON CONFLICT): the same supplier returns the PO unchanged with no line added and the PO sequence untouched; another supplier → `purchase_order_conflict`. Else `supplier_archived` / P0002, a draft in `private.shop_currency()`, then one line per DISTINCT product in ascending id with `set_purchase_order_line`'s checks (P0002, `purchase_line_unique_product`, `purchase_line_not_shop_owned`, `purchase_line_product_inactive`, `purchase_currency_mismatch`, `purchase_line_duplicate_product`): quantity max(suggestion computed now, 1), capped at the line limit 100000; unit cost `private.default_purchase_unit_cost` (supplier last cost, else product cost incl. 0, else 0). `line_added` events come from the trigger, without a reason. Locks only the new PO row; products and stock are read unlocked. |
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) within the D11 ceiling | Permission rows (`granted_by` = caller); replay-safe (no row change, no event). One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
@@ -1641,7 +1644,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Never public for a customer record or an undecoded original (`attachment_original_never_public`). Locks the row; `visibility_changed` event; replay is a no-op. |
 | `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload. Returns a set: the deleted row (the server then removes the object), or no row on replay (PostgREST: `[]`). |
 | `attachment_stray_objects(entity_type, entity_id)` | S | Objects under `{entity_type}/{entity_id}/` in either photo bucket that no attachment points at and that are safe to remove now (older than 10 minutes; in `media-internal`, with history or older than a day), at most 100. The server removes them when it shows the record. |
-| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
+| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). From Phase 7 (`20261005000400_purchasing_search.sql`), suppliers (`supplier`: every word of q in name/contact/email/account reference 0.5 + 0.4 × word similarity, exact email or exact phone (with or without +65) 0.95, phone digits contained 0.6; title the name, subtitle `contact · phone · email`, no short_id; archived suppliers only with `archived`) and purchase orders (`purchase_order`: exact PO number key — `PO-000002`, `po 000002`, `PO000002` — 1.0, exact supplier reference key 0.95, PO number containing the key (≥ 3 characters) 0.6, every word of q in the supplier's search text 0.4 + 0.4 × word similarity; title the supplier's name, short_id the PO number, subtitle `status · expected 12 Oct 2026 · R of N received` (the date only when set, the count only when the PO has lines); POs are never archived, so none with `archived`; cancelled and received POs are found). **Merge hazard:** each phase's migration replaces the whole function, so the latest definition must contain every branch; `tests/db/staff-search.test.ts` checks that staff_search accepts every `SEARCH_KINDS` entry of `src/lib/search.ts`, which the app asks for by default. Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |
@@ -1750,11 +1753,11 @@ every request id used once.
 | P-000003 | Road inner tube 700x23-28c Presta 60mm | 9.00 / 3.80 | 20 | 40 Shop floor + 20 Workshop store |
 | P-000004 | Marathon Racer 16x1.35 tyre | 55.00 / 30.00 | 3 | 6 Shop floor (one consumed by J-000010, then reversed) |
 | P-000005 | Inner tube 16in Schrader | 14.00 / 6.00 | 6 | 14 Shop floor (15 opening, one on J-000010) |
-| P-000006 | X11 11-speed chain | 45.00 / 24.00 | 5 | 8 Shop floor |
-| P-000007 | 105 CS-R7000 11-34 cassette (draft) | 109.00 / 68.00 | 2 | 3 Shop floor |
+| P-000006 | X11 11-speed chain | 45.00 / 24.00 | 5 | 8 Shop floor (26 after Phase 7's PO-000002) |
+| P-000007 | 105 CS-R7000 11-34 cassette (draft) | 109.00 / 68.00 | 2 | 3 Shop floor (7 after Phase 7's PO-000001) |
 | P-000008 | Pro brake cable kit | 35.00 / 16.00 | 4 | 2 Shop floor (low) |
 | P-000009 | SM-BH90 hydraulic hose 1000mm | 28.00 / 12.00 | 5 | 1 Shop floor (low) |
-| P-000010 | Dry chain lube 120ml | 16.00 / 7.00 | 6 | 18 Shop floor |
+| P-000010 | Dry chain lube 120ml | 16.00 / 7.00 | 6 | 18 Shop floor (28 after Phase 7's PO-000002) |
 | P-000011 | DSP 3.2mm bar tape | 49.00 / 26.00 | 4 | 7 Shop floor |
 | P-000012 | Tubeless sealant 237ml | 32.00 / 17.00 | 3 | 1 Shop floor + 1 Workshop store (low) |
 | P-000013 | Colnago C64 Disc 52s (pre-owned), unique | 6800.00 / 4200.00 | — | unit U-000001 (bike B-000011) |
@@ -1869,3 +1872,65 @@ by `tests/e2e/global-setup.mts`, with `seedAnchor()` / `anchorDay(n)` in
 `tests/e2e/helpers.ts`), count days back from it, and skip with a message
 the assertions that need the anchor to be today. Reset (`npm run
 db:reset`) to move the demo's "today".
+
+Phase 7 part (done): **purchasing, built through the RPCs.** A section at
+the end of `supabase/seed.sql`, run with `request.jwt.claims` naming Asha
+Admin (reset to '' afterwards), so PO history, the `purchase_received`
+movements and the supplier last costs are what the app writes. It creates
+no products, units, bikes or customers (their short IDs would collide with
+rows the parallel track seeds): it uses Phase 4's products (`PRODUCT`) and
+the Shop floor (`LOCATION.shopFloor`). Ids use the `d7` prefix
+(`tests/fixtures/ids.ts`):
+
+- Suppliers `d7000000-…-00000000000N` (`SUPPLIER`), inserted directly
+  (suppliers have no create RPC; the app inserts them under RLS), dated
+  −20d: `veloParts` Velo Parts Asia Pte Ltd (Kenneth Lim,
+  sales@veloparts.test, +65 6123 4501, https://veloparts.test, account
+  BICII-0042, "Order by Thursday noon for Monday delivery."), `tropicTyre`
+  Tropic Tyre & Tube Co (Siti Rahman, orders@tropictyre.test, +65 6234
+  5502, account TT-1187) and `oldSpoke` Old Spoke Trading (archived −15d;
+  no links, no POs).
+- Links (`set_supplier_product`, SKU, lead days, preferred): Velo Parts
+  supplies the cassette, chainX11, chainLube, cableKit, hydraulicHose
+  (preferred) and the GP5000 tyre (not preferred); Tropic Tyre the GP5000
+  tyre and roadTube (preferred). The low-stock sealant has no supplier.
+- POs `d7100000-…-00000000000N` (`PURCHASE_ORDER`, `PO_NUMBER`
+  PO-000001…PO-000005 in creation order), lines
+  `d7200000-…-0000000000NN` (`PURCHASE_ORDER_LINE`), receipt idempotency
+  keys `d7300000-…-00000000000N` (`RECEIPT_KEY`). Every line's unit cost is
+  the product's current cost:
+
+| PO | Supplier | Lines (qty × cost) | Dates (d = shop days before the reset day, Singapore time) | State |
+|---|---|---|---|---|
+| PO-000001 | Velo Parts, ref SO-7702 | cassette 4 × 68.00 | expected d9; created d12 10:00, submitted d11 09:30, received d9 14:00 at the Shop floor (DN-5402) | received; cassette 3 → 7 |
+| PO-000002 | Velo Parts, ref SO-7781 | chainX11 20 × 24.00, chainLube 10 × 7.00 | expected d1; created d6 10:00, submitted d5 09:30; one receipt d3 11:30, DN-5531: 18 chains + 10 lubes | partially received (SPEC §14: 20 ordered, 18 received, 2 outstanding), overdue; chainX11 8 → 26, chainLube 18 → 28 |
+| PO-000003 | Tropic Tyre | gp5000Tyre 6 × 52.00 | expected in 3 days; created d2 10:00, submitted d2 10:20 | submitted, nothing received; 6 on order |
+| PO-000004 | Velo Parts | cableKit 6 × 16.00, hydraulicHose 9 × 12.00 (their D66 suggestions) | created d1 09:00 | draft ("In draft PO-000004" on the reorder screen) |
+| PO-000005 | Tropic Tyre | roadTube 20 × 3.80 | created d1 15:00, submitted d1 15:10, cancelled at seed time | cancelled, "Supplier out of stock until next quarter"; 20 cancelled |
+
+On order after the seed (`reporting.product_on_order`): GP5000 tyre 6,
+chainX11 2. Supplier last costs: Velo Parts cassette 68.00, chainX11
+24.00, chainLube 7.00 (the receipts upsert the links).
+
+Chronology (D64 D-RECEIPT-TIME): each PO is created and submitted through
+the RPCs, then, BEFORE it is received, its `created_at` and `submitted_at`
+are back-dated with a plain UPDATE as the owner (those columns write no PO
+event; `pg_temp.seed_at`), and `receive_purchase` records the receipt with
+its past `received_at`. The `purchase_received` movements keep seed time
+(Phase 4's ledger is append-only with no effective date; their reason
+carries the delivery date, e.g. "PO-000002 received 2 Oct 2026 11:30"), and
+PO events keep record time.
+
+Fences on the earlier phases: (1) every receipt cost equals the product's
+current `default_direct_cost`, so D63 changes no cost and writes no
+`cost_changed` event; (2) receipts touch only the cassette, chainX11 and
+chainLube, none of them low stock or with an on-hand figure a test pins
+(the brief's suggested brake pads for PO-000001 were swapped for the
+cassette because `staff-search.test.ts` pins "34 in stock"), and each stays
+above its reorder point, so `reporting.low_stock` still lists exactly
+P-000008, P-000009 and P-000012 and Today and `tests/fixtures/reporting.ts`
+are unchanged; (3) the draft's products are low-stock products no receipt
+touches; (4) Phase 5's daily summary and Today count only
+`job_consumption`, `reversal`, `stock_adjustment` and `damaged` movements,
+never `purchase_received`. `tests/db/purchasing-seed.test.ts` checks the
+state.

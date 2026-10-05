@@ -2582,6 +2582,34 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      create_purchase_order_from_low_stock: {
+        Args: { id: string; product_ids: string[]; supplier_id: string };
+        Returns: {
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          po_number: string;
+          received_at: string | null;
+          status: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at: string | null;
+          submitted_by: string | null;
+          supplier_id: string;
+          supplier_reference: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_service: {
         Args: {
           category_id?: string;
@@ -3048,6 +3076,23 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      reorder_suggestions: {
+        Args: { supplier_id?: string };
+        Returns: {
+          draft_po_numbers: string[];
+          name: string;
+          on_hand: number;
+          on_order: number;
+          preferred_supplier_id: string;
+          product_id: string;
+          reorder_point: number;
+          short_id: string;
+          sku: string;
+          suggested_quantity: number;
+          supplier_linked: boolean;
+          supplier_sku: string;
+        }[];
       };
       revoke_permission: {
         Args: {
