@@ -39,21 +39,22 @@ adjustments, operational exceptions; money only with View financial
 reports, costs only with View costs), a seed spanning a week of shop days,
 the Today dashboard (`/`: today's or an earlier day's jobs, money, stock,
 low stock, what needs attention and the last 7 days) and the job yield
-panel on the job page. Phase 2 (appointments) is in progress: its
-database is built (shop settings, weekly hours, closures, appointment types
-and their history; appointments with capacity, the slot grid, booking,
-status and cancellation; check-in, which opens or links the appointment's
-one work order and completes the appointment with it; appointment counts
-for Today and the reports; the customer booking RPCs the public site will
-call; a seeded schedule, a week of appointments and one customer login)
-with its tests, and the staff screens: `/appointments` (day and week, the
-week strip, capacity per slot, closed days and custom hours, bookings a
-settings change left outside the hours flagged), booking from a sheet
-whose free times are computed in the browser with the database's rules,
-each appointment's page (arrive, confirm, no-show, reinstate, cancel,
-edit bike and notes, history) and check-in into a new or linked job. The
-Today list, the customer page's section and the schedule settings
-screens follow.
+panel on the job page. Phase 2 (appointments) is built: shop settings,
+weekly hours, closures and appointment types with their history;
+appointments with capacity, the slot grid, booking, status and
+cancellation; check-in, which opens or links the appointment's one work
+order and completes the appointment with it; appointment counts for Today
+and the reports; the customer booking RPCs the public site will call; a
+seeded schedule, a week of appointments and one customer login; and the
+staff screens: `/appointments` (day and week, the week strip, capacity per
+slot, closed days and custom hours, bookings a settings change left behind
+flagged), booking from a sheet whose free times are computed in the
+browser with the database's rules, each appointment's page (arrive,
+confirm, no-show, reinstate, cancel, edit bike and notes, history),
+check-in into a new or linked job, Today's appointment tiles and expected
+arrivals, the customer page's appointments with Book, the job's link back
+to its appointment, and Settings → Shop hours and closures and Appointment
+types (readable by all staff, changed by admins).
 
 ## Quickstart
 

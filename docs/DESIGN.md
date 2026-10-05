@@ -160,6 +160,10 @@ The pattern every Server Action form follows (`staffAction` +
   without a `loading.tsx`.
 - `/q/[shortId]` has no `loading.tsx` on purpose: its job is a server
   `redirect()`, which must happen before anything streams.
+- `/settings/schedule` and `/settings/appointment-types` need only
+  `requireStaff()` (every staff member reads the schedule; only admins
+  see edit controls, never a 403), so each has its own `loading.tsx`
+  like `/settings/profile`; `/settings` itself still has none.
 - Record pages (`/customers/[id]`, `/bikes/[id]`) have their own
   `loading.tsx`, so opening a row shows the record skeleton at once. An
   unknown or malformed id renders the not-found screen (with a 200 status,
@@ -434,10 +438,18 @@ upload itself, below).
   lines have no cost entered…" (D14). On a past day, muted: "Counts jobs
   completed on this day. If one is reopened, it moves to the day it is
   completed again." (D32; words, not colour).
-- **Placeholders are extension points.** `AppointmentsSection` shows
-  Scheduled / Arrived / No-shows as "—" with "Arrives with appointments"
-  (sr-only "Not tracked yet") until Phase 2 fills the columns; its
-  `children` takes Phase 2's appointment list. Consignment sales and New
+- **Appointments** (Phase 2, D30, D41). `AppointmentsSection`: Scheduled
+  ("Booked for this day"), Arrived ("Including checked in") and No-shows
+  from `today_dashboard`, by scheduled day and current status, for every
+  staff member; the placeholder treatment only for a row the database did
+  not count. On today its `children` is `TodayArrivals` (streamed):
+  "Still expected" (booked or confirmed, linking to the day view) and
+  "Arrivals", the first five expected, late ones first, each a row (time,
+  customer, type, solid "Late") opening `/appointments/<id>` with the name
+  "10:30, Hafiz Rahman, Service drop-off, late"; "See all" opens
+  `/appointments?date=<day>`; "N more expected later"; empty: "No more
+  arrivals expected today" with Book. A past day shows only the counts.
+- **Placeholders are extension points.** Consignment sales and New
   consignor liability say "Arrives with consignment" until Phase 6. The
   `ExceptionList` is the list Phase 9 links from `/reports/exceptions`.
 - **Streaming.** The dashboard row loads first; each list (financial
@@ -460,7 +472,7 @@ upload itself, below).
 | Component | Notes |
 |---|---|
 | `StatTile`, `MoneyTile`, `TileGrid`, `TodaySection` (`stat-tile.tsx`) | A figure as `<dl>` with label, value, hint, optional link, tone (value colour only) and `notTracked` ("—" and `NOT_TRACKED`, "Not tracked yet", for screen readers: the one source of that wording); money formatted with a real minus sign and its currency, scaled to the tile (see Layout); the grid; a section with its `<h2>`. |
-| `AppointmentsSection` | The Phase 2 slot, above. |
+| `AppointmentsSection`, `TodayArrivals` (`appointments-section.tsx`) | The appointment tiles and the expected arrivals, above. |
 | `DayNavigator` (client) | ‹ Previous day / Today / Next day › links and a `next/form` GET form (`<input type="date" name="day">` with `min` and `max`, "Go"); works before hydration; once hydrated a picked date submits after a 600 ms pause (typing a year passes through "0002"). |
 | `RefreshButton` (client) | "Updated 10:42 am" and Refresh: `router.refresh()` in a transition with a spinner; returning to the tab refreshes once the figures are a minute old. |
 | `ActivityList` | One flow's jobs from `work_order_activity_on`: J- number, status pill, Overdue badge, customer, bike, sale total; the heading's id is the flow tile's anchor. Checked in, Completed and Collected always; Started, Ready for collection and Cancelled when not empty; "Nothing happened on this day" for a quiet day. |
@@ -474,8 +486,8 @@ upload itself, below).
 ### Appointments
 
 `/appointments`, `/appointments/[id]` and `/appointments/[id]/check-in`
-(SPEC §6; PLAN D2, D36–D42; Phase 2 step 3, completed by step 4's Today
-list, customer-page section and settings screens). Reads in
+(SPEC §6; PLAN D2, D36–D42), with Today's tiles and arrivals, the
+customer page's section, the job's link back and the schedule settings. Reads in
 `src/lib/domain/appointments.ts`; the grid, statuses, history wording and
 times in `src/lib/appointments/` (pure: `slots.ts` mirrors the database's
 slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
@@ -502,9 +514,10 @@ slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
   words ("1 of 2 booked"; red and "3 of 2 booked" when over), beside the
   list from lg. The week view is an agenda, stacked on phones, seven
   columns at lg.
-- **Booking** (`BookAppointmentSheet`, props `presetCustomer`,
-  `lockCustomer`, `presetDate`; `BookAppointmentButton` with `variant`
-  "button" (md+) or "fab", the phones' yellow Book above the tab bar,
+- **Booking** (`BookAppointmentSheet`, props `open`, `onOpenChange`,
+  `presetCustomer`, `lockCustomer`, `presetDate` (a past date falls back
+  to today); `BookAppointmentButton` with the same presets, `label`,
+  `buttonVariant`, `size`, `disabled` and `variant` "button" (md+) or "fab", the phones' yellow Book above the tab bar,
   right of Scan): customer (`CustomerPicker`, or a fixed name when locked;
   "New customer…" links to Customers rather than nesting a sheet), type
   as radio cards (staff-only types badged), date as a 14-day chip strip
@@ -537,6 +550,54 @@ slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
   lead chips, extracted to `lead-picker.tsx`: "Me" first, Unassigned
   last); one sticky "Check in and open job". A new job opens on its
   intake photos step (`/jobs/<id>?intake=photos`).
+- **Status → tone** (`appointmentTone`, `StatusPill` with its words):
+  Booked info, Confirmed progress, Arrived waiting, Checked in and
+  Completed done, No-show danger, Cancelled neutral (struck through in the
+  week agenda and the customer page). Completed is never a button (D36:
+  the job completes it). Two-step rules: No-show confirms without a reason
+  (focus on Cancel, the confirm rests 400 ms); Cancel is `ReasonConfirm`
+  (required reason, "Keep appointment"); cancelled and completed are final
+  (D39).
+- **Source badge**: "Booked online" (info) on customer bookings in every
+  list; the customer page shows "Booked by staff" (neutral) too.
+- **Schedule warning badges** (D38): solid waiting "Outside opening hours"
+  / "Shop closed" on a row, and "N appointments affected" on a closure in
+  settings, linking to the first affected day.
+- **Customer page**: an Appointments card (upcoming from today, soonest
+  first, then "Past" with the latest five; `CustomerAppointmentRows`: day
+  and time range, `StatusPill`, source badge, type, bike and job) with
+  "Book appointment" (`BookAppointmentButton` with `presetCustomer`,
+  `lockCustomer`, `buttonVariant="outline"`, `size="sm"`, `disabled` for
+  an archived customer, like Add bike).
+- **Job page**: a "Booked appointment · Tue 6 Oct 10:00 · Service
+  drop-off" chip under the header when the job came from an appointment;
+  the timeline's `appointment_linked` line reads "Opened from the
+  appointment on …" (check-in created the job) or "Linked to the
+  appointment on …", and its title is a link (`EventDescription.href`).
+- **Schedule settings** (`schedule-settings.tsx`, client sheets; admin
+  only, each submits through `onSubmit` with controlled state and stays
+  open on a refusal): Booking capacity (`NumberInput`s: slot length,
+  bikes per slot, minimum notice, how far ahead, online bookings per
+  customer, online cancellation cutoff; read-only it shows the D2 sentence
+  "Up to 2 bikes can be booked in for each 30-minute slot.", "Customers
+  can cancel online until 2 hours before." and "Singapore time");
+  `WeeklyHoursList` (Monday first, "10:00–19:00" / "09:00–12:30,
+  13:30–18:00" / "Closed"; for admins each row is a button opening the
+  day's sheet: "Open on <weekday>" `Switch`, up to four interval rows of
+  time inputs with add and remove, 00:00 as a closing time meaning
+  midnight, overlap and order errors listed on the group); closures (an
+  "Add closure" / Edit sheet: `SegmentedControl` Closed / Short day, first
+  and last day, "Only part of the day" for Closed (forces one day), opens
+  and closes for a short day, reason; delete with `ReasonConfirm`; past
+  ones under a collapsed "Past"). Every save toasts the upcoming bookings
+  the schedule no longer fits, with "Show" opening the first such day.
+  Closures and types carry a `newId()` from the sheet (Add sends `isNew`).
+- **Appointment types** (`/settings/appointment-types`,
+  `AppointmentTypeSheet`): rows with name, duration, units, Public / Staff
+  only, Inactive (inactive last) and sort order; the admin sheet has name,
+  description, duration, capacity units (at most the shop's), "Public"
+  ("Customers can book this on the BICII website"), Active and sort order.
+  Types are never deleted, and the page says so.
 
 ### Photos and images
 

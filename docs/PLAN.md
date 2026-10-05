@@ -206,9 +206,51 @@ machine; `history.ts`, `time.ts`, `format.ts`), `src/lib/domain/appointments.ts`
 `openUnlinkedJobs`), the Server Actions, `/appointments` (day/week),
 `BookAppointmentSheet`, `/appointments/[id]` and its check-in, the shared
 `LeadPicker`, and `appointments.spec.ts` (journey 2 and the no-show
-reinstatement). Step 4: the Today list, the customer page's section, the
-job's appointment chip and timeline text, the schedule and type settings
-screens and their E2E.
+reinstatement).
+
+Shipped (Phase 2 as a whole, step 4 completing the app): migrations
+`20261004002700_appointment_enum_values`, `…2800_schedule`,
+`…2900_appointments`, `…3000_appointment_customer_access`,
+`…3100_appointment_check_in` and `…3200_appointment_reporting` (Phase 5's
+SQL untouched except `private.shop_timezone()` / `shop_currency()`, same
+signatures, now reading `shop_settings`, D35). Routes: `/appointments`
+(day/week, with a link to the schedule), `/appointments/[id]`,
+`/appointments/[id]/check-in`, `/settings/schedule` and
+`/settings/appointment-types` (readable by every staff member, each with
+its own `loading.tsx`; edit controls for admins), plus Today's appointment
+tiles with "Still expected" and the arrivals list (D41 counts, D30: every
+staff member), the customer page's Appointments card with Book (customer
+locked, not for archived customers) and the job's "Booked appointment"
+chip and "Opened from / Linked to the appointment on …" timeline line
+linking back (D40). Domain modules: `src/lib/domain/appointments.ts`
+(adds `todaySummary` over `public.appointment_daily` and
+`customerAppointments`) and `src/lib/domain/schedule.ts`
+(`getShopSettings`, `getWeeklyHours`, `listClosures` with the bookings
+each affects, `getClosure`, `listAppointmentTypes`, `affectedBySchedule`,
+and the admin writes `updateShopSettings`, `setShopHours`, `saveClosure`,
+`deleteClosure`, `saveAppointmentType`); the pure `src/lib/schedule.ts`
+(wording and the form schemas mirroring the database checks) and
+`src/lib/appointments/`. Actions: `appointments/actions.ts`,
+`settings/schedule/actions.ts` and `settings/appointment-types/actions.ts`
+(admin). Components: `BookAppointmentSheet` / `BookAppointmentButton`, the
+appointment list, actions, edit and check-in components, `LeadPicker`,
+`TodayArrivals`, `CustomerAppointmentRows`, the schedule settings sheets
+and `AppointmentTypeSheet`. Decisions D36–D42 (§6) with D2, D8, D9, D12,
+D18, D30 and D35. Tests: the database files `appointments`,
+`appointment-slots`, `schedule-settings`, `appointment-customer-access`,
+`appointment-concurrency`, `appointment-check-in`, `appointment-reporting`
+and `appointment-seed`; unit tests for the slot mirror, statuses, times,
+the timeline text and link, Today's appointment components and the
+schedule forms; E2E `appointments.spec.ts` (journey 2 through Today and the
+job, the no-show reinstatement, capacity closing a slot) and
+`appointment-settings.spec.ts`. Phase 11 consumes `available_slots`,
+`public_appointment_types`, `public_shop_hours`,
+`my_appointments(include_past)`, `book_my_appointment` and
+`cancel_my_appointment`, and wraps `private.available_slots_at` (keep its
+signature) in its `bookable_slots` range RPC; Phase 8 decides whether
+`shop_settings.public_site_url` or `NEXT_PUBLIC_PUBLIC_SITE_URL` is the QR
+base (D9); Phase 9's activity report uses the D41 basis
+(`public.appointment_daily`).
 
 ### Phase 3 — Workshop
 

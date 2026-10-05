@@ -9,6 +9,7 @@ everyday local setup (the Docker-free devstack) see the README quickstart.
 - [Creating the first admin in a hosted project](#creating-the-first-admin-in-a-hosted-project)
 - [Rotating keys and passwords](#rotating-keys-and-passwords)
 - [Vercel environment setup](#vercel-environment-setup)
+- [Appointments: schedule before go-live](#appointments-schedule-before-go-live)
 - [CI](#ci)
 
 The demo data is relative to the shop day (Singapore) the database was
@@ -276,6 +277,49 @@ and shows anything else as "Not a BICII label" without opening it. A label
 printed for another environment's public site URL is therefore foreign on
 this one (Phase 8 adds the database QR base to the accepted list,
 `src/lib/qr.ts`).
+
+## Appointments: schedule before go-live
+
+The seed's schedule is demo data. Before the shop takes real bookings
+(staff or online), an admin sets, in the app under Settings:
+
+1. **Shop hours and closures → Weekly hours.** Tap each weekday: switch
+   "Open on <day>" and enter up to four stretches (a lunch break is two).
+   A closing time of 00:00 means midnight.
+2. **Booking capacity → Edit.** The slot length (it must divide the day:
+   15, 20, 30 or 60 minutes; bookings start on that grid from midnight)
+   and how many bikes the shop takes in per slot (one shared pool, PLAN
+   D2). The online booking rules (D37): minimum notice (default 120
+   minutes), how far ahead customers may book (60 days), how many upcoming
+   online bookings one customer may hold (3; staff bookings never count)
+   and the online cancellation cutoff (120 minutes before the start; after
+   it the customer calls the shop). Staff bookings ignore the online rules
+   but never the hours, closures or capacity.
+3. **Appointment types.** Name, description, duration (steps of 5
+   minutes), capacity units (at most the shop's capacity), "Public"
+   (customers can book it on the website) and Active. Types are never
+   deleted: switch one off to stop new bookings.
+
+**Closures and short days.** Settings → Shop hours and closures → Add
+closure. "Closed" closes whole days (first to last day) or, with "Only part
+of the day", a few hours of one day; "Short day" opens only the hours
+given on those days, instead of the weekly hours. A reason is required
+(staff see it; customers only see that no times are free). Deleting a
+closure asks for a reason too and is kept in the schedule history.
+
+**Existing bookings never move** (D38). Changing hours, closures, the slot
+length, the capacity or a type's length or units leaves every appointment
+already booked as it is. After a save the toast says how many upcoming
+appointments no longer fit, with a link to the first such day; each
+closure shows "N appointments affected"; the appointments day view marks
+them "Outside opening hours" or "Shop closed" and its capacity bars turn
+red over capacity. Call those customers and cancel and rebook (there is no
+reschedule and no automatic customer message in the MVP).
+
+**Fixed settings.** The shop's time zone is Singapore and its currency SGD
+(D35): no screen or RPC changes them. `shop_settings.public_site_url` is
+stored but not used yet: the QR base stays `NEXT_PUBLIC_PUBLIC_SITE_URL`
+until Phase 8 decides (D9).
 
 ## CI
 

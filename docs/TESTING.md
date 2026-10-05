@@ -330,6 +330,25 @@ same PR.
   (`appointment-time.test.ts`): Singapore wall times, '24:00' as the next
   midnight, London and New York across daylight saving, `weekStart`
   (Monday), HH:MM parsing including Postgres's seconds.
+- Phase 2 (appointments, step 4): `workshop-timeline.test.ts` reads
+  `appointment_linked` as "Opened from the appointment on Tue 6 Oct 10:00
+  (Service drop-off)" when check-in created the job and "Linked to the
+  appointment on …" otherwise, with `href` `/appointments/<id>` (none for a
+  malformed id, and a plain sentence for an incomplete payload, D40);
+  `job-timeline.test.tsx` renders an entry with an `href` as a link.
+  `today-appointments.test.tsx`: `AppointmentsSection`'s three D41 tiles
+  and their wording (the placeholder only for a null row) and
+  `TodayArrivals` (rows link to `/appointments/<id>` named "10:30, Hafiz
+  Rahman, Service drop-off, late", "Still expected" links to the day,
+  "N more expected later", "No more arrivals expected today" with Book).
+  `schedule.test.ts`: the weekday order, hours, capacity and cutoff
+  sentences and closure labels; `shopSettingsSchema` (slot lengths that
+  divide the day, every bound of the `shop_settings` checks, no time zone,
+  D35, D38), `shopHoursSchema` (four ordered intervals up to 24:00,
+  overlaps, an open day needs hours, a closed day keeps them),
+  `closureSchema` (whole days drop typed times, part of ONE day, short-day
+  times in order, day order, reason 1–200), `deleteClosureSchema` and
+  `appointmentTypeSchema` (5–480 minutes in steps of 5, units, names).
 
 ### Database (SPEC §27.2 and §23)
 
@@ -657,8 +676,10 @@ today's list and clicks the row by its href (Chloe has a seeded booking
 today too), sees "Booked online", taps Arrived (pill and toast), Check
 in: the Giant preselected, the note as requested work, Marcus Tan as lead,
 "Check in and open job" lands on the new job with a J- number (and the
-toast); the job's timeline shows "Checked in as J-…" and "Linked to an
-appointment"; back on the appointment: Checked in, the job card linking
+toast); the job's timeline shows "Checked in as J-…" and the link
+"Opened from the appointment on … <time> (Service drop-off)" to the
+appointment, and the job's chip "Booked appointment · … · Service
+drop-off" links back too; back on the appointment: Checked in, the job card linking
 to the job, history "Booked online by the customer", "Marked as arrived
 by Asha Admin", "Checked in by Asha Admin", "Job J-… opened". "No-show
 and late arrival" makes its own data: the admin books Daniel through the
@@ -667,6 +688,42 @@ has not ended), marks it a no-show, and in the UI "Reinstate as arrived"
 turns the pill to Arrived with "Reinstated as arrived by Asha Admin" in
 the history. Walk-ins and every earlier spec are unaffected; Today's spec
 reads deltas, so the extra appointment today changes nothing it asserts.
+
+Step 4 adds to journey 2, before the staff list: Today (`/`) shows the
+booking in "Arrivals" as a link with href `/appointments/<id>` whose
+accessible name starts with the booked time and Chloe Lim, "Still
+expected" is at least 1, and Arrived is read; after check-in Today's
+Arrived is exactly one higher (read before and after with `readCount`,
+never absolute counts, D41) and the booking left the arrivals list. Chloe
+Lim (`CUSTOMER_LOGIN.chloe`, password `bicii-dev-password`) is the one
+seeded customer login, used here and in the customer-access tests. "Staff
+book for a customer and capacity closes the slot": mechanic2 (no
+permissions), on the first Tuesday at least 21 days after `shopToday()`
+(+7 on the tablet project, `clearDay`), with the capacity set to 2 through
+the API at the start (4 again in `finally`, the spec's `beforeAll` value),
+books Tan and Priya into 11:00 "Service drop-off" from each customer's
+page (the Book sheet with the customer preset and locked) with a tagged
+internal note; a third booking (Daniel) is not offered 11:00 (11:30 is);
+both are cancelled through "Cancel appointment…" with a reason and 11:00
+is offered again; `finally` also cancels the test's own tagged bookings.
+`appointment-settings.spec.ts` (each day +7 on the tablet; `afterEach`
+restores, through the replay-safe admin RPCs, Sunday's seeded
+09:00–13:00, deletes the test's closures by their tagged reason with
+"E2E cleanup" and deactivates its own type, so a failure never leaks):
+an admin adds a whole-day closure on the first Wednesday at least 35 days
+ahead → the day view says "Closed: <reason>", the Book sheet has no
+times and "Next day with free times" moves on → deleting it (ReasonConfirm
+with a reason) brings 10:00 back; a short day 12:00–16:00 on the first
+Thursday at least 35 days ahead offers exactly 12:00–15:30 for the
+30-minute type, then is deleted; a staff-only "E2E fit <tag>" (45 min, 1
+unit) appears in the Book sheet with "Staff only" until it is deactivated,
+and stays listed as Inactive; Sunday gets 14:00–16:00 (listed, and offered
+on a Sunday at least 21 days ahead), then the seeded hours are restored in
+the UI; mechanic2 reads both settings pages (Singapore time, the D2
+sentence, the week, the types with Public / Staff only) without any Edit,
+Add, New type or Delete control. Helpers: `clearDay`, `openBookSheet`
+(the phone's floating Book or the md+ button) and `pickTime` (taps a time
+chip) in `tests/e2e/helpers.ts`.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
@@ -677,8 +734,8 @@ database, signed in as the seeded admin and mechanic:
    with M1.5: `workshop.spec.ts` for the timeline, `today.spec.ts` for the
    milestone run ending on Today).
 2. Appointment: book (as seeded customer via RPC) → appears on Today → arrive →
-   check in → work order linked (`appointments.spec.ts` from Phase 2 step 3,
-   via the appointments list; step 4 adds the Today list).
+   check in → work order linked (`appointments.spec.ts`: Today's arrivals
+   list and counts, the appointments list, check-in, the job's link back).
 3. Bulk product: create → receive PO (partial) → print 10 labels (PDF adapter
    produces 10 identical QR payloads) → consume one on a job → stock −1.
 4. Consignment: create consignor + unique bike → label → public page (hitting
