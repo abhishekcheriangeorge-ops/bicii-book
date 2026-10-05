@@ -207,3 +207,8 @@ export function toMoneyString(
 ): string {
   return roundMoney(value, currency).toFixed(minorDigits(currency));
 }
+
+/** A quantity for display, without trailing zeros: "2", "1.5", "0.25". */
+export function formatQuantity(value: MoneyInput): string {
+  return toDecimal(value).toFixed();
+}

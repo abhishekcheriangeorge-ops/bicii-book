@@ -28,6 +28,15 @@ describe("groupHits", () => {
     expect(groups.map((g) => g.kind)).toEqual(["bike", "customer"]);
   });
 
+  it("puts Jobs first for an exact J- number", () => {
+    const groups = groupHits([
+      hit("customer", "c1", 0.6),
+      hit("bike", "b1", 0.6),
+      hit("work_order", "j1", 1),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["Jobs", "Customers", "Bikes"]);
+  });
+
   it("leaves out empty groups", () => {
     expect(groupHits([])).toEqual([]);
     expect(groupHits([hit("bike", "b1", 1)]).map((g) => g.kind)).toEqual(["bike"]);
@@ -38,7 +47,9 @@ describe("hrefForHit", () => {
   it("opens the staff record", () => {
     expect(hrefForHit({ kind: "customer", id: "x" })).toBe("/customers/x");
     expect(hrefForHit({ kind: "bike", id: "y" })).toBe("/bikes/y");
-    expect(isSearchKind("work_order")).toBe(false);
+    expect(hrefForHit({ kind: "work_order", id: "z" })).toBe("/jobs/z");
+    expect(isSearchKind("work_order")).toBe(true);
+    expect(isSearchKind("product")).toBe(false);
   });
 });
 

@@ -4,7 +4,10 @@ import {
   formatDateTime,
   formatDayShort,
   formatTime,
+  fromShopLocal,
   SHOP_TIME_ZONE,
+  shopDayStart,
+  toShopLocal,
   shopDateKey,
   shopDaysBetween,
 } from "@/lib/dates";
@@ -52,5 +55,26 @@ describe("dates (Asia/Singapore by default)", () => {
     expect(shopDaysBetween("2026-10-04T15:00:00Z", "2026-10-04T17:00:00Z")).toBe(1);
     expect(shopDaysBetween("2026-10-01T02:00:00Z", "2026-10-04T02:00:00Z")).toBe(3);
     expect(shopDaysBetween("2026-10-04T02:00:00Z", "2026-10-04T09:00:00Z")).toBe(0);
+  });
+});
+
+describe("shop-local wall-clock times (Singapore, UTC+8, no daylight saving)", () => {
+  it("starts a shop day at Singapore midnight", () => {
+    // 4 Oct 2026, 1 am in Singapore is still 3 Oct in UTC.
+    const now = new Date("2026-10-03T17:00:00Z");
+    expect(shopDayStart(now).toISOString()).toBe("2026-10-03T16:00:00.000Z");
+    expect(shopDayStart(now, 6).toISOString()).toBe("2026-09-27T16:00:00.000Z");
+  });
+
+  it("reads and writes datetime-local values in shop time", () => {
+    expect(fromShopLocal("2026-10-05T09:30")?.toISOString()).toBe("2026-10-05T01:30:00.000Z");
+    expect(toShopLocal("2026-10-05T01:30:00Z")).toBe("2026-10-05T09:30");
+    expect(toShopLocal("2026-10-04T16:05:00Z")).toBe("2026-10-05T00:05");
+  });
+
+  it("refuses malformed or impossible times", () => {
+    for (const bad of ["", "2026-10-05", "2026-02-31T10:00", "2026-10-05T25:00", "yesterday"]) {
+      expect(fromShopLocal(bad), bad).toBeNull();
+    }
   });
 });

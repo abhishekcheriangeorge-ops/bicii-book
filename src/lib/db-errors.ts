@@ -71,6 +71,37 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   attachment_original_never_public:
     "This photo was stored as its original file, which may carry where it was taken. Add it again as a JPEG to make it public.",
   attachment_history_append_only: "Photo history cannot be changed.",
+  // Workshop (Phase 3)
+  work_order_transition_invalid: "A job can't move to that status from where it is now.",
+  work_order_locked: "This job is completed or closed. Reopen it to change its lines.",
+  work_order_closed: "This job is collected or cancelled and can no longer change.",
+  work_order_has_lines: "Void the job's lines before cancelling it.",
+  work_order_conflict: "That job clashes with another one. Start the check-in again.",
+  work_order_immutable: "A job keeps its number, customer, bike and timestamps.",
+  work_order_history_append_only: "A job's timeline cannot be changed.",
+  work_order_customer_archived:
+    "That customer is archived. Unarchive them before checking in a bike.",
+  work_order_bike_archived: "That bike is archived. Unarchive it before checking it in.",
+  requested_work_required: "Say what the customer wants done.",
+  note_required: "Write the note first.",
+  note_too_long: "Keep the note under 5,000 characters.",
+  bike_owner_mismatch: "That bike belongs to someone else. Transfer it to this customer first.",
+  staff_inactive: "Only active staff can be assigned to a job.",
+  assignment_immutable: "Assignments are closed, never edited. Assign again instead.",
+  line_conflict: "That line clashes with another one. Add it again.",
+  line_immutable: "Lines can't be edited or deleted. Void the line and add a new one.",
+  line_type_unsupported: "Parts lines can't be voided until inventory is set up.",
+  service_unavailable: "That service is inactive or archived.",
+  service_conflict: "That service clashes with another one. Save it again.",
+  category_kind_mismatch: "Choose a service category for a service.",
+  cult_commons_rate_missing: "No Cult Commons rate is set. Ask an admin to set one.",
+  cult_commons_rates_append_only:
+    "Cult Commons rates can't be changed. Schedule a new rate instead.",
+  cult_commons_rate_in_effect: "That rate is already in effect and can't be cancelled.",
+  rate_backdated: "A new rate can start now or later, never in the past.",
+  rate_conflict: "That rate clashes with another one. Schedule it again.",
+  note_conflict: "That note clashes with another one. Add it again.",
+  attachment_work_order_never_public: "Photos on a job can't be made public.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -84,6 +115,20 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   bikes_pkey: "That bike has already been saved.",
   attachments_pkey: "That photo has already been saved.",
   attachments_storage_path_key: "That photo has already been saved.",
+  // Workshop (Phase 3)
+  work_orders_pkey: "That job has already been saved.",
+  work_orders_job_number_key: "That job number is already taken. Try again.",
+  work_order_line_items_pkey: "That line has already been saved.",
+  services_pkey: "That service has already been saved.",
+  services_active_name_key: "A service with that name already exists.",
+  categories_pkey: "That category has already been saved.",
+  categories_active_name_key: "A category with that name already exists.",
+  cult_commons_rates_effective_from_key: "Another rate already starts at that time.",
+  work_order_assignments_active_staff_key:
+    "Someone else changed the assignments at the same time. Try again.",
+  work_order_assignments_one_lead_key:
+    "Someone else changed the assignments at the same time. Try again.",
+  work_order_events_note_id_key: "That note has already been added.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -108,6 +153,70 @@ export const CHECK_ERRORS: Record<string, string> = {
   attachments_caption_check: "Keep the caption under 500 characters.",
   attachments_byte_size_check: "Photos must be under 20 MB.",
   attachments_customer_never_public: "Photos on a customer record cannot be made public.",
+  attachments_work_order_never_public: "Photos on a job can't be made public.",
+  // Shape checks the RPCs and triggers keep true; reaching one means a
+  // writer outside them (an owner backfill, a new path) got something wrong.
+  staff_events_permission_matches_type: "That staff history entry is not consistent.",
+  bikes_short_id_format: "A bike ID looks like B-000123.",
+  bike_ownership_events_registered_shape: "That ownership entry is not consistent.",
+  bike_ownership_events_transfer_changes_owner: "A transfer must go to a different owner.",
+  bike_ownership_events_transfer_has_reason: "Give a reason for the transfer.",
+  bike_ownership_events_reason_check: "Keep the reason under 500 characters.",
+  attachments_bucket_matches_visibility:
+    "The photo was stored in the wrong place. Upload it again.",
+  attachments_media_type_check: "Photos must be JPEG, PNG, WebP or HEIC.",
+  attachments_path_shape: "The photo was uploaded to the wrong place. Try again.",
+  attachments_extension_matches_media_type: "That file is not the type of photo it claims to be.",
+  attachment_events_deleted_has_reason: "Give a reason for deleting the photo.",
+  attachment_events_reason_check: "Keep the reason under 500 characters.",
+  // Workshop (Phase 3)
+  categories_name_check: "Enter a category name under 80 characters.",
+  services_name_check: "Enter a service name under 120 characters.",
+  services_description_check: "Keep the description under 2,000 characters.",
+  services_default_sale_price_check: "Prices can't be negative.",
+  services_default_direct_cost_check: "Costs can't be negative.",
+  services_currency_check: "Use a three-letter currency code.",
+  cult_commons_rates_rate_check: "The rate must be between 0% and 100%.",
+  cult_commons_rates_cancelled_shape: "A cancelled rate needs the time it was cancelled.",
+  work_orders_job_number_format: "A job number looks like J-000123.",
+  work_orders_currency_check: "Use a three-letter currency code.",
+  work_orders_collected_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_cancelled_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_completed_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_ready_stamp: "The job's dates don't match its status. Refresh and try again.",
+  work_orders_ready_after_completed: "A job is ready for collection only after it is completed.",
+  work_orders_completed_after_started: "A job is completed only after work has started.",
+  work_orders_started_after_check_in: "Work can't start before the bike was checked in.",
+  work_orders_completed_after_check_in: "A job can't be completed before the bike was checked in.",
+  work_orders_collected_after_completed: "A job is collected only after it is completed.",
+  work_orders_status_changed_after_check_in:
+    "A job's status can't change before the bike was checked in.",
+  work_order_assignments_unassigned_after_assigned:
+    "Someone can't leave a job before they were assigned to it.",
+  work_order_events_payload_object: "That timeline entry is not consistent.",
+  work_orders_requested_work_check: "Say what the customer wants done, in under 2,000 characters.",
+  work_orders_intake_notes_check: "Keep the condition notes under 5,000 characters.",
+  work_orders_internal_notes_check: "Keep the internal notes under 10,000 characters.",
+  work_orders_completion_notes_check: "Keep the completion notes under 5,000 characters.",
+  work_orders_approval_note_check: "Keep the approval note under 500 characters.",
+  work_orders_cancellation_reason_check: "Keep the reason under 500 characters.",
+  work_order_line_items_description_check: "Enter a description under 300 characters.",
+  work_order_line_items_quantity_check: "Quantity must be more than 0 and at most 9,999.",
+  work_order_line_items_unit_sale_price_check: "Prices can't be negative.",
+  work_order_line_items_unit_direct_cost_check: "Costs can't be negative.",
+  work_order_line_items_void_reason_check: "Keep the reason under 500 characters.",
+  work_order_line_items_inventory_source: "Parts are counted in whole units.",
+  work_order_line_items_unit_quantity: "A unique item is added one at a time.",
+  work_order_line_items_rate_check: "The rate must be between 0% and 100%.",
+  work_order_line_items_currency_check: "Use a three-letter currency code.",
+  work_order_line_items_void_shape: "A voided line needs a reason.",
+  work_order_line_items_service_source: "A service line needs its service.",
+  work_order_line_items_manual_source: "A manual line can't point at a service or a part.",
+  work_order_line_items_cost_pending_shape:
+    "Only a manual line without a cost can be cost pending.",
+  money_amount_not_nan: "Enter an amount.",
+  rate_fraction_not_nan: "Enter a rate.",
+  line_quantity_not_nan: "Enter a quantity.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */
@@ -124,6 +233,7 @@ const SQLSTATE_ERRORS: Record<string, Pick<MappedError, "message" | "kind">> = {
   "22004": { message: "Some required values are missing.", kind: "invalid" },
   "22023": { message: "Some values are not allowed.", kind: "invalid" },
   "22P02": { message: "Some values are not in the right format.", kind: "invalid" },
+  "22003": { message: "That amount is too large.", kind: "invalid" },
 };
 
 /** Constraint name from the error, or parsed from Postgres's message. */

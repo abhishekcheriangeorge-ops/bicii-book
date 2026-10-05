@@ -4,17 +4,20 @@ import { notFound } from "next/navigation";
 import { ArchiveControl } from "@/components/domain/archive-control";
 import { NewBikeButton } from "@/components/domain/bike-sheet";
 import { EditCustomerButton } from "@/components/domain/customer-sheet";
+import { JobHistoryList } from "@/components/domain/job-history";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { ShortId } from "@/components/domain/short-id";
 import { Badge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { BikeIcon, ChevronRightIcon } from "@/components/ui/icons";
+import { BikeIcon, ChevronRightIcon, PlusIcon, WrenchIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowLink, RowList } from "@/components/ui/row-list";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDate } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
 import { getCustomer } from "@/lib/domain/customers";
+import { listWorkOrdersForCustomer } from "@/lib/domain/workshop";
 import { mailtoHref, telHref } from "@/lib/people";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -23,7 +26,7 @@ export const metadata: Metadata = { title: "Customer" };
 
 /**
  * One customer (SPEC §21): how to reach them, staff notes, the bikes they
- * own now (add one here), photos on their record (never public, PLAN D13),
+ * own now (add one here), their jobs (latest 20, "New job"), photos on their record (never public, PLAN D13),
  * and archiving.
  */
 export default async function CustomerPage({ params }: PageProps<"/customers/[id]">) {
@@ -31,9 +34,10 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const supabase = await createClient();
-  const [customer, photos] = await Promise.all([
+  const [customer, photos, jobs] = await Promise.all([
     getCustomer(supabase, id),
     listPhotos(supabase, { entityType: "customer", entityId: id }),
+    listWorkOrdersForCustomer(supabase, id),
   ]);
   if (!customer) notFound();
   const archived = customer.archivedAt !== null;
@@ -151,6 +155,38 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
               </RowLink>
             ))}
           </RowList>
+        )}
+      </Card>
+      <Card
+        title="Jobs"
+        actions={
+          archived ? null : (
+            <ButtonLink
+              href={`/jobs/new?customer=${customer.id}`}
+              variant="outline"
+              size="sm"
+              icon={<PlusIcon className="size-4" />}
+            >
+              New job
+            </ButtonLink>
+          )
+        }
+      >
+        {jobs.items.length === 0 ? (
+          <p className="flex items-center gap-2 text-dust-700">
+            <WrenchIcon className="size-5 shrink-0 text-dust-500" />
+            No jobs for {customer.label} yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {jobs.more ? (
+              <p className="text-sm text-dust-700">
+                Showing the latest {jobs.items.length} jobs. There are more: find an older one by
+                its J- number in Search, or on a bike&rsquo;s service history.
+              </p>
+            ) : null}
+            <JobHistoryList label={`Jobs of ${customer.label}`} jobs={jobs.items} showBike />
+          </div>
         )}
       </Card>
       <Card title="Photos" eyebrow="On the customer record">

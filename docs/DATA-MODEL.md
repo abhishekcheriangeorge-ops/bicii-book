@@ -185,7 +185,8 @@ attachments
   created_by uuid -> staff
   created_at, updated_at
   index (entity_type, entity_id, created_at)
-  check: a `customer` entity's attachment is never `public` (PLAN D13)
+  check: a `customer` entity's attachment is never `public` (PLAN D13),
+         nor a `work_order` entity's (PLAN D19, Phase 3)
 
 attachment_events                       -- append-only; outlives deleted attachments
   id, attachment_id (no FK), entity_type, entity_id
@@ -212,7 +213,7 @@ Rules:
   `deleted` event's payload; ids are never reused). Staff may edit a
   caption directly (recorded as `caption_changed`).
 - Entity types grow by phase. `private.attachment_entity_exists` knows
-  `customer` and `bike`, returns null for the rest (`record_attachment`
+  `customer`, `bike` and (Phase 3) `work_order`, returns null for the rest (`record_attachment`
   raises `attachment_entity_unsupported`); the migration that creates
   `work_orders`, `products`, `inventory_units` or `consignment_items` adds
   its branch with `create or replace`.
@@ -325,127 +326,305 @@ mechanic.
 
 ## 4. Workshop
 
+Phase 3 migrations: `…1200_workshop_catalog` (§5), `…1300_work_orders`,
+`…1400_work_order_lines` (§5), `…1500_workshop_rpcs`.
+
 ```
-work_orders
-  id uuid PK
-  job_number text not null unique         -- J-000456
+work_orders                              -- written only through RPCs (§16)
+  id uuid PK                             -- client-chosen: the check-in's idempotency key
+  job_number text not null unique        -- J-000456: assigned on insert from next_short_id('J')
+                                         --   whatever the caller sent (D9); immutable
   customer_id uuid not null -> customers
   bike_id uuid not null -> bikes
-  appointment_id uuid null -> appointments
-  lead_mechanic_id uuid null -> staff     -- denormalised from assignments
+  appointment_id uuid null               -- no FK yet: Phase 2 adds it with check_in_appointment;
+                                         --   set once (insert, or null -> value), never changed or cleared
+  lead_mechanic_id uuid null -> staff    -- = the active lead assignment's staff_id (trigger-kept)
   status work_order_status not null default 'received'
      -- enum: received | diagnosing | awaiting_customer | awaiting_parts |
      --       ready_to_start | in_progress | paused | completed |
      --       ready_for_collection | collected | cancelled
-  intake_notes, internal_notes, completion_notes text
-  requested_work text
-  approval_flag boolean not null default false   -- optional internal flag
-  approval_note text null
-  checked_in_at timestamptz not null default now()
+  requested_work text not null           -- 1..2000
+  intake_notes text null                 -- condition on arrival, ≤ 5000
+  internal_notes text null               -- staff only, ≤ 10000
+  completion_notes text null             -- ≤ 5000
+  approval_flag boolean not null default false   -- optional internal flag (SPEC §7.1)
+  approval_note text null                -- ≤ 500
+  checked_in_at timestamptz not null default clock_timestamp()
+  status_changed_at timestamptz not null -- time of the last status change (= checked_in_at at first)
   started_at, completed_at, ready_for_collection_at, collected_at timestamptz null
-  cancelled_at timestamptz null, cancellation_reason text null
+  cancelled_at timestamptz null, cancellation_reason text null (≤ 500)
   currency char(3) not null default 'SGD'
-  created_by uuid -> staff
-  created_at, updated_at
+  created_by uuid -> staff, created_at, updated_at
+  checks (named; every named check and unique index in the migrations is mapped in
+    db-errors.ts, enforced by tests/unit/db-errors.test.ts): collected ⇔ collected_at; cancelled ⇔
+    cancelled_at and cancellation_reason; completed/ready_for_collection/collected ⇔
+    completed_at; ready_for_collection_at needs completed_at; ready_for_collection
+    needs ready_for_collection_at; completed_at needs started_at; started_at,
+    completed_at, status_changed_at ≥ checked_in_at; collected_at > completed_at
+  index (status), (customer_id, checked_in_at desc), (bike_id, checked_in_at desc),
+        (lead_mechanic_id), (checked_in_at), (completed_at), (collected_at)
 
-work_order_assignments
+work_order_assignments                   -- rows are closed, never edited or deleted
   id, work_order_id, staff_id, role assignment_role   -- enum: lead | additional
-  assigned_by uuid -> staff, assigned_at, unassigned_at null, unassigned_by null
-  unique (work_order_id, staff_id) where unassigned_at is null
-  unique (work_order_id) where role = 'lead' and unassigned_at is null
+  assigned_by -> staff, assigned_at (clock_timestamp), unassigned_at null, unassigned_by null
+  unique (work_order_id, staff_id) where unassigned_at is null      -- …_active_staff_key
+  unique (work_order_id) where role = 'lead' and unassigned_at is null  -- …_one_lead_key
 
-work_order_events  (append-only; no update/delete policy for anyone)
+work_order_events  (append-only for every writer, the owner included)
   id bigint identity PK
   work_order_id uuid -> work_orders
   event_type work_order_event_type
-     -- enum: checked_in | photo_added | assignment_changed | note_added |
-     --       diagnosis_added | line_added | line_voided | stock_consumed |
-     --       stock_reversed | status_changed | completed | ready_for_collection |
-     --       collected | cancelled | approval_flagged
-  actor_staff_id uuid null, actor_user_id uuid null
-  payload jsonb not null default '{}'     -- e.g. {from:'received', to:'in_progress'}
-  created_at
-  index (work_order_id, created_at)
+     -- enum: checked_in | status_changed | completed | ready_for_collection |
+     --       collected | cancelled | reopened | assignment_changed | note_added |
+     --       diagnosis_added | details_changed | approval_flagged | photo_added |
+     --       photo_removed | line_added | line_voided | stock_consumed | stock_reversed
+  actor_staff_id uuid null -> staff (null = outside the app), actor_user_id uuid null (auth.uid())
+  payload jsonb not null default '{}' (an object)
+  correlation_id text null, created_at (clock_timestamp)
+  index (work_order_id, created_at, id), (event_type, created_at), (actor_staff_id)
 ```
 
-Status transitions are enforced by `set_work_order_status(work_order_id,
-new_status, note)`, which:
+Status machine (D15, D16): `private.work_order_transition_rule(from, to)`
+returns `allowed`, `reason_required` or null; `src/lib/workshop.ts`
+(`transitionRule`) mirrors it and a database test compares all 121 pairs.
 
-- validates the transition against an allowed-transition table in the function
-  (no transition out of `collected` or `cancelled`; `collected` only from
-  `ready_for_collection` or `completed`);
-- stamps the matching timestamp exactly once (`started_at` on first
-  `in_progress`, `completed_at` on `completed`, `ready_for_collection_at`,
-  `collected_at`), never clearing an earlier stamp;
-- appends a `status_changed` event plus the specific `completed` /
-  `collected` event.
+| From | Allowed | Reason required |
+|---|---|---|
+| received | diagnosing, awaiting_customer, awaiting_parts, ready_to_start, in_progress | cancelled |
+| diagnosing | awaiting_customer, awaiting_parts, ready_to_start, in_progress | cancelled |
+| awaiting_customer | diagnosing, awaiting_parts, ready_to_start, in_progress | cancelled |
+| awaiting_parts | diagnosing, awaiting_customer, ready_to_start, in_progress | cancelled |
+| ready_to_start | diagnosing, awaiting_customer, awaiting_parts, in_progress | cancelled |
+| in_progress | diagnosing, awaiting_customer, awaiting_parts, paused, completed | cancelled |
+| paused | diagnosing, awaiting_customer, awaiting_parts, in_progress, completed | cancelled |
+| completed | ready_for_collection, collected | in_progress ("reopen") |
+| ready_for_collection | collected | in_progress ("reopen") |
+| collected, cancelled | — (final) | — |
 
-`completed_at` and `collected_at` are different events and different
-timestamps. Reports use `completed_at` as the job's recognition date (see Open
-decision D3).
+The same status is not a transition: `set_work_order_status` returns the row
+unchanged (a replay). Nothing returns to `received`. "Open" means before
+completion (received … paused): only open jobs take or void lines (D15) or
+can be cancelled (D16, and only with no live line). "Closed" means collected
+or cancelled: assignments and the approval flag no longer change; details
+and notes still may.
+
+Stamps. `private.work_orders_enforce_rules` (BEFORE INSERT OR UPDATE, every
+writer) derives them from `status_changed_at`, which it sets to
+`clock_timestamp()` unless the writer moved it forward (backfills; moving it
+back is 22023): entering `in_progress` sets `started_at` only if it is null
+(never cleared); `completed` sets `completed_at`; `ready_for_collection`
+sets `ready_for_collection_at`; `collected` sets `collected_at`;
+`cancelled` sets `cancelled_at` and `cancellation_reason` (the reason).
+A reopen (completed or ready_for_collection → in_progress) clears
+`completed_at` and `ready_for_collection_at`. DEVIATION, owner to confirm
+before Phase 5: reopen clears completion stamps, which deviates from
+DATA-MODEL §4's original "stamps exactly once, never clearing an earlier
+stamp" and moves D3 recognition to the final completion. Phase 4 returns
+sold units to held_for_customer on reopen (whenever `completed_at` goes from
+non-null to null every unit on a non-voided inventory line of the job goes
+sold → held_for_customer; whenever `completed_at` goes from null to
+non-null, including re-completion after a reopen, they go
+held_for_customer → sold), with no stock movement (D6). Phase 3 keeps the
+reopen rule in `private.work_orders_enforce_rules`, commented as the Phase 4
+extension point, so Phase 4 can create or replace it starting from Phase 3's
+body or add its own `work_orders` trigger keyed on that `completed_at`
+change. Stamps never change without a status change, and `job_number`,
+`customer_id`, `bike_id`, `currency`, `created_by`, `created_at` and
+`checked_in_at` never change (`work_order_immutable`); `lead_mechanic_id`
+may only become the active lead (so only the assignments trigger moves it).
+`appointment_id` is linked at most once: it is set on insert
+(`private.create_work_order`) or may go from null to a value exactly once on
+update, and once set it never changes and is never cleared
+(`work_order_immutable`); the link writes no timeline event. This is the
+Phase 2 extension point: `check_in_appointment` links an existing open,
+unlinked job this way (Phase 2 checks that the job is open and the
+appointment valid, and adds the foreign key). An insert must be `received`
+with no lead and no stamps; the customer and the bike must exist and not be
+archived (`work_order_customer_archived`, `work_order_bike_archived`), and
+the customer must own the bike or the bike must have no owner (D18,
+`bike_owner_mismatch`). `completed_at` and `collected_at` are different
+events and different timestamps (SPEC §23); reports use `completed_at` as
+the job's recognition date (D3).
+
+Timeline. Triggers write the events, so no writer skips them, through
+`private.record_work_order_event(work_order_id, event_type, payload, at)`
+(actor = `current_staff_id()`, `auth.uid()`, correlation from the request);
+`created_at` is the row's own business timestamp, so backfills stay
+consistent. One event per action:
+
+| Event | When | Payload |
+|---|---|---|
+| `checked_in` | job inserted, at `checked_in_at` | `job_number, customer_id, bike_id, requested_work` |
+| `status_changed` / `completed` / `ready_for_collection` / `collected` / `cancelled` / `reopened` | each status change, at `status_changed_at` (exactly one event, typed by the target; `reopened` for completed/ready → in_progress) | `from, to, note` (+ `started: true` when it stamped `started_at`) |
+| `details_changed` | requested work or notes edited | `{field: {from, to}}` per changed field |
+| `approval_flagged` | flag or note changed | `flagged, note` |
+| `assignment_changed` | assignment inserted / closed, at `assigned_at` / `unassigned_at` | `action (assigned/unassigned), staff_id, role` |
+| `note_added` / `diagnosis_added` | `add_work_order_note` | `note_id, body` (`note_id`, the client's key, unique: `work_order_events_note_id_key`) |
+| `photo_added` / `photo_removed` | job attachment recorded (at its `created_at`) / deleted | `attachment_id, visibility` / `attachment_id, reason` |
+| `line_added` / `line_voided` | line inserted (at `created_at`) / voided (at `voided_at`) | `line_id, line_type, description, quantity, unit_sale_price, sale_total, currency` / `line_id, description, quantity, sale_total, reason` |
+| `stock_consumed` / `stock_reversed` | Phase 4 | — |
+
+Payloads never contain cost, yield, rate or Cult Commons values: every
+staff member reads the timeline, with or without `view_costs` (a test walks
+every key and value). DATA-MODEL originally said "status_changed plus the
+specific event"; one event per status change is the as-built rule. Nothing
+is written for no-ops (same status, unchanged details, an existing
+assignment, a replayed check-in or line).
+
+Assignments (D22): any active staff member assigns or unassigns anyone
+active (`staff_inactive`) on a job that is not closed (`work_order_closed`).
+A new lead closes the previous lead's row (they leave the job; not demoted);
+switching someone's role closes their row and opens one in the new role.
+The AFTER trigger keeps `work_orders.lead_mechanic_id` equal to the active
+lead.
+
+Photos (D19): `private.attachment_entity_exists` knows `work_order`. Photos
+on a job are `internal` or `customer`, never `public`
+(`attachment_work_order_never_public` from a trigger for
+`record_attachment` and `set_attachment_visibility`; CHECK
+`attachments_work_order_never_public` as the backstop).
+
+Lock order. Every RPC that touches a work order and its lines locks the
+`work_orders` row FOR UPDATE (`private.lock_work_order`, which raises P0002
+when the job is absent and checks no status) before any of its line rows
+FOR UPDATE, so concurrent calls on one job serialise in one order;
+`private.require_open_work_order` takes the same lock and then refuses a job
+that is not open (`work_order_locked`). The line triggers' FOR SHARE on the
+job follows the same order for direct writers. Phase 4's
+`add_inventory_line` and `void_line` replacement call
+`private.lock_work_order`, then the replay lookup (so a replay after
+completion returns the original), then `private.require_open_work_order`;
+§7 extends the order to stock, units and products.
+
+Customers (D17) never read these tables (staff-only RLS); they read their
+own jobs through the `my_work_order*` RPCs (§15 "Customer job projection",
+§16; migration `20261004001600_workshop_customer_access`). Staff find a job
+by its number through `staff_search` (`work_order` kind, migration
+`…1700_workshop_search`).
 
 ## 5. Services and line items
 
 ```
 categories
-  id, kind category_kind (service | product), name, parent_id null, sort_order
+  id, kind category_kind (service | product), name (1..80, trimmed), parent_id null
+  (unused by MVP screens), sort_order, created_at, updated_at, archived_at
+  unique (kind, lower(name)) where archived_at is null   -- categories_active_name_key
 
-services
-  id, name, description, category_id null,
-  default_sale_price money_amount not null,
-  default_direct_cost money_amount not null default 0,
-  active boolean, public boolean, sort_order
+services                                 -- written only through RPCs (§16)
+  id, name (1..120, trimmed), description (≤ 2000), category_id null -> categories
+  (a service category: category_kind_mismatch),
+  default_sale_price money_amount not null (≥ 0),
+  default_direct_cost money_amount not null default 0 (≥ 0)   -- no column grant (view_costs)
+  currency char(3) default 'SGD', active, public, sort_order
   created_at, updated_at, archived_at
+  unique (lower(name)) where archived_at is null    -- services_active_name_key
 
-cult_commons_rates
-  id, rate rate_fraction not null check (rate >= 0 and rate <= 1),
-  effective_from timestamptz not null unique,
-  created_by, created_at
-  -- seed: 0.3000 effective 1970-01-01
+services_staff (view)                    -- every column incl. the cost; rows only for view_costs
 
-work_order_line_items
-  id uuid PK
+cult_commons_rates                       -- append-only except cancelling a future rate (D21)
+  id, rate rate_fraction not null (0..1), effective_from timestamptz not null,
+  created_by null -> staff, created_at (clock_timestamp),
+  cancelled_at null, cancelled_by null -> staff
+  unique (effective_from) where cancelled_at is null
+  -- base row cc000000-…-000000000001: 0.3000 from 1970-01-01, in the migration (not the seed)
+
+work_order_line_items                    -- immutable except voiding; never deleted
+  id uuid PK                             -- client-chosen: the add's idempotency key
   work_order_id uuid -> work_orders
-  line_type line_type not null             -- enum: service | inventory | manual
+  line_type line_type not null           -- enum: service | inventory | manual
   source_service_id uuid null -> services
-  source_product_id uuid null -> products
-  source_inventory_unit_id uuid null -> inventory_units
-  description_snapshot text not null
-  quantity line_quantity not null check (quantity > 0)   -- numeric(10,2), NaN-free domain
-  unit_sale_price_snapshot money_amount not null
-  unit_direct_cost_snapshot money_amount not null
-  cult_commons_rate_snapshot rate_fraction not null
-  currency char(3) not null
-  -- generated, stored:
-  sale_total        = round(quantity * unit_sale_price_snapshot, 2)
-  cost_total        = round(quantity * unit_direct_cost_snapshot, 2)
-  yield_total       = sale_total - cost_total
-  cult_commons_share= round(greatest(yield_total, 0) * cult_commons_rate_snapshot, 2)
-  sort_order integer
-  created_by, created_at
-  voided_at timestamptz null, voided_by uuid null, void_reason text null
-  check (line_type <> 'inventory' or source_product_id is not null)
-  check (line_type <> 'inventory' or quantity = trunc(quantity))
-  check (source_inventory_unit_id is null or quantity = 1)
+  source_product_id uuid null            -- FK in Phase 4
+  source_inventory_unit_id uuid null     -- FK in Phase 4
+  description_snapshot text not null     -- 1..300
+  quantity line_quantity not null        -- numeric(10,2), NaN-free domain; 0 < q ≤ 9999
+  unit_sale_price_snapshot money_amount not null (≥ 0)
+  unit_direct_cost_snapshot money_amount not null (≥ 0)
+  cost_pending boolean not null default false
+                                         -- a manual line added with no cost (D14): the 0
+                                         -- above is a placeholder; check cost_pending_shape
+  cult_commons_rate_snapshot rate_fraction not null (0..1)
+  currency char(3) not null              -- the job's
+  -- generated, stored, typed money_amount (each expression written out:
+  -- a generated column cannot reference another):
+  sale_total         = round(q × price, 2)
+  cost_total         = round(q × cost, 2)
+  yield_total        = round(q × price, 2) − round(q × cost, 2)
+  cult_commons_share = round(greatest(round(q × price, 2) − round(q × cost, 2), 0) × rate, 2)
+  created_by, created_at (clock_timestamp)
+  voided_at null, voided_by null, void_reason null (1..500; set together)
+  checks: service lines name a service and nothing else; manual lines no source;
+    inventory lines a product, whole quantities; a unique unit has quantity 1
+  index (work_order_id, created_at), (source_service_id), (source_product_id)
 ```
 
-The arithmetic lives in generated columns so no application code can produce a
-different number. A line is immutable after insert except for `voided_*`,
-`sort_order` and `description_snapshot` (typo fixes; an event records the
-change). Changing quantity is "void and re-add", which is what the stock ledger
-needs anyway.
+The arithmetic lives in generated columns so no application code can produce
+a different number (`src/lib/cult-commons.ts` copies it for previews only;
+a shared fixture table runs through both). A line snapshots its economics
+when it is added: the description (service name unless overridden), unit
+sale price and cost (service defaults unless overridden, D14) and the Cult
+Commons rate from `private.cult_commons_rate_at(clock_timestamp())` (the
+non-cancelled row with the latest `effective_from` ≤ that time;
+`cult_commons_rate_missing` if none). Editing, archiving or deactivating a
+service, or scheduling a new rate, never changes an existing line. Lines are
+listed by `created_at` (there is no `sort_order`).
 
-Totals per work order come from the view `work_order_totals` (sum over
-non-voided lines of `sale_total`, `cost_total`, `yield_total`,
-`cult_commons_share`, plus `bicii_yield_after_cc = yield_total -
-cult_commons_share`). The cost, yield and Cult Commons columns are exposed only
-through `work_order_totals_staff` (requires `view_costs`); the customer/anon
-projection has sale totals only.
+Rates (D21): only admins schedule (`schedule_cult_commons_rate`, now or
+later, `rate_backdated` otherwise) or cancel (`cancel_cult_commons_rate`,
+only while `effective_from` is in the future, `cult_commons_rate_in_effect`
+otherwise) a rate; for every writer the rows are append-only
+(`cult_commons_rates_append_only`) except setting `cancelled_at`/
+`cancelled_by` once on a rate that has not started.
 
-Cult Commons: `cult_commons_share = max(yield, 0) × rate`, where
-`yield = sale − direct cost` and the consignor payout is direct cost. The rate
-is snapshotted on the line from `private.cult_commons_rate_at(now())`.
-Negative yield reports a loss and never produces a negative share.
+Totals per work order: `work_order_totals` (security invoker: job, currency,
+live `line_count`, `sale_total`) for every staff member;
+`work_order_totals_staff` adds `cost_total`, `yield_total`,
+`cult_commons_share` (Σ line shares, D1), `bicii_yield_after_cc =
+yield_total − cult_commons_share` and `cost_pending_count` (live lines with
+no cost entered, D14: while it is above 0 the cost-side figures count those
+lines at 0 and are provisional; the job page says so, and later reports
+must too); `work_order_line_items_staff` returns every line column. Both `_staff` views are security-barrier definer views
+that return rows only when `private.has_permission('view_costs')`;
+`authenticated` holds SELECT on `work_order_line_items` only for the sale
+side (no unit cost, rate, cost, yield or Cult Commons columns; `cost_pending`
+is granted, since it says only that a cost is missing) and on `services` for
+every column except `default_direct_cost`. The security definer writers to
+those two tables re-raise a check or not-null violation through
+`private.raise_without_row` (§16): Postgres would otherwise put the whole
+row, hidden columns included, in the error's DETAIL.
+
+Cult Commons: `cult_commons_share = max(yield, 0) × rate` per line, where
+`yield = sale − direct cost` and the consignor payout is direct cost.
+Negative yield reports a loss and never produces a negative share, nor
+offsets another line (D1).
+
+Lines change only while the job is open (D15, `work_order_locked`), checked
+by the BEFORE trigger for every writer (it locks the job `for share`), and
+are voided with a reason (`void_line`); a job is not cancelled while it has
+a live line (D16, `work_order_has_lines`, trigger
+`private.work_orders_cancel_requires_no_lines`). That is the single
+cancel-with-lines rule; it covers Phase 4's inventory lines too, so Phase 4
+adds no separate parts rule or code. The line RPCs follow the lock order in
+§4: the `work_orders` row FOR UPDATE (`private.lock_work_order`) before any
+line row FOR UPDATE.
+
+Deviations from this document's earlier draft, each for a reason:
+
+- (a) Lines are immutable except voiding and have no `sort_order`; the
+  earlier draft allowed `sort_order` and `description_snapshot` typo fixes.
+  Void and re-add keeps the evidence and matches the Phase 4 stock ledger.
+- (b) `add_service_line`, `add_manual_line`, `void_line` and the service
+  RPCs return ids, not rows (§16 says RPCs return the affected row): rows
+  carry cost columns, and an RPC result is not column-gated.
+- (c) `work_orders` and `services` are written only through RPCs (§15's
+  earlier "S" insert/update for work orders and "A / P(manage_inventory)"
+  for services are stricter now).
+- (d) The anonymous/customer services listing in §15 arrives with Phase 11
+  through a separate customer-safe projection.
+- (e) The Cult Commons base rate ships in the migration, not the seed.
+- (f) A manual line added without a cost is stored with cost 0 and
+  `cost_pending` (D14, owner to confirm), rather than a nullable cost, so
+  the generated arithmetic stays one expression; it is corrected by voiding
+  and re-adding it with the cost.
 
 ## 6. Catalog and inventory
 
@@ -553,6 +732,10 @@ compares the two and is the reconciliation tool from the spec.
 Unique-unit invariant: `inventory_units.status` is only changed by RPCs that
 also write the movement, inside one transaction, after `select … for update` on
 the unit. A `sold` unit cannot be consumed, sold or transferred; the RPC raises.
+The one exception is D6/D15's reopen rule (Phase 4, §4): when a job's
+`completed_at` is cleared its sold units go back to `held_for_customer`, and
+when it is stamped again they go back to `sold`, with no stock movement (the
+unit never left the job).
 
 ## 8. Sales (non-workshop revenue)
 
@@ -840,18 +1023,20 @@ security-definer function. Blank = no access.
 | customers | S; C own via `my_customer_profile()` | S (no `auth_user_id`, `shopify_customer_id`); C on sign-up via RPC (Phase 11) | S (same columns, `archived_at`); C own name/phone via `update_my_profile()` | — (archive) |
 | bikes | S; C own current, non-archived via `my_bikes()` | S (no `short_id`: server-assigned) | S (no `short_id`, `customer_id`, `inventory_unit_id`); owner via RPC `transfer_bike_ownership` | — (archive) |
 | bike_ownership_events | S | trigger only | never | never |
-| attachments | S; C `customer`/`public` rows of own bikes via `my_bike_attachments()` | RPC `record_attachment` (S) | S caption only; visibility via RPC `set_attachment_visibility` (S) | RPC `delete_attachment` (S, reason) |
+| attachments | S; C `customer`/`public` rows of own bikes via `my_bike_attachments()` and of own jobs via `my_work_order_attachments()` | RPC `record_attachment` (S) | S caption only; visibility via RPC `set_attachment_visibility` (S) | RPC `delete_attachment` (S, reason) |
 | attachment_events | S | triggers only | never | never |
 | storage `media-internal` | S | S | — | S, only objects no attachment points at |
 | storage `media-public` | S (everyone else only by public URL; nobody lists it) | S | — | S, only objects no attachment points at |
 | shop_hours, closure_overrides, appointment_types | S; anon/C active+public rows | A | A | A |
 | appointments | S; C own | RPC (`book_appointment`) | RPC / S | — |
-| work_orders | S; C own (customer projection view) | S | S | — |
-| work_order_assignments | S | RPC | RPC | — |
-| work_order_events | S; C own, customer-visible types | RPC | — | — |
-| services, categories | S; anon/C active+public | A / P(manage_inventory) | same | — |
-| cult_commons_rates | P(view_costs) | A | — | — |
-| work_order_line_items | S (cost cols via view only); C own sale cols | RPC | RPC (void) | — |
+| work_orders | S; C own, not cancelled, via `my_work_orders()` (D17) | RPC `create_work_order` | RPC (`set_work_order_status`, `update_work_order`, `set_approval_flag`; `lead_mechanic_id` by the assignments trigger) | — |
+| work_order_assignments | S | RPC `assign_staff` (S, D22) | RPC `unassign_staff` (closes the row) | — |
+| work_order_events | S; C own job's check-in, customer-status changes and customer-visible photos via `my_work_order_timeline()` (D8, D17) | triggers and `add_work_order_note` only | never | never |
+| categories | S | P(manage_inventory) (A included) | P(manage_inventory) | — (archive) |
+| services | S, every column except `default_direct_cost`; P(view_costs) everything via `services_staff`; anon/C listing in Phase 11 through a separate projection | RPC `create_service` (P(manage_inventory); a cost needs P(view_costs)) | RPC `update_service`, `set_service_archived` (same) | — (archive) |
+| cult_commons_rates | P(view_costs) | RPC `schedule_cult_commons_rate` (A) | RPC `cancel_cult_commons_rate` (A, future rates only) | never |
+| work_order_line_items | S sale columns only; P(view_costs) everything via `work_order_line_items_staff`; C own job's live lines (description, quantity, unit price, total) via `my_work_order_lines()` | RPC `add_service_line`, `add_manual_line` (cost needs P(view_costs)) | RPC `void_line` (voided_* only) | never |
+| work_order_totals / work_order_totals_staff (views) | S sale totals / P(view_costs) cost, yield, Cult Commons | — | — | — |
 | products | S; anon/C via `public_items` only | P(manage_inventory) | P(manage_inventory) | — |
 | inventory_units | S (cost col gated) | RPC | RPC | — |
 | inventory_movements | S (cost col gated) | RPC | — | — |
@@ -885,6 +1070,23 @@ listed in `tests/fixtures/api-surface.ts` and tested for: own rows only,
 no staff-only column in the result keys, another customer's id returns
 nothing, anon is refused (`customer-access.test.ts` is the template).
 
+**Customer job projection (Phase 3, shown in Phase 11; PLAN D8, D17).**
+The four `my_work_order*` RPCs follow the pattern above. Which jobs: those
+where the caller is `work_orders.customer_id`, whoever owns the bike now (a
+new owner does not see the previous owner's jobs; the previous owner keeps
+theirs) and whether or not the bike was archived since; cancelled jobs are
+hidden everywhere. What of them: a coarse `customer_job_status`
+(`private.customer_job_status`: received/diagnosing/ready_to_start →
+`received`, in_progress/paused → `in_progress`, the rest as they are,
+cancelled → null), the bike's short ID and title, the check-in,
+completion, ready and collection times, and the live lines' sale total;
+lines show description, quantity, unit price and total only; the timeline
+shows check-in, changes of the customer status and customer-visible photos
+that still exist. Requested work, intake/internal/completion notes,
+approval, assignments, actors, event payloads and every cost, yield, rate
+or Cult Commons value are never returned. Job photos follow D17 (the job's
+customer), not the bike-photo rule of D12.
+
 Column-level gating of cost/yield for staff without `view_costs` is done with
 views (`*_staff` views include the columns; base tables revoke `select` on
 those columns from `authenticated` via column grants). Customers never read
@@ -895,8 +1097,10 @@ those columns from `authenticated` via column grants). Customers never read
 
 Each RPC begins with `private.require_permission(...)` or `private.is_staff()`
 as appropriate, runs in a single transaction, locks the rows it mutates, and
-returns the created/affected row. Idempotent ones accept an idempotency key or
-rely on a unique index and return the existing row on replay.
+returns the created/affected row (except where a row would carry cost columns
+an RPC result cannot gate: the line and service RPCs return the id, §5
+deviation (b)). Idempotent ones accept an idempotency key or rely on a unique
+index and return the existing row on replay.
 
 Business errors an RPC raises on purpose use SQLSTATE `P0001` with `MESSAGE`
 set to a stable snake_case code (for example `staff_email_mismatch`) and
@@ -904,18 +1108,36 @@ set to a stable snake_case code (for example `staff_email_mismatch`) and
 user-facing messages; unknown codes become a generic error. Authorization
 failures are `42501`, missing rows `P0002`, the last-admin guard `55000`.
 Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
+A security definer function that writes a table with columns its callers
+may not read (`services`, `work_order_line_items`) catches
+`check_violation` and `not_null_violation` around the write and re-raises
+them with `private.raise_without_row(sqlstate, constraint, table, schema,
+column, message)`: same SQLSTATE, constraint and message, no DETAIL. The
+DETAIL ("Failing row contains (…)") is built with the definer's privileges
+and would print the hidden columns (costs) to any caller through PostgREST.
 
 | RPC | Guard | Effects |
 |---|---|---|
 | `book_appointment(type_id, starts_at, customer_id, bike_id, note)` | C own / S | Capacity + hours check under advisory lock; insert. |
-| `check_in_appointment(appointment_id, bike_id)` | S | Status → checked_in; creates work order; links. |
-| `create_work_order(customer_id, bike_id, intake, lead_mechanic_id, appointment_id)` | S | Job number from sequence; `checked_in` event; lead assignment. |
-| `assign_staff(work_order_id, staff_id, role)` / `unassign_staff(...)` | S | Assignment rows + `assignment_changed` event; keeps `lead_mechanic_id` in sync. |
-| `set_work_order_status(work_order_id, status, note)` | S | Transition rules, timestamps, events. |
-| `add_service_line(work_order_id, service_id, quantity, overrides)` | S | Snapshots price/cost/rate; `line_added` event. |
-| `add_manual_line(work_order_id, description, qty, price, cost)` | S (cost requires P(view_costs)) | As above. |
-| `add_inventory_line(work_order_id, product_id, unit_id, quantity, location_id)` | S | Snapshots; locks unit/stock; inserts line + `job_consumption` movement; unit → `held`/`sold` per D6; events. Replay = no-op by unique index. |
-| `void_line(line_id, reason)` | S | Sets `voided_*`; inserts `reversal` movement linked by `reversal_of_id`; unit back to `available`; events. Replay = no-op. |
+| `check_in_appointment(appointment_id, bike_id)` | S | Phase 2, built on `private.create_work_order` (with the appointment id) for a new job, or linking an existing open, unlinked job by setting `work_orders.appointment_id` once (null → value; never changed or cleared afterwards, `work_order_immutable`, §4). Status → checked_in; creates or links the work order. |
+| `create_work_order(work_order_id, customer_id, bike_id, requested_work, intake_notes = null, lead_mechanic_id = null, additional_staff_ids uuid[] = '{}', services jsonb = '[]')` → `work_orders` | S | Calls `private.create_work_order(actor, …, appointment_id)`. Replay first: an existing id returns the row as it is now when customer and bike match (no check, assignment or line re-run, no number burned), else `work_order_conflict`. Then FOR SHARE on customer and bike (D18 against a concurrent transfer), insert (trigger: J- number, `work_order_customer_archived`, `work_order_bike_archived`, `bike_owner_mismatch`), lead, ≤ 10 distinct additional staff, ≤ 20 services `{line_id, service_id, quantity}` (malformed 22023) through `private.insert_service_line`. One transaction. `requested_work_required`; 22004 for missing ids. |
+| `set_work_order_status(work_order_id, status, note = null)` → `work_orders` | S | Locks the job; same status → row unchanged (no event); `work_order_transition_invalid`; `reason_required` for cancel/reopen; `work_order_has_lines` when cancelling with live lines. Triggers stamp the time and write one event. |
+| `update_work_order(work_order_id, requested_work = null, intake_notes = null, internal_notes = null, completion_notes = null)` → `work_orders` | S | Null keeps, '' clears (requested work cannot be cleared: `requested_work_required`); no-op when unchanged; one `details_changed` event. Any status. |
+| `add_work_order_note(note_id, work_order_id, kind work_order_note_kind, body)` → `work_order_events` | S | Locks the job; replay by `note_id` first (same job → that event; else `note_conflict`); `note_added` / `diagnosis_added` with `{note_id, body}` (1..5000; `note_required`, `note_too_long`). Any status. |
+| `set_approval_flag(work_order_id, flagged, note = null)` → `work_orders` | S | Internal flag (SPEC §7.1); note null keeps the stored one, '' clears it; `work_order_closed`; replay no-op; `approval_flagged` event. |
+| `assign_staff(work_order_id, staff_id, role assignment_role = 'additional')` → `work_order_assignments` | S (D22) | Locks the job; `work_order_closed`; P0002 / `staff_inactive`; same role → the active row (no event); other role → close and reopen; a new lead closes the previous lead's row. Trigger syncs `lead_mechanic_id`, writes `assignment_changed`. |
+| `unassign_staff(work_order_id, staff_id)` → `work_order_assignments` | S | Closes the active row and returns it; null when none (no event). `work_order_closed`. |
+| `add_service_line(line_id, work_order_id, service_id, quantity line_quantity = 1, unit_sale_price = null, unit_direct_cost = null, description = null)` → `uuid` | S; a cost needs P(view_costs) (D14) | Locks the job, then `private.insert_service_line`: replay by line id first (same job, type and service → id; else `line_conflict`), then `work_order_locked`, P0002 / `service_unavailable`, snapshots (description, price, cost, `cult_commons_rate_at(now)`), insert. Returns the id only. |
+| `add_manual_line(line_id, work_order_id, description, unit_sale_price, quantity line_quantity = 1, unit_direct_cost = null)` → `uuid` | S; a cost needs P(view_costs) (D14) | Same order (replay, `work_order_locked`); cost null → 0 with `cost_pending` (D14). Returns the id only. |
+| `void_line(line_id, reason)` → `uuid` | S | `reason_required` / `reason_too_long`; locks the job, then the line; already voided → id (no event); `work_order_locked`; inventory lines `line_type_unsupported` until Phase 4 replaces it with the reversal branch. Sets `voided_*`; never deletes. |
+| `work_order_timeline(work_order_id, max_rows = 200)` | S | Events newest first with actor and (assignment events) subject display names; 1..2000 rows (the job page asks one more than it shows, to say older events exist). |
+| `create_service(service_id, name, default_sale_price, description = null, category_id = null, default_direct_cost = null, is_active = true, is_public = false)` → `uuid` | P(manage_inventory); a cost needs P(view_costs) | Replay by id with the same name → id; else `service_conflict`; `category_kind_mismatch`; 23505 `services_active_name_key`. |
+| `update_service(service_id, name, default_sale_price, description = null, category_id = null, is_active = true, is_public = false, default_direct_cost = null)` → `uuid` | same | Replaces every field; cost null keeps it. P0002. |
+| `set_service_archived(service_id, archived)` → `uuid` | P(manage_inventory) | Replay-safe. |
+| `schedule_cult_commons_rate(rate_id, rate, effective_from = null)` → `cult_commons_rates` | A | Replay by `rate_id` first (same rate → the row as it is now; else `rate_conflict`). Null = now; earlier than now → `rate_backdated` (D21); 23505 on a taken start time. |
+| `cancel_cult_commons_rate(rate_id)` → `cult_commons_rates` | A | Only before it starts (`cult_commons_rate_in_effect`); replay returns the row. |
+| `add_inventory_line(work_order_id, product_id, unit_id, quantity, location_id)` | S | Phase 4: `private.lock_work_order`, then the replay lookup, then `private.require_open_work_order` (lock order §4, §7). Snapshots; locks unit/stock; inserts line + `job_consumption` movement; unit → `held`/`sold` per D6; events. Replay = no-op by unique index. |
+| `void_line(line_id, reason)` inventory branch | S | Phase 4 (create or replace, keeping the lock order and the open check: `private.lock_work_order`, then the line and the replay check, then the open check): sets `voided_*`; inserts `reversal` movement linked by `reversal_of_id`; unit back to `available`; events. Replay = no-op. |
 | `adjust_stock(product_id, location_id, delta, movement_type, reason, unit_cost)` | P(adjust_stock) | Manual movement with mandatory reason. |
 | `transfer_stock(product_id, from, to, qty, reason)` | P(manage_inventory) | Paired movements with `transfer_group_id`. |
 | `create_unique_unit(product_id, location_id, ownership, cost, consignment)` | P(manage_inventory) | Unit + `consignment_received`/`stock_adjustment` movement. |
@@ -941,11 +1163,15 @@ Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
 | `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Never public for a customer record or an undecoded original (`attachment_original_never_public`). Locks the row; `visibility_changed` event; replay is a no-op. |
 | `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload. Returns a set: the deleted row (the server then removes the object), or no row on replay (PostgREST: `[]`). |
 | `attachment_stray_objects(entity_type, entity_id)` | S | Objects under `{entity_type}/{entity_id}/` in either photo bucket that no attachment points at and that are safe to remove now (older than 10 minutes; in `media-internal`, with history or older than a day), at most 100. The server removes them when it shows the record. |
-| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65) and bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name). Exact short ID or serial rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists; `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
+| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status). Exact short ID, serial or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |
 | `my_bike_attachments(bike_id)` | authenticated (C) | `customer`/`public` attachments of one of the caller's own bikes; empty for anyone else's. |
+| `my_work_orders()` | authenticated (C) | The caller's jobs (not cancelled), newest first: `id, job_number, bike_id, bike_short_id, bike_title, status customer_job_status, checked_in_at, completed_at, ready_for_collection_at, collected_at, currency, sale_total` (live lines). D17: by `work_orders.customer_id`, whatever the bike's owner or archived state now. |
+| `my_work_order_lines(work_order_id)` | authenticated (C) | Live lines of one of the caller's non-cancelled jobs, in `created_at` order: `id, description, quantity, unit_sale_price, sale_total, currency`. Empty for anyone else's job. |
+| `my_work_order_timeline(work_order_id)` | authenticated (C) | Oldest first `id, kind, status, attachment_id, created_at`: `checked_in` (status `received`); `status` for a status_changed/completed/ready_for_collection/collected/reopened event whose customer status differs from the previous entry's; `photo` for a `photo_added` whose attachment still exists and is customer-visible. No actors, notes, payloads, lines, assignments or costs. |
+| `my_work_order_attachments(work_order_id)` | authenticated (C) | `customer`/`public` attachments of one of the caller's non-cancelled jobs (job photos are never public, D19), same columns as `my_bike_attachments`. |
 
 ## 17. Sequences and short IDs
 
@@ -960,11 +1186,12 @@ humans and QR codes.
 
 Realistic and deterministic (fixed UUIDs so tests can reference them):
 3 staff (1 admin, 2 mechanics with differing permissions), 6 customers with
-10 bikes, shop hours Tue–Sun, 4 appointment types, 8 services, 2 locations,
+10 bikes, shop hours Tue–Sun, 4 appointment types, 9 services, 2 locations,
 12 quantity products with stock, 3 unique shop-owned bikes, 2 consigned bikes
 (one sold, unsettled), 2 suppliers, 1 PO partially received, 9 work orders
-spread across statuses and the last 10 days, settlements, and a Cult Commons
-rate row. The seed is applied to the local database and to a fresh preview
+spread across statuses and the last 9 days, settlements. (The Cult Commons
+base rate is not seed data: the workshop catalog migration ships it, D21.)
+The seed is applied to the local database and to a fresh preview
 project; never to production.
 
 Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
@@ -972,3 +1199,47 @@ Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
 `b1000000-…-0000000000NN` (`BIKE`, short IDs `B-000001`…`B-000010` in insert
 order, `BIKE_SHORT_ID`), one shop bike without an owner and one bike
 transferred between customers (two ownership events). No attachments.
+
+Phase 3 part (done): service categories `ca000000-…-00000000000N`
+(`CATEGORY`: Servicing, Wheels & tyres, Brakes, Builds, Labour, sort 1–5),
+services `5e000000-…-0000000000NN` (`SERVICE`; SGD price / default direct
+cost): Basic Service 80/0, Full Service 200/0, Wheel True 35/0 (per wheel),
+Tyre Installation 15/0 (per tyre), Brake Bleed 45/8 (per brake),
+Drivetrain Service 90/5, Bike Build 250/0, Custom Labour 60/0 (per hour,
+not public) and Suspension Fork Service 120/25 (inactive, archived 30 days
+ago). Nine jobs `f1000000-…-00000000000N` (`WORK_ORDER`, job numbers
+`J-000001`…`J-000009` in insert order, `JOB_NUMBER`), lines
+`f2000000-…-0000000000NN` (`LINE`, all at rate 0.3000) and assignments
+`f3000000-…-0000000000NN`. Times are offsets from the seed's `now()`
+(d = days, h = hours):
+
+| Job | Customer, bike | Status | What it demonstrates |
+|---|---|---|---|
+| J-000001 | Tan, Tarmac | collected | The full walk: checked in −9d, in progress −8d, completed −7d, ready −7d+1h, collected −6d; lead Marcus; Full Service + Brake Bleed ×2: sale 290.00, cost 16.00, yield 274.00, Cult Commons 82.20; intake and completion notes. |
+| J-000002 | Priya, Domane | ready_for_collection | Money the E2E tests assert: Basic Service, Tyre Installation ×2 and a manual "Continental GP5000 700×28c tyre" ×2 at 95.00 (cost 62.00): sale 300.00, cost 124.00, yield 176.00, CC 52.80, BICII after CC 123.20; approval flag with one `approval_flagged` event (Asha, −5d+1h); lead Nur. |
+| J-000003 | Hafiz, Brompton | completed | Completed two hours ago, not yet ready; lead Marcus with Nur as additional staff; Drivetrain Service. |
+| J-000004 | Chloe, Giant | in_progress | Diagnosing −3d+1h then in progress −1d (a received → diagnosing step the customer never sees); Wheel True ×2. |
+| J-000005 | Chloe, Surly | awaiting_parts | A note (Nur, −5d−1h) before waiting for the customer's part; Custom Labour ×1.5. |
+| J-000006 | Daniel, Cannondale | awaiting_customer | The one overdue job (D20: open, checked in −8d); a diagnosis (Marcus, −8d+2h); no lines. |
+| J-000007 | Nurul, Bianchi | received | Just checked in, unassigned, no lines: checked in at seed time, after the Bianchi's sale from Daniel. |
+| J-000008 | Tan, Brompton | cancelled | Cancelled an hour after check-in with a reason (hidden from the customer, D17). |
+| J-000009 | Priya, Tern | diagnosing | A voided line: Asha quoted a bottom bracket (45.00, cost 28.00), Nur voided it at −1d+3h; live total 80.00. |
+
+So that every seeded timeline reads true (`workshop-seed.test.ts`):
+(a) intake/completion notes and the approval flag are given in the
+`work_orders` INSERT (the insert trigger writes only `checked_in`), and the
+backdated `note_added`, `diagnosis_added` and `approval_flagged` events are
+inserted by hand with their own time and actor; those columns are never
+updated in the seed (that would stamp an event at seed time); (b) before
+each block of writes `request.jwt.claims` names the staff member acting,
+so every trigger-written actor equals the row's own `created_by` /
+`assigned_by` / `voided_by` (Asha checks in and assigns; Marcus and Nur
+walk their own jobs' statuses; lines with a cost are added by Asha or
+Marcus, D14); (c) each job is inserted `received` with an explicit
+`checked_in_at`, gets its assignments and lines while open, then walks its
+statuses one UPDATE at a time with an explicit `status_changed_at`, times
+strictly increasing and no line change after completion; (d) J-000007's
+`checked_in_at` is `clock_timestamp()` at its insert, after the Bianchi's
+`transferred` event. Still no attachments. (The seeded bikes themselves are
+registered at seed time, after the backdated check-ins; only the jobs'
+timelines are backdated.)

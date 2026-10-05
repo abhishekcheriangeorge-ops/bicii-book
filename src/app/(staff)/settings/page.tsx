@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 
-import { ChevronRightIcon, ShareIcon, UserIcon, UsersIcon } from "@/components/ui/icons";
+import {
+  ChevronRightIcon,
+  ShareIcon,
+  UserIcon,
+  UsersIcon,
+  WrenchIcon,
+} from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowLink, RowList } from "@/components/ui/row-list";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -27,6 +33,14 @@ export default async function SettingsPage() {
           },
         ]
       : []),
+    {
+      href: "/settings/services",
+      label: "Services",
+      description: hasPermission(staff, "view_costs")
+        ? "Services, prices, categories and the Cult Commons rate"
+        : "Services, prices and categories",
+      icon: WrenchIcon,
+    },
     {
       href: "/settings/install",
       label: "Install the app",

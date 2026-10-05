@@ -19,9 +19,9 @@ export const metadata: Metadata = { title: "Search" };
 /**
  * Global search (SPEC §20) over staff_search: customers by name, phone or
  * email; bikes by B- number, serial number (ignoring case, spaces and
- * dashes), brand, model, colour or owner. Exact short IDs and serial
- * numbers come first. Jobs, products and the rest join as their phases
- * land.
+ * dashes), brand, model, colour or owner; jobs by J- number (an exact one
+ * puts Jobs first). Exact short IDs and serial numbers come first.
+ * Products and the rest join as their phases land.
  */
 export default async function SearchPage({ searchParams }: PageProps<"/search">) {
   await requireStaff();
@@ -35,8 +35,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
     <>
       <PageHeader title="Search" />
       <SearchField
-        label="Search customers and bikes"
-        hint="Name, phone, email, serial number or B- number"
+        label="Search customers, bikes and jobs"
+        hint="Name, phone, email, serial number, B- number or J- number"
         placeholder="Search"
         autoFocus={!q}
         remember
@@ -46,8 +46,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
           empty={
             <EmptyState
               icon={<SearchIcon />}
-              title="Find a customer or bike"
-              description="Type part of a name, the last digits of a phone number, a serial number or a B- number. Jobs and products become searchable in later phases."
+              title="Find a customer, bike or job"
+              description="Type part of a name, the last digits of a phone number, a serial number, a B- number or a J- number. Products become searchable in a later phase."
             />
           }
         />
@@ -55,7 +55,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
         <EmptyState
           icon={<SearchIcon />}
           title={`Nothing matches “${q}”`}
-          description="Check the spelling, try fewer words, or search by phone digits, serial number or B- number. Archived customers and bikes are not searched; find them under Customers or Bikes."
+          description="Check the spelling, try fewer words, or search by phone digits, serial number, B- or J- number. Archived customers and bikes are not searched; find them under Customers or Bikes."
         />
       ) : (
         <RememberOnOpen q={q}>

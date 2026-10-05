@@ -31,6 +31,7 @@ import {
   asStaff,
   connect,
   inTransaction,
+  isolatedDatabase,
   scalar,
   staffClaims,
   withClaims,
@@ -127,6 +128,9 @@ async function addBikePhotos(
   return ids;
 }
 
+/** A job of Tan's created inside one test (the seeded jobs are in workshop-customer-access). */
+const TAN_JOB = randomUUID();
+
 const rowsOf = (tx: pg.Client, sql: string, params: unknown[] = []) =>
   tx.query(sql, params).then((r) => r.rows);
 
@@ -189,6 +193,18 @@ describe("a signed-in customer and the base tables", () => {
           "bike_ownership_events",
           "attachments",
           "attachment_events",
+          // Workshop (Phase 3): base tables and every view, staff ones included
+          "categories",
+          "services",
+          "services_staff",
+          "cult_commons_rates",
+          "work_orders",
+          "work_order_assignments",
+          "work_order_events",
+          "work_order_line_items",
+          "work_order_line_items_staff",
+          "work_order_totals",
+          "work_order_totals_staff",
         ]) {
           expect(await scalar(tx, `select count(*)::int from public.${table}`)).toBe(0);
         }
@@ -203,6 +219,67 @@ describe("a signed-in customer and the base tables", () => {
       },
     );
   });
+
+  // Inserts a job (consumes the J- sequence), so only on a per-file clone.
+  it.skipIf(!isolatedDatabase())(
+    "reads nothing of their own job: not the job, its lines, costs, totals, staff or timeline",
+    async () => {
+      await asCustomer(
+        CUSTOMER.tan,
+        async (tx) => {
+          for (const table of [
+            "work_orders",
+            "work_order_assignments",
+            "work_order_events",
+            "work_order_line_items",
+            "work_order_line_items_staff",
+            "work_order_totals",
+            "work_order_totals_staff",
+            "services",
+            "services_staff",
+            "categories",
+            "cult_commons_rates",
+          ]) {
+            expect(await scalar(tx, `select count(*)::int from public.${table}`)).toBe(0);
+          }
+          for (const sql of [
+            "select * from public.work_order_timeline($1)",
+            "select public.add_manual_line(gen_random_uuid(), $1, 'Free', 0)",
+            "select public.set_work_order_status($1, 'cancelled', 'Mine')",
+          ]) {
+            await expect(
+              tx.query("savepoint s").then(() => tx.query(sql, [TAN_JOB])),
+            ).rejects.toMatchObject({ code: "42501" });
+            await tx.query("rollback to savepoint s");
+          }
+        },
+        async (tx) => {
+          await tx.query(
+            "insert into public.categories (kind, name) values ('service', 'Fitting')",
+          );
+          await tx.query(
+            "insert into public.services (name, default_sale_price, default_direct_cost) values ('Race Prep', 180, 20)",
+          );
+          await tx.query(
+            `insert into public.work_orders (id, customer_id, bike_id, requested_work, internal_notes)
+             values ($1, $2, $3, 'Full service', 'Haggles on price')`,
+            [TAN_JOB, CUSTOMER.tan, BIKE.tanTarmac],
+          );
+          await tx.query(
+            "insert into public.work_order_assignments (work_order_id, staff_id, role) values ($1, $2, 'lead')",
+            [TAN_JOB, STAFF.mechanic1],
+          );
+          await tx.query(
+            `insert into public.work_order_line_items
+               (id, work_order_id, line_type, description_snapshot, quantity, unit_sale_price_snapshot,
+                unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency)
+             values (gen_random_uuid(), $1, 'manual', 'Cable', 1, 95, 62, 0.3, 'SGD')`,
+            [TAN_JOB],
+          );
+        },
+      );
+    },
+  );
 
   it("writes nothing: inserts are refused and updates match no row", async () => {
     await asCustomer(CUSTOMER.tan, async (tx) => {

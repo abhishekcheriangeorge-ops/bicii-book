@@ -41,11 +41,35 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.set_attachment_visibility(uuid, attachment_visibility, text, text)",
   "public.staff_search(text, text[], integer, boolean)",
   "public.transfer_bike_ownership(uuid, uuid, text)",
+  // Workshop (Phase 3): active staff; service writes need manage_inventory
+  // (a cost also view_costs), Cult Commons rates are admin only
+  "public.add_manual_line(uuid, uuid, text, money_amount, line_quantity, money_amount)",
+  "public.add_service_line(uuid, uuid, uuid, line_quantity, money_amount, money_amount, text)",
+  "public.add_work_order_note(uuid, uuid, work_order_note_kind, text)",
+  "public.assign_staff(uuid, uuid, assignment_role)",
+  "public.cancel_cult_commons_rate(uuid)",
+  "public.create_service(uuid, text, money_amount, text, uuid, money_amount, boolean, boolean)",
+  "public.create_work_order(uuid, uuid, uuid, text, text, uuid, uuid[], jsonb)",
+  "public.schedule_cult_commons_rate(uuid, rate_fraction, timestamp with time zone)",
+  "public.set_approval_flag(uuid, boolean, text)",
+  "public.set_service_archived(uuid, boolean)",
+  "public.set_work_order_status(uuid, work_order_status, text)",
+  "public.unassign_staff(uuid, uuid)",
+  "public.update_service(uuid, text, money_amount, text, uuid, boolean, boolean, money_amount)",
+  "public.update_work_order(uuid, text, text, text, text)",
+  "public.void_line(uuid, text)",
+  "public.work_order_timeline(uuid, integer)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
   "public.my_customer_profile()",
   "public.update_my_profile(text, text, text, text)",
+  // Customer job projection (Phase 3, shown in Phase 11): own jobs only,
+  // customer-safe columns (D17)
+  "public.my_work_order_attachments(uuid)",
+  "public.my_work_order_lines(uuid)",
+  "public.my_work_order_timeline(uuid)",
+  "public.my_work_orders()",
 ];
 
 /**
@@ -53,7 +77,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
  * also has RLS policies (meta test "RLS is enabled on every table"). The
  * Phase 1 tables' policies admit active staff only; INSERT and UPDATE are
  * column grants (no short_id, customer_id after insert, Auth or Shopify
- * links; attachments: caption only).
+ * links; attachments: caption only). Phase 3: the workshop tables are
+ * read-only (every write is an RPC) and SELECT on services and
+ * work_order_line_items is a column grant without the cost columns, which
+ * only the *_staff views return (view_costs); cult_commons_rates rows are
+ * visible to view_costs only; categories are written by manage_inventory.
  */
 export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>> = {
   "public.attachment_events": ["SELECT"],
@@ -63,11 +91,29 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "public.customers": ["INSERT", "SELECT", "UPDATE"],
   "public.staff": ["SELECT"],
   "public.staff_permissions": ["SELECT"],
+  // Workshop (Phase 3)
+  "public.categories": ["INSERT", "SELECT", "UPDATE"],
+  "public.cult_commons_rates": ["SELECT"],
+  "public.services": ["SELECT"],
+  "public.services_staff": ["SELECT"],
+  "public.work_order_assignments": ["SELECT"],
+  "public.work_order_events": ["SELECT"],
+  "public.work_order_line_items": ["SELECT"],
+  "public.work_order_line_items_staff": ["SELECT"],
+  "public.work_order_totals": ["SELECT"],
+  "public.work_order_totals_staff": ["SELECT"],
+  "public.work_orders": ["SELECT"],
 };
 
 /**
  * Views that run with their owner's rights (security_invoker off) and are
- * still granted to an API role. Each must filter rows itself; reporting's
- * public_items (Phase 8) will be the first.
+ * still granted to an API role. Each must filter rows itself. The Phase 3
+ * *_staff views read cost columns authenticated has no grant on, and return
+ * rows only when private.has_permission('view_costs') (security_barrier);
+ * reporting's public_items (Phase 8) will be the first public one.
  */
-export const DEFINER_VIEWS: readonly string[] = [];
+export const DEFINER_VIEWS: readonly string[] = [
+  "public.services_staff",
+  "public.work_order_line_items_staff",
+  "public.work_order_totals_staff",
+];

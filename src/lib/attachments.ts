@@ -11,8 +11,11 @@ import { extensionFor, type PhotoMediaType } from "./images";
 export type AttachmentEntity = Database["public"]["Enums"]["attachment_entity"];
 export type Visibility = Database["public"]["Enums"]["attachment_visibility"];
 
-/** Entity types that can hold photos in Phase 1 (private.attachment_entity_exists). */
-export const PHOTO_ENTITIES = ["bike", "customer"] as const;
+/**
+ * Entity types that can hold photos so far (private.attachment_entity_exists):
+ * bikes and customers (Phase 1), jobs (Phase 3).
+ */
+export const PHOTO_ENTITIES = ["bike", "customer", "work_order"] as const;
 export type PhotoEntity = (typeof PHOTO_ENTITIES)[number];
 
 export function isPhotoEntity(value: unknown): value is PhotoEntity {
@@ -76,14 +79,20 @@ export const ORIGINAL_NEVER_PUBLIC =
 
 /**
  * The visibility levels for a photo on `entityType`, with who sees each.
- * PLAN D13: a photo on a customer record is never public; nor is an
- * undecoded original (`original`), which may carry its GPS position.
+ * PLAN D13: a photo on a customer record is never public; D19: nor is a
+ * photo on a job; nor is an undecoded original (`original`), which may
+ * carry its GPS position.
  */
 export function visibilityOptions(
   entityType: AttachmentEntity,
   { original = false }: { original?: boolean } = {},
 ): VisibilityOption[] {
-  const owner = entityType === "customer" ? "this customer" : "the bike's current owner";
+  const owner =
+    entityType === "customer"
+      ? "this customer"
+      : entityType === "work_order"
+        ? "the job's customer"
+        : "the bike's current owner";
   return [
     {
       value: "internal",
@@ -104,9 +113,11 @@ export function visibilityOptions(
       blocked:
         entityType === "customer"
           ? "Photos on a customer record can never be public."
-          : original
-            ? ORIGINAL_NEVER_PUBLIC
-            : null,
+          : entityType === "work_order"
+            ? "Photos on a job can never be public."
+            : original
+              ? ORIGINAL_NEVER_PUBLIC
+              : null,
     },
   ];
 }

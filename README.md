@@ -24,7 +24,13 @@ Bikes (search-first lists, detail pages, new/edit sheets, archive),
 ownership transfer with a reason, the camera upload (downscaled on the
 phone, uploaded straight to Storage) with a photo viewer (caption,
 internal / customer / public, delete with a reason), and global search
-from the header. Work orders (M1.3) come next.
+from the header. M1.3 (workshop) is built: its database layer (catalog,
+Cult Commons rates, jobs, lines, the customer job projection, job search)
+and seeded jobs, the intake wizard (`/jobs/new`), the workshop board and My
+Jobs (`/jobs`), the job page (status, lines and totals, photos, people,
+approval, notes, details, timeline), services settings with the Cult
+Commons rate (`/settings/services`), service history on bikes and
+customers, and jobs in global search.
 
 ## Quickstart
 

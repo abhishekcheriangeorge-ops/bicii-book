@@ -322,8 +322,8 @@ describe("record_attachment", () => {
     ).rejects.toMatchObject({ code: "P0002" });
     await expect(
       asMechanic(
-        (tx) => upload(tx, { id, entityType: "work_order", entityId: nowhere }),
-        (tx) => record(tx, { id, entityType: "work_order", entityId: nowhere }),
+        (tx) => upload(tx, { id, entityType: "product", entityId: nowhere }),
+        (tx) => record(tx, { id, entityType: "product", entityId: nowhere }),
       ),
     ).rejects.toMatchObject({ code: "P0001", message: "attachment_entity_unsupported" });
   });

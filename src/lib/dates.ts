@@ -87,3 +87,46 @@ export function greetingFor(value: DateInput, zone?: ZoneOptions): string {
   if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
+
+/**
+ * Singapore's UTC offset. It has had no daylight saving since 1982, so a
+ * shop-local wall-clock time converts with a fixed offset.
+ */
+export const SHOP_UTC_OFFSET = "+08:00";
+
+/** Midnight (shop time) at the start of the day `daysBack` days before `now`'s shop day. */
+export function shopDayStart(now: DateInput, daysBack = 0): Date {
+  const start = new Date(`${shopDateKey(now)}T00:00:00${SHOP_UTC_OFFSET}`);
+  return new Date(start.getTime() - daysBack * 86_400_000);
+}
+
+/**
+ * A shop-local wall-clock time from `<input type="datetime-local">`
+ * ("2026-10-05T09:30", seconds optional) as an instant; null when malformed.
+ */
+export function fromShopLocal(value: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
+  if (!m) return null;
+  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] ?? "00"}${SHOP_UTC_OFFSET}`);
+  if (Number.isNaN(d.getTime())) return null;
+  // Reject rollovers such as 31 February: the shop-local date must read back unchanged.
+  return shopDateKey(d) === `${m[1]}-${m[2]}-${m[3]}` ? d : null;
+}
+
+/** An instant as the value of `<input type="datetime-local">` in shop time ("2026-10-05T09:30"). */
+export function toShopLocal(value: DateInput): string {
+  const parts = fmt(
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    },
+    { locale: "en-GB" },
+  ).formatToParts(toDate(value));
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}

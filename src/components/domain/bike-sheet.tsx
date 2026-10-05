@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
+import { bikeTitle } from "@/lib/bikes";
 import { newId } from "@/lib/uuid";
 
 import { CustomerPicker } from "./customer-picker";
@@ -38,13 +39,16 @@ type State = ActionResult<unknown> | null;
  * opened from a customer's page, or picked) or none: shop and consigned
  * bikes have no customer. The database assigns its B- number; saving opens
  * the bike, ready for photos. The owner of an existing bike changes only by
- * transfer (with a reason), so the edit form has no owner field.
+ * transfer (with a reason), so the edit form has no owner field. With
+ * `onCreated` (intake), the new bike is handed back and the sheet closes
+ * instead of opening the bike.
  */
 export function BikeSheet({
   open,
   onOpenChange,
   bike,
   owner,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,18 +56,24 @@ export function BikeSheet({
   bike?: BikeFields;
   /** New bike: register it to this customer. */
   owner?: { id: string; label: string };
+  /** New bike: receive it here instead of navigating to it. */
+  onCreated?: (created: { id: string; label: string }) => void;
 }) {
-  return open ? <BikeSheetBody onOpenChange={onOpenChange} bike={bike} owner={owner} /> : null;
+  return open ? (
+    <BikeSheetBody onOpenChange={onOpenChange} bike={bike} owner={owner} onCreated={onCreated} />
+  ) : null;
 }
 
 function BikeSheetBody({
   onOpenChange,
   bike,
   owner,
+  onCreated,
 }: {
   onOpenChange: (open: boolean) => void;
   bike?: BikeFields;
   owner?: { id: string; label: string };
+  onCreated?: (created: { id: string; label: string }) => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -77,6 +87,21 @@ function BikeSheetBody({
     if (result.ok) {
       if (bike) {
         toast({ title: "Bike saved", tone: "success" });
+        onOpenChange(false);
+      } else if (onCreated) {
+        toast({ title: "Bike added", tone: "success" });
+        const text = (key: string) => {
+          const v = formData.get(key);
+          return typeof v === "string" ? v : "";
+        };
+        onCreated({
+          id,
+          label: bikeTitle({
+            brand: text("brand"),
+            model: text("model"),
+            variant: text("variant"),
+          }),
+        });
         onOpenChange(false);
       } else {
         toast({ title: "Bike added", tone: "success" });

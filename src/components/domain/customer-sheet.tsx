@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
+import { customerLabel } from "@/lib/people";
 import { newId } from "@/lib/uuid";
 
 /** The fields a customer form edits (CustomerDetail has them all). */
@@ -33,27 +34,50 @@ type State = ActionResult<unknown> | null;
  * id (idempotency key, made when the sheet opens), so a repeated submit
  * cannot create the same person twice; saving opens their page. Failed
  * submissions keep what was typed (DESIGN.md "Forms"). Mounted only while
- * open, so every opening starts clean.
+ * open, so every opening starts clean. With `onCreated` (intake), a new
+ * customer is handed back and the sheet closes instead of opening their page.
  */
 export function CustomerSheet({
   open,
   onOpenChange,
   customer,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Edit this customer; omit for a new one. */
   customer?: CustomerFields;
+  /** New customer: receive it here instead of navigating to their page. */
+  onCreated?: (created: { id: string; label: string }) => void;
 }) {
-  return open ? <CustomerSheetBody onOpenChange={onOpenChange} customer={customer} /> : null;
+  return open ? (
+    <CustomerSheetBody onOpenChange={onOpenChange} customer={customer} onCreated={onCreated} />
+  ) : null;
+}
+
+/** The name a new customer will be shown by, from the submitted form. */
+function labelFromForm(formData: FormData): string {
+  const get = (key: string) => {
+    const v = formData.get(key);
+    return typeof v === "string" ? v : null;
+  };
+  return customerLabel({
+    firstName: get("firstName"),
+    lastName: get("lastName"),
+    displayName: get("displayName"),
+    email: get("email"),
+    phone: get("phone"),
+  });
 }
 
 function CustomerSheetBody({
   onOpenChange,
   customer,
+  onCreated,
 }: {
   onOpenChange: (open: boolean) => void;
   customer?: CustomerFields;
+  onCreated?: (created: { id: string; label: string }) => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -66,6 +90,10 @@ function CustomerSheetBody({
     if (result.ok) {
       if (customer) {
         toast({ title: "Customer saved", tone: "success" });
+        onOpenChange(false);
+      } else if (onCreated) {
+        toast({ title: "Customer created", tone: "success" });
+        onCreated({ id, label: labelFromForm(formData) });
         onOpenChange(false);
       } else {
         toast({ title: "Customer created", tone: "success" });

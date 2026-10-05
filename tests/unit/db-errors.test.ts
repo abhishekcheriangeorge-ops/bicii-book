@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   BUSINESS_ERRORS,
+  CHECK_ERRORS,
   DbError,
   FORBIDDEN_ERROR,
   GENERIC_ERROR,
+  UNIQUE_ERRORS,
   constraintOf,
   mapDbError,
   unwrap,
@@ -104,6 +106,60 @@ describe("mapDbError", () => {
     expect(mapDbError(pgrst("P0002", "staff 123 not found"))).toMatchObject({ kind: "not_found" });
   });
 
+  it("maps the workshop's business errors, unique indexes and checks (Phase 3)", () => {
+    expect(mapDbError(pgrst("P0001", "work_order_transition_invalid"))).toMatchObject({
+      kind: "business",
+      message: "A job can't move to that status from where it is now.",
+    });
+    expect(mapDbError(pgrst("P0001", "bike_owner_mismatch")).message).toBe(
+      "That bike belongs to someone else. Transfer it to this customer first.",
+    );
+    expect(mapDbError(pgrst("P0001", "attachment_work_order_never_public")).message).toBe(
+      "Photos on a job can't be made public.",
+    );
+    expect(
+      mapDbError({
+        code: "23505",
+        message: "dup",
+        constraint: "work_order_assignments_one_lead_key",
+      }),
+    ).toMatchObject({
+      kind: "duplicate",
+      message: "Someone else changed the assignments at the same time. Try again.",
+    });
+    expect(
+      mapDbError(
+        pgrst(
+          "23514",
+          'new row for relation "work_order_line_items" violates check constraint "work_order_line_items_quantity_check"',
+        ),
+      ).message,
+    ).toBe("Quantity must be more than 0 and at most 9,999.");
+    expect(
+      mapDbError(
+        pgrst(
+          "23514",
+          'value for domain line_quantity violates check constraint "line_quantity_not_nan"',
+        ),
+      ).message,
+    ).toBe("Enter a quantity.");
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "attachments_work_order_never_public",
+      }).message,
+    ).toBe("Photos on a job can't be made public.");
+  });
+
+  it("maps numeric overflow (22003) to a plain message", () => {
+    expect(mapDbError(pgrst("22003", "numeric field overflow"))).toEqual({
+      message: "That amount is too large.",
+      kind: "invalid",
+      code: "22003",
+    });
+  });
+
   it("maps expired JWTs and connection loss", () => {
     expect(mapDbError(pgrst("PGRST301", "JWT expired")).kind).toBe("forbidden");
     expect(mapDbError(pgrst("08006", "connection failure")).kind).toBe("unavailable");
@@ -156,5 +212,43 @@ describe("BUSINESS_ERRORS covers every code the migrations raise", () => {
     }
     expect(codes.size).toBeGreaterThan(0);
     expect([...codes].filter((c) => !(c in BUSINESS_ERRORS))).toEqual([]);
+  });
+});
+
+describe("CHECK_ERRORS and UNIQUE_ERRORS cover every named constraint", () => {
+  it("maps each `constraint <name> check` and `create unique index <name>` in supabase/migrations", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const path = await import("node:path");
+    const dir = path.join(process.cwd(), "supabase", "migrations");
+    const checks = new Set<string>();
+    const uniques = new Set<string>();
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql"))) {
+      const sql = readFileSync(path.join(dir, file), "utf8");
+      for (const m of sql.matchAll(/constraint\s+([a-z0-9_]+)\s+check\b/g)) checks.add(m[1]);
+      for (const m of sql.matchAll(/create unique index\s+([a-z0-9_]+)/g)) uniques.add(m[1]);
+    }
+    expect(checks.size).toBeGreaterThan(0);
+    expect(uniques.size).toBeGreaterThan(0);
+    expect([...checks].filter((c) => !(c in CHECK_ERRORS))).toEqual([]);
+    expect([...uniques].filter((c) => !(c in UNIQUE_ERRORS))).toEqual([]);
+  });
+
+  it("maps a check re-raised without its row (raise_without_row) by its constraint", () => {
+    // What a security definer writer now returns through PostgREST: the
+    // constraint in the message, no DETAIL.
+    expect(
+      mapDbError({
+        code: "23514",
+        message:
+          'new row for relation "work_order_line_items" violates check constraint "work_order_line_items_quantity_check"',
+        details: null,
+        hint: null,
+      }),
+    ).toEqual({
+      message: CHECK_ERRORS.work_order_line_items_quantity_check,
+      kind: "invalid",
+      code: "23514",
+      reason: "work_order_line_items_quantity_check",
+    });
   });
 });

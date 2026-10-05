@@ -4,7 +4,8 @@
  *
  *   * finds bikes by short ID and serial number (ignoring case, spaces and
  *     dashes), by brand/model and by owner; customers by name in any word
- *     order, email and phone (with or without spaces or +65);
+ *     order, email and phone (with or without spaces or +65); jobs by job
+ *     number (Phase 3), never in the archived lists;
  *   * exact short ID and serial matches rank first (rank 1), above every
  *     fuzzy hit;
  *   * kinds filter and result limit; unknown kinds raise; blank finds
@@ -15,7 +16,16 @@
 import type pg from "pg";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { AUTH_USER, BIKE, BIKE_SERIAL, BIKE_SHORT_ID, CUSTOMER, STAFF } from "../fixtures/ids";
+import {
+  AUTH_USER,
+  BIKE,
+  BIKE_SERIAL,
+  BIKE_SHORT_ID,
+  CUSTOMER,
+  JOB_NUMBER,
+  STAFF,
+  WORK_ORDER,
+} from "../fixtures/ids";
 import { customerClaims, linkCustomerLogin } from "./customer-fixtures";
 import { actAs, asAnon, asStaff, connect, inTransaction, staffClaims } from "./harness";
 
@@ -173,6 +183,71 @@ describe("bikes by brand, model and owner", () => {
   });
 });
 
+describe("jobs by job number (Phase 3)", () => {
+  it("an exact job number finds the job first, with or without the dash, in any case", async () => {
+    for (const q of [JOB_NUMBER.chloeGiantInProgress, "j000004", "J000004", " j-000004 "]) {
+      const hits = await find(q);
+      expect(hits[0]).toMatchObject({
+        kind: "work_order",
+        id: WORK_ORDER.chloeGiantInProgress,
+        title: "Giant TCR Advanced Pro 1",
+        short_id: "J-000004",
+        rank: 1,
+      });
+      expect(hits[0].subtitle).toBe("Chloe Lim · Both wheels out of true after a pothole.");
+      for (const other of hits.slice(1)) expect(other.rank).toBeLessThan(1);
+    }
+  });
+
+  it("part of a job number finds the job at 0.6", async () => {
+    const hits = await find("000004", ["work_order"]);
+    expect(hits).toEqual([
+      expect.objectContaining({
+        id: WORK_ORDER.chloeGiantInProgress,
+        short_id: "J-000004",
+        rank: 0.6,
+      }),
+    ]);
+    // Every seeded job contains "00000"; at least three characters are needed.
+    expect((await find("00000", ["work_order"])).map((h) => h.short_id).sort()).toEqual(
+      Object.values(JOB_NUMBER).sort(),
+    );
+    expect(await find("04", ["work_order"])).toEqual([]);
+  });
+
+  it("finds jobs in every status, cancelled and collected included", async () => {
+    for (const key of ["tanBromptonCancelled", "tanTarmacCollected"] as const) {
+      expect((await find(JOB_NUMBER[key], ["work_order"]))[0]).toMatchObject({
+        id: WORK_ORDER[key],
+        rank: 1,
+      });
+    }
+  });
+
+  it("the kinds filter keeps jobs in or out", async () => {
+    const all = await find("000004");
+    expect(new Set(all.map((h) => h.kind))).toEqual(new Set(["bike", "work_order"]));
+    expect(new Set((await find("000004", ["work_order"])).map((h) => h.kind))).toEqual(
+      new Set(["work_order"]),
+    );
+    expect((await find("J-000004", ["bike", "customer"])).map((h) => h.kind)).not.toContain(
+      "work_order",
+    );
+  });
+
+  it("jobs are never archived, so the archived lists never show one", async () => {
+    await asStaff(conn, STAFF.mechanic2, async (tx) => {
+      for (const kinds of [null, ["work_order"]]) {
+        const { rows } = await tx.query<Hit>(
+          "select * from public.staff_search($1, $2, 20, true)",
+          [JOB_NUMBER.chloeGiantInProgress, kinds],
+        );
+        expect(rows.filter((h) => h.kind === "work_order")).toEqual([]);
+      }
+    });
+  });
+});
+
 describe("query handling", () => {
   it("returns typed hits", async () => {
     const [hit] = await find("tarmac");
@@ -219,7 +294,7 @@ describe("query handling", () => {
   });
 
   it("raises 22023 for a kind it does not know", async () => {
-    await expect(find("tan", ["work_order"])).rejects.toMatchObject({ code: "22023" });
+    await expect(find("tan", ["product"])).rejects.toMatchObject({ code: "22023" });
     await expect(find("tan", ["bike", null as unknown as string])).rejects.toMatchObject({
       code: "22023",
     });
