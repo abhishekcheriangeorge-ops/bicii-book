@@ -41,7 +41,8 @@ Supabase services run without Docker on the devstack
 Installed versions (from `package.json` and `node_modules`, 2026-10-05):
 `next` 16.3.8, `react` / `react-dom` 19.2.8, `@supabase/ssr` 0.12.7,
 `@supabase/supabase-js` 2.117.2, `zod` 4.6.5, `decimal.js` 10.6.0, `pino`
-10.4.0, `@zxing/browser` 0.2.1. No QR-drawing package is installed yet (labels
+10.4.0, `@zxing/browser` 0.2.1 (the Scan screen imports it dynamically, only
+when the browser has no `BarcodeDetector` for QR codes). No QR-drawing package is installed yet (labels
 are Phase 8; [R-019](RISKS.md#r-019--adr-001-names-versions-the-code-does-not-use)).
 
 ## Main workflow: add a part to a job

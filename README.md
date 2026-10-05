@@ -1,169 +1,92 @@
 # BICII Admin (bicii-book)
 
-The staff-facing operations app for BICII, a custom bicycle workshop in
-Singapore: intake and work orders, appointments, inventory and consignment,
-purchasing, QR labels, reporting and the Shopify boundary. It is a
-phone-first PWA (iPhone in the workshop, iPad at the counter).
+The phone-first staff app for BICII, a custom bicycle workshop in
+Singapore: staff run intake, work orders, appointments and inventory in it
+today, with consignment, purchasing, labels, reporting and the Shopify
+boundary planned.
 
-It shares **one Supabase backend** with the public site
-(`abhishekcheriangeorge-ops/bicii`), which stays the customer-facing client.
-Business rules live in Postgres (RLS, constraints, RPCs); this app and the
-public site are two frontends over the same database.
+Owner: Abhishek Cherian George (George), GitHub
+[abhishekcheriangeorge-ops](https://github.com/abhishekcheriangeorge-ops).
+Application: not deployed.
 
-**Status:** milestone M1 is built through M1.5 ([PLAN §3](docs/PLAN.md)). Phase 0 /
-M1.1 is in place: the Next.js 16 scaffold, design tokens and UI primitives,
-the Docker-free Supabase devstack, the foundation, staff and
-staff-management migrations, the DB test harness, email + password
-sign-in, the staff shell (phone tab bar / iPad rail), Staff settings
-(invite, permissions, deactivate), the PWA manifest and service worker,
-Playwright E2E, and CI. M1.2 ([PLAN §3](docs/PLAN.md)) adds customers,
-bikes with ownership history, photo attachments in Storage, customer
-self-service RPCs and staff search (database, seed and tests), the domain
-services and Server Actions over them, and the screens: Customers and
-Bikes (search-first lists, detail pages, new/edit sheets, archive),
-ownership transfer with a reason, the camera upload (downscaled on the
-phone, uploaded straight to Storage) with a photo viewer (caption,
-internal / customer / public, delete with a reason), and global search
-from the header. M1.3 (workshop) is built: its database layer (catalog,
-Cult Commons rates, jobs, lines, the customer job projection, job search)
-and seeded jobs, the intake wizard (`/jobs/new`), the workshop board and My
-Jobs (`/jobs`), the job page (status, lines and totals, photos, people,
-approval, notes, details, timeline), services settings with the Cult
-Commons rate (`/settings/services`), service history on bikes and
-customers, and jobs in global search. M1.4 (inventory) is built: products
-and units, the stock ledger with linked reversals, parts on jobs with live
-stock, stock adjustments and transfers, publication, the Scan screen and
-`/q` short-ID links. M1.5 (Today) is built: the financial reporting views
-and read RPCs (recognised lines, daily summaries, job activity, stock
-adjustments, operational exceptions; money only with View financial
-reports, costs only with View costs), a seed spanning a week of shop days,
-the Today dashboard (`/`: today's or an earlier day's jobs, money, stock,
-low stock, what needs attention and the last 7 days) and the job yield
-panel on the job page. Phase 2 (appointments) is built: shop settings,
-weekly hours, closures and appointment types with their history;
-appointments with capacity, the slot grid, booking, status and
-cancellation; check-in, which opens or links the appointment's one work
-order and completes the appointment with it; appointment counts for Today
-and the reports; the customer booking RPCs the public site will call; a
-seeded schedule, a week of appointments and one customer login; and the
-staff screens: `/appointments` (day and week, the week strip, capacity per
-slot, closed days and custom hours, bookings a settings change left behind
-flagged), booking from a sheet whose free times are computed in the
-browser with the database's rules, each appointment's page (arrive,
-confirm, no-show, reinstate, cancel, edit bike and notes, history),
-check-in into a new or linked job, Today's appointment tiles and expected
-arrivals, the customer page's appointments with Book, the job's link back
-to its appointment, and Settings → Shop hours and closures and Appointment
-types (readable by all staff, changed by admins).
+It shares one Supabase backend with the public site
+(`abhishekcheriangeorge-ops/bicii`), which stays the customer-facing
+client: business rules live in Postgres
+(RLS, constraints, RPCs), and this app and the public site are two
+frontends over the same database.
+
+## Start here
+
+| I want to… | Read |
+|---|---|
+| Return after a break | [NOW.md](NOW.md) |
+| Understand the purpose | [docs/PRODUCT.md](docs/PRODUCT.md) |
+| Read the original brief | [docs/SPEC.md](docs/SPEC.md) |
+| Understand the design | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/ADR-001-architecture.md](docs/ADR-001-architecture.md), [docs/decisions/README.md](docs/decisions/README.md), [docs/RISKS.md](docs/RISKS.md) |
+| Understand the data and who may access it | [docs/DATA-MODEL.md](docs/DATA-MODEL.md) |
+| Develop the application | [docs/ENGINEERING.md](docs/ENGINEERING.md), [docs/TESTING.md](docs/TESTING.md), [docs/DESIGN.md](docs/DESIGN.md) |
+| Administer or operate it | [docs/OPERATIONS.md](docs/OPERATIONS.md), [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Use it | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) |
+| See the phases and decisions | [docs/PLAN.md](docs/PLAN.md) |
+| Work as a coding agent | [AGENTS.md](AGENTS.md) |
+
+Reading path for an engineer: [NOW](NOW.md),
+[PRODUCT](docs/PRODUCT.md), [ARCHITECTURE](docs/ARCHITECTURE.md),
+[DATA-MODEL](docs/DATA-MODEL.md), [RISKS](docs/RISKS.md),
+[ENGINEERING](docs/ENGINEERING.md), [TESTING](docs/TESTING.md),
+[AGENTS](AGENTS.md).
+
+Reading path for an operator: [NOW](NOW.md),
+[OPERATIONS](docs/OPERATIONS.md), [RUNBOOK](docs/RUNBOOK.md),
+[RISKS](docs/RISKS.md), [USER-GUIDE](docs/USER-GUIDE.md).
+
+## Where each fact lives
+
+Each fact has one home; change it there and link to it elsewhere.
+
+| Responsibility | Canonical home |
+|---|---|
+| Entry point and reading paths | [README.md](README.md) |
+| Current state and next action | [NOW.md](NOW.md) |
+| Agent contract | [AGENTS.md](AGENTS.md) (`CLAUDE.md` stays exactly `@AGENTS.md`) |
+| Purpose, users, scope, domain rules, owner questions | [docs/PRODUCT.md](docs/PRODUCT.md) |
+| Original requirement (verbatim, historical, still the requirement) | [docs/SPEC.md](docs/SPEC.md) |
+| Phases and the decision index | [docs/PLAN.md §6](docs/PLAN.md#6-open-decisions-for-the-owner) |
+| Architecture decision of record | [docs/ADR-001-architecture.md](docs/ADR-001-architecture.md) |
+| Observed design | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Decision records | [docs/decisions/](docs/decisions/README.md) |
+| Data authority, meaning, access, lifecycle and contracts | [docs/DATA-MODEL.md](docs/DATA-MODEL.md) |
+| Test strategy | [docs/TESTING.md](docs/TESTING.md) |
+| Design system | [docs/DESIGN.md](docs/DESIGN.md) |
+| Setup, commands, conventions | [docs/ENGINEERING.md](docs/ENGINEERING.md) |
+| Environments, administration, release, diagnosis, recovery | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Operator procedures | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Problems, shortcuts, gaps | [docs/RISKS.md](docs/RISKS.md) |
+| Staff tasks | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) |
+| A pull request's documentation impact | [.github/pull_request_template.md](.github/pull_request_template.md) |
+
+No issue tracker is in use: the backlog is the phases in
+[PLAN §2](docs/PLAN.md#2-phases) plus the next actions in
+[RISKS](docs/RISKS.md), and [NOW](NOW.md) names the next action.
 
 ## Quickstart
 
-Needs Node 22 (`.nvmrc`) with npm, a Postgres 16 you can reach as a superuser
-(default `postgres`/`postgres` on 127.0.0.1:5432), and curl, tar and git.
-No Docker. The devstack binaries are linux-x64; on macOS or Windows use the
-Supabase CLI with Docker instead ([RUNBOOK](docs/RUNBOOK.md#local-supabase-with-docker-supabase-cli)).
-
-```sh
-npm ci
-npm run devstack:setup   # once per machine: Auth, PostgREST, Storage into ~/.cache/bicii-devstack
-npm run devstack:start   # Auth, PostgREST, Storage + gateway on http://127.0.0.1:54321
-                         # (builds bicii_dev on first run)
-npm run db:reset         # rebuild bicii_dev: roles, Auth, Storage, migrations, seed (~1s)
-npm run devstack:env     # write the local URLs and demo keys into .env.local
-npm run dev              # http://localhost:3000
-```
-
-Open **http://localhost:3000** (not 127.0.0.1: Next 16 blocks dev resources
-on other origins) and sign in with a seeded login. The password for all of
-them is `bicii-dev-password`:
-
-| Email | Role | Permissions |
-|---|---|---|
-| `admin@bicii.test` | admin | all |
-| `mechanic1@bicii.test` | staff | `view_costs` |
-| `mechanic2@bicii.test` | staff | none |
-
-The seed also has one customer login, `chloe.lim@example.com` (Chloe Lim,
-same password), for the public site's customer pages; the Admin does not
-let customers in.
-
-Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
-`PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
-shell before any of the commands (they do not read `.env.local`). `npm run devstack:stop` stops the services.
-
-## Scripts
-
-| Script | What it does |
-|---|---|
-| `npm run dev` | Next dev server (Turbopack) on :3000. Primitives gallery at `/dev/ui`. |
-| `npm run build` / `npm start` | Production build / serve it. |
-| `npm run check` | `next typegen` + `tsc --noEmit`, ESLint, `prettier --check`. |
-| `npm run check:types` | Regenerate the database types from a throwaway database and fail if `src/lib/database.types.ts` differs (CI runs it). |
-| `npm test` | Every Vitest project (unit + db). |
-| `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. |
-| `npm run test:db` | DB project: invariants, RLS and RPCs on clones of a template built with the real Supabase Auth and Storage migrations. Includes a live-stack smoke test when the devstack is running. |
-| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on :3100, resets `bicii_dev`, starts the devstack if needed. |
-| `npm run format` / `npm run lint` | Prettier write / ESLint. |
-| `npm run tokens:contrast` | Recompute WCAG ratios for the colour tokens; fails on a miss. |
-| `npm run icons` | Regenerate the PWA icons from `brand/logo-source.png`. |
-| `npm run devstack:setup` | Download and build the devstack components (idempotent; `-- --force` rebuilds). |
-| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321. |
-| `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. |
-| `npm run db:reset` | Drop and rebuild the dev database, then seed it (the demo history is relative to the shop day of the reset: reset to move "today"). |
-| `npm run db:migrate` | Apply pending migrations without a reset. |
-| `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database from the migrations first; CI diffs that). |
-
-## Project layout
-
-```
-.github/            CI workflow and the shared "prepare" action
-brand/              logo source for the icons
-docs/               spec, plan, ADR, data model, testing, design, runbook
-public/             logo, icons, service worker (sw.js)
-scripts/            contrast and icon generators
-  devstack/         Docker-free Supabase: setup, start/stop, db reset/migrate/types, gateway
-src/
-  app/              App Router: (auth)/login, (staff)/... screens, manifest, error pages
-  components/ui/    design-system primitives
-  components/shell/ tab bar, rail, header (with global search), profile chip
-  components/domain/ record components: camera upload, photo grid/viewer, sheets, search field
-  lib/              money, ids, dates, env, logger, actions, db errors
-    auth/           session, requireStaff, permissions, redirects
-    supabase/       server, browser and (restricted) service-role clients
-    domain/         typed wrappers over the RPCs
-    admin/          Auth admin API (service role)
-  proxy.ts          session refresh and sign-in redirect (Next 16's middleware)
-  instrumentation.ts
-supabase/
-  migrations/       the schema, RLS and RPCs (Supabase CLI timestamp names)
-  seed.sql          demo data and test fixtures
-  devstack/         roles.sql: platform roles for plain Postgres (never a migration)
-tests/
-  unit/  db/  e2e/  fixtures/
-```
-
-## Documents
-
-| File | What it is |
-|---|---|
-| [docs/SPEC.md](docs/SPEC.md) | The authoritative build brief (v1.0, 3 Oct 2026). |
-| [docs/PLAN.md](docs/PLAN.md) | Phases, the first milestone, environment, risks, open decisions. |
-| [docs/ADR-001-architecture.md](docs/ADR-001-architecture.md) | Stack, layering, auth, migrations, the Supabase client/server boundary, PWA, observability. |
-| [docs/DATA-MODEL.md](docs/DATA-MODEL.md) | Every table, constraint, ledger, view, RLS rule and RPC. |
-| [docs/TESTING.md](docs/TESTING.md) | Unit, database and E2E harnesses, the invariant test list, CI. |
-| [docs/DESIGN.md](docs/DESIGN.md) | Design tokens and UI primitives. |
-| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Supabase CLI with Docker, hosted projects, first admin, key rotation, Vercel. |
-
-Read SPEC, PLAN, ADR, DATA-MODEL and TESTING in that order before changing
-code, and see [AGENTS.md](AGENTS.md) for the rules that are not negotiable.
+Node 22, a local Postgres 16 superuser, curl, tar and git; no Docker.
+Set up the devstack, reset the database and run `npm run dev`, then open
+http://localhost:3000 with a seeded login: every step is in
+[ENGINEERING.md](docs/ENGINEERING.md#clean-checkout-to-running-application).
 
 ## Stack
 
-Next.js 16 (App Router, Turbopack), React 19, TypeScript 5, Tailwind 4,
-Supabase (Postgres, Auth, Storage, RLS), zod, decimal.js, pino, Vitest,
-Playwright, GitHub Actions, Vercel. This Next.js differs from older ones
-(`proxy.ts`, async request APIs); see `AGENTS.md`. `@zxing/browser` (with
-its `@zxing/library` peer) decodes QR codes on the Scan screen where the
-browser has no `BarcodeDetector`; it is imported dynamically, only then.
-The camera needs HTTPS or localhost (RUNBOOK, "The camera scanner on
-phones and iPads").
+Next.js 16 (App Router, Turbopack; `proxy.ts` and async request APIs, see
+[AGENTS.md](AGENTS.md)), React 19, TypeScript 5, Tailwind 4, Supabase
+(Postgres, Auth, Storage, RLS), zod, decimal.js, pino and `@zxing/browser`
+for the QR scanner, tested with Vitest and Playwright on GitHub Actions;
+Vercel is planned for hosting. Installed versions and how the parts fit:
+[ARCHITECTURE.md](docs/ARCHITECTURE.md#current-system).
+
+## Licence notice
+
+The documentation structure adapts templates from Vibe Code Docs Stack
+v0.2.0; its MIT notice is in
+[LICENSES/vibe-code-docs-stack.txt](LICENSES/vibe-code-docs-stack.txt).

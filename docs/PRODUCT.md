@@ -2,7 +2,7 @@
 
 Owner: Abhishek Cherian George ("George"; GitHub `abhishekcheriangeorge-ops`),
 product owner. Last substantive decision: the owner decisions of 2026-10-05
-([below](#decisions)). Current build state lives in `NOW.md` at the
+([below](#decisions)). Current build state lives in [NOW.md](../NOW.md) at the
 repository root; this page says why the product exists and what must stay
 true.
 
@@ -44,7 +44,7 @@ Admin never replaces the public site.
   Phase 8 labels; Phase 9 period reports; Phase 10 Shopify; Phase 11 the
   public side of QR pages and customer access; Phase 0 and every phase the
   PWA, the look and the RLS tests ([PLAN §2](PLAN.md#2-phases)). What is
-  built today is recorded in `NOW.md`, not here.
+  built today is recorded in [NOW.md](../NOW.md), not here.
 - Explicit non-goals ([SPEC §30](SPEC.md#30-explicitly-out-of-mvp),
   [PLAN §7](PLAN.md#7-out-of-scope-restated-from-spec-30)): no payment
   processor or Shopify checkout replacement; no accounting, payroll or tax;

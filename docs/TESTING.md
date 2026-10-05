@@ -1,5 +1,7 @@
 # BICII Admin — Testing strategy
 
+Commands: [ENGINEERING.md](ENGINEERING.md#commands); current results: [NOW.md](../NOW.md).
+
 Maps SPEC.md §27 onto concrete harnesses. A feature is done when the tests in
 its row of PLAN.md pass in CI.
 

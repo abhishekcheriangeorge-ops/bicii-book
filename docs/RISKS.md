@@ -5,7 +5,7 @@ Review trigger: the end of each phase, and before any hosted deployment.
 
 The most consequential unresolved items come first. There is no issue
 tracker in use (0 GitHub issues on 2026-10-05): the backlog is the phases in
-[PLAN §2](PLAN.md#2-phases) plus the next actions below, and `NOW.md` names
+[PLAN §2](PLAN.md#2-phases) plus the next actions below, and [NOW.md](../NOW.md) names
 the next action. Decisions referred to as Dn are in
 [PLAN §6](PLAN.md#6-open-decisions-for-the-owner), with their records in
 [decisions/](decisions/README.md).
@@ -340,8 +340,9 @@ URLs, or customer data in this file.
 - Category: security concern (non-exploitable summary).
 - Status and owner: mitigated by procedure; operator.
 - Trigger: running `supabase/seed.sql` on a hosted project.
-- Impact: the seed creates staff logins whose password is published in the
-  README, so seeding a hosted project would open it to anyone.
+- Impact: the seed creates staff logins whose password is published in
+  [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application),
+  so seeding a hosted project would open it to anyone.
 - Evidence and confidence: high; RUNBOOK "Hosted Supabase projects" step 5
   says never to run it on a hosted project.
 - Workaround or containment: create the first hosted admin as RUNBOOK

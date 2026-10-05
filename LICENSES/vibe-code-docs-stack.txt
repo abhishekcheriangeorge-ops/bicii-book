@@ -1,10 +1,7 @@
-The documentation structure of this repository (README.md, NOW.md, AGENTS.md,
-docs/PRODUCT.md, docs/ARCHITECTURE.md, docs/RISKS.md, docs/ENGINEERING.md,
-docs/OPERATIONS.md, docs/USER-GUIDE.md, docs/decisions/ and
-.github/pull_request_template.md) adapts templates from Vibe Code Docs Stack
+Portions of README.md, NOW.md, AGENTS.md, docs/*.md, docs/decisions/ and
+.github/pull_request_template.md are adapted from Vibe Code Docs Stack
 v0.2.0, https://github.com/abhishekcheriangeorge-ops/vibe-code-docs-stack,
-which is distributed under the following license. The application itself is
-not covered by this notice.
+under this licence:
 
 MIT License
 
