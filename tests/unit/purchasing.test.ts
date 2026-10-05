@@ -140,6 +140,22 @@ describe("purchasing permissions (D60 D-PO-COSTS)", () => {
     expect(canManagePurchasing(staff("mechanic", ["manage_purchasing"]))).toBe(true);
     expect(canManagePurchasing(staff("mechanic", ["view_costs"]))).toBe(false);
   });
+
+  it("a manager sees purchase costs everywhere through the role's view_costs (D91)", () => {
+    const manager = staff("manager", []);
+    expect(canSeePurchaseCosts(manager)).toBe(true);
+    expect(canSeeProductPageSupplierCosts(manager)).toBe(true);
+    expect(canManagePurchasing(manager)).toBe(true);
+    expect(canSeePurchaseCosts(staff("manager", [], false))).toBe(false);
+    expect(canSeeProductPageSupplierCosts(staff("manager", [], false))).toBe(false);
+  });
+
+  it("a mechanic with manage_purchasing as an exception: the D60 case is unchanged", () => {
+    const buyer = staff("mechanic", ["manage_purchasing"]);
+    expect(canSeePurchaseCosts(buyer)).toBe(true);
+    expect(canSeeProductPageSupplierCosts(buyer)).toBe(false);
+    expect(canManagePurchasing(buyer)).toBe(true);
+  });
 });
 
 describe("normaliseWebsite", () => {

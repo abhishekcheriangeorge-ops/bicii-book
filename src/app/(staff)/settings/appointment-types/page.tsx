@@ -25,6 +25,8 @@ export const metadata: Metadata = { title: "Appointment types" };
  */
 export default async function AppointmentTypesPage() {
   const staff = await requireStaff();
+  // Admin-only on purpose (D91): appointment types are shop settings, which
+  // no role but admin and no exception changes (private.require_admin()).
   const admin = staff.role === "admin";
   const supabase = await createClient();
   const [types, settings] = await Promise.all([

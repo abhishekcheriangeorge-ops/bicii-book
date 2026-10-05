@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { RoleBadge } from "@/components/domain/role-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   PERMISSIONS,
+  ROLE_PERMISSIONS,
   accessChangeBlocker,
   permissionChangeBlocker,
   type PermissionKey,
@@ -45,7 +47,7 @@ export default async function StaffMemberPage({ params }: PageProps<"/settings/s
         description={member.email}
         actions={
           <>
-            <Badge tone={isAdmin ? "info" : "neutral"}>{isAdmin ? "Admin" : "Staff"}</Badge>
+            <RoleBadge role={member.role} />
             {member.active ? (
               <Badge tone="done">Active</Badge>
             ) : (
@@ -65,9 +67,13 @@ export default async function StaffMemberPage({ params }: PageProps<"/settings/s
                 Manage staff, or your own permissions.
               </p>
             ) : null}
+            {/* What the role implies shows on, locked with "Included in the
+                <Role> role." (D91); the rest are exceptions (D92). */}
             <PermissionSwitches
               staffId={member.staffId}
-              granted={member.grantedPermissions}
+              granted={[
+                ...new Set([...ROLE_PERMISSIONS[member.role], ...member.grantedPermissions]),
+              ]}
               disabled={!member.active}
               blockers={blockers}
             />

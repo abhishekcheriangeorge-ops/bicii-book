@@ -3,13 +3,23 @@ import { describe, expect, it } from "vitest";
 import { MORE_ITEMS, TABS, isActive, isItemActive, isMoreActive } from "@/components/shell/nav";
 import {
   PERMISSIONS,
+  ROLES,
+  ROLE_DESCRIPTIONS,
+  ROLE_LABELS,
   accessChangeBlocker,
   effectivePermissions,
+  exceptionsOf,
   hasPermission,
+  invitableRoles,
+  isExceptionFor,
   isPermissionKey,
   permissionChangeBlocker,
+  roleChangeBlocker,
   roleImplies,
+  roleLabel,
+  type PermissionKey,
   type StaffDTO,
+  type StaffRole,
 } from "@/lib/auth/permissions";
 import { isPublicPath } from "@/lib/auth/routes";
 import { greetingFor } from "@/lib/dates";
@@ -150,48 +160,221 @@ describe("greetingFor", () => {
   });
 });
 
-describe("delegation ceiling (mirrors private.authorize_permission_change, PLAN D11)", () => {
-  const actor = (role: "admin" | "mechanic", permissions: StaffDTO["permissions"]) => ({
-    staffId: "me",
-    role,
-    active: true,
-    permissions,
-  });
-  const colleague = { staffId: "them", role: "mechanic" as const };
+describe("roles (D90, D91, mirrors private.role_implies)", () => {
+  // The full table: 3 roles x 7 permissions. tests/db/staff-roles.test.ts
+  // proves private.role_implies gives the same answers.
+  const table: Record<StaffRole, Record<PermissionKey, boolean>> = {
+    admin: {
+      view_costs: true,
+      manage_inventory: true,
+      adjust_stock: true,
+      manage_consignments: true,
+      manage_purchasing: true,
+      manage_staff: true,
+      view_financial_reports: true,
+    },
+    manager: {
+      view_costs: true,
+      manage_inventory: true,
+      adjust_stock: true,
+      manage_consignments: true,
+      manage_purchasing: true,
+      manage_staff: false,
+      view_financial_reports: true,
+    },
+    mechanic: {
+      view_costs: false,
+      manage_inventory: false,
+      adjust_stock: false,
+      manage_consignments: false,
+      manage_purchasing: false,
+      manage_staff: false,
+      view_financial_reports: false,
+    },
+  };
 
-  it("admins may change anything", () => {
+  it("lists the three roles in enum order with labels and one-line descriptions", () => {
+    expect(ROLES).toEqual(["admin", "manager", "mechanic"]);
+    expect(ROLE_LABELS).toEqual({ admin: "Admin", manager: "Manager", mechanic: "Mechanic" });
+    expect(ROLE_DESCRIPTIONS).toEqual({
+      admin: "Everything, including staff, roles and shop settings",
+      manager: "Every permission except managing staff, and refunds",
+      mechanic: "Workshop work; extra access only if granted",
+    });
+  });
+
+  for (const role of ["admin", "manager", "mechanic"] as const) {
     for (const p of PERMISSIONS) {
-      expect(permissionChangeBlocker(actor("admin", [...PERMISSIONS]), colleague, p)).toBeNull();
+      it(`${role} ${table[role][p] ? "implies" : "does not imply"} ${p}`, () => {
+        expect(roleImplies(role, p)).toBe(table[role][p]);
+        expect(isExceptionFor(role, p)).toBe(!table[role][p]);
+      });
+    }
+  }
+
+  it('reads the legacy history value "staff" as Mechanic, and every role by its label', () => {
+    expect(roleLabel("staff")).toBe("Mechanic");
+    expect(roleLabel("mechanic")).toBe("Mechanic");
+    expect(roleLabel("manager")).toBe("Manager");
+    expect(roleLabel("admin")).toBe("Admin");
+  });
+
+  it("effective permissions per role, with and without exceptions, and none when inactive", () => {
+    expect(effectivePermissions("admin", true, [])).toEqual([...PERMISSIONS]);
+    expect(effectivePermissions("manager", true, [])).toEqual(
+      PERMISSIONS.filter((p) => p !== "manage_staff"),
+    );
+    expect(effectivePermissions("manager", true, ["manage_staff"])).toEqual([...PERMISSIONS]);
+    expect(effectivePermissions("mechanic", true, [])).toEqual([]);
+    expect(effectivePermissions("mechanic", true, ["manage_purchasing", "view_costs"])).toEqual([
+      "view_costs",
+      "manage_purchasing",
+    ]);
+    for (const role of ROLES) {
+      expect(effectivePermissions(role, false, [...PERMISSIONS]), role).toEqual([]);
     }
   });
 
-  it("a manager grants only what they hold, never manage_staff, never to themselves or admins", () => {
-    const manager = actor("mechanic", ["manage_staff", "adjust_stock"]);
-    expect(permissionChangeBlocker(manager, colleague, "adjust_stock")).toBeNull();
-    expect(permissionChangeBlocker(manager, colleague, "view_costs")).toMatch(/you have yourself/);
-    expect(permissionChangeBlocker(manager, colleague, "manage_staff")).toMatch(/Only an admin/);
-    expect(
-      permissionChangeBlocker(manager, { staffId: "me", role: "mechanic" }, "adjust_stock"),
-    ).toMatch(/your permissions/);
-    expect(
-      permissionChangeBlocker(manager, { staffId: "x", role: "admin" }, "adjust_stock"),
-    ).toMatch(/Admins/);
+  it("exceptionsOf keeps only what the role does not imply", () => {
+    expect(exceptionsOf("admin", [...PERMISSIONS])).toEqual([]);
+    expect(exceptionsOf("manager", [...PERMISSIONS])).toEqual(["manage_staff"]);
+    expect(exceptionsOf("mechanic", ["view_costs", "manage_purchasing"])).toEqual([
+      "view_costs",
+      "manage_purchasing",
+    ]);
+  });
+});
+
+describe("delegation ceiling (mirrors private.authorize_permission_change and grant_permission, D11, D92, D93)", () => {
+  const actor = (
+    role: StaffRole,
+    permissions: StaffDTO["permissions"] = effectivePermissions(role, true, []),
+    active = true,
+  ) => ({ staffId: "me", role, active, permissions });
+  const mechanic = { staffId: "them", role: "mechanic" as const };
+  const manager = { staffId: "boss", role: "manager" as const };
+  const admin = { staffId: "owner", role: "admin" as const };
+
+  it("a permission the target's role implies is never an exception to grant", () => {
+    for (const p of PERMISSIONS.filter((p) => p !== "manage_staff")) {
+      expect(permissionChangeBlocker(actor("admin"), manager, p)).toBe(
+        "Included in the Manager role.",
+      );
+    }
+    for (const p of PERMISSIONS) {
+      expect(permissionChangeBlocker(actor("admin"), admin, p)).toBe("Included in the Admin role.");
+    }
   });
 
-  it("staff without manage_staff change nothing", () => {
-    expect(
-      permissionChangeBlocker(actor("mechanic", ["view_costs"]), colleague, "view_costs"),
-    ).toMatch(/Manage staff/);
+  it("an admin may change any exception: a mechanic's, and a manager's manage_staff", () => {
+    for (const p of PERMISSIONS) {
+      expect(permissionChangeBlocker(actor("admin"), mechanic, p)).toBeNull();
+    }
+    expect(permissionChangeBlocker(actor("admin"), manager, "manage_staff")).toBeNull();
   });
 
-  it("access: nobody deactivates themselves; only admins change an admin's access", () => {
-    const manager = actor("mechanic", ["manage_staff"]);
-    expect(accessChangeBlocker(manager, colleague)).toBeNull();
-    expect(accessChangeBlocker(manager, { staffId: "me", role: "mechanic" })).toMatch(/yourself/);
-    expect(accessChangeBlocker(manager, { staffId: "x", role: "admin" })).toMatch(/Only an admin/);
+  it("a manager without the exception changes nothing", () => {
+    expect(permissionChangeBlocker(actor("manager"), mechanic, "view_costs")).toBe(
+      "You need the Manage staff permission.",
+    );
+  });
+
+  it("a non-admin manage_staff holder acts on mechanics only, within what they hold", () => {
+    const holder = actor("mechanic", ["manage_staff", "adjust_stock"]);
+    expect(permissionChangeBlocker(holder, mechanic, "adjust_stock")).toBeNull();
+    expect(permissionChangeBlocker(holder, mechanic, "view_costs")).toBe(
+      "You can only grant permissions you have yourself.",
+    );
+    expect(permissionChangeBlocker(holder, mechanic, "manage_staff")).toBe(
+      "Only an admin can grant or remove Manage staff.",
+    );
     expect(
-      accessChangeBlocker(actor("admin", [...PERMISSIONS]), { staffId: "x", role: "admin" }),
-    ).toBeNull();
+      permissionChangeBlocker(holder, { staffId: "me", role: "mechanic" }, "adjust_stock"),
+    ).toBe("Only an admin can change your permissions.");
+    expect(permissionChangeBlocker(holder, manager, "manage_staff")).toBe(
+      "Only an admin changes an admin's or a manager's access.",
+    );
+    expect(permissionChangeBlocker(holder, manager, "adjust_stock")).toBe(
+      "Included in the Manager role.",
+    );
+  });
+
+  it("a manager granted manage_staff acts on mechanics only, never on another manager", () => {
+    const holder = actor("manager", [...PERMISSIONS]);
+    expect(permissionChangeBlocker(holder, mechanic, "view_costs")).toBeNull();
+    expect(permissionChangeBlocker(holder, mechanic, "manage_staff")).toBe(
+      "Only an admin can grant or remove Manage staff.",
+    );
+    expect(permissionChangeBlocker(holder, manager, "manage_staff")).toBe(
+      "Only an admin changes an admin's or a manager's access.",
+    );
+    expect(
+      permissionChangeBlocker(holder, { staffId: "me", role: "manager" }, "manage_staff"),
+    ).toBe("Only an admin can change your permissions.");
+  });
+
+  it("staff without manage_staff, and inactive staff, change nothing", () => {
+    expect(permissionChangeBlocker(actor("mechanic", ["view_costs"]), mechanic, "view_costs")).toBe(
+      "You need the Manage staff permission.",
+    );
+    expect(permissionChangeBlocker(actor("admin", [], false), mechanic, "view_costs")).toBe(
+      "Only active staff can change permissions.",
+    );
+  });
+
+  it("access: nobody deactivates themselves; only admins change an admin's or a manager's", () => {
+    const holder = actor("mechanic", ["manage_staff"]);
+    expect(accessChangeBlocker(holder, mechanic)).toBeNull();
+    expect(accessChangeBlocker(holder, { staffId: "me", role: "mechanic" })).toBe(
+      "You can't deactivate yourself.",
+    );
+    expect(accessChangeBlocker(holder, admin)).toBe(
+      "Only an admin changes an admin's or a manager's access.",
+    );
+    expect(accessChangeBlocker(holder, manager)).toBe(
+      "Only an admin changes an admin's or a manager's access.",
+    );
+    expect(accessChangeBlocker(actor("manager", [...PERMISSIONS]), manager)).toBe(
+      "Only an admin changes an admin's or a manager's access.",
+    );
+    expect(accessChangeBlocker(actor("manager"), mechanic)).toBe(
+      "You need the Manage staff permission.",
+    );
+    expect(accessChangeBlocker(actor("admin"), admin)).toBeNull();
+    expect(accessChangeBlocker(actor("admin"), manager)).toBeNull();
+    expect(accessChangeBlocker(actor("admin"), { staffId: "me", role: "admin" })).toBe(
+      "You can't deactivate yourself.",
+    );
+    expect(accessChangeBlocker(actor("admin", [], false), mechanic)).toBe(
+      "Only active staff can change access.",
+    );
+  });
+
+  it("roles: only an active admin changes them, never their own (mirrors update_staff)", () => {
+    expect(roleChangeBlocker(actor("admin"), mechanic)).toBeNull();
+    expect(roleChangeBlocker(actor("admin"), manager)).toBeNull();
+    expect(roleChangeBlocker(actor("admin"), admin)).toBeNull();
+    expect(roleChangeBlocker(actor("admin"), { staffId: "me", role: "admin" })).toBe(
+      "You can't change your own role.",
+    );
+    expect(roleChangeBlocker(actor("manager", [...PERMISSIONS]), mechanic)).toBe(
+      "Only an admin changes roles.",
+    );
+    expect(roleChangeBlocker(actor("mechanic", ["manage_staff"]), mechanic)).toBe(
+      "Only an admin changes roles.",
+    );
+    expect(roleChangeBlocker(actor("admin", [], false), mechanic)).toBe(
+      "Only active staff can change roles.",
+    );
+  });
+
+  it("invites: an admin any role; another manage_staff holder mechanics only (mirrors create_staff)", () => {
+    expect(invitableRoles(actor("admin"))).toEqual(["admin", "manager", "mechanic"]);
+    expect(invitableRoles(actor("manager", [...PERMISSIONS]))).toEqual(["mechanic"]);
+    expect(invitableRoles(actor("mechanic", ["manage_staff"]))).toEqual(["mechanic"]);
+    expect(invitableRoles(actor("manager"))).toEqual([]);
+    expect(invitableRoles(actor("mechanic", []))).toEqual([]);
+    expect(invitableRoles(actor("admin", [], false))).toEqual([]);
   });
 });
 

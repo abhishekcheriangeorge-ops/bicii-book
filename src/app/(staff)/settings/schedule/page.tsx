@@ -41,6 +41,9 @@ export const metadata: Metadata = { title: "Shop hours and closures" };
  */
 export default async function ScheduleSettingsPage() {
   const staff = await requireStaff();
+  // Admin-only on purpose (D91): hours, closures and booking capacity are
+  // shop settings, which no role but admin and no exception changes
+  // (private.require_admin()).
   const admin = staff.role === "admin";
   const supabase = await createClient();
   const [settings, week, closures] = await Promise.all([

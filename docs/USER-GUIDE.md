@@ -53,8 +53,11 @@ If it fails:
 
 A link you opened before signing in takes you back there afterwards.
 
-Your own details, permissions and **Sign out** are under Settings → Your
-profile.
+Your own details, your role (Admin, Manager or Mechanic), what it lets you
+do and **Sign out** are under Settings → Your profile: the card **Your role
+and access** lists every permission you have, marks any given to you on top
+of your role as **Extra access**, and lists **Record refunds** for admins and
+managers.
 
 ## Routine tasks
 
@@ -277,7 +280,9 @@ profile.
 
 ### Refund a sale
 
-- Before you start: only an admin records a refund (D49).
+- Before you start: an admin or a manager records a refund (D94, amending
+  D49). A mechanic does not see **Record refund**, whatever extra access
+  they have.
 - Steps: open the sale (Sales, or search its S- number) → **Record
   refund**. The **Amount** starts at what is left to refund; change it for
   a partial refund. Press **Record refund of $x…**, answer "Why is it
@@ -484,21 +489,38 @@ profile.
 
 ## Roles and limits
 
+Everyone has one of three roles (D90, [ADR-021](decisions/ADR-021-staff-roles.md)),
+shown as a badge on Settings → Your profile and on Settings → Staff:
+
+| Role | What it lets you do |
+|---|---|
+| Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93) |
+| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings |
+| Mechanic | The workshop: what everyone can do (next paragraph). Anything more only as extra access |
+
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
 parts from stock, appointments and check-in, in-store sales, Scan, search,
 and read the schedule, appointment types, services and locations. Selling
 prices and sale totals are visible to all; costs are not.
 
-| You have | What changes for you |
+**Extra access (exceptions).** An admin can give one person a single
+permission on top of their role (D92): for example a mechanic who orders
+parts gets Manage purchasing alone, or a manager who invites colleagues gets
+Manage staff. A mechanic can have any of them; a manager only Manage staff
+(their role already includes the rest); an admin none. Your profile marks
+each one **Extra access**. Extra access never includes **Record refund**,
+which is for admins and managers only. Each permission, whether it comes
+from your role or as extra access:
+
+| Permission | What changes for you |
 |---|---|
-| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate and **Record refund** on a sale (D49) |
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
-| Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), permissions and deactivation (it ends their sessions at once), only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
+| Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), extra access and deactivation (it ends their sessions at once). Without the Admin role: mechanics only, only within your own permissions, never Manage staff and never your own row ([OPERATIONS.md](OPERATIONS.md#product-administration), D93) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
-| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history, D60), not job, sale, product-page or report costs (supplier last costs on a product's **Suppliers & orders** card need View costs) |
+| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history). A mechanic given it as extra access sees those costs on purchasing screens only, not job, sale, product-page or report costs (D60); a manager sees them everywhere through View costs |
 
 Without a permission, its buttons are absent and the figures are not sent
 to your screen at all. Opening a page you may not use shows "You can't open
@@ -508,8 +530,8 @@ that." Ask an admin.
 Everyone can open Consignment, its consignors and items, and the asking
 prices; who is owed what, payments and agreement photos need Manage
 consignments or View costs (D48). Anyone may record an in-store sale and
-see its total; its cost, yield and Cult Commons need View costs, and only
-an admin records a refund (D48, D49).
+see its total; its cost, yield and Cult Commons need View costs, and an
+admin or a manager records a refund (D48, D94).
 
 Everyone can open Purchasing, its orders and suppliers, and see what is
 ordered, received and still to come; costs on those screens need View

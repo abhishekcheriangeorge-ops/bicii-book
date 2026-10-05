@@ -5,6 +5,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { ChevronRightIcon, PlusIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowLink, RowList } from "@/components/ui/row-list";
+import { RoleBadge } from "@/components/domain/role-badge";
 import { PERMISSION_LABELS } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { listStaff } from "@/lib/domain/staff";
@@ -37,9 +38,7 @@ export default async function StaffSettingsPage() {
                 {s.staffId === me.staffId ? (
                   <span className="text-sm text-dust-500">(you)</span>
                 ) : null}
-                <Badge tone={s.role === "admin" ? "info" : "neutral"}>
-                  {s.role === "admin" ? "Admin" : "Staff"}
-                </Badge>
+                <RoleBadge role={s.role} />
                 {s.active ? null : <Badge tone="danger">Deactivated</Badge>}
               </span>
               <span className="truncate text-sm text-dust-500">{s.email}</span>

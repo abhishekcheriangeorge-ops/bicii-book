@@ -5,7 +5,7 @@ import { unstable_rethrow } from "next/navigation";
 import type { Logger } from "pino";
 import { z } from "zod";
 
-import type { PermissionKey, StaffDTO } from "@/lib/auth/permissions";
+import type { PermissionKey, StaffDTO, StaffRole } from "@/lib/auth/permissions";
 import { authorizeStaff, getCorrelationId, type Session } from "@/lib/auth/session";
 import { mapDbError } from "@/lib/db-errors";
 import { DomainError } from "@/lib/domain/errors";
@@ -67,10 +67,12 @@ export class ActionError extends Error {
 export type StaffActionOptions = {
   /** Stable name for logs, e.g. "staff.grant_permission". */
   name: string;
-  /** Required permission (admins have all). */
+  /** Required permission (from the role or an exception, PLAN D91). */
   permission?: PermissionKey;
-  /** Require role admin. */
+  /** Require role admin (admin-only settings: private.require_admin()). */
   admin?: boolean;
+  /** Require one of these roles (e.g. refunds: admin or manager, D94). */
+  roles?: readonly StaffRole[];
 };
 
 /**
@@ -87,7 +89,7 @@ export type StaffAction<Input, Data> = {
  * endpoint, so it
  *
  *   1. authenticates and authorizes on ONE Supabase client:
- *      authorizeStaff(client, { permission, admin }) — redirect to /login
+ *      authorizeStaff(client, { permission, admin, roles }) — redirect to /login
  *      when signed out, 403 when not allowed (these propagate). React
  *      cache() does not memoise inside an action, so requireStaff() would
  *      verify the session twice; the same client then goes to the handler;
@@ -116,6 +118,7 @@ export function staffAction<Schema extends z.ZodType, Data>(
     const { staff, session } = await authorizeStaff(supabase, {
       permission: options.permission,
       admin: options.admin,
+      roles: options.roles,
     });
     const correlationId = await getCorrelationId();
     const log = child(correlationId, { action: options.name, actor: staff.staffId });

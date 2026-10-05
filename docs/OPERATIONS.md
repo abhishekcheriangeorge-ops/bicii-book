@@ -150,7 +150,7 @@ either permission a member sees counts only, never who is owed money.
 `tests/e2e/consignment-journey.spec.ts`; the grants:
 `tests/db/consignment-access.test.ts`.)
 
-**Record a refund** (admin only; D49). Sales → the sale → Record refund;
+**Record a refund** (an admin or a manager; D94, amending D49). Sales → the sale → Record refund;
 the Amount starts at what is left to refund; press "Record refund of
 $x…", give the reason, confirm "Refund $x". Expected: "Refund of $x
 recorded" and the sale reads Partly refunded or Refunded. A refund is money

@@ -495,7 +495,8 @@ URLs, or customer data in this file.
 - Category: deliberate shortcut.
 - Status and owner: accepted (D49, build default, owner to confirm);
   owner, with Phase 9's refund-reporting row (working name DR5).
-- Trigger: an admin records a refund on a sale (`record_sale_refund`), or
+- Trigger: an admin or a manager records a refund on a sale
+  (`record_sale_refund`, D94), or
   staff restock a sold unit (`restock_unit`).
 - Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
   Today and the financial reports) keep every sale line at its snapshot:
@@ -512,7 +513,8 @@ URLs, or customer data in this file.
   includes it (passed in `npm test` on 2026-10-05).
 - Workaround or containment: refunds and restocks show on the sale, in
   `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
-  ledger; refunds are admin-only and capped at the sale total (D49). Since
+  ledger; refunds are for admins and managers (D94) and capped at the sale
+  total (D49). Since
   Phase 6 step 4 the sale page's Yield card says "Refunds and restocks do
   not change these figures yet", the Sales list marks Partly refunded /
   Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial

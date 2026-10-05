@@ -1,4 +1,4 @@
-import { PERMISSION_LABELS } from "@/lib/auth/permissions";
+import { PERMISSION_LABELS, roleLabel } from "@/lib/auth/permissions";
 import { formatDateTime } from "@/lib/dates";
 import type { StaffEvent } from "@/lib/domain/staff";
 
@@ -16,8 +16,12 @@ function describe(event: StaffEvent): string {
     case "reactivated":
       return "Reactivated";
     case "role_changed": {
-      const to = (event.payload.role as { to?: string } | undefined)?.to;
-      return to === "admin" ? "Made an admin" : "Changed to staff";
+      // Payloads written before D90 say "staff"; roleLabel reads it as Mechanic.
+      const change = event.payload.role as { from?: unknown; to?: unknown } | undefined;
+      const from = typeof change?.from === "string" ? roleLabel(change.from) : null;
+      const to = typeof change?.to === "string" ? roleLabel(change.to) : null;
+      if (!to) return "Role changed";
+      return from ? `Role changed from ${from} to ${to}` : `Role changed to ${to}`;
     }
     case "details_changed":
       return "Details changed";

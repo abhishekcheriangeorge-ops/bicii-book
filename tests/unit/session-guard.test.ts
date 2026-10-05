@@ -36,7 +36,7 @@ type ProfileRow = {
   auth_user_id: string;
   display_name: string;
   email: string;
-  role: "admin" | "mechanic";
+  role: "admin" | "manager" | "mechanic";
   active: boolean;
   permissions: string[];
 };
@@ -110,5 +110,65 @@ describe("requireStaff and requireAdmin (pages)", () => {
     await expect(requireStaff()).rejects.toBeInstanceOf(Forbidden);
     createClient.mockResolvedValue(client(profile({ role: "admin", active: false })));
     await expect(requireAdmin()).rejects.toBeInstanceOf(Forbidden);
+  });
+});
+
+describe("role requirements (D94 refunds, admin-only settings)", () => {
+  it("roles: a manager and an admin pass [admin, manager]; a mechanic gets 403", async () => {
+    const refunders = { roles: ["admin", "manager"] as const };
+    await expect(
+      authorizeStaff(client(profile({ role: "manager" })), refunders),
+    ).resolves.toMatchObject({ staff: { role: "manager" } });
+    await expect(
+      authorizeStaff(client(profile({ role: "admin" })), refunders),
+    ).resolves.toMatchObject({ staff: { role: "admin" } });
+    await expect(authorizeStaff(client(profile()), refunders)).rejects.toBeInstanceOf(Forbidden);
+  });
+
+  it("roles: no exception satisfies a role requirement", async () => {
+    const everything = [
+      "view_costs",
+      "manage_inventory",
+      "adjust_stock",
+      "manage_consignments",
+      "manage_purchasing",
+      "manage_staff",
+      "view_financial_reports",
+    ];
+    await expect(
+      authorizeStaff(client(profile({ permissions: everything })), {
+        roles: ["admin", "manager"],
+      }),
+    ).rejects.toBeInstanceOf(Forbidden);
+  });
+
+  it("roles: an inactive manager gets 403", async () => {
+    await expect(
+      authorizeStaff(client(profile({ role: "manager", active: false })), {
+        roles: ["admin", "manager"],
+      }),
+    ).rejects.toBeInstanceOf(Forbidden);
+  });
+
+  it("admin: still refuses a manager (admin-only settings stay admin-only)", async () => {
+    await expect(
+      authorizeStaff(client(profile({ role: "manager" })), { admin: true }),
+    ).rejects.toBeInstanceOf(Forbidden);
+    createClient.mockResolvedValue(client(profile({ role: "manager" })));
+    await expect(requireAdmin()).rejects.toBeInstanceOf(Forbidden);
+  });
+
+  it("permission: a manager holds what the role implies, not manage_staff", async () => {
+    await expect(
+      authorizeStaff(client(profile({ role: "manager" })), { permission: "view_costs" }),
+    ).resolves.toMatchObject({ staff: { role: "manager" } });
+    await expect(
+      authorizeStaff(client(profile({ role: "manager" })), { permission: "manage_staff" }),
+    ).rejects.toBeInstanceOf(Forbidden);
+    await expect(
+      authorizeStaff(client(profile({ role: "manager", permissions: ["manage_staff"] })), {
+        permission: "manage_staff",
+      }),
+    ).resolves.toMatchObject({ staff: { role: "manager" } });
   });
 });
