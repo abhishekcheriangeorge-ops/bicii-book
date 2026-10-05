@@ -17,7 +17,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { isOverdue, OVERDUE_AFTER_DAYS, type WorkOrderStatus } from "@/lib/workshop";
 
 import { JOB_FIXTURES, LINE_FIXTURES } from "../fixtures/cult-commons";
-import { STAFF } from "../fixtures/ids";
+import { CUSTOMER, STAFF } from "../fixtures/ids";
+import { insertAppointment, makeType } from "./appointment-fixtures";
 import { actAs, connect, inTransaction, isolatedDatabase, scalar } from "./harness";
 import {
   ADMIN,
@@ -459,6 +460,22 @@ describe.skipIf(!isolated)("financial engine on test-built rows", () => {
       });
 
       await ownerMode(tx);
+      // Appointments (D41): by scheduled day and current status. d1: one
+      // booked, one no-show, one cancelled; d3: one arrived.
+      const type = await makeType(tx);
+      for (const [day, time, status] of [
+        [d1, "10:00", "booked"],
+        [d1, "11:00", "no_show"],
+        [d1, "12:00", "cancelled"],
+        [d3, "10:00", "arrived"],
+      ] as const)
+        await insertAppointment(tx, {
+          customerId: CUSTOMER.daniel,
+          typeId: type,
+          startsAt: sgt(day, time),
+          endsAt: new Date(new Date(sgt(day, time)).getTime() + 30 * 60_000).toISOString(),
+          status,
+        });
       expect(
         await scalar<number>(
           tx,
@@ -521,17 +538,47 @@ describe.skipIf(!isolated)("financial engine on test-built rows", () => {
             ledgers[r.day].returned,
           ]);
         }
-        for (const p of [
-          "appointments_scheduled",
-          "appointments_arrived",
-          "appointments_no_show",
-          "consignment_sales",
-          "consignment_sales_total",
-          "new_consignor_liability",
-        ])
+        // D41: the appointment columns are integers equal to
+        // appointment_daily's booked / arrived / no_shows (0 on days without
+        // appointments); Phase 6's columns are still NULL.
+        const counts = (
+          await tx.query<{ booked: number; arrived: number; no_shows: number }>(
+            "select booked, arrived, no_shows from public.appointment_daily($1, $1)",
+            [r.day],
+          )
+        ).rows[0];
+        expect({
+          day: r.day,
+          scheduled: r.appointments_scheduled,
+          arrived: r.appointments_arrived,
+          noShow: r.appointments_no_show,
+        }).toEqual({
+          day: r.day,
+          scheduled: counts.booked,
+          arrived: counts.arrived,
+          noShow: counts.no_shows,
+        });
+        for (const p of ["appointments_scheduled", "appointments_arrived", "appointments_no_show"])
+          expect(Number.isInteger(r[p])).toBe(true);
+        for (const p of ["consignment_sales", "consignment_sales_total", "new_consignor_liability"])
           expect(r[p]).toBeNull();
       }
       const byDay = Object.fromEntries(rows.map((r) => [r.day, r]));
+      expect(byDay[d1]).toMatchObject({
+        appointments_scheduled: 2,
+        appointments_arrived: 0,
+        appointments_no_show: 1,
+      });
+      expect(byDay[d3]).toMatchObject({
+        appointments_scheduled: 1,
+        appointments_arrived: 1,
+        appointments_no_show: 0,
+      });
+      expect(byDay[empty]).toMatchObject({
+        appointments_scheduled: 0,
+        appointments_arrived: 0,
+        appointments_no_show: 0,
+      });
       expect(byDay[d1]).toMatchObject({
         jobs_checked_in: 2,
         jobs_completed: 1,

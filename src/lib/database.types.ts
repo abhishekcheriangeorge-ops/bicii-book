@@ -2226,6 +2226,18 @@ export type Database = {
           on_hand: number;
         }[];
       };
+      appointment_daily: {
+        Args: { from_day?: string; to_day?: string };
+        Returns: {
+          arrived: number;
+          booked: number;
+          cancelled: number;
+          checked_in: number;
+          day: string;
+          expected: number;
+          no_shows: number;
+        }[];
+      };
       assign_staff: {
         Args: {
           role?: Database["public"]["Enums"]["assignment_role"];
@@ -3733,6 +3745,18 @@ export type Database = {
       [_ in never]: never;
     };
     Views: {
+      appointment_daily: {
+        Row: {
+          arrived: number | null;
+          booked: number | null;
+          cancelled: number | null;
+          checked_in: number | null;
+          day: string | null;
+          expected: number | null;
+          no_shows: number | null;
+        };
+        Relationships: [];
+      };
       daily_summary: {
         Row: {
           appointments_arrived: number | null;
