@@ -8,10 +8,13 @@ import {
   printerConfigSchema,
   toDbConfig,
   toDbLayout,
+  PUBLIC_SITE_URL_PROBLEM,
+  publicSiteUrlInputSchema,
 } from "@/lib/printing/schemas";
 import { LABEL_FIELD_ORDER } from "@/lib/printing/types";
 
 import { DEFAULT_LAYOUTS, LAYOUT_CASES } from "../../fixtures/label-layouts";
+import { QR_BASE_CASES } from "../../fixtures/qr-bases";
 
 // Parity with private.label_layout_problem: tests/db/labels.test.ts runs
 // the same cases through the database.
@@ -146,5 +149,27 @@ describe("labelContentSchema", () => {
       labelContentSchema.safeParse({ ...content, qr_payload: "http://localhost:4000/q/P-000012" })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("publicSiteUrlInputSchema (the QR address form, D9)", () => {
+  it("accepts exactly the bases the database accepts", () => {
+    for (const c of QR_BASE_CASES.filter((c) => c.base === c.base.trim() && c.base !== "")) {
+      expect(publicSiteUrlInputSchema.safeParse({ publicSiteUrl: c.base }).success, c.base).toBe(
+        c.valid,
+      );
+    }
+  });
+
+  it("trims, asks for an address, and says what a valid one looks like", () => {
+    expect(publicSiteUrlInputSchema.parse({ publicSiteUrl: " https://bicii.sg " })).toEqual({
+      publicSiteUrl: "https://bicii.sg",
+    });
+    expect(
+      publicSiteUrlInputSchema.safeParse({ publicSiteUrl: "  " }).error?.issues[0]?.message,
+    ).toBe("Enter the public website's address.");
+    expect(
+      publicSiteUrlInputSchema.safeParse({ publicSiteUrl: "bicii.sg" }).error?.issues[0]?.message,
+    ).toBe(PUBLIC_SITE_URL_PROBLEM);
   });
 });

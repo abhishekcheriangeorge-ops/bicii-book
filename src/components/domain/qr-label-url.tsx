@@ -26,8 +26,8 @@ export function QrLabelUrl({ value, isAdmin }: { value: string | null; isAdmin: 
             {isAdmin ? (
               <>
                 {" "}
-                <Link href="/settings" className="font-medium underline">
-                  Set it in Settings
+                <Link href="/settings/labels" className="font-medium underline">
+                  Set it in Labels and printers
                 </Link>
                 .
               </>

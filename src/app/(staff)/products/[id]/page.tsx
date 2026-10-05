@@ -8,7 +8,9 @@ import { HistoryList, MovementList } from "@/components/domain/movement-list";
 import { NoActiveLocation } from "@/components/domain/no-active-location";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { ConsignmentItemRow } from "@/components/domain/consignment-item-row";
+import { HeaderPrintLabel, LabelsCard } from "@/components/domain/labels-card";
 import { EditProductButton } from "@/components/domain/product-sheet";
+import { PUBLIC_PREVIEW_ID } from "@/components/domain/public-preview";
 import { PublicationControls } from "@/components/domain/publication-card";
 import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
 import { ShortId } from "@/components/domain/short-id";
@@ -26,6 +28,7 @@ import { requireStaff } from "@/lib/auth/session";
 import { CONSIGNED_STOCK_NOTE, consignmentStatusPill } from "@/lib/consignment";
 import { consignmentsForProduct } from "@/lib/domain/consignment";
 import { getProduct, listLocations, listProductCategories } from "@/lib/domain/inventory";
+import { getLabelContext, resolvePrintPreset } from "@/lib/domain/labels";
 import {
   publicationLabel,
   publicationTone,
@@ -35,6 +38,7 @@ import {
 } from "@/lib/inventory";
 import { describeProductEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
+import { parsePrintParams } from "@/lib/printing/print-sheet";
 import { qrUrl } from "@/lib/qr";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -58,8 +62,11 @@ const plain = (n: number) => signedQuantity(n).replace(/^\+/, "");
  * adjust_stock and manage_inventory and is offered on counted products.
  * Phase 6: Sell (any staff, D48) on an active counted product with stock,
  * shop-owned or consigned (its oldest consignment with stock first, D45).
+ * Phase 8: Print label (any staff) in the header of a counted product and
+ * the Labels card (D56–D59); a unique product's labels are its units'
+ * (D57). `?print=1&qty=N&reprint={job}` opens the print sheet preset.
  */
-export default async function ProductPage({ params }: PageProps<"/products/[id]">) {
+export default async function ProductPage({ params, searchParams }: PageProps<"/products/[id]">) {
   const staff = await requireStaff();
   const { id } = await params;
   if (!isUuid(id)) notFound();
@@ -76,9 +83,13 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
   // D50: consigned stock moves only through intake, sale, restock, a job,
   // return to the consignor and transfers.
   const consigned = product.ownershipType === "consignment";
-  const [qr, consignments] = await Promise.all([
+  const [qr, consignments, labels, preset] = await Promise.all([
     qrUrl(product.shortId),
     consigned ? consignmentsForProduct(supabase, product.id) : Promise.resolve([]),
+    getLabelContext(supabase, { kind: "product", entityId: product.id }),
+    searchParams.then((sp) =>
+      resolvePrintPreset(supabase, "product", product.id, parsePrintParams(sp)),
+    ),
   ]);
 
   const archived = product.archivedAt !== null;
@@ -125,8 +136,17 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
             {counted ? "Counted by quantity" : "Unique: each item has its own U- number"}
           </p>
         </div>
-        {manage || sellable ? (
+        {manage || sellable || counted ? (
           <div className="flex flex-wrap items-center gap-2">
+            {counted ? (
+              <HeaderPrintLabel
+                kind="product"
+                entityId={product.id}
+                shortId={product.shortId}
+                ctx={labels}
+                preset={preset}
+              />
+            ) : null}
             {sellable ? (
               <RecordSaleButton
                 label="Sell"
@@ -349,6 +369,16 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
           )}
         </Card>
       ) : null}
+
+      <LabelsCard
+        kind="product"
+        entityId={product.id}
+        shortId={product.shortId}
+        ctx={labels}
+        isAdmin={staff.role === "admin"}
+        publicPreviewId={PUBLIC_PREVIEW_ID}
+        units={product.units.map((u) => ({ id: u.id, shortId: u.shortId }))}
+      />
 
       <Card title="Publication">
         <PublicationControls

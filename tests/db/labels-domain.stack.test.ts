@@ -18,6 +18,7 @@ import {
   getLabelContext,
   getPrintJob,
   getReprintPreset,
+  resolvePrintPreset,
   listJobsFor,
   listPrintJobs,
   listProfiles,
@@ -184,11 +185,44 @@ describe.skipIf(!reachable)("label context", () => {
       quantity: 1,
       profileId: PRINTER_PROFILE.pdf,
       templateId: LABEL_TEMPLATE.unit,
+      price: "6800.00",
     });
     expect(await getReprintPreset(staff, PRINT_JOB.unitFailed, "unit", UNIT.brompton)).toBeNull();
     expect(
       await getReprintPreset(staff, PRINT_JOB.unitFailed, "product", PRODUCT.barTape),
     ).toBeNull();
+  });
+
+  it("resolves a record page's ?print=1 deep link into the sheet's preset", async () => {
+    const closed = { open: false, requestedQuantity: 4, reprintOfId: null };
+    expect(await resolvePrintPreset(staff, "unit", UNIT.colnago, closed)).toBeNull();
+    expect(
+      await resolvePrintPreset(staff, "unit", UNIT.colnago, {
+        open: true,
+        requestedQuantity: 3,
+        reprintOfId: PRINT_JOB.unitFailed,
+      }),
+    ).toEqual({
+      requestedQuantity: 3,
+      reprintOfId: PRINT_JOB.unitFailed,
+      profileId: PRINTER_PROFILE.pdf,
+      templateId: LABEL_TEMPLATE.unit,
+      reprintPrice: "6800.00",
+    });
+    // Another record's job: the sheet opens, without the link.
+    expect(
+      await resolvePrintPreset(staff, "product", PRODUCT.barTape, {
+        open: true,
+        requestedQuantity: null,
+        reprintOfId: PRINT_JOB.unitFailed,
+      }),
+    ).toEqual({
+      requestedQuantity: 1,
+      reprintOfId: null,
+      profileId: null,
+      templateId: null,
+      reprintPrice: null,
+    });
   });
 
   it("lists templates and printers, defaults first", async () => {

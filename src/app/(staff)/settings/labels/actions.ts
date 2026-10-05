@@ -11,11 +11,16 @@ import {
   setDefaultTemplate,
   setPublicSiteUrl,
 } from "@/lib/domain/labels";
-import { labelTemplateInputSchema, printerProfileInputSchema } from "@/lib/printing/schemas";
+import {
+  labelTemplateInputSchema,
+  printerProfileInputSchema,
+  publicSiteUrlInputSchema,
+} from "@/lib/printing/schemas";
 
 /**
  * Labels and printers settings (admins only; SPEC §16; PLAN D9, ADR-017).
- * The screens are Phase 8 step 3. The database checks every rule again
+ * The screens: src/app/(staff)/settings/labels/page.tsx and
+ * src/components/domain/label-settings.tsx. The database checks every rule again
  * (layout and printer config validators, column grants, admin RPCs).
  *
  *   saveTemplateAction        create (the form's id is the key) or update
@@ -68,13 +73,7 @@ export const setDefaultProfileAction = staffAction(
 );
 
 export const setPublicSiteUrlAction = staffAction(
-  z.object({
-    publicSiteUrl: z
-      .string()
-      .trim()
-      .min(1, { error: "Enter the public website's address." })
-      .max(200, { error: "Keep the address under 200 characters." }),
-  }),
+  publicSiteUrlInputSchema,
   { name: "labels.set_public_site_url", admin: true },
   async ({ publicSiteUrl }, { supabase }) => {
     const saved = await setPublicSiteUrl(supabase, publicSiteUrl);

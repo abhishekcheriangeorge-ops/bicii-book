@@ -8,6 +8,7 @@ import { isValidQrBase, parseShortId } from "@/lib/ids";
 import { labelUnavailable, type LabelUnavailableReason } from "@/lib/printing/availability";
 import { maxLabelQuantity } from "@/lib/printing/job";
 import {
+  PUBLIC_SITE_URL_PROBLEM,
   labelContentSchema,
   labelLayoutSchema,
   printerConfigSchema,
@@ -544,7 +545,8 @@ export async function getLabelContext(
 /**
  * "Print again" (D59): the settings of an earlier job of THIS record, for
  * a new job: its quantity (within today's cap), its printer and template
- * when still active (and the template still of this kind), and the link.
+ * when still active (and the template still of this kind), the link, and
+ * the price that job printed (D58: the sheet says when today's differs).
  * Null when the job is unknown or belongs to another record.
  */
 export async function getReprintPreset(
@@ -557,12 +559,13 @@ export async function getReprintPreset(
   quantity: number;
   profileId: string | null;
   templateId: string | null;
+  price: string | null;
 } | null> {
   const job = unwrap(
     await supabase
       .from("print_jobs")
       .select(
-        "id, label_kind, product_id, inventory_unit_id, bike_id, quantity, printer_profile_id, label_template_id",
+        "id, label_kind, product_id, inventory_unit_id, bike_id, quantity, printer_profile_id, label_template_id, content",
       )
       .eq("id", jobId)
       .maybeSingle(),
@@ -588,6 +591,43 @@ export async function getReprintPreset(
     quantity: Math.min(Math.max(job.quantity, 1), maxLabelQuantity(kind)),
     profileId: profile?.active ? profile.id : null,
     templateId: template?.active && template.kind === kind ? template.id : null,
+    price: labelContentSchema.parse(job.content).price,
+  };
+}
+
+/** What a record page's print sheet opens with (PrintLabelSheet's `preset`). */
+export type PrintPreset = {
+  /** The count asked for (D56: more than one job's cap leaves a remainder). */
+  requestedQuantity: number;
+  reprintOfId: string | null;
+  profileId: string | null;
+  templateId: string | null;
+  /** The reprinted job's price snapshot (D58). */
+  reprintPrice: string | null;
+};
+
+/**
+ * A record page's deep link (`?print=1&qty=N&reprint={jobId}`, parsed by
+ * parsePrintParams): the sheet's preset, or null when the page should not
+ * open it. A reprint of an unknown job, or of another record's, opens the
+ * sheet without the link (and its count).
+ */
+export async function resolvePrintPreset(
+  supabase: ServerSupabase,
+  kind: LabelKind,
+  entityId: string,
+  params: { open: boolean; requestedQuantity: number | null; reprintOfId: string | null },
+): Promise<PrintPreset | null> {
+  if (!params.open) return null;
+  const reprint = params.reprintOfId
+    ? await getReprintPreset(supabase, params.reprintOfId, kind, entityId)
+    : null;
+  return {
+    requestedQuantity: params.requestedQuantity ?? reprint?.quantity ?? 1,
+    reprintOfId: reprint?.reprintOfId ?? null,
+    profileId: reprint?.profileId ?? null,
+    templateId: reprint?.templateId ?? null,
+    reprintPrice: reprint ? reprint.price : null,
   };
 }
 
@@ -726,9 +766,7 @@ export async function setPublicSiteUrl(supabase: ServerSupabase, url: string): P
   const value = url.trim();
   if (!isValidQrBase(value)) {
     throw new DomainError("Enter the public website's address, like https://bicii.sg.", {
-      publicSiteUrl: [
-        "Use http:// or https://, a host and an optional path, with no ? or # part, under 200 characters.",
-      ],
+      publicSiteUrl: [PUBLIC_SITE_URL_PROBLEM],
     });
   }
   unwrap(await supabase.rpc("update_shop_settings", { public_site_url: value }));

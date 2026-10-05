@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isValidQrBase } from "@/lib/ids";
 import { Decimal } from "@/lib/money";
 
 import {
@@ -274,3 +275,21 @@ export const printerProfileInputSchema = z.object({
 });
 
 export type PrinterProfileInput = z.output<typeof printerProfileInputSchema>;
+
+/** What a malformed public website address gets (private.qr_payload's rule, isValidQrBase). */
+export const PUBLIC_SITE_URL_PROBLEM =
+  "Use http:// or https://, a host and an optional path, with no ? or # part, under 200 characters.";
+
+/**
+ * The QR address form (Labels and printers settings; D9): the shop's public
+ * website address, checked with the database's rule (isValidQrBase, the
+ * check of shop_settings.public_site_url and private.qr_payload) before
+ * it is submitted; update_shop_settings checks again.
+ */
+export const publicSiteUrlInputSchema = z.object({
+  publicSiteUrl: z
+    .string()
+    .trim()
+    .min(1, { error: "Enter the public website's address." })
+    .refine((v) => isValidQrBase(v), { error: PUBLIC_SITE_URL_PROBLEM }),
+});

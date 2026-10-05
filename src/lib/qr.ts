@@ -50,5 +50,14 @@ export async function qrUrl(shortId: string): Promise<string | null> {
  * still scan.
  */
 export async function scanBases(): Promise<string[]> {
-  return mergeScanBases(await getQrBase(), getPublicEnv().NEXT_PUBLIC_PUBLIC_SITE_URL);
+  return mergeScanBases(await getQrBase(), environmentScanBase());
+}
+
+/**
+ * The environment's NEXT_PUBLIC_PUBLIC_SITE_URL as a scan base (trailing
+ * slashes dropped), or null. Only for scanning and for the Labels and
+ * printers settings' note when it differs from the QR base: never a QR URL.
+ */
+export function environmentScanBase(): string | null {
+  return mergeScanBases(null, getPublicEnv().NEXT_PUBLIC_PUBLIC_SITE_URL)[0] ?? null;
 }
