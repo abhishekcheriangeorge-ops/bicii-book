@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+import { SIGN_IN_MESSAGES } from "../../src/lib/auth/sign-in-errors";
 import { STAFF } from "../fixtures/ids";
 
-import { isPhone, signIn, signInAs, toast } from "./helpers";
+import { isPhone, requestCodeOnForm, signIn, signInAs, toast } from "./helpers";
 
 test("mechanic2 (no manage_staff) gets the 403 page on /settings/staff", async ({ page }) => {
   await signIn(page, "mechanic2");
@@ -144,12 +145,29 @@ test("the admin invites a colleague who signs in with an emailed code", async ({
     await expect(history.getByRole("listitem").first()).toContainText("Deactivated");
     await expect(history.getByRole("listitem").first()).toContainText("E2E: trial shift over");
 
-    // Their open session loses access at once. (/settings/staff has no
-    // loading boundary, so the 403 is a real HTTP status.)
-    const after = await colleaguePage.goto("/settings/staff");
-    expect(after?.status()).toBe(403);
-    await colleaguePage.goto("/settings/profile");
-    await expect(colleaguePage.getByRole("heading", { name: "You can't open this" })).toBeVisible();
+    // Their open session ends at once (PLAN D71): deactivation deleted their
+    // Auth sessions, and on the devstack (HS256) getClaims asks Auth, so the
+    // next navigation lands on the sign-in page. (Hosted asymmetric keys
+    // keep the access token valid until it expires; requireStaff's 403
+    // covers that window, see the DB and stack tests.)
+    await colleaguePage.goto("/settings/staff");
+    await expect(colleaguePage).toHaveURL(/\/login\?next=%2Fsettings%2Fstaff$/);
+    await expect(colleaguePage.getByRole("heading", { name: "Staff sign in" })).toBeVisible();
+
+    // Auth still emails them a code (it knows nothing about staff) and shows
+    // the same "Check your email" screen, but the Admin signs them out
+    // straight after the code (PLAN D70).
+    const code = await requestCodeOnForm(colleaguePage, email);
+    await colleaguePage.getByLabel("Code").fill(code);
+    await colleaguePage.getByRole("button", { name: "Sign in" }).click();
+    await expect(colleaguePage.getByRole("main").getByRole("alert")).toHaveText(
+      SIGN_IN_MESSAGES.not_staff,
+    );
+    await expect(colleaguePage).toHaveURL(/\/login/);
+    await expect(colleaguePage.getByLabel("Email")).toHaveValue(email);
+    // No session was kept.
+    await colleaguePage.goto("/");
+    await expect(colleaguePage).toHaveURL(/\/login$/);
   } finally {
     await colleague.close();
   }

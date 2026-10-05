@@ -202,6 +202,31 @@ npx supabase@2.119.0 db push                        # apply pending migrations, 
   check `migration list` before every push so you know which project you
   are pointed at.
 
+### If `20261005005000_staff_session_revocation` refuses to apply
+
+Deactivating a staff member deletes their Supabase Auth sessions at once
+(PLAN D71). The trigger function that does it runs with the rights of the
+role that applies migrations, so the migration checks first and fails
+loudly, before it changes anything, with "role … cannot delete from
+auth.sessions and auth.refresh_tokens" when that role lacks DELETE on
+either table.
+
+- Do not edit the migration, and do not drop the check. Resolve the grant
+  with Supabase (support or the project's database settings) so the
+  migration role (`postgres` on hosted projects) may delete from
+  `auth.sessions` and `auth.refresh_tokens`, then run `db push` again. The
+  migration runs in one transaction, so nothing half-applied is left
+  behind.
+- Until it is resolved, deactivation still blocks every page, Server
+  Action and RPC for the deactivated person (`requireStaff` answers 403;
+  RLS and the RPC guards check `staff.active`), but their devices can keep
+  refreshing their session, so they keep seeing the 403 page instead of
+  the sign-in page. Later migrations stay blocked behind this one.
+- Even when it is applied, a hosted project that verifies JWTs locally
+  (asymmetric signing keys) accepts an access token already issued until
+  it expires: at most `jwt_expiry` (Authentication > Sessions, 3600 s
+  here). The inactive check covers that window; nothing else needs doing.
+
 ## Creating the first admin in a hosted project
 
 Every later staff member is invited from Settings → Staff by an admin. The

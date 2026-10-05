@@ -15,7 +15,8 @@ M1.1 is in place: the Next.js 16 scaffold, design tokens and UI primitives,
 the Docker-free Supabase devstack, the foundation, staff and
 staff-management migrations, the DB test harness, staff sign-in (email
 one-time codes since 2026-10-05, PLAN D10), the staff shell (phone tab bar / iPad rail), Staff settings
-(invite, permissions, deactivate), the PWA manifest and service worker,
+(invite, permissions, deactivate; deactivating someone ends their
+sign-in sessions at once, PLAN D71), the PWA manifest and service worker,
 Playwright E2E, and CI. M1.2 ([PLAN §3](docs/PLAN.md)) adds customers,
 bikes with ownership history, photo attachments in Storage, customer
 self-service RPCs and staff search (database, seed and tests), the domain
@@ -39,7 +40,8 @@ adjustments, operational exceptions; money only with View financial
 reports, costs only with View costs), a seed spanning a week of shop days,
 the Today dashboard (`/`: today's or an earlier day's jobs, money, stock,
 low stock, what needs attention and the last 7 days) and the job yield
-panel on the job page.
+panel on the job page. What each gate verified (pass, fail or not run)
+is recorded in [TESTING.md](docs/TESTING.md#the-devstack-mail-catcher).
 
 ## Quickstart
 

@@ -91,7 +91,11 @@ deleted after the file. Every other live test signs in with
 admin API (`auth.admin.generateLink({ type: 'magiclink' })` returns
 `properties.email_otp` and sends no email) and verifies it with
 `verifyOtp`; `staffClient(who)` is `otpClient` for a seeded login and
-`serviceClient()` is the service-role client. `tests/db/photo-moves.stack.test.ts` runs the app's own
+`serviceClient()` is the service-role client.
+`tests/db/staff-sessions.stack.test.ts` invites a uniquely named throwaway
+staff login, signs it in and deactivates it (PLAN D71); staff rows are
+history and are never deleted, so it stays, deactivated, until the next
+`npm run db:reset`. `tests/db/photo-moves.stack.test.ts` runs the app's own
 photo domain code (`src/lib/domain/attachments.ts`, loaded with
 `server-only` aliased to its empty module in the db project) as mechanic2
 against real Storage: moves between buckets, deletes, refused moves and
@@ -239,6 +243,35 @@ password paths are gone), same worktree and ports:
 - `npm run build`: **pass**.
 - `npm run test:e2e` (phone and tablet, every spec signing in with codes
   from the mail catcher): 98 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
+Verification of the deactivation step (2026-10-05, OTP phase step 3:
+deactivation deletes the person's Auth sessions, PLAN D71; final sweep of
+the phase), same worktree and ports:
+
+- Established on the devstack before writing the specs: after the
+  trigger deletes the sessions, Auth 2.178 answers the old access token
+  with 403 `session_not_found` (supabase-js turns it into
+  `AuthSessionMissingError`) and the refresh token with
+  `refresh_token_not_found`; PostgREST still accepts the unexpired token
+  on its own. `staff-sessions.test.ts` fails (3 of its tests) with the
+  migration removed.
+- `npm run devstack:status` lists mail, auth, rest, storage and gateway,
+  all ok: **pass**.
+- The final sweep's grep (password, temporary, `SEED_PASSWORD`,
+  `signInWithPassword`, `grant_type=password`, "Change password",
+  "one-time password" over `src/`, `tests/`, `scripts/`, `supabase/`,
+  `docs/`, README and `.github/`) finds only generic secret handling,
+  `PGPASSWORD`/`POSTGRES_PASSWORD`, the `roles.sql` service-role
+  passwords, the invite's "No password needed." copy, Auth's own password
+  settings in `config.toml` and the devstack (commented: unused) and
+  history in these notes: **pass**.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 73 files, 960
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet): 98 tests: **pass**.
 - `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
   Docker).
 
@@ -430,6 +463,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
+| Deactivation ends Auth sessions (PLAN D71) | `staff-sessions.test.ts`, with sessions and refresh tokens inserted for mechanic1 and mechanic2: the admin deactivating mechanic2 (with a reason) deletes mechanic2's sessions and refresh tokens (with and without a session) and leaves mechanic1's; a replayed deactivation (with or without a reason) neither errors nor deletes; reactivation deletes nothing; a `manage_staff` holder who is not an admin deactivating a non-admin has the same effect; a refused deactivation (P0001 `reason_required`) leaves the sessions intact; a direct superuser `update staff set active = false` revokes too (false over false and updates of other columns do not); the migration's first statement passes for the migration role and fails, naming RUNBOOK, for a role without DELETE on `auth.sessions`. Live (`staff-sessions.stack.test.ts`): a throwaway staff login (admin API without a password, then `create_staff` as the admin) signs in with a code and is deactivated by the admin; Auth then answers its access token with 403 `session_not_found` (supabase-js: `AuthSessionMissingError`), its refresh token gets `refresh_token_not_found`, PostgREST still accepts the unexpired token but `my_staff_profile` says `active = false` (the hosted window), and a fresh code still verifies at Auth while `my_staff_profile` says `active = false`, which the Admin's `verifyCode` and `requireStaff` refuse. |
 | RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. Phase 3: a signed-in customer reads nothing of their own job (job, assignments, events, lines, line and totals views, services, categories, rates) and cannot call the workshop RPCs (42501); their projection is tested in `workshop-customer-access.test.ts` (row below). |
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
 | Stable physical identity | bike short IDs are server-assigned `B-######`, increasing, unique, never client-supplied (42501) and immutable (`bike_short_id_immutable`). |
@@ -558,7 +592,12 @@ and shows no credential; the invited colleague (unique per project and
 run) signs in with an emailed code as active staff with no granted
 permissions (Today opens; `/settings/staff` is 403), and when the admin
 deactivates them (a reason is required and shows in their history) their
-open session loses access.
+open session ends at once (PLAN D71: the deactivation deleted their Auth
+sessions, and on the devstack's HS256 keys `getClaims` asks Auth, so their
+next navigation lands on `/login?next=…`); they can still ask for a code
+and see the same "Check your email" screen, but after typing the emailed
+code they stay on `/login` with the not-staff message, and `/` still
+redirects to `/login`.
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
 tag made of the project name and a timestamp, so the phone and iPad runs and

@@ -86,6 +86,20 @@ Rules:
   `staff_keep_an_active_admin`, serialised with an advisory lock).
 - "Staff" in any policy means `staff.active = true` for the calling
   `auth.uid()`. Deactivating a staff member revokes everything at once.
+- Deactivation also deletes the person's Supabase Auth sessions (trigger
+  `staff_revoke_sessions`, D71): when `staff.active` goes from true to
+  false, through `set_staff_active` or any other writer,
+  `private.revoke_auth_sessions_on_deactivation()` (security definer,
+  EXECUTE revoked from every API role) deletes their `auth.sessions` rows
+  (refresh tokens and MFA claims cascade) and any refresh token of theirs
+  without a session, in the same transaction. A refused deactivation rolls
+  back with it; replays and reactivation delete nothing. An access token
+  already issued and verified without asking Auth (hosted asymmetric keys)
+  lives until it expires (at most `jwt_expiry`); the inactive check above
+  refuses it meanwhile. The migration
+  (`20261005005000_staff_session_revocation.sql`) refuses to apply where
+  its role cannot delete from `auth.sessions` and `auth.refresh_tokens`
+  (RUNBOOK "Applying migrations to a hosted project").
 - History over overwrites (SPEC §2, §22): every insert or update of a
   `staff` row and every insert or delete of a `staff_permissions` row
   appends one `staff_events` row, written by triggers
@@ -1437,7 +1451,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) within the D11 ceiling | Permission rows (`granted_by` = caller); replay-safe (no row change, no event). One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
-| `set_staff_active(target_staff_id, active, reason)` | A or P(manage_staff) | Deactivating needs a reason (P0001 `reason_required`; `reason_too_long` over 500). Nobody deactivates themselves; only an admin changes an admin's status; the last active admin stays (55000). One `deactivated`/`reactivated` event with the reason; replaying the current state is a no-op. |
+| `set_staff_active(target_staff_id, active, reason)` | A or P(manage_staff) | Deactivating needs a reason (P0001 `reason_required`; `reason_too_long` over 500). Nobody deactivates themselves; only an admin changes an admin's status; the last active admin stays (55000). One `deactivated`/`reactivated` event with the reason; replaying the current state is a no-op. Deactivation also deletes the person's Supabase Auth sessions (trigger `staff_revoke_sessions`, D71). |
 | `update_staff(target_staff_id, display_name, role, reason)` | A or P(manage_staff); role changes A only | Null leaves a field as it is. Nobody changes their own role; only an admin renames an admin; the last active admin cannot be demoted (55000). `role_changed` / `details_changed` events. Email is not editable (it must stay the login's email). |
 | `staff_history(target_staff_id, max_rows)` | A or P(manage_staff) | `staff_events` for one person, newest first, with the actor's display name (≤ 500 rows, default 100). |
 | `my_staff_profile()` | authenticated | Caller's staff row + effective permissions (admin → all; inactive → none); zero rows for non-staff. |
