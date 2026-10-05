@@ -105,8 +105,13 @@ tests with their allow-list fixture; env schema; login E2E smoke.
   RLS, storage buckets + policies (via migration on `storage.objects`);
   `private.current_customer_id()` (security definer, stable,
   `search_path = ''`; the active customers row for `auth.uid()`) with
-  EXECUTE granted to `authenticated` only, for the "C own" policies; the new
-  RPCs and tables added to `tests/fixtures/api-surface.ts`.
+  EXECUTE granted to `authenticated` only; the new RPCs and tables added to
+  `tests/fixtures/api-surface.ts`. Shipped as `20261004000600`–`001100`
+  (customers, bikes, media storage, attachments, customer access, staff
+  search). "C own" is implemented as staff-only base-table RLS plus
+  customer `my_*` security-definer RPCs that project customer-safe columns
+  (DATA-MODEL §15 "Customer access pattern"), because staff and customers
+  share the `authenticated` role; every later phase follows it.
 - Domain: `customers.ts` (search by name/phone/email, create, update,
   archive), `bikes.ts` (create, link to customer, transfer ownership with
   event, search by brand/model/serial/short ID), `attachments.ts` (signed
@@ -114,10 +119,20 @@ tests with their allow-list fixture; env schema; login E2E smoke.
 - UI: Customers list + detail; Bike detail with photo grid and (empty)
   service history; new-customer and new-bike sheets reachable from intake;
   camera capture component (`CaptureButton`) used everywhere photos are taken.
+  Shipped (M1.2): domain modules `customers.ts`, `bikes.ts`,
+  `attachments.ts`, `search.ts`; Server Actions per section; `/customers`,
+  `/customers/[id]`, `/bikes`, `/bikes/[id]`, `/search` and the header
+  search; the sheets open from customer and bike pages (intake reuses them
+  in Phase 3). DESIGN.md "Domain components" describes the screens.
 
 Tests: RLS customer A/B; anon denied; attachment visibility move; serial
 search; ownership change preserves history; `current_customer_id()` is null
-for anonymous callers and for staff without a customers row.
+for anonymous callers and for staff without a customers row. Database side
+in `customers-bikes`, `customer-access`, `attachments`, `media-storage` and
+`staff-search` `.test.ts`, plus a live signed-upload round trip in
+`stack.smoke.test.ts`. App side: unit tests for the pure helpers
+(downscale sizing, search params, naming, recent searches, photo rules),
+`display-parity.test.ts`, and E2E `customers-bikes.spec.ts` (phone + iPad).
 
 ### Phase 2 — Appointments, shop hours, capacity, check-in
 
@@ -345,6 +360,8 @@ build proceeds with; confirm or change before the phase that uses it.
 | D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. | Phase 1 |
 | D10 | Staff login method | Supabase email + password for staff; invitations by admin from Staff settings. No magic links in MVP. | Phase 0 |
 | D11 | What a `manage_staff` holder who is not an admin may change (SPEC §4.2 asks for granular permissions but does not say who may grant them) | Delegation ceiling: they may grant or revoke only permissions they hold themselves, never `manage_staff` (admins only), never on their own row and never on an admin's row; they may invite (role staff only) and deactivate/reactivate non-admins. Admins are unrestricted. Residual risk to confirm: an inviter sees the new login's temporary password, so a manager could keep a second login at their own permission level; closing that fully needs invite links or a forced password change on first sign-in (not in MVP). | Phase 0 |
+| D12 | Who sees a bike's customer-visible photos after it changes hands (SPEC §5 "Ownership changes preserve history" does not say what a new or previous owner sees) | The current owner sees every `customer`/`public` photo of the bike, including ones taken before they owned it; a previous owner stops seeing the bike and its photos once it is transferred (`my_bikes`, `my_bike_attachments` read current ownership). Staff history (`bike_ownership_events`) keeps every owner. Alternative to confirm before Phase 11: limit each owner to photos taken during their ownership. | Phase 1 (enforced), Phase 11 (shown) |
+| D13 | Can a photo on a customer record be public? (SPEC §8 allows `public` visibility without saying for which records) | Never: attachments whose `entity_type = customer` may be `internal` or `customer` only (check constraint and RPC error `attachment_customer_never_public`). Bike photos may be public (shop and consigned bikes for sale need them); staff choose per photo. | Phase 1 |
 
 ## 7. Out of scope (restated from SPEC §30)
 

@@ -30,8 +30,11 @@ export function Card({
   return (
     <section className={cn("rounded-2xl border border-hairline bg-card", className)} {...props}>
       {hasHeader ? (
-        <header className="flex items-start justify-between gap-3 px-4 pt-4 pb-2 sm:px-5">
-          <div className="flex min-w-0 flex-col gap-1">
+        // Wraps rather than squeezing: a long action (e.g. "Transfer
+        // ownership" in a half-width card) moves under the title instead of
+        // shrinking it into the button.
+        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 pt-4 pb-2 sm:px-5">
+          <div className="flex max-w-full min-w-0 flex-col gap-1">
             {eyebrow ? <p className="eyebrow text-dust-500">{eyebrow}</p> : null}
             {title ? <h2 className="text-xl leading-tight">{title}</h2> : null}
           </div>

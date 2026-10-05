@@ -166,9 +166,15 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
 | Tests | `pg` directly | DB superuser + `set local role` and `request.jwt.claims`, as PostgREST does | See TESTING.md. |
 | Local development | Same clients against the devstack gateway `http://127.0.0.1:54321` (or `supabase start`) | local demo anon / service-role keys written to `.env.local` by `npm run devstack:env` | Keys are signed with the well-known local demo secret; never used outside local. |
 
-Image delivery: `next/image` with `images.remotePatterns` for the Supabase
-Storage host. Local development adds `images.dangerouslyAllowLocalIP` only in
-`.env.development`-gated config, never in production.
+Image delivery (revised in M1.2): Storage photos render with `next/image`
+`unoptimized`, i.e. plain lazy `<img>` tags with width and height, and no
+`images.remotePatterns`. Internal photos are signed URLs that live five
+minutes and change on every render; passing them through the image
+optimizer would cache private photos on the server under ever-new keys, and
+the devstack's loopback Storage host would need
+`images.dangerouslyAllowLocalIP`. See DESIGN.md "Photos and images". If
+thumbnails become a bandwidth problem, Supabase Storage image
+transformations (a paid hosted feature) are the place to add sizes.
 
 ### A6. Caching
 

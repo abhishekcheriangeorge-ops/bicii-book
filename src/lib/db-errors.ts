@@ -52,6 +52,25 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   reason_too_long: "Keep the reason under 500 characters.",
   staff_history_append_only: "Staff history cannot be changed.",
   staff_permission_immutable: "Remove the permission and grant the new one instead.",
+  // Customers and bikes (Phase 1)
+  customer_archived: "That customer is archived. Unarchive them first.",
+  bike_archived: "That bike is archived. Unarchive it before changing its owner.",
+  bike_short_id_immutable: "A bike keeps its ID for life.",
+  bike_history_append_only: "Bike ownership history cannot be changed.",
+  // Attachments (Phase 1)
+  attachment_object_missing: "The photo did not finish uploading. Try again.",
+  attachment_path_mismatch: "The photo was uploaded to the wrong place. Try again.",
+  attachment_bucket_mismatch: "The photo was uploaded to the wrong place. Try again.",
+  attachment_media_type_unsupported: "Photos must be JPEG, PNG, WebP or HEIC.",
+  attachment_media_type_mismatch: "That file is not the type of photo it claims to be.",
+  attachment_entity_unsupported: "Photos cannot be added to that kind of record yet.",
+  attachment_conflict: "That photo clashes with another one. Upload it again.",
+  attachment_deleted: "That photo was deleted. Upload it again.",
+  attachment_immutable: "A photo stays on the record it was taken for.",
+  attachment_customer_never_public: "Photos on a customer record cannot be made public.",
+  attachment_original_never_public:
+    "This photo was stored as its original file, which may carry where it was taken. Add it again as a JPEG to make it public.",
+  attachment_history_append_only: "Photo history cannot be changed.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -59,12 +78,36 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   staff_email_key: "A staff member with that email already exists.",
   staff_auth_user_id_key: "That login is already linked to a staff member.",
   staff_permissions_pkey: "That permission is already granted.",
+  customers_pkey: "That customer has already been saved.",
+  customers_auth_user_id_key: "That login is already linked to a customer.",
+  customers_shopify_customer_id_key: "That Shopify customer is already linked to someone else.",
+  bikes_pkey: "That bike has already been saved.",
+  attachments_pkey: "That photo has already been saved.",
+  attachments_storage_path_key: "That photo has already been saved.",
 };
 
 /** 23514 check violations by constraint name. */
 export const CHECK_ERRORS: Record<string, string> = {
   staff_display_name_check: "Enter a name.",
   staff_events_reason_check: "Keep the reason under 500 characters.",
+  customers_identifies_someone: "Enter a name, an email or a phone number.",
+  customers_email_check: "Enter a valid email address.",
+  customers_first_name_check: "Keep the first name under 100 characters.",
+  customers_last_name_check: "Keep the last name under 100 characters.",
+  customers_display_name_check: "Keep the name under 200 characters.",
+  customers_phone_check: "Keep the phone number under 40 characters.",
+  customers_internal_notes_check: "Keep the notes under 10,000 characters.",
+  bikes_brand_check: "Keep the brand under 100 characters.",
+  bikes_model_check: "Keep the model under 100 characters.",
+  bikes_variant_check: "Keep the variant under 100 characters.",
+  bikes_frame_size_check: "Keep the frame size under 40 characters.",
+  bikes_colour_check: "Keep the colour under 60 characters.",
+  bikes_serial_number_check: "Keep the serial number under 100 characters.",
+  bikes_description_check: "Keep the description under 2,000 characters.",
+  bikes_internal_notes_check: "Keep the notes under 10,000 characters.",
+  attachments_caption_check: "Keep the caption under 500 characters.",
+  attachments_byte_size_check: "Photos must be under 20 MB.",
+  attachments_customer_never_public: "Photos on a customer record cannot be made public.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */

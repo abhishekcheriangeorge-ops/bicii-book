@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type { ComponentPropsWithRef, ComponentPropsWithoutRef, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Spinner } from "./spinner";
 
@@ -61,7 +61,8 @@ type CommonProps = {
 };
 
 export type ButtonProps = CommonProps &
-  Omit<ComponentPropsWithoutRef<"button">, keyof CommonProps> & {
+  // With ref (React 19 passes it as a prop), e.g. to return focus to a button.
+  Omit<ComponentPropsWithRef<"button">, keyof CommonProps> & {
     /**
      * Shows a spinner, sets aria-busy and blocks further presses. Pass the
      * `pending` from useActionState / useFormStatus; financial and stock

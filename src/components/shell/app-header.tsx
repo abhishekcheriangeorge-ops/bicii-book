@@ -2,12 +2,15 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { SearchIcon } from "@/components/ui/icons";
+import { UnsavedPhotos } from "@/components/domain/photo-uploads";
+
+import { HeaderSearch } from "./header-search";
 
 /**
  * Sticky top bar: BICII mark (phones; the rail shows it from md up), the
- * global search entry and the profile button. Clears the notch/status bar
- * via the safe-area inset (viewport-fit=cover in the root layout).
+ * global search field (HeaderSearch: Enter opens /search), photos that
+ * failed to save (UnsavedPhotos, from any screen) and the profile button. Clears the notch/status bar via the safe-area inset
+ * (viewport-fit=cover in the root layout).
  */
 export function AppHeader({ profile }: { profile: ReactNode }) {
   return (
@@ -28,15 +31,11 @@ export function AppHeader({ profile }: { profile: ReactNode }) {
             className="h-6 w-auto"
           />
         </Link>
-        <Link
-          href="/search"
-          className="flex min-h-tap min-w-0 flex-1 items-center gap-2 rounded-full border-2 border-ink bg-card px-4 text-dust-500 transition-colors hover:bg-dust-100 md:max-w-md"
-        >
-          <SearchIcon className="size-5 shrink-0 text-ink" />
-          <span className="truncate text-base">Search</span>
-          <span className="sr-only">customers, bikes, jobs and products</span>
-        </Link>
-        <div className="ml-auto flex shrink-0 items-center">{profile}</div>
+        <HeaderSearch />
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <UnsavedPhotos />
+          {profile}
+        </div>
       </div>
     </header>
   );

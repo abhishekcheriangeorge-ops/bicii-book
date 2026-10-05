@@ -1,4 +1,6 @@
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vitest/config";
 
 // Set up per node_modules/next/dist/docs/01-app/02-guides/testing/vitest.md,
@@ -27,6 +29,16 @@ export default defineConfig({
       },
       {
         extends: true,
+        // The stack tests drive the server-only domain modules
+        // (src/lib/domain) against the live devstack; outside Next's
+        // react-server build, "server-only" would refuse to load.
+        resolve: {
+          alias: {
+            "server-only": fileURLToPath(
+              new URL("./node_modules/server-only/empty.js", import.meta.url),
+            ),
+          },
+        },
         test: {
           name: "db",
           environment: "node",

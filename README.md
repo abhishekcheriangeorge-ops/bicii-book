@@ -10,13 +10,21 @@ It shares **one Supabase backend** with the public site
 Business rules live in Postgres (RLS, constraints, RPCs); this app and the
 public site are two frontends over the same database.
 
-**Status:** Phase 0 (foundation), milestone M1.1. In place: the Next.js 16
-scaffold, design tokens and UI primitives, the Docker-free Supabase devstack,
-the foundation, staff and staff-management migrations, the DB test harness,
-email + password sign-in, the staff shell (phone tab bar / iPad rail), Staff
-settings (invite, permissions, deactivate), the PWA manifest and service
-worker, Playwright E2E, and CI. Next: M1.2 customers and bikes
-([PLAN §3](docs/PLAN.md)).
+**Status:** Phase 1, milestone M1.2 (customers, bikes, photos). Phase 0 /
+M1.1 is in place: the Next.js 16 scaffold, design tokens and UI primitives,
+the Docker-free Supabase devstack, the foundation, staff and
+staff-management migrations, the DB test harness, email + password
+sign-in, the staff shell (phone tab bar / iPad rail), Staff settings
+(invite, permissions, deactivate), the PWA manifest and service worker,
+Playwright E2E, and CI. M1.2 ([PLAN §3](docs/PLAN.md)) adds customers,
+bikes with ownership history, photo attachments in Storage, customer
+self-service RPCs and staff search (database, seed and tests), the domain
+services and Server Actions over them, and the screens: Customers and
+Bikes (search-first lists, detail pages, new/edit sheets, archive),
+ownership transfer with a reason, the camera upload (downscaled on the
+phone, uploaded straight to Storage) with a photo viewer (caption,
+internal / customer / public, delete with a reason), and global search
+from the header. Work orders (M1.3) come next.
 
 ## Quickstart
 
@@ -83,7 +91,8 @@ scripts/            contrast and icon generators
 src/
   app/              App Router: (auth)/login, (staff)/... screens, manifest, error pages
   components/ui/    design-system primitives
-  components/shell/ tab bar, rail, header, profile chip
+  components/shell/ tab bar, rail, header (with global search), profile chip
+  components/domain/ record components: camera upload, photo grid/viewer, sheets, search field
   lib/              money, ids, dates, env, logger, actions, db errors
     auth/           session, requireStaff, permissions, redirects
     supabase/       server, browser and (restricted) service-role clients

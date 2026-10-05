@@ -8,6 +8,8 @@ export type SegmentOption<V extends string = string> = {
   label: ReactNode;
   /** Optional count, e.g. jobs in that status. */
   count?: number;
+  /** Not selectable (arrow keys skip it); say why next to the control. */
+  disabled?: boolean;
 };
 
 export type SegmentedControlProps<V extends string = string> = {
@@ -44,27 +46,33 @@ export function SegmentedControl<V extends string = string>({
 
   const select = (index: number) => {
     const option = options[index];
-    if (!option) return;
+    if (!option || option.disabled) return;
     if (!controlled) setInner(option.value);
     onValueChange?.(option.value);
     refs.current[index]?.focus();
+  };
+
+  // The next enabled option from `from`, stepping by `delta` and wrapping.
+  const enabledFrom = (from: number, delta: 1 | -1): number | null => {
+    const n = options.length;
+    for (let step = 0; step < n; step++) {
+      const i = (((from + delta * step) % n) + n) % n;
+      if (!options[i]?.disabled) return i;
+    }
+    return null;
   };
 
   const onKeyDown = (e: KeyboardEvent, index: number) => {
     const last = options.length - 1;
     const next =
       e.key === "ArrowRight" || e.key === "ArrowDown"
-        ? index === last
-          ? 0
-          : index + 1
+        ? enabledFrom(index === last ? 0 : index + 1, 1)
         : e.key === "ArrowLeft" || e.key === "ArrowUp"
-          ? index === 0
-            ? last
-            : index - 1
+          ? enabledFrom(index === 0 ? last : index - 1, -1)
           : e.key === "Home"
-            ? 0
+            ? enabledFrom(0, 1)
             : e.key === "End"
-              ? last
+              ? enabledFrom(last, -1)
               : null;
     if (next === null) return;
     e.preventDefault();
@@ -96,14 +104,21 @@ export function SegmentedControl<V extends string = string>({
             type="button"
             role="radio"
             aria-checked={checked}
+            aria-disabled={option.disabled || undefined}
             tabIndex={checked ? 0 : -1}
             onClick={() => select(i)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
               // Inset ring: the group scrolls horizontally and so clips.
-              "inline-flex min-h-tap shrink-0 cursor-pointer items-center gap-2 rounded-full px-4 font-display text-xs font-bold tracking-wide whitespace-nowrap uppercase focus-inset",
+              "inline-flex min-h-tap shrink-0 items-center gap-2 rounded-full px-4 font-display text-xs font-bold tracking-wide whitespace-nowrap uppercase focus-inset",
               "transition-colors duration-150",
-              checked ? "bg-ink text-paper" : "text-ink hover:bg-dust-100",
+              // One branch per state: cn() does not resolve conflicting
+              // utilities, so stacking them leaves the winner to CSS order.
+              checked
+                ? "cursor-pointer bg-ink text-paper"
+                : option.disabled
+                  ? "cursor-not-allowed text-dust-500"
+                  : "cursor-pointer text-ink hover:bg-dust-100",
             )}
           >
             {option.label}

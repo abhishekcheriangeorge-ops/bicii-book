@@ -101,6 +101,26 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    reaching production.
 5. Do **not** run `supabase/seed.sql` on a hosted project: its logins have a
    published password. Create the first admin as below.
+6. Storage: do not create buckets by hand. The `…0800_media_storage`
+   migration creates `media-internal` (private) and `media-public` (public),
+   photo types only, 20 MiB, plus their `storage.objects` policies; it
+   keeps an existing bucket of the same name as it is (`on conflict do
+   nothing`), so a hand-made one would keep its own settings. After the
+   first `db push`, check both under Storage → Buckets.
+   `record_attachment` checks that an upload exists by reading
+   `storage.objects` as the function owner (`postgres`), which relies on
+   `postgres` bypassing RLS there, as it does on hosted Supabase:
+   `select rolbypassrls from pg_roles where rolname = 'postgres';` → `t`.
+   `media-public` has no select policy for anon on purpose (public URLs
+   need none; one would let anyone list the bucket): if the Supabase
+   advisor or a dashboard prompt offers to add "public read" there, don't.
+   Leftover objects from a failed Storage cleanup are removed by the app
+   whenever the record is shown (`attachment_stray_objects`); to look for
+   any by hand, as an admin in the SQL editor: `select o.bucket_id, o.name
+   from storage.objects o where o.bucket_id in ('media-internal',
+   'media-public') and not exists (select 1 from public.attachments a where
+   a.storage_bucket = o.bucket_id and a.storage_path = o.name);` (recent
+   ones may be uploads or moves still running).
 
 ## Applying migrations to a hosted project
 

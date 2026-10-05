@@ -27,3 +27,63 @@ export const STAFF_EMAIL = {
 } as const;
 
 export type SeedStaff = keyof typeof STAFF;
+
+/**
+ * public.customers.id (Phase 1). None has a login: tests that act as a
+ * customer create an Auth user and link it (tests/db/customer-fixtures.ts).
+ * tan and daniel have internal_notes; nurul has no email.
+ */
+export const CUSTOMER = {
+  tan: "c1000000-0000-4000-8000-000000000001",
+  priya: "c1000000-0000-4000-8000-000000000002",
+  hafiz: "c1000000-0000-4000-8000-000000000003",
+  chloe: "c1000000-0000-4000-8000-000000000004",
+  daniel: "c1000000-0000-4000-8000-000000000005",
+  nurul: "c1000000-0000-4000-8000-000000000006",
+} as const;
+
+export type SeedCustomer = keyof typeof CUSTOMER;
+
+/**
+ * public.bikes.id (Phase 1). Owner in the key; shopCervelo has no owner.
+ * nurulBianchi was registered to daniel and then transferred to nurul.
+ */
+export const BIKE = {
+  tanTarmac: "b1000000-0000-4000-8000-000000000001",
+  tanBrompton: "b1000000-0000-4000-8000-000000000002",
+  priyaDomane: "b1000000-0000-4000-8000-000000000003",
+  priyaTern: "b1000000-0000-4000-8000-000000000004",
+  hafizBrompton: "b1000000-0000-4000-8000-000000000005",
+  chloeGiant: "b1000000-0000-4000-8000-000000000006",
+  chloeSurly: "b1000000-0000-4000-8000-000000000007",
+  danielCannondale: "b1000000-0000-4000-8000-000000000008",
+  nurulBianchi: "b1000000-0000-4000-8000-000000000009",
+  shopCervelo: "b1000000-0000-4000-8000-000000000010",
+} as const;
+
+export type SeedBike = keyof typeof BIKE;
+
+/**
+ * Short IDs the database assigned to the seeded bikes, in insert order on
+ * a freshly built database (private.next_short_id('B')).
+ */
+export const BIKE_SHORT_ID: Record<SeedBike, string> = {
+  tanTarmac: "B-000001",
+  tanBrompton: "B-000002",
+  priyaDomane: "B-000003",
+  priyaTern: "B-000004",
+  hafizBrompton: "B-000005",
+  chloeGiant: "B-000006",
+  chloeSurly: "B-000007",
+  danielCannondale: "B-000008",
+  nurulBianchi: "B-000009",
+  shopCervelo: "B-000010",
+};
+
+/** Serial numbers as entered in the seed (chloeSurly has none). */
+export const BIKE_SERIAL = {
+  tanTarmac: "WSBC604123456N",
+  priyaDomane: "WTU291C1234K",
+  priyaTern: "TRN-19-0045821",
+  shopCervelo: "CV-CAL5-0921",
+} as const;

@@ -24,6 +24,12 @@ export type ActionResult<T = null> =
       error: string;
       fieldErrors?: Record<string, string[]>;
       /**
+       * The business-error code when an RPC refused (DATA-MODEL §16, e.g.
+       * `attachment_object_missing`), so a client can react to that case
+       * specifically. A stable code, never a raw database message.
+       */
+      code?: string;
+      /**
        * What a form submitted, so it can render the values again: React
        * resets uncontrolled fields after every form action, whatever the
        * result. Text fields only; never passwords or other secrets
@@ -148,7 +154,12 @@ export function staffAction<Schema extends z.ZodType, Data>(
           "action failed",
         ),
       );
-      return { ok: false, error: mapped.message, values };
+      return {
+        ok: false,
+        error: mapped.message,
+        code: mapped.kind === "business" ? mapped.reason : undefined,
+        values,
+      };
     }
   };
   return action as StaffAction<z.input<Schema>, Data>;

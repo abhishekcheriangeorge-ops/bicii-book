@@ -3,6 +3,299 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      attachment_events: {
+        Row: {
+          actor_staff_id: string | null;
+          attachment_id: string;
+          correlation_id: string | null;
+          created_at: string;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          event_type: Database["public"]["Enums"]["attachment_event_type"];
+          id: string;
+          payload: NonNullable<Json>;
+          reason: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          attachment_id: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          event_type: Database["public"]["Enums"]["attachment_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          attachment_id?: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity_id?: string;
+          entity_type?: Database["public"]["Enums"]["attachment_entity"];
+          event_type?: Database["public"]["Enums"]["attachment_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attachment_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      attachments: {
+        Row: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        };
+        Insert: {
+          byte_size?: number | null;
+          caption?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height?: number | null;
+          id?: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at?: string;
+          visibility?: Database["public"]["Enums"]["attachment_visibility"];
+          width?: number | null;
+        };
+        Update: {
+          byte_size?: number | null;
+          caption?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          entity_id?: string;
+          entity_type?: Database["public"]["Enums"]["attachment_entity"];
+          height?: number | null;
+          id?: string;
+          media_type?: string;
+          storage_bucket?: string;
+          storage_path?: string;
+          updated_at?: string;
+          visibility?: Database["public"]["Enums"]["attachment_visibility"];
+          width?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attachments_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      bike_ownership_events: {
+        Row: {
+          actor_staff_id: string | null;
+          bike_id: string;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["bike_ownership_event_type"];
+          from_customer_id: string | null;
+          id: string;
+          reason: string | null;
+          to_customer_id: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          bike_id: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["bike_ownership_event_type"];
+          from_customer_id?: string | null;
+          id?: string;
+          reason?: string | null;
+          to_customer_id?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          bike_id?: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["bike_ownership_event_type"];
+          from_customer_id?: string | null;
+          id?: string;
+          reason?: string | null;
+          to_customer_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "bike_ownership_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bike_ownership_events_bike_id_fkey";
+            columns: ["bike_id"];
+            isOneToOne: false;
+            referencedRelation: "bikes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bike_ownership_events_from_customer_id_fkey";
+            columns: ["from_customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bike_ownership_events_to_customer_id_fkey";
+            columns: ["to_customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      bikes: {
+        Row: {
+          archived_at: string | null;
+          brand: string;
+          colour: string | null;
+          created_at: string;
+          customer_id: string | null;
+          description: string | null;
+          frame_size: string | null;
+          id: string;
+          internal_notes: string | null;
+          inventory_unit_id: string | null;
+          model: string;
+          search_text: string | null;
+          serial_key: string | null;
+          serial_number: string | null;
+          short_id: string;
+          updated_at: string;
+          variant: string | null;
+        };
+        Insert: {
+          archived_at?: string | null;
+          brand: string;
+          colour?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          description?: string | null;
+          frame_size?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          inventory_unit_id?: string | null;
+          model: string;
+          search_text?: never;
+          serial_key?: never;
+          serial_number?: string | null;
+          short_id?: string;
+          updated_at?: string;
+          variant?: string | null;
+        };
+        Update: {
+          archived_at?: string | null;
+          brand?: string;
+          colour?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          description?: string | null;
+          frame_size?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          inventory_unit_id?: string | null;
+          model?: string;
+          search_text?: never;
+          serial_key?: never;
+          serial_number?: string | null;
+          short_id?: string;
+          updated_at?: string;
+          variant?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "bikes_customer_id_fkey";
+            columns: ["customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      customers: {
+        Row: {
+          archived_at: string | null;
+          auth_user_id: string | null;
+          created_at: string;
+          display_name: string | null;
+          email: string | null;
+          first_name: string | null;
+          id: string;
+          internal_notes: string | null;
+          last_name: string | null;
+          phone: string | null;
+          phone_digits: string | null;
+          search_text: string | null;
+          shopify_customer_id: string | null;
+          short_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          auth_user_id?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string | null;
+          first_name?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          last_name?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          shopify_customer_id?: string | null;
+          short_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          auth_user_id?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          email?: string | null;
+          first_name?: string | null;
+          id?: string;
+          internal_notes?: string | null;
+          last_name?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          shopify_customer_id?: string | null;
+          short_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       staff: {
         Row: {
           active: boolean;
@@ -128,6 +421,13 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      attachment_stray_objects: {
+        Args: { entity_id: string; entity_type: Database["public"]["Enums"]["attachment_entity"] };
+        Returns: {
+          bucket: string;
+          path: string;
+        }[];
+      };
       create_staff: {
         Args: {
           auth_user_id: string;
@@ -152,6 +452,31 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      delete_attachment: {
+        Args: { attachment_id: string; reason: string };
+        Returns: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "attachments";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       grant_permission: {
         Args: {
           permission: Database["public"]["Enums"]["permission_key"];
@@ -170,6 +495,45 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      my_bike_attachments: {
+        Args: { bike_id: string };
+        Returns: {
+          caption: string;
+          created_at: string;
+          height: number;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number;
+        }[];
+      };
+      my_bikes: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          brand: string;
+          colour: string;
+          created_at: string;
+          description: string;
+          frame_size: string;
+          id: string;
+          model: string;
+          serial_number: string;
+          short_id: string;
+          variant: string;
+        }[];
+      };
+      my_customer_profile: {
+        Args: Record<PropertyKey, never>;
+        Returns: Database["public"]["CompositeTypes"]["customer_profile"][];
+        SetofOptions: {
+          from: "*";
+          to: "customer_profile";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       my_staff_profile: {
         Args: Record<PropertyKey, never>;
         Returns: {
@@ -181,6 +545,43 @@ export type Database = {
           permissions: Database["public"]["Enums"]["permission_key"][];
           role: Database["public"]["Enums"]["staff_role"];
         }[];
+      };
+      record_attachment: {
+        Args: {
+          attachment_id: string;
+          byte_size?: number;
+          caption?: string;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height?: number;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          visibility?: Database["public"]["Enums"]["attachment_visibility"];
+          width?: number;
+        };
+        Returns: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "attachments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       revoke_permission: {
         Args: {
@@ -196,6 +597,36 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "staff_permissions";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_attachment_visibility: {
+        Args: {
+          attachment_id: string;
+          new_bucket?: string;
+          new_path?: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+        };
+        Returns: {
+          byte_size: number | null;
+          caption: string | null;
+          created_at: string;
+          created_by: string | null;
+          entity_id: string;
+          entity_type: Database["public"]["Enums"]["attachment_entity"];
+          height: number | null;
+          id: string;
+          media_type: string;
+          storage_bucket: string;
+          storage_path: string;
+          updated_at: string;
+          visibility: Database["public"]["Enums"]["attachment_visibility"];
+          width: number | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "attachments";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -255,6 +686,55 @@ export type Database = {
           role: Database["public"]["Enums"]["staff_role"];
         }[];
       };
+      staff_search: {
+        Args: { archived?: boolean; kinds?: string[]; max_results?: number; q: string };
+        Returns: {
+          id: string;
+          kind: string;
+          rank: number;
+          short_id: string;
+          subtitle: string;
+          title: string;
+        }[];
+      };
+      transfer_bike_ownership: {
+        Args: { bike_id: string; reason: string; to_customer_id: string };
+        Returns: {
+          archived_at: string | null;
+          brand: string;
+          colour: string | null;
+          created_at: string;
+          customer_id: string | null;
+          description: string | null;
+          frame_size: string | null;
+          id: string;
+          internal_notes: string | null;
+          inventory_unit_id: string | null;
+          model: string;
+          search_text: string | null;
+          serial_key: string | null;
+          serial_number: string | null;
+          short_id: string;
+          updated_at: string;
+          variant: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "bikes";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      update_my_profile: {
+        Args: { display_name?: string; first_name?: string; last_name?: string; phone?: string };
+        Returns: Database["public"]["CompositeTypes"]["customer_profile"];
+        SetofOptions: {
+          from: "*";
+          to: "customer_profile";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_staff: {
         Args: {
           display_name?: string;
@@ -281,6 +761,11 @@ export type Database = {
       };
     };
     Enums: {
+      attachment_entity:
+        "bike" | "work_order" | "product" | "inventory_unit" | "customer" | "consignment_item";
+      attachment_event_type: "created" | "visibility_changed" | "caption_changed" | "deleted";
+      attachment_visibility: "internal" | "customer" | "public";
+      bike_ownership_event_type: "registered" | "transferred";
       permission_key:
         | "view_costs"
         | "manage_inventory"
@@ -300,7 +785,15 @@ export type Database = {
       staff_role: "admin" | "staff";
     };
     CompositeTypes: {
-      [_ in never]: never;
+      customer_profile: {
+        id: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        display_name: string | null;
+        email: string | null;
+        phone: string | null;
+        created_at: string | null;
+      };
     };
   };
 };
@@ -409,6 +902,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      attachment_entity: [
+        "bike",
+        "work_order",
+        "product",
+        "inventory_unit",
+        "customer",
+        "consignment_item",
+      ],
+      attachment_event_type: ["created", "visibility_changed", "caption_changed", "deleted"],
+      attachment_visibility: ["internal", "customer", "public"],
+      bike_ownership_event_type: ["registered", "transferred"],
       permission_key: [
         "view_costs",
         "manage_inventory",
