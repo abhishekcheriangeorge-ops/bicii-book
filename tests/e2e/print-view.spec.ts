@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 
 import { reprintPath } from "../../src/lib/printing/links";
-import { PRINT_JOB, PRODUCT, PRODUCT_SHORT_ID, SHOP, UNIT } from "../fixtures/ids";
+import { PRINT_JOB, PRODUCT, PRODUCT_SHORT_ID, UNIT } from "../fixtures/ids";
 import { E2E_PUBLIC_SITE_URL } from "../fixtures/public-site";
 import { signIn } from "./helpers";
+import { QR_BASE, labelPayloads, pdfLinkUris, qrPayloadFor } from "./label-helpers";
 
 /**
  * Phase 8 step 2 on a phone and an iPad (PLAN D9, D56, D59): the print view
@@ -19,22 +20,9 @@ import { signIn } from "./helpers";
  * http://localhost:4001 by default).
  */
 
-const base = SHOP.publicSiteUrl.replace(/\/+$/, "");
-const payload = `${base}/q/${PRODUCT_SHORT_ID.barTape}`;
+const base = QR_BASE;
+const payload = qrPayloadFor(PRODUCT_SHORT_ID.barTape);
 const MM = 72 / 25.4;
-
-function linkUris(pdf: PDFDocument): string[] {
-  return pdf.getPages().flatMap((page) => {
-    const annots = page.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
-    return (annots?.asArray() ?? []).map((ref) =>
-      pdf.context
-        .lookup(ref, PDFDict)
-        .lookup(PDFName.of("A"), PDFDict)
-        .lookup(PDFName.of("URI"), PDFString)
-        .decodeText(),
-    );
-  });
-}
 
 const codeField = (page: Page) => page.getByLabel("Or type the code on the label");
 
@@ -42,12 +30,8 @@ test("an open job's print view and PDF carry exactly the database payload", asyn
   await signIn(page, "mechanic1");
   await page.goto(`/print/labels/${PRINT_JOB.productQueued}`);
 
-  const labels = page.locator("[data-label]");
-  await expect(labels).toHaveCount(10);
-  const payloads = await labels.evaluateAll((els) =>
-    els.map((el) => el.getAttribute("data-qr-payload")),
-  );
-  expect(payloads).toEqual(Array.from({ length: 10 }, () => payload));
+  await expect(page.locator("[data-label]")).toHaveCount(10);
+  expect(await labelPayloads(page)).toEqual(Array.from({ length: 10 }, () => payload));
   await expect(page.getByText("10 labels · PDF download · 58 × 40 mm")).toBeVisible();
   await expect(page.getByText("1 of 10", { exact: true })).toBeVisible();
 
@@ -69,7 +53,7 @@ test("an open job's print view and PDF carry exactly the database payload", asyn
     expect(Math.abs(p.getWidth() - 58 * MM)).toBeLessThan(0.01);
     expect(Math.abs(p.getHeight() - 40 * MM)).toBeLessThan(0.01);
   }
-  expect(linkUris(pdf)).toEqual(Array.from({ length: 10 }, () => payload));
+  expect(pdfLinkUris(pdf)).toEqual(Array.from({ length: 10 }, () => payload));
 });
 
 test("printed, the view is the labels and nothing else", async ({ page }) => {

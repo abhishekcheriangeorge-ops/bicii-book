@@ -668,8 +668,8 @@ afresh). mechanic2 (no view_costs) opens J-000002 and sees its $300.00 total
 but no cost, yield or Cult Commons, and the page's data holds no cost key.
 
 Phase 4 (`inventory.spec.ts`, phone and iPad, every record tagged and
-stock asserted on the test's own product): journey 3 without labels and
-receiving: the admin creates a counted product (tag in name and SKU,
+stock asserted on the test's own product): journey 3 without receiving
+(the label step was added by Phase 8 step 4, below): the admin creates a counted product (tag in name and SKU,
 $12.00, cost $5.00, reorder point 3), records 10 opening stock at the Shop
 floor with the "Opening stock count" chip (preview "Shop floor: 0 → 10"),
 finds it by SKU on /inventory with "10 in stock", adds 1 to a walk-in job
@@ -899,8 +899,8 @@ payment".
 
 Phase 6 step 4 (phone and tablet, every created record tagged, stock
 asserted relative to a reading taken first):
-`consignment-journey.spec.ts` is journey 4 below without the label step
-(labels are Phase 8): an admin creates "Consignor <tag>", receives
+`consignment-journey.spec.ts` is journey 4 below (its label step was added
+by Phase 8 step 4, above): an admin creates "Consignor <tag>", receives
 "Colnago Master <tag>" (owed 500, asking 1000; `C-`, `U-` link, "For
 sale"), uploads a listing photo and makes it Public while the agreement
 photo offers no Public (D52), makes the product internal and publishes
@@ -976,6 +976,30 @@ archived…" and Print label disabled; Labels and printers shows `base`, and
 the bar tape's Labels card and "QR label URL" both equal `${base}/q/P-000011`,
 never the environment base.
 
+Phase 8 step 4 (the journeys' label steps, phone and iPad; shared helpers
+`QR_BASE`, `qrPayloadFor`, `labelPayloads` and `pdfLinkUris` in
+`tests/e2e/label-helpers.ts`, also used by `print-view.spec.ts` and
+`labels.spec.ts`; payload assertions are exact equality on the database
+base). Journey 3 (`inventory.spec.ts`), after the opening count and before
+the job: the product's Print label, chip 10, "PDF download", "Print 10
+labels" → 10 `[data-label]` boxes all `${base}/q/{P-…}`; the "Open PDF"
+href is `/api/labels/{job}/pdf`, fetched as 200 `application/pdf` with 10
+pages whose 10 link URIs equal the payload; clicking Open PDF opens a tab
+(closed) and "Did all 10 labels print correctly?" → "Yes, all printed" →
+"Marked as printed"; `/labels?q={P-…}` lists the job as Printed, 10 ×; the
+product still has 10 in stock (printing moves no stock) and the journey
+continues unchanged. Journey 4 (`consignment-journey.spec.ts`), after the
+product is published: the bike's unit page → Print label (heading "Print
+labels · U-…", quantity 1, browser printer, `window.print` stubbed) → one
+label `${base}/q/{U-…}` whose accessible name is "Label: Colnago Master
+<tag>, $1,000.00, U-…" and whose text has no "$500", cost, consign or
+internal; its price field reads $1,000.00 (D58); "Yes, all printed"; the
+unit page's "What the public sees" shows the name, the same price and
+Available, and nothing matching /cost|consign|internal|\$500/i. The
+anonymous half (an anonymous scan reads the same row) is the database
+test in `labels.test.ts` ("reporting.public_items returns identical rows to
+anon and to staff").
+
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
 
@@ -988,12 +1012,18 @@ database, signed in as the seeded admin and mechanic:
    check in → work order linked (`appointments.spec.ts`: Today's arrivals
    list and counts, the appointments list, check-in, the job's link back).
 3. Bulk product: create → receive PO (partial) → print 10 labels (PDF adapter
-   produces 10 identical QR payloads) → consume one on a job → stock −1.
+   produces 10 identical QR payloads) → consume one on a job → stock −1
+   (`inventory.spec.ts`: the label step since Phase 8 step 4, after an
+   opening stock count; the receiving step waits for Phase 7, on the
+   parallel track).
 4. Consignment: create consignor + unique bike → label → public page (hitting
    `public_items` through the app's preview route) → record sale → yield and
    CC shown to admin, hidden from mechanic → consignor outstanding → partial
    settlement → full settlement → outstanding 0 (`consignment-journey.spec.ts`
-   since Phase 6 step 4, without the label step until Phase 8).
+   since Phase 6 step 4, with the label step since Phase 8 step 4; the public
+   page is the staff "What the public sees" panel over `public_items`, and
+   anon's identical read is the database test, until Phase 11 serves
+   `/q/[shortId]` on the public site).
 5. Shopify: publish product → simulate `orders/paid` POST to the webhook route
    with a valid HMAC → stock −1 once; POST the same payload again → unchanged.
 6. (Later, in the public-site repo) customer sign-in sees only own data.

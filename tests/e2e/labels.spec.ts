@@ -1,16 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import {
-  BIKE,
-  PRINT_JOB,
-  PRODUCT,
-  PRODUCT_SHORT_ID,
-  SHOP,
-  UNIT,
-  UNIT_SHORT_ID,
-} from "../fixtures/ids";
+import { BIKE, PRINT_JOB, PRODUCT, PRODUCT_SHORT_ID, UNIT, UNIT_SHORT_ID } from "../fixtures/ids";
 import { E2E_PUBLIC_SITE_URL } from "../fixtures/public-site";
 import { createProduct, section, signIn, tagFor, toast } from "./helpers";
+import { QR_BASE, labelPayloads as payloads } from "./label-helpers";
 
 /**
  * Phase 8 step 3 on a phone and an iPad (SPEC §15, §16; PLAN D9, D56–D59;
@@ -24,7 +17,7 @@ import { createProduct, section, signIn, tagFor, toast } from "./helpers";
  * spec) or the status of a seeded print job. window.print is stubbed.
  */
 
-const base = SHOP.publicSiteUrl.replace(/\/+$/, "");
+const base = QR_BASE;
 
 async function stubPrint(page: Page) {
   await page.addInitScript(() => {
@@ -50,12 +43,6 @@ async function startJob(page: Page, buttonName: string): Promise<string> {
   await sheet(page).getByRole("button", { name: buttonName }).click();
   await expect(page).toHaveURL(/\/print\/labels\/[0-9a-f-]{36}$/);
   return page.url().split("/").at(-1)!;
-}
-
-async function payloads(page: Page): Promise<(string | null)[]> {
-  return page
-    .locator("[data-label]")
-    .evaluateAll((els) => els.map((el) => el.getAttribute("data-qr-payload")));
 }
 
 async function newBike(page: Page, model: string): Promise<{ url: string; shortId: string }> {
