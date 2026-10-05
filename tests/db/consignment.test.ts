@@ -45,6 +45,7 @@ import {
   addStock,
   assertLedgerConsistent,
   completeJob,
+  makeLocation,
   makeProduct,
   makeUnit,
   newJob,
@@ -859,6 +860,109 @@ describe.skipIf(!isolatedDatabase())("consignors (D47, D48)", () => {
         (await tx.query("update public.consignors set archived_at = now() where id = $1", [id]))
           .rowCount,
       ).toBe(1);
+      await assertLedgerConsistent(tx);
+    });
+  });
+});
+
+describe.skipIf(!isolatedDatabase())("intake with a new consignor: one transaction", () => {
+  /** create_consignment_item with new_consignor, as whoever `tx` is. */
+  const intakeWithNew = (
+    tx: pg.Client,
+    a: { itemId: string; consignorId: string; locationId: string; name: string; email?: string },
+  ) =>
+    tx.query(
+      `select (r).item_id from (select public.create_consignment_item(
+         item_id => $1, consignor_id => $2, location_id => $3, agreed_amount_owed => 50.00,
+         asking_price => 90.00, product_name => 'Consigned wheel', tracking_type => 'unique',
+         new_product_id => $4, new_unit_id => $5,
+         new_consignor => jsonb_build_object('display_name', $6::text, 'phone', '+65 9000 0000',
+                                             'email', $7::text)
+       ) r) s`,
+      [
+        a.itemId,
+        a.consignorId,
+        a.locationId,
+        // Fixed per item, like the sheet's ids, so a retry is the same request.
+        a.itemId.replace(/^.{8}/, "aaaaaaaa"),
+        a.itemId.replace(/^.{8}/, "bbbbbbbb"),
+        a.name,
+        a.email ?? null,
+      ],
+    );
+  const consignor = async (tx: pg.Client, id: string) => {
+    const { rows } = await tx.query<{ display_name: string; email: string | null }>(
+      "select display_name, email::text from public.consignors where id = $1",
+      [id],
+    );
+    return rows[0] ?? null;
+  };
+
+  it("a refused intake leaves no consignor; the retry stores the edited name; a replay changes nothing", async () => {
+    await inTx(async (tx) => {
+      await ownerMode(tx);
+      const closed = await makeLocation(tx, { active: false });
+      await actAs(tx, ADMIN);
+      const itemId = randomUUID();
+      const consignorId = randomUUID();
+      await failsWith(
+        tx,
+        () => intakeWithNew(tx, { itemId, consignorId, locationId: closed, name: "Jon" }),
+        { code: "P0001", message: "location_inactive" },
+      );
+      expect(await consignor(tx, consignorId)).toBeNull();
+
+      const retry = { itemId, consignorId, locationId: LOCATION.shopFloor, name: " John " };
+      await intakeWithNew(tx, retry);
+      expect(await consignor(tx, consignorId)).toEqual({ display_name: "John", email: null });
+      expect((await itemRow(tx, itemId)).consignor_id).toBe(consignorId);
+      // A double tap: the same request returns the same item.
+      await intakeWithNew(tx, retry);
+      expect(
+        await scalar<number>(
+          tx,
+          "select count(*)::integer from public.consignment_items where consignor_id = $1",
+          [consignorId],
+        ),
+      ).toBe(1);
+      // The same item id with another new consignor is another request.
+      await failsWith(tx, () => intakeWithNew(tx, { ...retry, name: "Johnny" }), {
+        code: "P0001",
+        message: "consignment_item_conflict",
+      });
+      await assertLedgerConsistent(tx);
+    });
+  });
+
+  it("an existing consignor with that id is used only when the details match (consignor_conflict otherwise)", async () => {
+    await inTx(async (tx) => {
+      const consignorId = await createConsignor(tx, {
+        displayName: "Mei Tan",
+        email: "Mei@Example.com",
+        phone: "+65 9000 0000",
+      });
+      await failsWith(
+        tx,
+        () =>
+          intakeWithNew(tx, {
+            itemId: randomUUID(),
+            consignorId,
+            locationId: LOCATION.shopFloor,
+            name: "Someone else",
+          }),
+        { code: "P0001", message: "consignor_conflict" },
+      );
+      await intakeWithNew(tx, {
+        itemId: randomUUID(),
+        consignorId,
+        locationId: LOCATION.shopFloor,
+        name: "Mei Tan",
+        email: "mei@example.com",
+      });
+      expect(await consignor(tx, consignorId)).toEqual({
+        display_name: "Mei Tan",
+        email: "Mei@Example.com",
+      });
       await assertLedgerConsistent(tx);
     });
   });

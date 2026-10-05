@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { recordSaleAction, searchSaleableAction } from "@/app/(staff)/sales/actions";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import { SearchPicker, type PickerOption } from "@/components/ui/search-picker";
 import { Sheet } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
 import { fromShopLocal, toShopLocal } from "@/lib/dates";
 import type { SaleableRow, SaleLineInput } from "@/lib/domain/sales";
@@ -204,22 +205,39 @@ function RecordSaleSheet({
   );
   const [pending, start] = useTransition();
   const errors = state && !state.ok ? state.fieldErrors : undefined;
+  // A refusal shows where it applies: the first marked field gets focus,
+  // else the alert scrolls into view (the sheet may be scrolled down to
+  // the footer button on a phone).
+  const formRef = useFocusFirstInvalid(state);
+  const alertRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (!state || state.ok) return;
+    if (formRef.current?.querySelector('[aria-invalid="true"]')) return;
+    alertRef.current?.scrollIntoView({ block: "nearest" });
+    alertRef.current?.focus();
+  }, [state, formRef]);
 
   // A "Sell" entry point: find its item once, when the sheet opens.
   useEffect(() => {
     if (!preset) return;
     let live = true;
-    searchSaleableAction({ q: preset.q }).then((result) => {
-      if (!live) return;
-      const row = result.ok ? result.data.rows.find((r) => matches(r, preset)) : undefined;
-      if (result.ok) setRate(result.data.rate);
-      if (row) {
-        setLines([{ row, price: prefill(row), quantity: "1" }]);
-        setPresetState("idle");
-      } else {
-        setPresetState("missing");
-      }
-    });
+    searchSaleableAction({ q: preset.q })
+      .then((result) => {
+        if (!live) return;
+        const row = result.ok ? result.data.rows.find((r) => matches(r, preset)) : undefined;
+        if (result.ok) setRate(result.data.rate);
+        if (row) {
+          setLines([{ row, price: prefill(row), quantity: "1" }]);
+          setPresetState("idle");
+        } else {
+          setPresetState("missing");
+        }
+      })
+      // A dropped connection or a server failure: fall back to the picker
+      // instead of "Finding the item…" for good.
+      .catch(() => {
+        if (live) setPresetState("missing");
+      });
     return () => {
       live = false;
     };
@@ -263,6 +281,17 @@ function RecordSaleSheet({
   const total = complete ? sumMoney(priced.map((p) => lineTotal(p.qty!, p.price!))) : null;
   const recognizedAt = earlier && soldAt ? (fromShopLocal(soldAt)?.toISOString() ?? null) : null;
   const badDate = earlier && soldAt !== "" && recognizedAt === null;
+  // Set at submit (the clock moves while the sheet is open): a time after
+  // now is refused here with the same words, before the server does.
+  const [futureDate, setFutureDate] = useState(false);
+  const dateError =
+    badDate || futureDate
+      ? "Enter a date and time that is not in the future."
+      : errors?.recognizedAt?.[0];
+  // Refusals the sheet has no field for (the lines as a whole), under the alert.
+  const otherErrors = Object.entries(errors ?? {})
+    .filter(([k]) => !["recognizedAt", "customerId", "notes"].includes(k) && !k.startsWith("line:"))
+    .flatMap(([, v]) => v);
 
   const preview =
     viewCosts && rate !== null && complete && lines.every((l) => l.row.cost != null)
@@ -276,8 +305,12 @@ function RecordSaleSheet({
         )
       : null;
 
-  const submit = () => {
+  const submit = (submittedAt: number) => {
     if (!complete || lines.length === 0 || overStock || badDate) return;
+    if (recognizedAt !== null && Date.parse(recognizedAt) > submittedAt) {
+      setFutureDate(true);
+      return;
+    }
     const input: {
       saleId: string;
       lines: SaleLineInput[];
@@ -355,18 +388,32 @@ function RecordSaleSheet({
       }
     >
       <form
+        ref={formRef}
         id={formId}
         className="flex flex-col gap-5"
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          // The event's own clock (epoch ms), read when the form is submitted.
+          submit(performance.timeOrigin + e.timeStamp);
         }}
       >
         {state && !state.ok ? (
-          <p role="alert" className="text-sm font-medium text-danger-deep">
-            {state.error}
-          </p>
+          <div className="flex flex-col gap-1">
+            <p
+              ref={alertRef}
+              tabIndex={-1}
+              role="alert"
+              className="text-sm font-medium text-danger-deep outline-none"
+            >
+              {state.error}
+            </p>
+            {otherErrors.map((e) => (
+              <p key={e} className="text-sm text-danger-deep">
+                {e}
+              </p>
+            ))}
+          </div>
         ) : null}
         {presetState === "loading" ? (
           <p role="status" className="text-sm text-dust-700">
@@ -527,7 +574,11 @@ function RecordSaleSheet({
           </div>
         ) : null}
 
-        <Field label="Customer" hint="Optional. Leave empty for a walk-in.">
+        <Field
+          label="Customer"
+          hint="Optional. Leave empty for a walk-in."
+          error={errors?.customerId?.[0]}
+        >
           <CustomerPicker value={customer} onSelect={setCustomer} />
         </Field>
 
@@ -535,13 +586,16 @@ function RecordSaleSheet({
           <Field
             label="Sold at"
             hint="Shop time. Leave empty to record it as now."
-            error={badDate ? "Enter a date and time that is not in the future." : undefined}
+            error={dateError}
           >
             <Input
               type="datetime-local"
               max={toShopLocal(now)}
               value={soldAt}
-              onChange={(e) => setSoldAt(e.target.value)}
+              onChange={(e) => {
+                setSoldAt(e.target.value);
+                setFutureDate(false);
+              }}
             />
           </Field>
         ) : (
@@ -552,7 +606,7 @@ function RecordSaleSheet({
           </div>
         )}
 
-        <Field label="Notes" hint="Optional. Kept with the sale.">
+        <Field label="Notes" hint="Optional. Kept with the sale." error={errors?.notes?.[0]}>
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       </form>

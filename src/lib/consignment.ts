@@ -97,23 +97,44 @@ export const SHOP_CHARGE_UNIQUE_ONLY =
 // Balances (D46: never "credit")
 // ---------------------------------------------------------------------------
 
+/** What has been owed and paid so far, to tell "Settled" from "nothing yet". */
+export type BalanceHistory = { owed: string | null; paid: string | null };
+
+const isZeroOrNull = (v: string | null) => v === null || toDecimal(v).isZero();
+
+/** Nothing has ever been owed or paid: no payment cycle has started. */
+function nothingYet(outstanding: string, history?: BalanceHistory): boolean {
+  return (
+    history !== undefined &&
+    toDecimal(outstanding).isZero() &&
+    isZeroOrNull(history.owed) &&
+    isZeroOrNull(history.paid)
+  );
+}
+
 /**
  * What a consignor's (or an item's) outstanding means in words:
- * "$300.00 owed", "Settled", or "Overpaid $40.00 (consignor owes the
- * shop)". A negative outstanding is never a credit (D46).
+ * "$300.00 owed", "Settled" (paid what was owed), "Nothing owed yet"
+ * (nothing owed and nothing paid, when `history` is given) or "Overpaid
+ * $40.00 (consignor owes the shop)". A negative outstanding is never a
+ * credit (D46).
  */
-export function outstandingLabel(outstanding: string, currency = "SGD"): string {
+export function outstandingLabel(
+  outstanding: string,
+  currency = "SGD",
+  history?: BalanceHistory,
+): string {
   if (isPositive(outstanding)) return `${formatMoney(outstanding, currency)} owed`;
   if (isNegative(outstanding)) {
     return `Overpaid ${formatMoney(toDecimal(outstanding).negated(), currency)} (consignor owes the shop)`;
   }
-  return "Settled";
+  return nothingYet(outstanding, history) ? "Nothing owed yet" : "Settled";
 }
 
-export function outstandingTone(outstanding: string): ConsignmentTone {
+export function outstandingTone(outstanding: string, history?: BalanceHistory): ConsignmentTone {
   if (isPositive(outstanding)) return "waiting";
   if (isNegative(outstanding)) return "info";
-  return "done";
+  return nothingYet(outstanding, history) ? "neutral" : "done";
 }
 
 /** How an overpayment clears (D46), one line. */
@@ -178,7 +199,9 @@ export function describeConsignmentEvent(
           ? `${payload.quantity} items`
           : null,
         moneyOf(payload.agreed_amount_owed, currency)
-          ? `owed ${moneyOf(payload.agreed_amount_owed, currency)} each`
+          ? `owed ${moneyOf(payload.agreed_amount_owed, currency)}${
+              typeof payload.quantity === "number" && payload.quantity > 1 ? " each" : ""
+            }`
           : null,
         moneyOf(payload.asking_price, currency)
           ? `asking ${moneyOf(payload.asking_price, currency)}`

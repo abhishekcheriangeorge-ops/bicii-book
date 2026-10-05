@@ -159,7 +159,8 @@ function TermsSheet({
  * "Return to consignor" (manage_consignments; return_consignment_item): a
  * two-step confirmation with a reason, the confirm button in another
  * place with another key and ignoring presses for 400 ms. A quantity item
- * asks how many (all remaining by default) and from which location. The
+ * asks from which location and how many (by default all of this item's
+ * stock there: D54, another consignor's stock never goes back). The
  * return id is made when the confirmation opens, so a retry returns once.
  */
 export function ReturnToConsignorControl({
@@ -174,16 +175,19 @@ export function ReturnToConsignorControl({
   unique: boolean;
   /** Quantity items: what the shop still holds. */
   remaining: number;
-  /** Quantity items: where the stock is (on-hand per location). */
+  /** Quantity items: where this item's stock is (its on-hand per location, D54). */
   locations: { locationId: string; name: string; onHand: number }[];
 }) {
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
   const [returnId, setReturnId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  const [quantity, setQuantity] = useState(String(remaining));
   const stocked = locations.filter((l) => l.onHand > 0);
   const [locationId, setLocationId] = useState<string | null>(stocked[0]?.locationId ?? null);
+  const stockAt = (id: string | null) =>
+    Math.min(stocked.find((l) => l.locationId === id)?.onHand ?? remaining, remaining);
+  const [quantity, setQuantity] = useState(String(stockAt(stocked[0]?.locationId ?? null)));
+  const here = stockAt(locationId);
   const [error, setError] = useState<string | undefined>();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | undefined>();
   const [pending, start] = useTransition();
@@ -205,7 +209,7 @@ export function ReturnToConsignorControl({
     setReason("");
     setError(undefined);
     setFieldErrors(undefined);
-    setQuantity(String(remaining));
+    setQuantity(String(here));
     setConfirming(true);
   };
 
@@ -277,7 +281,7 @@ export function ReturnToConsignorControl({
         <>
           <Field
             label="How many"
-            hint={`${remaining} left with the shop.`}
+            hint={`${here} here, ${remaining} left with the shop.`}
             required
             error={fieldErrors?.quantity?.[0]}
           >
@@ -285,7 +289,7 @@ export function ReturnToConsignorControl({
               kind="quantity"
               stepper
               minValue={1}
-              maxValue={Math.max(remaining, 1)}
+              maxValue={Math.max(here, 1)}
               value={quantity}
               onValueChange={setQuantity}
             />
@@ -296,7 +300,10 @@ export function ReturnToConsignorControl({
               <SegmentedControl
                 label="Return from"
                 value={locationId ?? undefined}
-                onValueChange={setLocationId}
+                onValueChange={(v) => {
+                  setLocationId(v);
+                  setQuantity(String(stockAt(v)));
+                }}
                 options={stocked.map((l) => ({
                   value: l.locationId,
                   label: `${l.name} · ${l.onHand}`,

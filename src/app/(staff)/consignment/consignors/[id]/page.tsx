@@ -176,8 +176,8 @@ export default async function ConsignorPage({ params }: PageProps<"/consignment/
               </dd>
             </dl>
             <div className="mt-3 flex flex-col gap-2">
-              <StatusPill status={outstandingTone(totals.outstanding)}>
-                {outstandingLabel(totals.outstanding, currency)}
+              <StatusPill status={outstandingTone(totals.outstanding, totals)}>
+                {outstandingLabel(totals.outstanding, currency, totals)}
               </StatusPill>
               {positive(totals.consignorCharges) ? (
                 <p className="text-sm text-dust-700">

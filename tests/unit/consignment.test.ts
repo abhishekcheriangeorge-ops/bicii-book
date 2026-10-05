@@ -116,6 +116,17 @@ describe("balances (D46: never credit)", () => {
     for (const v of ["300", "0", "-40"]) expect(outstandingLabel(v)).not.toMatch(/credit/i);
   });
 
+  it('says "Nothing owed yet", not "Settled", when nothing was ever owed or paid', () => {
+    expect(outstandingLabel("0", "SGD", { owed: "0.00", paid: "0.00" })).toBe("Nothing owed yet");
+    expect(outstandingLabel("0", "SGD", { owed: null, paid: null })).toBe("Nothing owed yet");
+    expect(outstandingTone("0", { owed: "0", paid: "0" })).toBe("neutral");
+    // Paid what was owed: a finished cycle.
+    expect(outstandingLabel("0.00", "SGD", { owed: "500.00", paid: "500.00" })).toBe("Settled");
+    expect(outstandingTone("0", { owed: "500", paid: "500" })).toBe("done");
+    // Owed is never shown as nothing when money is outstanding.
+    expect(outstandingLabel("35", "SGD", { owed: "35", paid: "0" })).toBe("$35.00 owed");
+  });
+
   it("tones each balance", () => {
     expect(outstandingTone("0.01")).toBe("waiting");
     expect(outstandingTone("0")).toBe("done");
@@ -149,7 +160,12 @@ describe("item history labels", () => {
         agreed_amount_owed: 500,
         asking_price: 1000,
       }),
-    ).toEqual({ title: "Received", detail: "owed $500.00 each · asking $1,000.00" });
+    ).toEqual({ title: "Received", detail: "owed $500.00 · asking $1,000.00" });
+    // A single item is owed its amount, not "each" (as on the item page).
+    expect(describeConsignmentEvent("received", { agreed_amount_owed: 500 })).toEqual({
+      title: "Received",
+      detail: "owed $500.00",
+    });
     expect(describeConsignmentEvent("received", { quantity: 3, agreed_amount_owed: 35 })).toEqual({
       title: "Received",
       detail: "3 items · owed $35.00 each",

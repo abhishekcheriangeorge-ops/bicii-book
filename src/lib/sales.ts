@@ -11,7 +11,13 @@
  */
 import type { Database } from "@/lib/database.types";
 import { jobEconomics, lineEconomics, type Economics, type LineInput } from "@/lib/cult-commons";
-import { shopDayStart, type DateInput } from "@/lib/dates";
+import {
+  SHOP_UTC_OFFSET,
+  parseShopDay,
+  shiftShopDay,
+  shopDayStart,
+  type DateInput,
+} from "@/lib/dates";
 import { Decimal, toDecimal, toMoneyString, type MoneyInput } from "@/lib/money";
 
 export type SaleStatus = Database["public"]["Enums"]["sale_status"];
@@ -111,6 +117,18 @@ export type SaleRange = (typeof SALE_RANGES)[number]["key"];
 /** `?range=`: one of today, 7d, 30d; anything else is 7d. */
 export function readSaleRange(value: unknown): SaleRange {
   return SALE_RANGES.some((r) => r.key === value) ? (value as SaleRange) : "7d";
+}
+
+/** `?day=`: one shop day ("YYYY-MM-DD", from Today's tiles), else null. */
+export function readSaleDay(value: unknown): string | null {
+  return parseShopDay(value);
+}
+
+/** The instants [from, to) of one shop day: its Singapore midnight to the next (D35). */
+export function saleDayRange(day: string): { from: string; to: string } {
+  const start = new Date(`${day}T00:00:00${SHOP_UTC_OFFSET}`);
+  const end = new Date(`${shiftShopDay(day, 1)}T00:00:00${SHOP_UTC_OFFSET}`);
+  return { from: start.toISOString(), to: end.toISOString() };
 }
 
 /**

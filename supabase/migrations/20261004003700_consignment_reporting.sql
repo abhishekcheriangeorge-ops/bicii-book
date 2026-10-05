@@ -296,6 +296,7 @@ returns table (
   phone text,
   archived_at timestamptz,
   active_items integer,
+  sold_items integer,
   awaiting_settlement_items integer,
   returned_items integer,
   owed numeric,
@@ -334,7 +335,9 @@ begin
       c.phone,
       c.archived_at,
       l.active_items,
-      l.awaiting_settlement_items,
+      l.sold_items,
+      -- Who still has money owed is consignment money (D48).
+      case when show_money then l.awaiting_settlement_items end,
       l.returned_items,
       case when show_money then l.owed end,
       case when show_money then l.paid end,
@@ -356,7 +359,7 @@ end;
 $$;
 
 comment on function public.list_consignors(text, boolean, integer) is
-  'Active staff: consignors (archived ones only with include_archived) by name, with item counts; owed, paid and outstanding need manage_consignments or view_costs and are NULL otherwise (D48). q: every word of name or email, or phone digits with or without +65. max_rows clamped to 1..200.';
+  'Active staff: consignors (archived ones only with include_archived) by name, with item counts (active, sold, returned); the awaiting-payment count, owed, paid and outstanding need manage_consignments or view_costs and are NULL otherwise (D48). q: every word of name or email, or phone digits with or without +65. max_rows clamped to 1..200.';
 
 -- ---------------------------------------------------------------------------
 -- consignor_statement (active staff): one consignor's items, or one item.
@@ -696,9 +699,11 @@ comment on function public.sale_lines_detail(uuid) is
 --            active), unit_price = private.selling_price(product, unit)
 --   product  shop-owned active quantity products, one row per location
 --            with on-hand > 0, unit_price = private.selling_price(product)
---   product  consigned quantity products, one row per (location with
---            on-hand > 0, active item with remaining > 0), on_hand =
---            least(location on-hand, remaining), unit_price = the item's
+--   product  consigned quantity products, one row per active item with
+--            remaining > 0 and each location where that item has stock
+--            (D54: from the movements that name the item), on_hand =
+--            least(item on-hand there, location on-hand, remaining),
+--            unit_price = the item's
 --            asking price, else the product default (D45: equal to
 --            selling_price for the FIFO head)
 -- Rank: exact U-/P-/C- ID, SKU or serial 1.0; an ID containing q (>= 3
@@ -757,6 +762,17 @@ begin
       group by m.product_id, m.location_id
       having sum(m.quantity_delta) > 0
     ),
+    -- D54: each consignor's quantity stock where it is (every consigned
+    -- movement names its item; private.consignment_item_on_hand per row).
+    item_stock as (
+      select m.consignment_item_id, m.location_id, sum(m.quantity_delta)::integer as qty
+      from public.inventory_movements m
+      join public.products p on p.id = m.product_id
+      where p.tracking_type = 'quantity' and p.ownership_type = 'consignment'
+        and m.consignment_item_id is not null
+      group by m.consignment_item_id, m.location_id
+      having sum(m.quantity_delta) > 0
+    ),
     candidates as (
       select 'unit'::text as c_kind, p.id as c_product_id, p.short_id::text as c_product_short_id,
              u.id as c_unit_id, u.short_id::text as c_unit_short_id, p.name::text as c_title,
@@ -793,17 +809,18 @@ begin
       select 'product', p.id, p.short_id::text, null::uuid, null::text, p.name::text,
              pg_catalog.concat_ws(
                ' · ', p.short_id, ci.short_id || ' · consigned by ' || c.display_name,
-               least(s.qty, pos.remaining_qty)::text || ' at ' || l.name
+               least(ist.qty, s.qty, pos.remaining_qty)::text || ' at ' || l.name
              ),
-             s.location_id, l.name::text, least(s.qty, pos.remaining_qty),
+             ist.location_id, l.name::text, least(ist.qty, s.qty, pos.remaining_qty),
              coalesce(ci.asking_price, p.default_sale_price)::numeric, p.ownership_type,
              ci.id, ci.short_id::text, c.display_name::text,
              pg_catalog.lower(p.name || ' ' || coalesce(p.brand, '') || ' ' || c.display_name),
              array[p.short_id, ci.short_id]::text[], p.sku_key, null::text
       from public.products p
-      join stock s on s.product_id = p.id
-      join public.locations l on l.id = s.location_id
       join public.consignment_items ci on ci.product_id = p.id and ci.status = 'active'
+      join item_stock ist on ist.consignment_item_id = ci.id
+      join stock s on s.product_id = p.id and s.location_id = ist.location_id
+      join public.locations l on l.id = ist.location_id
       join reporting.consignment_item_position pos on pos.consignment_item_id = ci.id and pos.remaining_qty > 0
       join public.consignors c on c.id = ci.consignor_id
       where p.tracking_type = 'quantity' and p.ownership_type = 'consignment' and p.active and p.archived_at is null
@@ -835,7 +852,7 @@ end;
 $$;
 
 comment on function public.saleable_stock(text, integer) is
-  'Active staff: available units (shop-owned and consigned) and quantity stock per location (consigned: per active item with stock left, at its asking price) matching q, for the sale sheet; unit_price is the single selling price (D45). Exact U-/P-/C- ID, SKU or serial first. No cost.';
+  'Active staff: available units (shop-owned and consigned) and quantity stock per location (consigned: per active item and the location where that item has stock, D54, at its asking price) matching q, for the sale sheet; unit_price is the single selling price (D45). Exact U-/P-/C- ID, SKU or serial first. No cost.';
 
 -- ---------------------------------------------------------------------------
 -- staff_search kinds (Phase 6): consignors, consignment items and sales,

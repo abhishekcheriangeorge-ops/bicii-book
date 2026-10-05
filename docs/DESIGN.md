@@ -325,24 +325,27 @@ absent without it.
 | Item sold, money hidden | done | Sold |
 | Item returned / withdrawn | neutral | Returned / Withdrawn |
 | Balance > 0 (`outstandingLabel`) | waiting | $300.00 owed |
-| Balance = 0 | done | Settled |
+| Balance = 0 after something was owed or paid | done | Settled |
+| Balance = 0, nothing ever owed or paid (`outstandingLabel` with the owed and paid history) | neutral | Nothing owed yet |
 | Balance < 0 | info | Overpaid $40.00 (consignor owes the shop), never "credit" (D46), with one line of remedies |
 
 | Component | Notes |
 |---|---|
 | `ConsignorSheet`, `NewConsignorButton`, `EditConsignorButton` | Name (required), phone, email, an optional `CustomerPicker` link that prefills empty fields, payout details (never shown back: on edit, empty keeps them), internal notes; `newId()` key; creating opens the consignor. |
 | `ConsignorPicker` | `SearchPicker` over active consignors (`searchConsignorsAction`); its action row "New consignor "<typed>"" hands the text to the intake. |
-| `ReceiveItemButton` / `ConsignmentIntakeSheet` | Four fieldsets: consignor (preset, picker, or a new consignor with an optional customer link, created in the same request with its own id); what (One item (bike, frame, wheelset) / Several identical; a shop bike `SearchPicker` for one item (no owner, not in stock; prefills name, brand, serial; D51 hint), name, brand, description, category, serial and condition or a quantity stepper, "Kept at" as segments for up to 4 active locations, else a select); money (amount owed per item, 0 allowed, D24; asking price; a "If it sells at the asking price: yield · Cult Commons · BICII keeps" preview for view_costs); paperwork (received date sent as NULL when left at today, notes). Item, product, unit and consignor ids are made when the sheet opens; every value is state, so a retry sends the same request. Toast "C-000123 received", then the item page. |
+| `ReceiveItemButton` / `ConsignmentIntakeSheet` | Four fieldsets, each `min-w-0` so a segmented control scrolls inside its row instead of widening the sheet past a phone screen: consignor (preset, picker, or a new consignor with an optional customer link, created by the intake RPC in the same transaction with its own id, so a refused intake leaves no consignor); what (One item (bike, frame, wheelset) / Several identical; a shop bike `SearchPicker` for one item (no owner, not in stock; prefills name, brand, serial; D51 hint), name, brand, description, category, serial and condition or a quantity stepper, "Kept at" as segments for up to 4 active locations, else a select); money (amount owed per item, 0 allowed, D24; asking price; a "If it sells at the asking price: yield · Cult Commons · BICII keeps" preview for view_costs); paperwork (received date sent as NULL when left at today, notes). Item, product, unit and consignor ids are made when the sheet opens; every value is state, so a retry sends the same request. Toast "C-000123 received", then the item page. |
 | `ConsignmentItemRow` (server) | A RowList row: C- number and status pill on the first line, the name on its own line (never squeezed out on a phone), details, and the amount owed for money users. |
 | `EditTermsButton` | Amount owed and asking price; a "Why is the amount owed changing?" field appears (required) once the amount owed differs. |
 | `AddChargeButton` / `ChargeSheet`, `VoidChargeControl` | Description, amount (> 0) and "Who pays?" as a `SegmentedControl` with nothing chosen; "Add charge" is disabled until one is (D4), with one explanation line per bearer; Shop pays disabled with the reason for quantity items (D45) and once the unit is on a job or sold. Void is a `ReasonConfirm`. |
-| `ReturnToConsignorControl` | The `ReasonConfirm` pattern with a `newId()` return id made when it opens; quantity items add How many (all remaining by default) and where from; the confirm button names the effect ("Return 1 to consignor"). |
-| `RecordPaymentButton` / `SettlementSheet` | Amount paid, paid on (today: NULL; else noon Singapore, `paidAtFromDate`), reference, notes; one row per owed item, oldest sale first, with its `outstandingLabel` and an amount; Auto-fill (`autoAllocate`), "Add another item"; a live "Unallocated $x" / "Over by $x" / "Fully allocated" status; a row above what is owed reveals a required "Why pay more than is owed?" (D47). The commit names the amount ("Record payment of $200.00") and is disabled while `allocationProblems` blocks. |
+| `ReturnToConsignorControl` | The `ReasonConfirm` pattern with a `newId()` return id made when it opens; quantity items add where from (the locations holding this item's own stock, D54) and How many (by default all of this item's stock there, "N here, M left with the shop"); the confirm button names the effect ("Return 1 to consignor"). |
+| `RecordPaymentButton` / `SettlementSheet` | Amount paid, paid on (today: NULL; else noon Singapore, `paidAtFromDate`), reference, notes; one row per owed item, oldest sale first, with its `outstandingLabel` and an amount; Auto-fill (`autoAllocate`), "Add another item"; a live "Unallocated $x" / "Over by $x" / "Fully allocated" status (the done tone only once an amount is entered and allocated; before that "Enter the amount paid" in the neutral sunken style); a row above what is owed reveals a required "Why pay more than is owed?" (D47). The commit names the amount ("Record payment of $200.00") and is disabled while `allocationProblems` blocks. |
 | `ReverseSettlementControl` | `ReasonConfirm` on a payment; the reversal id is made when it opens. A reversed payment stays listed, struck through, with "Reversed: <reason> · <who> · <date>". |
 | `PayoutDetailsReveal` | "Show payout details" (manage_consignments) fetches them on demand and shows them inline with Hide; they are never in the page's data. |
 
 Pages: `/consignment` (`LinkSegments` Consignors / Items as `?view=`; the
-items' status filter For sale / Sold / Returned / All as links),
+items' status filter For sale / Sold / Returned / All as links; a
+consignor row reads "N for sale · N awaiting payment" for money users and
+"N for sale · N sold" otherwise, never who is owed money),
 `/consignment/consignors/[id]` (contact, payout details, Balance card,
 items grouped Awaiting payment / For sale / Settled and returned (for
 staff without money access: Sold / For sale / Returned), Payments,
@@ -373,7 +376,7 @@ a refund changes only the status, D49):
 
 | Component | Notes |
 |---|---|
-| `RecordSaleButton` / `RecordSaleSheet` | "New sale" on `/sales`, "Sell" on the consignment item, unit and product pages (any staff, D48; a Sell entry point presets its item by searching its short ID). Lines: title, short ID, "3 in stock at Shop floor" (a unit: "At Shop floor"), "Consigned · <consignor>" (a consigned quantity row is one consignment and the line sends its `consignment_item_id`, D45), a money `NumberInput` prefilled with the database selling price (`unit_price`), a quantity stepper capped at what the row holds, Remove. `priceWarnings` under the price: "Below the asking price" for everyone, "Below cost: this sale loses money" for view_costs (D53; never blocks). Add item reveals the picker again; Customer (optional `CustomerPicker`, walk-in otherwise); "Sold earlier?" reveals a shop-time `datetime-local` (max now; NULL while closed or empty); Notes. A view_costs "Preview" (cost, yield, Cult Commons) per line and in total, through `previewSale` (`lineEconomics`). Footer: the Decimal running total and "Record sale · $X". The sale id is made when the sheet opens; errors show as an alert, the lines stay, and a unit sold meanwhile is outlined with "Already sold or taken. Remove this line.". Success: toast "S-000123 recorded" and the sale page. |
+| `RecordSaleButton` / `RecordSaleSheet` | "New sale" on `/sales`, "Sell" on the consignment item, unit and product pages (any staff, D48; a Sell entry point presets its item by searching its short ID). Lines: title, short ID, "3 in stock at Shop floor" (a unit: "At Shop floor"), "Consigned · <consignor>" (a consigned quantity row is one consignment and the line sends its `consignment_item_id`, D45), a money `NumberInput` prefilled with the database selling price (`unit_price`), a quantity stepper capped at what the row holds, Remove. `priceWarnings` under the price: "Below the asking price" for everyone, "Below cost: this sale loses money" for view_costs (D53; never blocks). Add item reveals the picker again; Customer (optional `CustomerPicker`, walk-in otherwise); "Sold earlier?" reveals a shop-time `datetime-local` (max now; NULL while closed or empty); Notes. A view_costs "Preview" (cost, yield, Cult Commons) per line and in total, through `previewSale` (`lineEconomics`). Footer: the Decimal running total and "Record sale · $X". The sale id is made when the sheet opens; errors show as an alert, the lines stay, and a unit sold meanwhile is outlined with "Already sold or taken. Remove this line.". A refusal is shown where it applies: Sold at, Customer and Notes carry their field errors (a time after the moment of submitting is caught in the sheet with "Enter a date and time that is not in the future."; the database's `sale_recognized_in_future` and `sale_before_stock` land on Sold at too), the first marked field takes the focus (`useFocusFirstInvalid`), and a refusal with no field scrolls the alert into view and focuses it. A preset whose search fails (a dropped connection) falls back to the picker with the "no longer available" note instead of "Finding the item…". Success: toast "S-000123 recorded" and the sale page. |
 | `SaleablePicker` | `SearchPicker` over `searchSaleableAction` (`saleable_stock`): U-, P- and C- numbers, SKU, serial, name. Each result: title and price, short ID, a `StockBadge` with where and how many, the consignor badge; a unit already on the sale is disabled. |
 | `RecordRefundButton` / `RefundSheet` | Admins only (`canRecordRefund`, D49), shown while something is left to refund. Amount defaults to `refundableAmount` and is capped at it; the info note "A refund does not put anything back in stock. If the item came back, restock it separately." (D7); the reason through `ReasonConfirm` ("Record refund of $5.00…" then "Refund $5.00"); the refund id is made when the sheet opens. |
 | `RestockControl` | `ReasonConfirm` "Restock… U-000123" on a unit line still sold on this sale (`unit_sold_sale_line_id` = the line) and on the unit page's Restock card; for adjust_stock holders, and for a consigned unit only with manage_consignments too (D46). It always sends this line's id; "Back to" location segments (default: where it was sold) while confirming when there is more than one active location; a consigned unit says "It goes back on sale for the consignor and is no longer owed to them." |
@@ -395,10 +398,11 @@ and Cult Commons for view_costs, Restock; a "Yield" card for view_costs:
 Sale, Direct cost (incl. consignor payout), Yield, Cult Commons (30% of
 positive yield), BICII after Cult Commons; Refunds with what is left to
 refund; Notes). The unit page shows "Sold on S-…" and a Restock card when
-a sale sold it. Today's "Consignment sales" tile links to
-`/sales?range=today` (another day: `/sales`) and "New consignor
-liability" (view_financial_reports and view_costs, D30) to `/consignment`;
-both always show an amount now.
+a sale sold it. Today's "Consignment sales" tile links to that shop
+day's sales, `/sales?day=YYYY-MM-DD` (today or a past day; the Sales
+page's heading names the day and no range is current), and "New
+consignor liability" (view_financial_reports and view_costs, D30) to
+`/consignment`; both always show an amount now.
 
 ### Scanning
 
@@ -546,7 +550,9 @@ both always show an amount now.
   `/appointments?date=<day>`; "N more expected later"; empty: "No more
   arrivals expected today" with Book. A past day shows only the counts.
 - **Consignment tiles (Phase 6).** "Consignment sales" (the day's sales
-  with a consigned line, count and total; links to the Sales list) and,
+  and completed jobs with a consigned line, count and total; the hint says
+  "N sales or jobs with consigned items"; links to that day's Sales list,
+  `/sales?day=`, where the sales are; the jobs are under Jobs completed) and,
   for view_costs, "New consignor liability" (what the day's consigned
   lines owe their consignors; links to Consignment) always show an amount.
   Money also counts in-store sales: Gross sales is jobs completed and

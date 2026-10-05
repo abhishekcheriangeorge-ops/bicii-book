@@ -27,6 +27,7 @@ import {
   itemMovements,
   itemPosition,
   itemStatus,
+  settle,
 } from "./consignment-fixtures";
 import { actAs, connect, inTransaction, isolatedDatabase, scalar } from "./harness";
 import {
@@ -316,6 +317,46 @@ describe.skipIf(!isolatedDatabase())("a consigned unit as a job part (D44, D6/D2
   });
 });
 
+describe.skipIf(!isolatedDatabase())("a reopen and an archived consignor (D47)", () => {
+  it("a job whose consigned part belongs to an archived consignor is not reopened (consignor_archived) until they are unarchived", async () => {
+    await inTx(async (tx) => {
+      const consignorId = await createConsignor(tx, { displayName: "Archived later" });
+      const r = await intakeUnique(tx, { consignorId, agreed: "500.00", asking: "1000.00" });
+      const job = await newJob(tx);
+      await addPart(tx, {
+        workOrderId: job.id,
+        productId: r.product_id,
+        unitId: r.inventory_unit_id,
+      });
+      await completeJob(tx, job.id);
+      await settle(tx, {
+        consignorId,
+        amount: "500.00",
+        allocations: [{ consignment_item_id: r.item_id, amount: "500.00" }],
+      });
+      await tx.query("update public.consignors set archived_at = now() where id = $1", [
+        consignorId,
+      ]);
+      await failsWith(tx, () => reopenJob(tx, job.id), {
+        code: "P0001",
+        message: "consignor_archived",
+      });
+      expect(await itemStatus(tx, r.item_id)).toBe("sold");
+      expect(
+        await scalar<string>(tx, "select status::text from public.work_orders where id = $1", [
+          job.id,
+        ]),
+      ).toBe("completed");
+      await tx.query("update public.consignors set archived_at = null where id = $1", [
+        consignorId,
+      ]);
+      await reopenJob(tx, job.id);
+      expect(await itemStatus(tx, r.item_id)).toBe("active");
+      await assertLedgerConsistent(tx);
+    });
+  });
+});
+
 describe.skipIf(!isolatedDatabase())("consigned quantity parts (D44, D45, D50)", () => {
   it("draw FIFO from one item at that item's asking price; never more than one item has; never below zero", async () => {
     await inTx(async (tx) => {
@@ -383,7 +424,8 @@ describe.skipIf(!isolatedDatabase())("consigned quantity parts (D44, D45, D50)",
         liability: "50.00",
       });
 
-      // Covered by the item, but not at that location: no negative consigned stock.
+      // Covered by the item, but not at that location: the item's stock is
+      // per location (D54), and consigned stock never goes negative.
       const c = await intakeQuantity(tx, { consignorId: a, agreed: "5.00", quantity: 3 });
       await transfer(tx, {
         productId: c.product_id,
@@ -401,7 +443,7 @@ describe.skipIf(!isolatedDatabase())("consigned quantity parts (D44, D45, D50)",
             quantity: 2,
             locationId: LOCATION.shopFloor,
           }),
-        { code: "P0001", message: "insufficient_stock" },
+        { code: "P0001", message: "consignment_quantity_unavailable" },
       );
       await addPart(tx, {
         workOrderId: second.id,

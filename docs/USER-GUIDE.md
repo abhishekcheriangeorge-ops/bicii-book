@@ -171,7 +171,9 @@ Settings → Your profile.
 - Steps: **Add part** on the job, search the item's name or U-/P-/C-
   number. Consigned choices show "Consigned · <consignor>" (several
   identical also show the C- number of the consignment they come from:
-  the oldest one with stock left). The price is the asking price;
+  the oldest one with stock left; at the location you take it from, the
+  part comes from the oldest consignment that has that many there). The
+  price is the asking price;
   **Price each** may change it. Press **Add part**.
 - Success looks like: "Added … It is on hold for this job." The line shows
   "Consigned · <consignor>", linked to the item. When the job is
@@ -179,8 +181,8 @@ Settings → Your profile.
   is owed the agreed amount (D44).
 - If it fails: consigned stock never goes below zero: "Only 2 of this
   consigned item at Shop floor. Consigned stock can't go below zero.", and
-  "No single consignment of this item has that many left. Add fewer, or one
-  consignor's stock at a time." To take it back, reopen the job and void
+  "No single consignor has that many of this item at that location. Use
+  fewer, or one consignor's stock at a time." To take it back, reopen the job and void
   the line; reopening alone removes what is owed until the job is
   completed again.
 
@@ -195,7 +197,8 @@ Settings → Your profile.
   $x**.
 - Success looks like: "Payment of $200.00 recorded for <name>"; **Balance**
   shows Owed, Paid and Outstanding, and the payment appears under
-  **Payments** with its allocations.
+  **Payments** with its allocations. "Settled" means everything owed has
+  been paid; "Nothing owed yet" means nothing has sold.
 - If it fails: the button stays disabled while the rows show "Unallocated
   $x" or "Over by $x", and while a row pays more than that item is owed
   without an answer to "Why pay more than is owed?". A wrong payment is
@@ -209,15 +212,17 @@ Settings → Your profile.
 
 - Before you start: you need **Manage consignments**; the item is for sale.
 - Steps: open the item → **Return to consignor…** → answer "Why is it going
-  back?"; for several identical, choose **How many** (all that is left by
-  default) and where from. Press **Return to consignor** (or **Return N to
-  consignor**).
+  back?"; for several identical, choose where from (only places holding
+  this consignor's stock) and **How many** (all of their stock there by
+  default). Press **Return to consignor** (or **Return N to consignor**).
+  Another consignor's stock of the same item is never handed over (D54).
 - Success looks like: the stock leaves the shop; a single item reads
   **Returned**; a quantity reads "2 of 3 left"; the history shows "1
   returned to consignor" with the reason. Nothing is owed for returned
   stock.
 - If it fails: "Return at least one, and no more than the shop still has."
-  An item on an open job must come off the job first. A returned bike
+  "There isn't that much stock at that location." means this consignor
+  has less there: choose the other location. An item on an open job must come off the job first. A returned bike
   keeps its link to its bike record; transfer the bike back to the
   consignor's customer record on the bike page ([R-020](RISKS.md#r-020--a-bike-record-consigned-once-cannot-be-consigned-again)).
 
@@ -233,7 +238,9 @@ Settings → Your profile.
   it if you agreed another. For several, set **Quantity** (up to what is
   there). **Add item** adds more. Choose the **Customer** if they are on
   file (empty is a walk-in). **Sold earlier?** lets you enter when it was
-  sold. Press **Record sale · $x**.
+  sold (not in the future, and not before the item came into the shop:
+  a consigned item's intake, or the restock of a returned unit; D55).
+  Press **Record sale · $x**.
 - Success looks like: "S-000123 recorded" and the sale's page: the items,
   the total and who recorded it; the stock is lower, a unique item reads
   Sold ("Sold on S-…" on its page) and a consigned item is owed to its
@@ -244,8 +251,12 @@ Settings → Your profile.
   sold." outlines the line that went meanwhile: remove it and record the
   rest. "There isn't that much stock at that location." means the count
   changed: lower the quantity. "This item has no selling price. Enter
-  one." needs a price. A sold bike is not transferred to the buyer: use
-  **Transfer** on the bike page (D51).
+  one." needs a price. A date in the future is marked on **Sold at**;
+  "A sale can't be dated before the item came into the shop." needs a
+  later date. "No single consignor has that many of this item at that
+  location." means the consigned stock there belongs to several
+  consignors: sell fewer, or pick each consignor's line. A sold bike is not
+  transferred to the buyer: use **Transfer** on the bike page (D51).
 
 ### Refund a sale
 
@@ -275,8 +286,10 @@ Settings → Your profile.
   sale for its consignor and is no longer owed to them; money already paid
   for it stays paid (the balance may read Overpaid).
 - If it fails: a unit whose bike now belongs to a customer cannot go back
-  into stock (D29); a restock never refunds money: record a refund too if
-  the customer was paid back.
+  into stock (D29); a consigned item whose consignor is archived cannot
+  either: "That consignor is archived. Unarchive them first." (the same
+  applies to reopening a job that used it, D47); a restock never refunds
+  money: record a refund too if the customer was paid back.
 
 ### Adjust stock or move it between locations
 
@@ -293,6 +306,10 @@ Settings → Your profile.
 - Success looks like: "Stock saved. Shop floor: 10", or "Moved 2 to
   <location>"; the movement appears under Recent movements and **All
   movements**, with the reason. (Transfer is not covered by an E2E spec.)
+- Consigned stock moves one consignor's stock at a time: the oldest
+  consignment with that many at **From** (D54). "No single consignor has
+  that many of this item at that location." means move fewer, in two
+  transfers.
 - If it fails: a manual count can never go below zero: "<location> has 3. A
   count can't go below zero by hand; check the number." (Save stays
   disabled). "Give a reason for this stock change." "Choose two different
@@ -373,7 +390,8 @@ Settings → Your profile.
   View costs.
 - Success looks like: tiles that link to the jobs behind them.
 - Money counts jobs completed and in-store sales recorded on the day.
-  **Consignment sales** (sales with a consigned item) opens the Sales list;
+  **Consignment sales** (sales and completed jobs with a consigned item)
+  opens that day's sales (the jobs are under Jobs completed);
   **New consignor liability** (also View costs) opens Consignment.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
   at 0. Refunds and restocks are not taken off yet (Phase 9).

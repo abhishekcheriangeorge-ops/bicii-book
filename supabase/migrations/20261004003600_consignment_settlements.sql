@@ -212,6 +212,7 @@ as
          (count(il.consignment_item_id) filter (where il.status = 'active'))::integer as active_items,
          (count(il.consignment_item_id) filter (where il.outstanding > 0))::integer as awaiting_settlement_items,
          (count(il.consignment_item_id) filter (where il.status = 'returned'))::integer as returned_items,
+         (count(il.consignment_item_id) filter (where il.status = 'sold'))::integer as sold_items,
          coalesce(sum(il.liability), 0.00)::numeric as liability,
          coalesce(sum(il.consignor_charges), 0.00)::numeric as consignor_charges,
          coalesce(sum(il.owed), 0.00)::numeric as owed,
@@ -224,7 +225,7 @@ as
   group by c.id;
 
 comment on view reporting.consignor_ledger is
-  'Per consignor: item counts (active, awaiting settlement = outstanding > 0, returned) and the sums of its items'' liability, consignor charges, owed, paid and outstanding (equal to the sum of reporting.consignor_item_ledger rows). Derived; no API grant.';
+  'Per consignor: item counts (active, awaiting settlement = outstanding > 0, returned, sold) and the sums of its items'' liability, consignor charges, owed, paid and outstanding (equal to the sum of reporting.consignor_item_ledger rows). Derived; no API grant.';
 
 revoke all on table reporting.consignor_item_ledger from public, anon, authenticated, service_role;
 revoke all on table reporting.consignor_ledger from public, anon, authenticated, service_role;

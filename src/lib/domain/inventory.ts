@@ -100,6 +100,7 @@ const UNIT_FIELDS: Record<string, string> = {
 
 const STOCK_FIELDS: Record<string, string> = {
   insufficient_stock: "quantity",
+  consignment_quantity_unavailable: "quantity",
   quantity_invalid: "quantity",
   reason_required: "reason",
   reason_too_long: "reason",

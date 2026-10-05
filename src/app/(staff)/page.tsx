@@ -448,11 +448,13 @@ function MoneySection({ dash, children }: { dash: TodayDashboard; children: Reac
           label="Consignment sales"
           amount={money.consignmentSales.total}
           currency={c}
-          href={dash.isToday ? "/sales?range=today" : "/sales"}
+          href={`/sales?day=${dash.day}`}
           hint={
+            // Sales and completed jobs that used consigned stock (D44): the
+            // link opens that day's sales; jobs are under Jobs completed.
             money.consignmentSales.count === 1
-              ? "1 sale with consigned items"
-              : `${money.consignmentSales.count} sales with consigned items`
+              ? "1 sale or job with consigned items"
+              : `${money.consignmentSales.count} sales or jobs with consigned items`
           }
         />
         {costs ? (

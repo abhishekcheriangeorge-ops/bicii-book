@@ -279,7 +279,7 @@ function ConsignmentIntakeSheet({
           </p>
         ) : null}
 
-        <fieldset className="flex flex-col gap-4">
+        <fieldset className="flex min-w-0 flex-col gap-4">
           <legend className="mb-2 font-display text-xs font-bold tracking-wide uppercase">
             1. Consignor
           </legend>
@@ -346,7 +346,7 @@ function ConsignmentIntakeSheet({
           )}
         </fieldset>
 
-        <fieldset className="flex flex-col gap-4">
+        <fieldset className="flex min-w-0 flex-col gap-4">
           <legend className="mb-2 font-display text-xs font-bold tracking-wide uppercase">
             2. What
           </legend>
@@ -475,7 +475,7 @@ function ConsignmentIntakeSheet({
           </div>
         </fieldset>
 
-        <fieldset className="flex flex-col gap-4">
+        <fieldset className="flex min-w-0 flex-col gap-4">
           <legend className="mb-2 font-display text-xs font-bold tracking-wide uppercase">
             3. Money
           </legend>
@@ -514,7 +514,7 @@ function ConsignmentIntakeSheet({
           ) : null}
         </fieldset>
 
-        <fieldset className="flex flex-col gap-4">
+        <fieldset className="flex min-w-0 flex-col gap-4">
           <legend className="mb-2 font-display text-xs font-bold tracking-wide uppercase">
             4. Paperwork
           </legend>

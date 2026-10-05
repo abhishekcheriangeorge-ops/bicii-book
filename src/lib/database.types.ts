@@ -3261,6 +3261,7 @@ export type Database = {
           internal_notes?: string;
           item_id: string;
           location_id: string;
+          new_consignor?: Json;
           new_product_id?: string;
           new_unit_id?: string;
           product_id?: string;
@@ -3531,6 +3532,7 @@ export type Database = {
           paid: number;
           phone: string;
           returned_items: number;
+          sold_items: number;
         }[];
       };
       list_sales: {
@@ -5000,6 +5002,7 @@ export type Database = {
           owed: number | null;
           paid: number | null;
           returned_items: number | null;
+          sold_items: number | null;
         };
         Relationships: [];
       };

@@ -682,6 +682,8 @@ export type LedgerExpectation = {
   active_items: number;
   awaiting_settlement_items: number;
   returned_items: number;
+  /** Items whose status is sold (D48: the count staff without money access see). */
+  sold_items: number;
   liability: string;
   consignor_charges: string;
   owed: string;
@@ -701,6 +703,7 @@ export const EXPECTED_CONSIGNOR_LEDGER: Record<SeedConsignor, LedgerExpectation>
     active_items: 1,
     awaiting_settlement_items: 0,
     returned_items: 1,
+    sold_items: 0,
     liability: "0.00",
     consignor_charges: "0.00",
     owed: "0.00",
@@ -713,6 +716,7 @@ export const EXPECTED_CONSIGNOR_LEDGER: Record<SeedConsignor, LedgerExpectation>
     active_items: 0,
     awaiting_settlement_items: 1,
     returned_items: 0,
+    sold_items: 1,
     liability: "500.00",
     consignor_charges: "45.00",
     owed: "455.00",
@@ -725,6 +729,7 @@ export const EXPECTED_CONSIGNOR_LEDGER: Record<SeedConsignor, LedgerExpectation>
     active_items: 1,
     awaiting_settlement_items: 1,
     returned_items: 0,
+    sold_items: 0,
     liability: "105.00",
     consignor_charges: "0.00",
     owed: "105.00",

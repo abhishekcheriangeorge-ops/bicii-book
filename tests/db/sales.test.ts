@@ -30,6 +30,7 @@ import {
   returnItem,
   saleLines,
   sellingPrice,
+  settle,
   staffWith,
   updateTerms,
 } from "./consignment-fixtures";
@@ -1278,6 +1279,154 @@ describe.skipIf(!isolatedDatabase())("Refunds are financial only (D7, D49)", () 
       await failsWith(tx, () => refund(tx, { saleId: randomUUID(), amount: "1.00" }), {
         code: "P0002",
       });
+    });
+  });
+});
+
+describe.skipIf(!isolatedDatabase())("when a sale may be dated (D55 SALE-DATE)", () => {
+  it("never before a consigned item came in: mechanic2's sale dated 400 days back is refused (sale_before_stock); at or after intake it is recorded", async () => {
+    await inTx(async (tx) => {
+      const consignorId = await createConsignor(tx);
+      const receivedAt = await hoursAgo(tx, 48);
+      const item = await intakeUnique(tx, { consignorId, agreed: "500.00", receivedAt });
+      await actAs(tx, MECHANIC2);
+      for (const at of [await hoursAgo(tx, 400 * 24), await hoursAgo(tx, 49)]) {
+        await failsWith(
+          tx,
+          () =>
+            recordSale(tx, {
+              lines: [{ inventory_unit_id: item.inventory_unit_id! }],
+              recognizedAt: at,
+            }),
+          { code: "P0001", message: "sale_before_stock" },
+        );
+      }
+      expect(await itemStatus(tx, item.item_id)).toBe("active");
+      const sale = await recordSale(tx, {
+        lines: [{ inventory_unit_id: item.inventory_unit_id! }],
+        recognizedAt: receivedAt,
+      });
+      expect(sale.recognized_at.toISOString()).toBe(receivedAt);
+      await assertLedgerConsistent(tx);
+    });
+  });
+
+  it("a consigned quantity line is not dated before its item's intake, named or FIFO", async () => {
+    await inTx(async (tx) => {
+      const consignorId = await createConsignor(tx);
+      const item = await intakeQuantity(tx, {
+        consignorId,
+        agreed: "20.00",
+        quantity: 3,
+        receivedAt: await hoursAgo(tx, 24),
+      });
+      for (const named of [null, item.item_id]) {
+        await failsWith(
+          tx,
+          async () =>
+            recordSale(tx, {
+              lines: [{ product_id: item.product_id, quantity: 1, consignment_item_id: named }],
+              recognizedAt: await hoursAgo(tx, 30),
+            }),
+          { code: "P0001", message: "sale_before_stock" },
+        );
+      }
+      await recordSale(tx, {
+        lines: [{ product_id: item.product_id, quantity: 1 }],
+        recognizedAt: await hoursAgo(tx, 2),
+      });
+      expect((await itemLedger(tx, item.item_id)).remaining_qty).toBe(2);
+      await assertLedgerConsistent(tx);
+    });
+  });
+
+  it("a restocked unit is not sold again before its restock; shop stock entered after the fact may still be dated back", async () => {
+    await inTx(async (tx) => {
+      const { unitId } = await makeUniqueWithUnit(tx, { price: "300.00", cost: "100.00" });
+      await actAs(tx, ADMIN);
+      // Registered now, sold two days ago: shop stock has no lower bound.
+      const first = await recordSale(tx, {
+        lines: [{ inventory_unit_id: unitId }],
+        recognizedAt: await hoursAgo(tx, 48),
+      });
+      const [line] = await saleLines(tx, first.sale_id);
+      await restock(tx, { unitId, saleLineId: line.id });
+      await failsWith(
+        tx,
+        async () =>
+          recordSale(tx, {
+            lines: [{ inventory_unit_id: unitId }],
+            recognizedAt: await hoursAgo(tx, 1),
+          }),
+        { code: "P0001", message: "sale_before_stock" },
+      );
+      await recordSale(tx, { lines: [{ inventory_unit_id: unitId }] });
+      expect((await unit(tx, unitId)).status).toBe("sold");
+      await assertLedgerConsistent(tx);
+    });
+  });
+});
+
+describe.skipIf(!isolatedDatabase())("an in-store sale carries no Shopify reference", () => {
+  it("mechanic2 cannot claim a Shopify line id on a retail sale (sale_line_invalid), for a quantity or a unit", async () => {
+    await inTx(async (tx) => {
+      const productId = await quantityProduct(tx);
+      const { unitId } = await makeUniqueWithUnit(tx);
+      await actAs(tx, MECHANIC2);
+      for (const line of [
+        { product_id: productId, quantity: 1, shopify_line_item_id: "gid://shopify/LineItem/123" },
+        { inventory_unit_id: unitId, shopify_line_item_id: "gid://shopify/LineItem/124" },
+      ]) {
+        await failsWith(tx, () => recordSale(tx, { lines: [line] }), {
+          code: "P0001",
+          message: "sale_line_invalid",
+        });
+      }
+      await ownerMode(tx);
+      expect(
+        await scalar<number>(
+          tx,
+          "select count(*)::integer from public.sale_lines where shopify_line_item_id like 'gid://shopify/LineItem/12%'",
+        ),
+      ).toBe(0);
+      await actAs(tx, MECHANIC2);
+      await recordSale(tx, { lines: [{ product_id: productId, quantity: 1 }] });
+      await assertLedgerConsistent(tx);
+    });
+  });
+});
+
+describe.skipIf(!isolatedDatabase())("an archived consignor (D47)", () => {
+  it("restock refuses a unit whose consignor is archived (consignor_archived): the consignor keeps no stock and a 0 balance", async () => {
+    await inTx(async (tx) => {
+      const consignorId = await createConsignor(tx);
+      const item = await intakeUnique(tx, { consignorId, agreed: "500.00", asking: "1000.00" });
+      const sale = await recordSale(tx, {
+        lines: [{ inventory_unit_id: item.inventory_unit_id! }],
+      });
+      const [line] = await saleLines(tx, sale.sale_id);
+      await settle(tx, {
+        consignorId,
+        amount: "500.00",
+        allocations: [{ consignment_item_id: item.item_id, amount: "500.00" }],
+      });
+      await tx.query("update public.consignors set archived_at = now() where id = $1", [
+        consignorId,
+      ]);
+      await failsWith(
+        tx,
+        () => restock(tx, { unitId: item.inventory_unit_id!, saleLineId: line.id }),
+        { code: "P0001", message: "consignor_archived" },
+      );
+      expect(await itemStatus(tx, item.item_id)).toBe("sold");
+      expect((await unit(tx, item.inventory_unit_id!)).status).toBe("sold");
+      // Unarchived, the restock goes through.
+      await tx.query("update public.consignors set archived_at = null where id = $1", [
+        consignorId,
+      ]);
+      await restock(tx, { unitId: item.inventory_unit_id!, saleLineId: line.id });
+      expect(await itemStatus(tx, item.item_id)).toBe("active");
+      await assertLedgerConsistent(tx);
     });
   });
 });

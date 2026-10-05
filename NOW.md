@@ -1,8 +1,9 @@
 # Current state
 
-Updated: 2026-10-05, end of Phase 6 (step 4) on `feat/p6-consignment`.
-Evidence checked: local refs and `git worktree list` on 2026-10-05; local
-gates on this branch at the step 4 commits (below); step 3's at ecc90f1,
+Updated: 2026-10-05, Phase 6 review fixes on `feat/p6-consignment` (after
+step 4). Evidence checked: `git for-each-ref refs/heads refs/remotes` and
+`git worktree list` at the review fixes; local gates on this branch at the
+review-fix commit (below); step 4's at a8967c7, step 3's at ecc90f1,
 step 2's at 2c402b2, step 1's at 365bdd7. Earlier rows: GitHub REST pull list and check
 runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
 
@@ -18,9 +19,19 @@ runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
   and not pushed.
 - Next action: the orchestrator pushes `feat/p6-consignment` and opens its
   PR on top of `feat/docs-stack`; then the next phase in the build order
-  (labels, Phase 8). The owner answers D44–D53 (D53's price-floor
-  question) in
+  (labels, Phase 8). The owner answers D44–D55 (D53's price-floor and
+  D55's backdating questions) in
   [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
+- Review fixes (one commit after a8967c7): each consignor's quantity stock
+  is tracked per location (D54), a sale is never dated before its stock
+  came in (D55), restock and job reopen refuse an archived consignor, an
+  in-store sale refuses a Shopify line id, a new consignor is created in
+  the intake's own transaction, `list_consignors` hides who is awaiting
+  payment from staff without money access, and the UI fixes (intake sheet
+  width on a phone, sale sheet field errors and preset fallback, Today's
+  consignment tile wording and `?day=` link, "Nothing owed yet", the
+  settlement prompt's tone, "each" only for several); races for refunds
+  and restocks; RISKS R-025 to R-027.
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -38,12 +49,13 @@ a separate, label-triggered run. All listed results are success.
 | Today and financial engine | Yes, PR #6 d3e2101 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262369366), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262380782/job/111612119938) | Not deployed |
 | Appointments | Yes, PR #7 b34bbcd | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521); locally `npm test` 82 files / 1186 tests, `npm run check`, `check:types`, `test:e2e` 106 passed | Not deployed |
 | Docs stack | Yes, `feat/docs-stack` | Locally: docs link check, 33 files / 476 links, 0 problems; `npm run check` pass (after the review fixes) | Not deployed |
-| Purchasing (Phase 7) | On `feat/p7-purchasing` 59944d6 only | Not verified here | Not deployed |
-| Staff email OTP | Parallel track; no `feat/auth-email-otp` ref visible | Not verified | Not deployed |
+| Purchasing (Phase 7) | On `feat/p7-purchasing` a0fc1d2 (local and origin equal: pushed) | Not verified here | Not deployed |
+| Staff email OTP | On `feat/auth-email-otp` 4b3eadd (local and origin equal: pushed), checked out in the worktree `bicii-book-wt` | Not verified here | Not deployed |
 | Consignment core and consigned job parts (Phase 6 step 1: D44, D45, D48, D50–D52) | Database only, `feat/p6-consignment` 13fe3f3, fe6ac53, 365bdd7; no screens yet | Locally on 365bdd7: `npm run db:reset` pass (34 migrations, `34\|20261004003400`), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 86 files / 1225 tests passed; `test:e2e` not run (no screen changed); docs link check 34 files / 506 links / 0 problems | Not deployed |
 | Sales, restocks, refunds, settlements, consignor ledgers, sale reporting, read RPCs, search, Phase 6 seed (Phase 6 step 2: D44, D46–D49) | Database only, `feat/p6-consignment` 2d2ba0c, 2c402b2; no screens yet | Locally at 2c402b2 + docs: `npm run db:reset` pass (37 migrations, latest `20261004003700`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 89 files / 1298 tests passed, `npm run build` pass, `npm run test:e2e` 106 passed (phone and tablet, 9.7 min), docs link check 34 files / 509 links / 0 problems | Not deployed |
 | Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
 | Sales screens, refunds, restocks, Today and nav wiring, journey 4 (Phase 6 step 4: D7, D46, D48, D49, D51, D53) | Yes, `feat/p6-consignment` 67b1607, b65484a, 543760f, eccd687 and the closing docs commit: `/sales`, `/sales/[id]`, `RecordSaleSheet` / `SaleablePicker`, `RefundSheet`, `RestockControl`; Sell on the consignment item, unit and product pages; "Sold on S-…" with Restock on the unit page; `S-` in `/q` and the `sale` search kind; Sales in More; Today's consignment tiles linked | Locally: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 92 files / 1364 tests passed, `npm run build` pass (inside `test:e2e`), `npm run test:e2e` 118 passed on phone and tablet (13.3 min; an earlier run had 2 failures, the Today past-day note's old wording in `today.spec.ts`, fixed in eccd687), docs link check 34 files / 528 links / 0 problems | Not deployed |
+| Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment`, the review-fix commit after a8967c7 | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems | Not deployed |
 | Labels, Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
@@ -57,14 +69,16 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 - `feat/p6-consignment`: stacked on `feat/docs-stack`; committed locally,
   not pushed (34783d6 decisions D44–D53, step 1's commits, step 2's
   2d2ba0c and 2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and d8ba313,
-  step 4's 67b1607, b65484a, 543760f, eccd687 and the closing docs commit
-  with this update). The orchestrator pushes it and opens its PR on top of
-  `feat/docs-stack`.
+  step 4's 67b1607, b65484a, 543760f, eccd687 and a8967c7, and the review
+  fixes commit with this update). There is no origin branch of that name;
+  origin holds an orchestrator auto-save, `wip/feat/p6-consignment`
+  (ed7d27e, a snapshot of uncommitted work, not reviewed). The
+  orchestrator pushes it and opens its PR on top of `feat/docs-stack`.
 - Parallel track: a second worktree of this clone (`bicii-book-wt`, see
   `git worktree list`) with its own database builds purchasing and email
-  OTP. `feat/p7-purchasing` is local
-  only and forks from PR #6 (no appointments); it is merged in a later
-  integration step
+  OTP. `feat/p7-purchasing` (a0fc1d2) and `feat/auth-email-otp` (4b3eadd)
+  are pushed (equal to origin); purchasing forks from PR #6 (no
+  appointments); both are merged in a later integration step
   ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 - Local-only artifacts (git-ignored): `.env.local`, `.devstack/`,
   `test-results/`.

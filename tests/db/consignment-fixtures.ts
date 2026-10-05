@@ -618,6 +618,7 @@ export type ConsignorLedger = {
   active_items: number;
   awaiting_settlement_items: number;
   returned_items: number;
+  sold_items: number;
   liability: string;
   consignor_charges: string;
   owed: string;
@@ -632,7 +633,7 @@ export async function consignorLedger(
 ): Promise<ConsignorLedger> {
   const { rows } = await readAsOwner(tx, () =>
     tx.query<ConsignorLedger>(
-      `select items_total, active_items, awaiting_settlement_items, returned_items,
+      `select items_total, active_items, awaiting_settlement_items, returned_items, sold_items,
               to_char(liability, 'FM9999999990.00') as liability,
               to_char(consignor_charges, 'FM9999999990.00') as consignor_charges,
               to_char(owed, 'FM9999999990.00') as owed,

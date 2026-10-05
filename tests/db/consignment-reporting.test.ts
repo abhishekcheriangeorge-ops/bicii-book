@@ -436,7 +436,8 @@ describe("list_consignors (D48)", () => {
     customer_label: string | null;
     archived_at: Date | null;
     active_items: number;
-    awaiting_settlement_items: number;
+    sold_items: number;
+    awaiting_settlement_items: number | null;
     returned_items: number;
     owed: string | null;
     paid: string | null;
@@ -444,8 +445,8 @@ describe("list_consignors (D48)", () => {
   };
   const list = async (tx: pg.Client, q: string | null = null, archived = false) => {
     const { rows } = await tx.query<Row>(
-      `select id, display_name, customer_label, archived_at, active_items, awaiting_settlement_items,
-              returned_items, owed::text, paid::text, outstanding::text
+      `select id, display_name, customer_label, archived_at, active_items, sold_items,
+              awaiting_settlement_items, returned_items, owed::text, paid::text, outstanding::text
          from public.list_consignors($1, $2)`,
       [q, archived],
     );
@@ -454,7 +455,7 @@ describe("list_consignors (D48)", () => {
   const seeded = (rows: Row[]) =>
     rows.filter((r) => (Object.values(CONSIGNOR) as string[]).includes(r.id));
 
-  it("counts for every staff member; owed, paid and outstanding only with manage_consignments or view_costs", async () => {
+  it("item counts for every staff member; who is awaiting payment, owed, paid and outstanding only with manage_consignments or view_costs", async () => {
     await withRoles(async (tx, r) => {
       for (const [who, claims, money_] of [
         ["admin", r.admin, true],
@@ -486,7 +487,9 @@ describe("list_consignors (D48)", () => {
             who,
             key,
             active_items: want.active_items,
-            awaiting_settlement_items: want.awaiting_settlement_items,
+            sold_items: want.sold_items,
+            // Who still has money owed is consignment money (D48).
+            awaiting_settlement_items: money_ ? want.awaiting_settlement_items : null,
             returned_items: want.returned_items,
             owed: money_ ? want.owed : null,
             paid: money_ ? want.paid : null,

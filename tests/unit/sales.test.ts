@@ -6,8 +6,10 @@ import {
   BELOW_COST,
   previewSale,
   priceWarnings,
+  readSaleDay,
   readSaleRange,
   refundableAmount,
+  saleDayRange,
   saleRange,
   saleStatusLabel,
   saleStatusTone,
@@ -166,6 +168,21 @@ describe("saleRange (shop days in Singapore, D35)", () => {
     expect(readSaleRange("30d")).toBe("30d");
     expect(readSaleRange("year")).toBe("7d");
     expect(readSaleRange(undefined)).toBe("7d");
+  });
+
+  it("reads ?day= as one shop day (Today's consignment tile), midnight to midnight in Singapore", () => {
+    expect(readSaleDay("2026-10-03")).toBe("2026-10-03");
+    expect(readSaleDay("2026-02-31")).toBeNull();
+    expect(readSaleDay("today")).toBeNull();
+    expect(readSaleDay(undefined)).toBeNull();
+    expect(saleDayRange("2026-10-03")).toEqual({
+      from: "2026-10-02T16:00:00.000Z",
+      to: "2026-10-03T16:00:00.000Z",
+    });
+    expect(saleDayRange("2026-12-31")).toEqual({
+      from: "2026-12-30T16:00:00.000Z",
+      to: "2026-12-31T16:00:00.000Z",
+    });
   });
 });
 

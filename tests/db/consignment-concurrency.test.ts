@@ -22,6 +22,10 @@
  *     (0); sales take the stock lock (3) before units (5) and items (6), so
  *     a sale, a part and a return of one unit serialise; a settlement locks
  *     its items (6) and reads the outstanding after the lock.
+ *   * Refunds lock their sale row before summing earlier refunds against the
+ *     cap (D49); restocks take the consignor (0b), the stock (3), the unit
+ *     (5) and read the line's restocked_at under them (D46), so two refunds,
+ *     two restocks, or a restock and a sale of the same unit serialise.
  *
  * Commits, so the whole file runs only on a per-file clone (no cleanup).
  */
@@ -40,7 +44,10 @@ import {
   itemPosition,
   itemStatus,
   recordSale,
+  refund,
+  restock,
   returnItem,
+  saleLines,
   settle,
   type ItemResult,
 } from "./consignment-fixtures";
@@ -458,5 +465,92 @@ describe.skipIf(!isolatedDatabase())("consignment under concurrency", () => {
     expect(await count("public.consignment_settlements where id = $1", [settlementId])).toBe(1);
     expect(await count("public.settlement_lines where settlement_id = $1", [settlementId])).toBe(1);
     expect((await itemLedger(setup, item.item_id)).outstanding).toBe("0.00");
+  });
+  it("two refunds of one sale whose sum exceeds its total: the second waits on the sale and is refund_exceeds_sale", async () => {
+    const item = await consignedUnit();
+    const sale = await must(
+      committed(setup, (tx) =>
+        recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      ),
+    );
+    const give = (tx: pg.Client) => refund(tx, { saleId: sale.sale_id, amount: "600.00" });
+    const [first, second] = await race(give, give);
+    expect(first.ok).toBe(true);
+    failedWith(second, "refund_exceeds_sale");
+    expect(
+      await scalar<string>(
+        setup,
+        "select sum(amount)::text from public.sale_refunds where sale_id = $1",
+        [sale.sale_id],
+      ),
+    ).toBe("600.00");
+    expect(
+      await scalar<string>(setup, "select status::text from public.sales where id = $1", [
+        sale.sale_id,
+      ]),
+    ).toBe("partially_refunded");
+  });
+
+  it("a replayed refund id on two connections: one refund row; both return it", async () => {
+    const item = await consignedUnit();
+    const sale = await must(
+      committed(setup, (tx) =>
+        recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      ),
+    );
+    const refundId = randomUUID();
+    const give = (tx: pg.Client) =>
+      refund(tx, { refundId, saleId: sale.sale_id, amount: "1000.00" });
+    const [first, second] = await race(give, give);
+    expect(first.ok && second.ok).toBe(true);
+    expect(second.ok && second.value).toEqual(first.ok && first.value);
+    expect(await count("public.sale_refunds where sale_id = $1", [sale.sale_id])).toBe(1);
+  });
+
+  it("two restocks of one sale line: one return movement; the second is a no-op", async () => {
+    const item = await consignedUnit();
+    const sale = await must(
+      committed(setup, (tx) =>
+        recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      ),
+    );
+    const [line] = await saleLines(setup, sale.sale_id);
+    const back = (tx: pg.Client) =>
+      restock(tx, { unitId: item.inventory_unit_id!, saleLineId: line.id });
+    const [first, second] = await race(back, back);
+    expect(first.ok && second.ok).toBe(true);
+    expect(
+      await count(
+        "public.inventory_movements where sale_line_id = $1 and movement_type = 'return'",
+        [line.id],
+      ),
+    ).toBe(1);
+    expect((await unit(setup, item.inventory_unit_id!)).status).toBe("available");
+    expect(await onHand(setup, item.product_id)).toBe(1);
+    expect(await itemStatus(setup, item.item_id)).toBe("active");
+    expect((await itemLedger(setup, item.item_id)).liability).toBe("0.00");
+  });
+
+  it("a restock racing a new sale of the same unit: the sale waits, then sells the restocked unit; one live line", async () => {
+    const item = await consignedUnit();
+    const sale = await must(
+      committed(setup, (tx) =>
+        recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      ),
+    );
+    const [line] = await saleLines(setup, sale.sale_id);
+    const [back, again] = await race(
+      (tx) => restock(tx, { unitId: item.inventory_unit_id!, saleLineId: line.id }),
+      (tx) => recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+    );
+    expect(back.ok && again.ok).toBe(true);
+    expect(
+      await count("public.sale_lines where inventory_unit_id = $1 and restocked_at is null", [
+        item.inventory_unit_id,
+      ]),
+    ).toBe(1);
+    expect((await unit(setup, item.inventory_unit_id!)).status).toBe("sold");
+    expect(await onHand(setup, item.product_id)).toBe(0);
+    expect((await itemLedger(setup, item.item_id)).liability).toBe("500.00");
   });
 });
