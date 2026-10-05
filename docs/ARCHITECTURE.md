@@ -2,7 +2,9 @@
 
 Owner: the build agent, reviewed by the product owner (Abhishek Cherian
 George). Implementation inspected: `c6bf6d0` on 2026-10-05 (application code
-identical to `b34bbcd`, the head of PR #7).
+identical to `b34bbcd`, the head of PR #7); the Phase 6 and Phase 7 rows were
+added at their phases, Phase 7's at its integration with the main line on
+`feat/p7-purchasing`.
 
 This page describes the system as it is built. The decision of record is
 [ADR-001](ADR-001-architecture.md), whose body stays as written in PR #1;
@@ -117,6 +119,7 @@ replay, never a second movement.
 | Domain modules (server-only) | [src/lib/domain/](../src/lib/domain/) | RLS-scoped client, RPCs | the feature fails; rules still hold in SQL |
 | Consignment (Phase 6) | [src/lib/domain/consignment.ts](../src/lib/domain/consignment.ts) (consignors, items, intake, terms, charges, returns, settlements over `list_consignors`, `consignor_statement`, `consignor_payout_details` and the step 1–2 RPCs); screens `src/app/(staff)/consignment/` (`page.tsx` with `?view=consignors\|items`, `consignors/[id]`, `items/[id]`, `actions.ts`); sheets in `src/components/domain/` (consignor, intake, charge, settlement, item controls); pure rules in [src/lib/consignment.ts](../src/lib/consignment.ts) (labels, `autoAllocate`, `allocationProblems`, `paidAtFromDate`) and [consignment-forms.ts](../src/lib/consignment-forms.ts); access mirrors `canViewConsignmentMoney` / `canViewSaleCosts` / `canRecordRefund` in [permissions.ts](../src/lib/auth/permissions.ts) (D48, D49) | RLS-scoped client; the consignment RPCs and the ledger views behind them | consignors cannot be paid or items received; owed, paid and outstanding stay correct because they are derived in SQL (D46). A consignor's totals are summed in the domain module from the item rows, which is how `reporting.consignor_ledger` defines them |
 | Sales (Phase 6) | [src/lib/domain/sales.ts](../src/lib/domain/sales.ts) (`listSales`, `getSale`, `saleForUnit`, `searchSaleable`, `recordRetailSale`, `restockUnit`, `recordSaleRefund` over `list_sales`, `sale_lines_detail`, `saleable_stock`, `record_retail_sale`, `restock_unit`, `record_sale_refund`); screens `src/app/(staff)/sales/` (`page.tsx`, `[id]/page.tsx`, `actions.ts`); `RecordSaleSheet` / `SaleablePicker` and `RefundSheet` / `RestockControl` in `src/components/domain/`; pure rules in [src/lib/sales.ts](../src/lib/sales.ts) (`previewSale` over `lineEconomics`, `priceWarnings`, `saleRange`, `refundableAmount`, status words) and [sales-forms.ts](../src/lib/sales-forms.ts); Sell on the consignment item, unit and product pages | RLS-scoped client; the sale RPCs; `private.sell_line` in the database is the single sale-line writer that Phase 10 reuses with `online_sale` | no sale can be recorded; stock, units, consignment and the reports stay consistent because every effect is inside `record_retail_sale` |
+| Purchasing (Phase 7) | [src/lib/domain/purchasing.ts](../src/lib/domain/purchasing.ts) (orders, lines, receipts, `receivePurchase` with the lookup `findReceiptByKey`, reorder, the product page's `getProductPurchasing`) and [suppliers.ts](../src/lib/domain/suppliers.ts); screens `src/app/(staff)/purchasing/` (the `(browse)` group: orders, `orders/[id]`, suppliers, `suppliers/[id]`; outside it, manage_purchasing only with a real 403, `receive/[id]` and `reorder`); components in `src/components/domain/purchasing/`; pure rules in [src/lib/purchasing.ts](../src/lib/purchasing.ts), [purchasing-forms.ts](../src/lib/purchasing-forms.ts) and [receive-form.ts](../src/lib/receive-form.ts) (the Receive screen's idempotency state machine); cost visibility mirrors `private.can_view_purchase_costs()` (D60) | RLS-scoped client; the purchasing RPCs and `reporting.purchase_order_progress` / `product_on_order` | nothing can be ordered or received; a delivery is still recorded once per submission key and stock moves only through `receive_purchase` |
 | Consigned job parts (D44) | `searchParts` in [inventory.ts](../src/lib/domain/inventory.ts) (consigned units and the FIFO-head consignment of quantity stock, D45), `loadParts` in [lines.ts](../src/lib/domain/lines.ts) (a line's consignment) | `consignor_statement` for the FIFO head and the cost preview | the part sheet does not offer consigned stock; `add_inventory_line` still applies D44 |
 | Supabase clients | [server.ts](../src/lib/supabase/server.ts), [browser.ts](../src/lib/supabase/browser.ts), [service.ts](../src/lib/supabase/service.ts) | anon key + session; service-role key (server only) | no data access |
 | Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API) | `SUPABASE_SERVICE_ROLE_KEY` | staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
@@ -147,6 +150,8 @@ reasoning is ADR-001's; the "small team" point is inferred.
 | Customers through `my_*` RPCs, anonymous through explicit projections | [ADR-003](decisions/ADR-003-customer-access.md) |
 | Cult Commons per line with a rate snapshot | [ADR-004](decisions/ADR-004-cult-commons.md) |
 | One shop time zone and currency in SQL | [ADR-012](decisions/ADR-012-shop-time-zone-and-currency.md) |
+| Consignment and in-store sales | [ADR-016](decisions/ADR-016-consignment-and-sales.md) |
+| Purchasing: cost visibility, last cost, receipts, reorder | [ADR-018](decisions/ADR-018-purchasing.md) |
 
 All records: [decisions/README.md](decisions/README.md).
 
@@ -203,6 +208,21 @@ All records: [decisions/README.md](decisions/README.md).
   transfers and `saleable_stock` read it under the product's stock lock,
   so a consignor is charged only for stock that was where it was sold
   ([ADR-016](decisions/ADR-016-consignment-and-sales.md)).
+- Purchasing (Phase 7): a delivery is one `receive_purchase` call with a
+  client-made idempotency key per submission; a replay returns the first
+  receipt, and a lost response is resolved by looking the key up
+  (`purchase_receipt_by_key`) before any retry. Stock enters the ledger
+  through `private.record_receipt_movement`, beside `record_movement` and
+  Phase 6's `record_linked_movement`; Phase 6's movement rules still apply,
+  and purchasing holds shop-owned counted products only (D62), so consigned
+  stock never arrives on a PO. Lock order: the PO row, then
+  `private.lock_stock` per product in ascending id, then products and
+  supplier links (the header of `20261005000100_suppliers.sql`). Purchase
+  costs are for `view_costs` or `manage_purchasing` through definer
+  `*_staff` views ([ADR-018](decisions/ADR-018-purchasing.md)).
+- Search: `staff_search` is one function replaced whole by each phase that
+  adds a kind; the latest (`20261005000400_purchasing_search.sql`) carries
+  every kind, and a DB test checks it against `SEARCH_KINDS`.
 - Errors: `P0001` with a stable code, `42501` for authorization, `P0002` for
   missing rows; mapped in [src/lib/db-errors.ts](../src/lib/db-errors.ts)
   ([DATA-MODEL §16](DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public)).
@@ -211,7 +231,7 @@ All records: [decisions/README.md](decisions/README.md).
 
 | Concern | Measured fact | Assumption or unknown | Revisit trigger |
 |---|---|---|---|
-| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2 and the review fixes: intake, returns, parts, completions, sales, settlements, refunds and restocks; each case proves the second call waits on a lock) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 on `feat/p6-consignment` (89 files, 1298 tests) | Behaviour under real shop load | First hosted use |
+| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2 and the review fixes: intake, returns, parts, completions, sales, settlements, refunds and restocks; each case proves the second call waits on a lock), `purchasing-concurrency` (Phase 7: the same receipt key twice, two keys racing for one line, a receipt against a quantity change or a job part, opposite-order receipts, racing preferred links) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on `feat/p7-purchasing` at the Phase 7 integration (102 files, 1517 tests) and again after its review fixes (102 files, 1518 tests), every concurrency file above included | Behaviour under real shop load | First hosted use |
 | Load and latency | Not measured | Single shop, a few staff | Slow screens reported, or Phase 9 reports |
 | Upload size | 20 MiB per object on both buckets (`file_size_limit` 20971520); photos are scaled to at most 2048 px and re-encoded as JPEG in the browser first (`prepare-photo.ts`) | Hosted Storage limits per plan | Hosted project created |
 | Hosted behaviour | None: everything runs on the devstack | Platform roles, Auth settings and versions may differ | [R-001](RISKS.md#r-001--nothing-is-deployed), [R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase) |
@@ -225,14 +245,15 @@ All records: [decisions/README.md](decisions/README.md).
   nothing hosted, nothing recoverable yet, and the local platform is a
   re-creation.
 - [R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6):
-  the open PR stack and the parallel purchasing branch.
+  the stack is merged; purchasing is integrated with `main` on its branch
+  and waits for its PR; OTP and labels are still on their own branches.
 - [R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp): an owner
   change not yet on this line (email OTP is on the parallel track); the D27
   change ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet))
   was built in Phase 6 step 1.
 - [R-018](RISKS.md#r-018--four-sections-are-placeholder-pages):
-  purchasing, labels and reports are placeholders by design, not defects
-  (consignment and sales were built in Phase 6).
+  labels and reports are placeholders by design, not defects (consignment
+  and sales were built in Phase 6, purchasing in Phase 7).
 - The lock order and the single helpers in
   [DATA-MODEL §7](DATA-MODEL.md#7-inventory-movement-ledger) before touching
   any stock path: work order → line → stock → bikes → units → consignment

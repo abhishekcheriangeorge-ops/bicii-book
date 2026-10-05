@@ -4,16 +4,19 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: commit f32dc45 (application code identical to b34bbcd; not
-deployed; on a developer machine at http://localhost:3000).
+Applies to: `feat/p7-purchasing` at the Phase 7 integration with the main
+line (the merge 06979ec and its documentation commit; not deployed; on a
+developer machine at http://localhost:3000).
 
 Last walkthrough: not walked through by a person. These flows are exercised
 by the E2E specs `tests/e2e/auth.spec.ts`, `workshop.spec.ts`,
 `workshop-board.spec.ts`, `inventory.spec.ts`, `inventory-publish.spec.ts`,
 `scan.spec.ts`, `appointments.spec.ts`, `appointment-settings.spec.ts`,
-`today.spec.ts`, `customers-bikes.spec.ts` and `staff.spec.ts`, on an
-iPhone 13 and an iPad viewport: 106 passed locally on 2026-10-05, and
-the latest green CI run is [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
+`today.spec.ts`, `customers-bikes.spec.ts`, `staff.spec.ts`,
+`consignment.spec.ts`, `consignment-journey.spec.ts`, `sales.spec.ts` and
+`purchasing.spec.ts`, on an iPhone 13 and an iPad viewport: 138 passed
+locally at the Phase 7 integration on 2026-10-05, and the latest green CI
+run on GitHub is [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
 Where a step below is not covered by a spec, it says so.
 
 ## Your first useful result
@@ -315,6 +318,75 @@ Settings → Your profile.
   disabled). "Give a reason for this stock change." "Choose two different
   locations." "That location is inactive. Choose another or reactivate it."
 
+### Order from a supplier
+
+- Before you start: you need **Manage purchasing**. Only counted,
+  shop-owned, active products can be ordered (D62): unique items are
+  registered one by one in Stock, and consigned stock comes in through
+  **Receive item** in Consignment, never on an order.
+- Steps:
+  - **Purchasing** → **Suppliers** → **New supplier** for someone new:
+    **Name**, **Contact name**, **Phone**, **Email**, **Website**,
+    **Account reference** (BICII's account number with them), then
+    **Create supplier**.
+  - On the supplier's page, **New order** (the supplier is fixed), or
+    **Purchasing** → **New order** and pick the supplier. Optionally a
+    **Supplier reference** and an expected date; **Create order** opens
+    the draft.
+  - **Add line**: search the product (each option shows on hand and on
+    order), then **Quantity** and **Unit cost**, prefilled from the
+    supplier's last cost or the product's cost when there is one;
+    **Add line**. Change a line with its **Change line** button.
+  - **Submit order** when it is sent to the supplier.
+- Success looks like: the order's `PO-` number and the status Submitted;
+  the product page's **Suppliers & orders** card shows "On order".
+- If it fails: "Only shop-owned products can be ordered from a supplier."
+  (a consigned or customer-owned product); "That product is already on
+  this order. Change its line instead."; "An order needs at least one
+  line." To stop an order, **Cancel order…** with a reason (D61): what was
+  already received stays in stock.
+
+### Receive a delivery
+
+- Before you start: you need **Manage purchasing**; the order is submitted
+  (a draft says "Submit the order before receiving").
+- Steps:
+  - Open the order (scan or type its `PO-` number) → **Receive**.
+  - For each line, **Receive now** (it starts at what is still to come)
+    and the **Actual unit cost** from the supplier's note ("Differs" shows
+    when it is not the ordered cost; 0 is allowed for free goods);
+    **Receive into** a location (each line can go somewhere else).
+  - **Delivery note reference**, **Received** (now unless the note is older;
+    at most 30 days back, D64) and **Notes**.
+  - Press **Receive N items** once.
+- Success looks like: "Received 18 items. 2 still to come.", the order
+  Partially received with "18 of 20 received · 2 to come", or Received when
+  everything has come. The stock goes up once, and the product's cost and
+  the supplier's last cost become the actual cost (D5, D63).
+- If it fails: more than is to come is refused; raise the line's ordered
+  quantity on the order first (D65). If the connection drops, the screen
+  checks whether the delivery was recorded and either shows it or offers
+  **Retry**, which never receives twice. A delivery note already recorded
+  on this order asks you to tick **This is a different delivery**. A wrong
+  count after receiving is corrected with **Adjust stock** and a reason;
+  a fully received order is closed, so extra units go on a new order.
+
+### Reorder low stock
+
+- Before you start: you need **Manage purchasing**.
+- Steps: **Purchasing** → **Reorder** (also from the Inventory low-stock
+  filter and Today's low-stock tile). Choose the **Supplier**; products
+  linked to it start ticked, each with on hand, on order and a suggested
+  quantity (twice the reorder point less what is on hand and on order,
+  D66). Press **Create draft order (N products)**.
+- Success looks like: a draft order with those lines at the supplier's
+  last cost; check quantities and costs, then **Submit order**.
+- Only shop-owned products are listed. A consigned product below its
+  reorder point still counts on Today and the Inventory low-stock filter,
+  but it is never reordered here: more of it comes from its consignor
+  through intake. If only consigned products are low, the list says
+  "Nothing is below its reorder point."
+
 ### Publish a product
 
 - Before you start: Manage inventory. Publishing needs **A name**, **A sale
@@ -412,7 +484,7 @@ prices and sale totals are visible to all; costs are not.
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite, permissions and deactivation, only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
-| Manage purchasing | Nothing yet on this branch |
+| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history, D60), not job, sale, product-page or report costs (supplier last costs on a product's **Suppliers & orders** card need View costs) |
 
 Without a permission, its buttons are absent and the figures are not sent
 to your screen at all. Opening a page you may not use shows "You can't open
@@ -425,8 +497,12 @@ consignments or View costs (D48). Anyone may record an in-store sale and
 see its total; its cost, yield and Cult Commons need View costs, and only
 an admin records a refund (D48, D49).
 
-Not available yet: **Purchasing**, **Labels** and **Reports** show
-"Arrives in Phase 7 (Purchasing)", "Phase 8 (QR and labels)" and "Phase 9
-(Reporting)" ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
+Everyone can open Purchasing, its orders and suppliers, and see what is
+ordered, received and still to come; costs on those screens need View
+costs or Manage purchasing (D60).
+
+Not available yet: **Labels** and **Reports** show "Phase 8 (QR and
+labels)" and "Phase 9 (Reporting)"
+([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 There is no reschedule, no customer messaging and no data export. Help:
 ask the owner or an admin.

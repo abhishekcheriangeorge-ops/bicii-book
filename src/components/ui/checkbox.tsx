@@ -50,7 +50,8 @@ export function Checkbox({ label, description, className, id, ...props }: Checkb
           <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </span>
-      <span className="flex flex-col gap-0.5">
+      {/* min-w-0: a long unbroken word in the label wraps instead of widening the page. */}
+      <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-base leading-6 font-medium">{label}</span>
         {description ? (
           <span id={descId} className="text-sm text-dust-500">

@@ -21,6 +21,7 @@ import {
   type ProductFilter,
 } from "@/lib/domain/inventory";
 import { publicationLabel, publicationTone } from "@/lib/inventory";
+import { canManagePurchasing } from "@/lib/purchasing";
 import { readQuery, withParam } from "@/lib/search-params";
 import { createClient } from "@/lib/supabase/server";
 
@@ -112,9 +113,17 @@ export default async function InventoryPage({ searchParams }: PageProps<"/invent
         />
       </div>
       <section aria-labelledby="product-results" className="flex flex-col gap-2">
-        <h2 id="product-results" className="eyebrow text-dust-500">
-          {heading}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="product-results" className="eyebrow text-dust-500">
+            {heading}
+          </h2>
+          {/* Purchasing (Phase 7): a draft order from what is low (D66). */}
+          {filter === "low" && !q && canManagePurchasing(staff) ? (
+            <ButtonLink href="/purchasing/reorder" variant="outline" size="sm">
+              Reorder
+            </ButtonLink>
+          ) : null}
+        </div>
         {more && q ? (
           <p className="text-sm text-dust-700">
             There are more. Add more of the P- number, SKU or name to narrow it down.

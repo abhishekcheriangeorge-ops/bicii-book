@@ -288,6 +288,20 @@
     overflow-x: clip;
   }
 
+  /* A page with a sticky action footer (data-sticky-footer: Receive,
+     Reorder) keeps a focused or scrolled-to control clear of it and of the
+     phone tab bar below it (WCAG 2.4.11). scroll-padding on the root, not
+     scroll-margin on the controls: Chromium's focus scrolling honours only
+     the former. */
+  html:has([data-sticky-footer]) {
+    scroll-padding-bottom: calc(11.5rem + env(safe-area-inset-bottom));
+  }
+  @media (width >= 48rem) {
+    html:has([data-sticky-footer]) {
+      scroll-padding-bottom: 7rem;
+    }
+  }
+
   body {
     background-color: var(--color-paper);
     color: var(--color-ink);

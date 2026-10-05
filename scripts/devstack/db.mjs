@@ -83,7 +83,7 @@ async function types(args) {
   const fresh = args.includes("--fresh");
   let url = databaseUrl();
   if (fresh) {
-    url = withDatabase(url, "bicii_typegen");
+    url = withDatabase(url, `bicii_typegen_${process.pid}`);
     log(`building throwaway database ${redact(url)}`);
     await buildDatabase(url, { seed: false, onStep: () => {} });
   }

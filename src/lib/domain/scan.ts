@@ -16,7 +16,7 @@ import type { ServerSupabase } from "@/lib/supabase/server";
  *   U  inventory_units.short_id   -> /units/[id]
  *   C  consignment_items.short_id -> /consignment/items/[id] (Phase 6)
  *   S  sales.sale_number          -> /sales/[id] (Phase 6)
- *   PO purchase orders: Phase 7 adds its case here
+ *   PO purchase_orders.po_number  -> /purchasing/orders/[id] (Phase 7)
  *
  * This is the only Admin resolver and /q/[shortId] the only Admin /q
  * route: later phases extend this function rather than adding routes, and
@@ -70,7 +70,15 @@ export async function resolveShortId(
           ?.id ?? null;
       break;
     case "purchase_order": // Phase 7
-      return null;
+      id =
+        unwrap(
+          await supabase
+            .from("purchase_orders")
+            .select("id")
+            .eq("po_number", shortId)
+            .maybeSingle(),
+        )?.id ?? null;
+      break;
   }
   if (!id) return null;
   const href = hrefForRecord(kind, id);

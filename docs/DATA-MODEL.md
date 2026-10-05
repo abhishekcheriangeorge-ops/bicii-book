@@ -45,11 +45,12 @@ This section was added by the documentation retrofit (2026-10-05, inspected
 at `c6bf6d0`). The numbered sections below are never renumbered; code and
 migration comments cite them as "DATA-MODEL §n".
 
-**Authority.** The schema source is the 37 files in
+**Authority.** The schema source is the 42 files in
 [supabase/migrations/](../supabase/migrations/), from
-`20261004000100_foundation.sql` to `20261004003700_consignment_reporting.sql`
-(on `feat/p6-consignment`; Phase 6 added the last five, `20261004003300` to
-`20261004003700`).
+`20261004000100_foundation.sql` to `20261005000500_purchasing_reorder.sql`
+(Phase 6 added `20261004003300` to `20261004003700`; Phase 7, purchasing,
+integrated onto the main line on `feat/p7-purchasing`, added the five
+`20261005…` files, which sort after every `20261004…` file).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
@@ -61,10 +62,11 @@ document is corrected.
 
 **Applied state.**
 
-- Local: on 2026-10-05, after `npm run db:reset` on `feat/p6-consignment`
-  (the Phase 6 review fixes; `npm run test:e2e` resets the same database),
-  `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
-  printed `37|20261004003700` (every file applied).
+- Local: on 2026-10-05, after `npm run db:reset` on `feat/p7-purchasing`
+  at the Phase 7 integration (the second worktree's database,
+  `PGDATABASE=bicii_dev_wt`; `npm run test:e2e` resets the same database),
+  `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev_wt -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
+  printed `42|20261005000500` (every file applied).
 - CI: the `check` job diffs the generated types against a throwaway
   database built from the migrations, and the `test` and E2E jobs run
   `npm run db:reset` (migrations, then the seed) before testing
@@ -77,7 +79,7 @@ document is corrected.
 **Implementation status on this branch.** Determined by matching each
 section's tables, views and functions against `create table`, `create view`
 and `create function` statements in the migrations (file names below drop
-the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
+the `20261004` prefix; Phase 7's keep `20261005`). For planned tables, the rows of §15 and the RPCs of
 §16 are design, not schema.
 
 | Section | Status | Where, or what is missing |
@@ -87,19 +89,19 @@ the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
 | §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2) |
 | §4 Workshop | Implemented | `001300_work_orders`, `001500_workshop_rpcs`, `001600_workshop_customer_access`, `001700_workshop_search` |
 | §5 Services and line items | Implemented | `001200_workshop_catalog`, `001400_work_order_lines`, `001500_workshop_rpcs`; consigned-part columns `003300_consignment`, their rules `003400_consignment_job_parts` (D44) |
-| §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; `003300_consignment` adds the units' consignment foreign key, ownership rules and the consignment branch of `private.selling_price`; the sale-line columns have their foreign keys since `003500_sales`; Shopify reference columns wait for Phase 10; `supplier_products` moved to Phase 7 |
-| §7 Inventory movement ledger | Implemented | `001800_inventory`, `001900_inventory_jobs`, `002000_inventory_reporting`; `003300_consignment` adds the consignment foreign key, D50's movement rules and `private.record_linked_movement`; `003500_sales` adds the sale-line foreign keys and `inventory_movements_restock_once`; receipt references wait for Phase 7 |
+| §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; `003300_consignment` adds the units' consignment foreign key, ownership rules and the consignment branch of `private.selling_price`; the sale-line columns have their foreign keys since `003500_sales`; Shopify reference columns wait for Phase 10; `supplier_products` is Phase 7's (§10) |
+| §7 Inventory movement ledger | Implemented | `001800_inventory`, `001900_inventory_jobs`, `002000_inventory_reporting`; `003300_consignment` adds the consignment foreign key, D50's movement rules and `private.record_linked_movement`; `003500_sales` adds the sale-line foreign keys and `inventory_movements_restock_once`; `20261005000300_purchase_receiving` adds the receipt-line foreign key, `inventory_movements_purchase_received_has_receipt_line` and `private.record_receipt_movement` |
 | §8 Sales | Implemented | `sales`, `sale_lines`, `sale_refunds`, `private.sell_line`, `record_retail_sale`, `restock_unit`, `record_sale_refund` (`003500_sales`; the partial unique index `sale_lines_unit_sells_once` replaces this section's plain `unique`, D46). Screens: Phase 6 step 4 (`src/app/(staff)/sales/`, `src/lib/domain/sales.ts`). Shopify orders reuse `private.sell_line` in Phase 10 |
 | §9 Consignment | Implemented | Phase 6 step 1: consignors, items, charges, item history, returns, `reporting.consignment_item_position`, consigned job parts (`003300_consignment`, `003400_consignment_job_parts`; D44–D52); step 2: settlements, reversals, the ledgers and the balance rule (`003600_consignment_settlements`; D46, D47). Screens: step 3 (`src/app/(staff)/consignment/`, `src/lib/domain/consignment.ts`); selling a consigned item in store: step 4 (Sell on the item page, `/sales`) |
-| §10 Suppliers and purchasing | Planned | Phase 7; built only on the parallel branch `feat/p7-purchasing`, not on this line |
-| §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`). Missing: the QR base decision and labels (Phase 8), PO- resolution (Phase 7; `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4), the public `/q` route (Phase 11) |
+| §10 Suppliers and purchasing | Implemented | Phase 7: `20261005000100_suppliers`, `…0200_purchase_orders`, `…0300_purchase_receiving`, `…0400_purchasing_search`, `…0500_purchasing_reorder` (D60–D66). Screens: `src/app/(staff)/purchasing/`, `src/lib/domain/purchasing.ts`, `src/lib/domain/suppliers.ts`. Purchases are shop-owned quantity products only (D62; consigned products are refused, `purchase_line_not_shop_owned`) |
+| §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`). `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4, `PO-` to the purchase order since Phase 7. Missing: the QR base decision and labels (Phase 8), the public `/q` route (Phase 11) |
 | §12 Label printing | Planned | Phase 8 (browser/PDF), Phase 12 (hardware) |
 | §13 Shopify integration | Planned | Phase 10; only reserved columns exist (`customers.shopify_customer_id`, the product Shopify ids) |
-| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. Missing: `stock_reconciliation` (Phase 9), `purchase_order_progress` (Phase 7), `shopify_sync_status` (Phase 10) |
-| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1) and sales and settlements (step 2, D48); rows for purchasing, labels and integrations are design |
-| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`); `receive_purchase` and the Shopify processors are design |
-| §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`), S from step 2 (`sales`); PO is reserved for Phase 7 |
-| §18 Seed data | Partly | Phase 1–5, Phase 2 and Phase 6 parts are in `supabase/seed.sql`; the suppliers and purchase order of the opening list wait for Phase 7 |
+| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `purchase_order_progress` and `product_on_order` (Phase 7). Missing: `stock_reconciliation` (Phase 9), `shopify_sync_status` (Phase 10) |
+| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48) and purchasing (Phase 7, D60); rows for labels and integrations are design |
+| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`), and the fourteen purchasing RPCs (Phase 7, `receive_purchase(purchase_order_id, idempotency_key, lines, reference, received_at, notes)` among them); the Shopify processors are design |
+| §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`), S from step 2 (`sales`), PO from Phase 7 (`purchase_orders`) |
+| §18 Seed data | Implemented | Phase 1–5, Phase 2, Phase 6 and Phase 7 parts are in `supabase/seed.sql` (Phase 7's last) |
 
 **Access summary.** The matrix is [§15](#15-row-level-security-matrix) and
 the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
@@ -109,7 +111,7 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 | anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`; objects in the public bucket `media-public` by URL, with no listing ([§2](#2-customers-bikes-attachments), [§15](#15-row-level-security-matrix)); nothing else | grants, RLS, definer projections, public bucket (`20261004000800_media_storage.sql`) | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access` |
 | customer (signed in) | own rows only, through `my_*` RPCs; base tables return nothing | staff-only RLS, `private.current_customer_id()` | `customer-access`, `workshop-customer-access`, `appointment-customer-access` |
 | staff (active) | base tables through RLS; cost columns hidden | `private.is_staff()`, column grants, `*_staff` views | `staff-rls`, `work-order-lines`, `inventory-catalog` |
-| staff with a permission | costs, inventory writes, stock changes, financial reports, staff management | `private.require_permission` / `has_permission` in RPCs | `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger` |
+| staff with a permission | costs, inventory writes, stock changes, financial reports, staff management, consignment money, purchasing (`manage_purchasing` also sees purchase costs on purchasing surfaces, D60) | `private.require_permission` / `has_permission` in RPCs; `private.can_view_purchase_costs()` | `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger`, `purchasing-access` |
 | admin | everything above plus settings, hours, rates and admin staff | `private.require_admin()`, `private.is_admin()` | `staff-management`, `staff-history`, `schedule-settings` |
 | service role | bypasses RLS; used only for the Auth admin API in `src/lib/admin/` | ESLint import restriction, `server-only` | no dedicated test |
 
@@ -1054,7 +1056,13 @@ and `void_line` refuse with `bike_with_customer`, and
 `private.assert_unit_consistent` is the backstop. `bikes.inventory_unit_id`
 has its FK and a unique index; `private.register_unit` sets it.
 
-`supplier_products` moved to Phase 7 (`suppliers` does not exist before).
+`supplier_products` (Phase 7, §10): several suppliers per product, PK
+(supplier_id, product_id), `supplier_sku`, `lead_days` 0..365, at most one
+`preferred` per product (`supplier_products_one_preferred`), and the
+supplier's `last_unit_cost` / `last_received_at`, written only by
+`receive_purchase` (D63). `last_unit_cost` is a purchase cost (D60): no
+column grant; read through `supplier_products_staff`. Links are written by
+`set_supplier_product` / `remove_supplier_product` (manage_purchasing).
 
 Quantity products print one QR (`P-...`) any number of times. Unique units
 print their own (`U-...`). A bulk unit that becomes special is
@@ -1067,8 +1075,9 @@ unit id.
 ## 7. Inventory movement ledger
 
 ```
-inventory_movements  (append-only for every writer; inserted only through private.record_movement
-                      or its Phase 6 twin private.record_linked_movement)
+inventory_movements  (append-only for every writer; inserted only through private.record_movement,
+                      its Phase 6 twin private.record_linked_movement, or Phase 7's
+                      private.record_receipt_movement for purchase_received)
   id bigint identity PK
   product_id uuid not null -> products
   inventory_unit_id uuid null -> inventory_units
@@ -1081,7 +1090,7 @@ inventory_movements  (append-only for every writer; inserted only through privat
   work_order_id uuid null -> work_orders
   work_order_line_item_id uuid null -> work_order_line_items
   sale_line_id uuid null                   -- FK in Phase 6
-  purchase_receipt_line_id uuid null       -- FK in Phase 7
+  purchase_receipt_line_id uuid null -> purchase_receipt_lines   -- FK since Phase 7
   consignment_item_id uuid null -> consignment_items   -- FK since Phase 6 step 1
   request_id uuid null                     -- the calling RPC's per-call key;
                                            -- a transfer's two rows share it
@@ -1095,6 +1104,8 @@ inventory_movements  (append-only for every writer; inserted only through privat
   check inventory_movements_reversal_shape: (type = reversal) = (reversal_of_id is not null)
   check inventory_movements_job_consumption_shape: job_consumption needs the job and line, delta < 0
   check inventory_movements_damaged_negative, inventory_movements_transfer_request
+  check inventory_movements_purchase_received_has_receipt_line (Phase 7):
+        movement_type <> 'purchase_received' or purchase_receipt_line_id is not null
 ```
 
 `request_id` replaces the original `transfer_group_id`: it is each call's
@@ -1121,6 +1132,17 @@ and `inventory_units.sold_sale_line_id` their foreign keys to `sale_lines`
 
 Plus btree indexes on (product_id, location_id, id), (inventory_unit_id,
 id), work_order_id, work_order_line_item_id, created_by and (id desc).
+
+Phase 7 added only the foreign key
+`inventory_movements_purchase_receipt_line_id_fkey` (→
+`purchase_receipt_lines`, on delete restrict) and the check
+`inventory_movements_purchase_received_has_receipt_line`; uniqueness per
+receipt line is Phase 4's `inventory_movements_receipt_line_once`, and no
+second index was added. Movements keep record time in `created_at` (there
+is no effective-date column): a `purchase_received` movement's reason
+carries the delivery time in shop time (`'PO-000034 received 25 Sep 2026
+10:42'`), and purchasing reports and the last-cost order use
+`purchase_receipts.received_at` (D64 D-RECEIPT-TIME).
 
 `inventory_movements_enforce_rules` (BEFORE INSERT) requires a unit for a
 unique product and forbids one for a quantity product, checks the unit's
@@ -1233,6 +1255,7 @@ Private extension points (security definer, no grants):
 |---|---|
 | `private.record_movement(product, unit, location, delta, type, reason, unit_cost_snapshot, request_id, work_order_id, line_id, reversal_of_id)` | THE single insert path; currency from the product; refuses an inactive location except for a reversal |
 | `private.record_linked_movement(…the same eleven…, sale_line_id, consignment_item_id)` | Phase 6's twin with exactly the same rules (P0002 for a missing product or location, `location_inactive` unless a reversal, check and not-null violations without the row) that also writes `sale_line_id` and `consignment_item_id`; `record_movement` is unchanged (the purchasing track added its own twin the same way). No grants |
+| `private.record_receipt_movement(product, location, quantity, unit_cost_snapshot, purchase_receipt_line_id, reason)` | Phase 7: the purchase twin of `record_movement` (which has no receipt-line parameter and is left alone). Same rules: currency from the product, P0002 for a missing product or location, `location_inactive`, check/not-null violations re-raised without the row; movement_type `purchase_received`; Phase 6's D50 trigger refuses it on a consigned product (`consignment_stock_adjust_blocked`), and D62 keeps such products off every PO. Called only by `receive_purchase` |
 | `private.register_unit(unit_id, product, location, ownership, serial, condition, sale_price, direct_cost, bike_id, consignment_item_id)` | THE single unit-creation path, plus the bike link; Phase 6 creates consigned units through it |
 | `private.selling_price(product_id, unit_id)` | THE single selling-price source: unit.sale_price, else product.default_sale_price. Phase 6 step 1 replaced it (same signature, `language sql stable security definer`, grants re-stated) to return the consignment asking price (§6, D45); Phase 8 labels and Phase 10 Shopify use it unchanged. EXECUTE for authenticated and anon, because the cost views and `reporting.public_items` call it as the caller (`create or replace` keeps the grants) |
 | `private.lock_stock(product_id)` | the per-product stock lock |
@@ -1508,48 +1531,213 @@ archived only with no active item and an outstanding of exactly 0.
 
 ## 10. Suppliers and purchasing
 
+Built in Phase 7 (migrations `20261005000100_suppliers`,
+`20261005000200_purchase_orders`, `20261005000300_purchase_receiving`;
+PLAN D5, D9, D24 as amended, D60–D65). Every table is staff-readable
+(RLS `private.is_staff()`), has no DELETE grant, and is written only
+through the §16 RPCs, except `suppliers` (column grants, manage_purchasing
+policies).
+
 ```
-suppliers
-  id, name, contact_name, email, phone, website, account_reference, notes,
-  active, created_at, updated_at, archived_at
+suppliers                                   -- soft delete only; no `active` column
+  id uuid PK (client-supplied on create, like customers)
+  name text not null                        -- trimmed, non-blank, ≤ 200; unique among
+                                            -- active rows: suppliers_name_active_key on lower(name)
+  contact_name ≤ 200, email citext (customers' shape check), phone ≤ 40,
+  website ≤ 300 matching ^https?://\S+$, account_reference ≤ 100
+  (BICII's account number at the supplier), notes ≤ 10000   -- blanks stored as NULL
+  search_text (generated: lower name, contact, email, account ref),
+  phone_digits (generated, as customers)    -- both trigram GIN
+  created_at, updated_at, archived_at
+  BEFORE UPDATE suppliers_guard_open_orders: archiving with a draft, submitted or
+  partially_received PO raises supplier_has_open_orders
+
+supplier_products                           -- §6; several suppliers per product
+  PK (supplier_id, product_id), both on delete restrict; index (product_id)
+  supplier_sku ≤ 100, lead_days 0..365, preferred boolean (unique index
+  supplier_products_one_preferred on (product_id) where preferred)
+  last_unit_cost money_amount ≥ 0 null      -- D60: no column grant; supplier_products_staff
+  currency char(3) not null (no default)    -- the product's on link, the PO's on receipt
+  last_received_at timestamptz null, created_at, updated_at
 
 purchase_orders
-  id uuid PK
-  po_number text not null unique           -- PO-000034
-  supplier_id uuid -> suppliers
-  status po_status not null default 'draft'
-     -- enum: draft | submitted | partially_received | received | cancelled
-  expected_at date null
-  currency char(3), notes text
-  created_by, created_at, updated_at
+  id uuid PK (client-supplied; create is replay-safe by id)
+  po_number text unique, ^PO-[0-9]{6}$       -- always assigned by the BEFORE INSERT
+                                            -- trigger from private.next_short_id('PO'),
+                                            -- immutable (purchase_order_number_immutable)
+  supplier_id -> suppliers (changes only while draft: purchase_order_supplier_locked;
+                            an archived supplier is refused: supplier_archived)
+  status purchase_order_status default 'draft'
+     -- draft | submitted | partially_received | received | cancelled
+  expected_at date, supplier_reference ≤ 100 (the supplier's order/quote no.),
+  currency char(3) not null                 -- private.shop_currency() at creation (D62)
+  notes ≤ 2000, created_by/at, updated_at
+  submitted_at/by, received_at (when fully received), cancelled_at/by,
+  cancellation_reason (non-blank, ≤ 500)
+  checks: (status = draft) = (submitted_at is null) or cancelled;
+          (status = received) = (received_at is not null);
+          (status = cancelled) = (cancelled_at and cancellation_reason are set)
+  indexes (supplier_id, created_at desc), (status, expected_at)
 
 purchase_order_lines
-  id, purchase_order_id, product_id, quantity_ordered integer check (> 0),
-  unit_cost money_amount not null, expected_at date null, notes
-  -- quantity_received is derived from receipt lines
+  id uuid PK, purchase_order_id, product_id (restrict)
+  quantity_ordered integer 1..100000
+  unit_cost money_amount 0..99999.99        -- D60: no column grant; 0 is valid (D24 amended)
+  currency char(3)                          -- copied from the PO
+  ordered_total generated round(quantity_ordered × unit_cost, 2)   -- no column grant
+  expected_at date (overrides the PO's), notes ≤ 500, created_by/at, updated_at
+  unique purchase_order_lines_product_once (purchase_order_id, product_id)
+  -- quantity received is derived from purchase_receipt_lines
 
-purchase_receipts
-  id uuid PK
-  purchase_order_id uuid -> purchase_orders
-  idempotency_key text not null unique     -- client-generated uuid per submit
-  reference text null                      -- supplier delivery note
-  received_at timestamptz not null
-  received_by uuid -> staff
-  notes, created_at
+purchase_order_events                       -- append-only (purchase_order_history_append_only)
+  id, purchase_order_id, event_type purchase_order_event_type
+     -- created | details_changed | line_added | line_changed | line_removed |
+     -- submitted | received | status_changed | cancelled
+  purchase_order_line_id uuid (no FK: removed lines keep their events),
+  purchase_receipt_id -> purchase_receipts, payload jsonb object (may carry costs),
+  reason ≤ 500, actor_staff_id, correlation_id, created_at clock_timestamp()
 
-purchase_receipt_lines
-  id, purchase_receipt_id, purchase_order_line_id, location_id,
-  quantity_received integer check (> 0),
-  unit_cost_actual money_amount not null
+purchase_receipts                           -- immutable (purchase_receipt_immutable)
+  id uuid PK, purchase_order_id
+  idempotency_key uuid not null, unique purchase_receipts_idempotency_key_key
+  reference ≤ 100 (delivery note; NOT unique: suppliers reuse it for split deliveries)
+  received_at timestamptz not null (D64), received_by -> staff, notes ≤ 2000,
+  correlation_id, created_at clock_timestamp(); index (purchase_order_id, received_at)
+
+purchase_receipt_lines                      -- immutable
+  id uuid PK, purchase_receipt_id, purchase_order_line_id, product_id (copied
+  from the PO line), location_id, line_number smallint (1-based input order,
+  unique per receipt), quantity_received 1..100000,
+  unit_cost_actual money_amount 0..99999.99 not null   -- D60; never NULL
+  currency (the PO's), received_total generated round(qty × cost, 2)  -- D60
 ```
 
-`receive_purchase(po_id, idempotency_key, lines[])` locks the PO row, checks
-each line's `quantity_received <= ordered − already received`, inserts the
-receipt and lines, writes one `purchase_received` movement per line with
-`unit_cost_snapshot = unit_cost_actual`, updates `products.default_direct_cost`
-per decision D5, and moves the PO to `partially_received` or `received`. A
-second call with the same `idempotency_key` returns the original receipt and
-writes nothing.
+**History.** Triggers write `purchase_order_events` through
+`private.record_purchase_order_event` (actor `private.current_staff_id()`,
+correlation `private.current_correlation_id()`): INSERT on a PO →
+`created {supplier_id, expected_at}`; UPDATE → `details_changed
+{field: {from, to}}` for supplier_id, expected_at, supplier_reference and
+notes (nothing changed → no event), draft→submitted → `submitted`, any move
+to cancelled → `cancelled` with the cancellation reason, any other status
+change → `status_changed {from, to}`; changes to created_at, submitted_at or
+received_at alone write nothing. Lines: `line_added {product_id,
+quantity_ordered, unit_cost, expected_at}`, `line_changed {field: {from,
+to}}` (quantity_ordered, unit_cost, expected_at, notes) with
+`private.change_reason()`, `line_removed` with the deleted row and the
+reason. `receive_purchase` writes `received` itself.
+
+**Receiving** (`receive_purchase(purchase_order_id, idempotency_key, lines
+jsonb, reference, received_at, notes)`), in this order:
+
+1. `manage_purchasing`; nulls 22004; `lines` must be a JSON array of at most
+   200 objects (22023); empty → `purchase_receipt_empty`.
+2. Fast path: a receipt with this key on this PO whose lines match
+   (`private.purchase_receipt_matches`: same element count, same set of
+   (purchase_order_line_id, location_id) keys with the same quantities; a
+   supplied `unit_cost_actual` must equal the stored cost, an omitted one
+   matches on the rest; never the PO line's current cost) is returned and
+   NOTHING is written. Any other receipt with the key →
+   `purchase_receipt_key_reused`.
+3. Lock the PO FOR UPDATE (P0002), then repeat step 2.
+4. draft → `purchase_order_not_submitted`; received or cancelled →
+   `purchase_order_closed` (D65).
+5. Parse each element: quantity a whole number 1..100000
+   (`purchase_receipt_quantity_invalid`); the line on this PO
+   (`purchase_receipt_line_foreign`); cost 0..99999.99
+   (`purchase_receipt_cost_invalid`), absent or null → the PO line's
+   `unit_cost` (0 is valid); the location exists (P0002) and is active
+   (`location_inactive`); a (line, location) pair once
+   (`purchase_receipt_line_duplicate`; one line split across locations is
+   fine). The product's active/archived state is not re-checked (the goods
+   arrived; SPEC §23).
+6. Over-receipt per PO line under the PO lock: received + this call ≤
+   ordered, else `purchase_over_receipt` (DETAIL names the product and the
+   ordered, received and attempted quantities); nothing is written.
+7. `effective = coalesce(received_at, now())`: > now() + 5 min →
+   `purchase_receipt_in_future`; < now() − 30 days → `purchase_receipt_too_old`;
+   < the PO's submitted_at → `purchase_receipt_before_submission` (D64).
+8. Insert the receipt; a `unique_violation` on the key (a concurrent call on
+   another PO) gives step 2's answer.
+9. `private.lock_stock(product)` for each product, ascending, before any
+   receipt line or movement.
+10. Receipt lines in input order, then one `purchase_received` movement per
+    receipt line through `private.record_receipt_movement` (ordered by
+    product, location, line_number): quantity, `unit_cost_snapshot =
+    unit_cost_actual`, `purchase_receipt_line_id`, reason `'PO-000034
+    received 25 Sep 2026 10:42'` (effective, in `private.shop_timezone()`).
+    No stock check (receiving only adds).
+11. Last cost (D5 as refined by D63): with the change reason `'Received on
+    PO-000034 (delivery note DN-5531)'` set, for each product in ascending id
+    the candidate is the cost of its highest line_number line in this
+    receipt (0 included). `products.default_direct_cost` takes it when it
+    differs and no receipt line of that product belongs to another receipt
+    that is later by (received_at, created_at, id); Phase 4's
+    `products_record_history` writes the `cost_changed` event with the
+    reason. Then `supplier_products (po.supplier_id, product)` is upserted:
+    `last_unit_cost` by the same rule restricted to that supplier's POs (a new
+    link takes the candidate), `last_received_at = greatest(existing,
+    effective)`, currency = the PO's. No snapshot (`work_order_line_items`,
+    existing movements) is touched.
+12. The `received` event `{reference, received_at, units, lines:
+    [{purchase_order_line_id, product_id, quantity_received, location_id}]}`.
+13. `private.refresh_purchase_order_status(po, effective)`: acts only on
+    submitted / partially_received; every line received in full → `received`
+    with `received_at = effective`; else any receipt → `partially_received`;
+    else `submitted`. Its `status_changed` event therefore follows `received`.
+14. Return the receipt. `purchase_receipt_by_key(key)` finds it after a lost
+    response.
+
+Interaction with Phase 4: the movement insert fires
+`inventory_movements_enforce_rules` (fills created_by = the caller's staff
+id and the correlation id; a quantity product never names a unit); the
+products update fires `products_enforce_rules` and `products_record_history`;
+`products_cost_write_guard` is SECURITY INVOKER and does not fire inside the
+definer RPC (current_user is the owner), which is intended: the RPC's own
+guard is manage_purchasing (D60). `inventory_movements_receipt_line_once` is
+the ledger backstop for "one movement per receipt line".
+
+**Global purchasing lock order** (extends §7's): (1) the purchase_orders row
+FOR UPDATE; (2) that PO's lines, read or changed only under the PO lock;
+(3) `private.lock_stock(product_id)` for every product a receipt touches,
+ascending, before any receipt line or movement (§7 step 3); (4) products
+rows, updated in ascending id (§7 step 6, the last inventory lock); (5)
+supplier_products rows in ascending product id. `set_supplier_product`
+holds no PO: it locks the products row FOR NO KEY UPDATE, then
+supplier_products (4 then 5), which serialises concurrent preference changes
+even before a link exists. Purchasing RPCs never lock work orders, bikes or
+units.
+
+**D60 D-PO-COSTS (cost gating).** `private.can_view_purchase_costs()` =
+view_costs OR manage_purchasing (security definer, EXECUTE to authenticated
+for policies and views). authenticated has no column grant on
+`supplier_products.last_unit_cost`, `purchase_order_lines.unit_cost` /
+`ordered_total` or `purchase_receipt_lines.unit_cost_actual` /
+`received_total`; they are read through the definer, security_barrier views
+`supplier_products_staff`, `purchase_order_lines_staff` (+ received_value),
+`purchase_receipt_lines_staff` and `purchase_order_totals_staff` (ordered,
+received and outstanding value; outstanding only while submitted or
+partially received), each filtered by that function. `purchase_order_events`
+rows are visible to staff who pass it (payloads carry costs). manage_purchasing
+opens no Phase 3/4/5 cost, yield or financial surface.
+
+**Currency (D62).** A PO's currency is `private.shop_currency()` at
+creation; lines and receipt lines copy it; a line's product must have the
+same currency (`purchase_currency_mismatch`). A PO orders quantity-tracked
+(`purchase_line_unique_product`), shop-owned (`purchase_line_not_shop_owned`),
+active, non-archived (`purchase_line_product_inactive`) products, once per
+PO (`purchase_line_duplicate_product`). Since Phase 6 a product's ownership
+can be `consignment` (D45); such products are never purchased: the PO line,
+`create_purchase_order_from_low_stock` and `set_supplier_product` (no
+supplier link on a non-shop-owned product, added at the Phase 7
+integration) refuse them with `purchase_line_not_shop_owned`,
+`purchase_cost_defaults` and `reorder_suggestions` leave them out
+(`reorder_suggestions` joins `public.products` and keeps
+`ownership_type = 'shop_owned'`, because `reporting.low_stock` keeps
+consigned products too), and
+Phase 6's D50 trigger would refuse a `purchase_received` movement on one
+(`consignment_stock_adjust_blocked`). `tests/db/purchasing.test.ts`
+("Phase 6's consigned stock is never purchased") proves it on the seeded
+jerseys.
 
 ## 11. QR identity and publication
 
@@ -1741,7 +1929,9 @@ never exposed.
 | `stock_reconciliation` | Ledger-derived vs cached balance when the cache exists. |
 | `low_stock` | Built (Phase 4): active, non-archived quantity products AT OR BELOW their reorder point (`on_hand <= reorder_point`), or below zero in total or at any location regardless of reorder point (D23); `shortfall = coalesce(reorder_point, 0) - on_hand`, largest first. security_invoker. |
 | `consignor_ledger` / `consignor_item_ledger` | Built (Phase 6 step 2, D46, D47): per consignor / per item liability, consignor charges, owed, paid (settlements not reversed), outstanding, counts and dates; derived, never stored; no API grant ([§9](#9-consignment)). |
-| `purchase_order_progress` | Ordered vs received per line. |
+| `purchase_order_progress` | Built (Phase 7). One row per PO line: `purchase_order_id`, `po_number`, `supplier_id`, `po_status`, `purchase_order_line_id`, `product_id`, `quantity_ordered`, `quantity_received` (sum of receipt lines, 0 when none), `quantity_outstanding` (ordered − received, ≥ 0, for draft/submitted/partially_received, else 0), `quantity_cancelled` (the same remainder when cancelled, D61), `expected_at` (the line's, else the PO's), `last_received_at` (latest receipt `received_at`), `is_overdue` (submitted/partially_received, outstanding > 0 and expected_at < `private.purchasing_shop_today()`). security_invoker, SELECT to authenticated, no cost column. `private.purchasing_shop_today()` is a security definer wrapper of Phase 5's `private.shop_today()` (EXECUTE to authenticated), not a competing calendar helper: authenticated has no EXECUTE on the Phase 5 helpers. |
+| `product_on_order` | Built (Phase 7). Per product with something outstanding on submitted or partially received POs (never drafts, D66): `product_id`, `quantity_on_order`, `open_purchase_orders`, `next_expected_at`. security_invoker, SELECT to authenticated. |
+| `low_stock` + `product_on_order` → `public.reorder_suggestions` | Built (Phase 7, D66 D-REORDER). Not a view: the staff RPC in §16 joins `low_stock` (the products, kept only when `products.ownership_type = 'shop_owned'`, D62), `product_on_order` (on order, submitted and partially received only) and `supplier_products`, and computes `private.suggested_reorder_quantity(reorder_point, on_hand, on_order)` = max(2 × reorder_point − on_hand − on_order, 0), NULLs as 0 (immutable SQL, no grant). No cost column. |
 | `shopify_sync_status` | Per published product. |
 | `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at`; price from `private.selling_price`; public photos only. Definer view, security_barrier, SELECT for anon and authenticated. Rules in §11. |
 
@@ -1816,7 +2006,7 @@ security-definer function. Blank = no access.
 | locations | S | P(manage_inventory) (id, name, kind, active, sort_order) | P(manage_inventory) (name, kind, active, sort_order; `location_has_stock`) | — (deactivate) |
 | products | S, every column except `default_direct_cost`; anon/C via `public_items` only | P(manage_inventory) (no short_id, publication, slug, ownership or Shopify ids; a cost needs P(view_costs): `products_cost_write_guard`); RPC `split_unit_from_stock` (P(adjust_stock) and P(manage_inventory)) | P(manage_inventory) (sku, name, description, brand, category, prices, reorder point, active, archived_at; cost guard as insert); publication via RPC `set_publication_status` | — (archive) |
 | inventory_units | S, every column except `direct_cost` | RPC `create_unique_unit` (P(manage_inventory); cost needs P(view_costs)) | P(manage_inventory) serial, condition, prices, notes, archived_at (cost guard); status, location, bike, ownership only by RPCs and triggers | — (archive) |
-| inventory_movements | S, every column except `unit_cost_snapshot` | RPCs only (`private.record_movement`, `private.record_linked_movement`; D50 trigger for consigned products) | never (`movement_append_only`) | never |
+| inventory_movements | S, every column except `unit_cost_snapshot` | RPCs only (`private.record_movement`, `private.record_linked_movement`, Phase 7's `private.record_receipt_movement`; D50 trigger for consigned products) | never (`movement_append_only`) | never |
 | product_events, inventory_unit_events | S | triggers only | never | never |
 | product_costs, inventory_unit_costs, inventory_movement_costs (definer views) | P(view_costs): costs, expected yield and Cult Commons | — | — | — |
 | selling_prices (definer view) | S: effective selling price per product and unit (`private.selling_price`) | — | — | — |
@@ -1828,8 +2018,15 @@ security-definer function. Blank = no access.
 | consignment_item_events | Built: as charges (payloads carry amounts) | triggers only | never | never |
 | reporting.consignment_item_position, consignor_item_ledger, consignor_ledger | no grants; read by definer functions | — | — | — |
 | consignment_settlements, settlement_lines, consignment_settlement_reversals | Built (Phase 6 step 2, D48): rows with P(manage_consignments) or P(view_costs) (`private.can_view_consignment_money()`); settlements every column except `request_fingerprint` | RPC `record_settlement`, `reverse_settlement` (P(manage_consignments)) | never (`settlement_immutable`; corrected by whole-settlement reversal, D47) | never |
-| suppliers, purchase_orders, lines | S | P(manage_purchasing) | same | — |
-| purchase_receipts, receipt_lines | S | RPC | — | — |
+| suppliers | S | P(manage_purchasing) (id, name, contact_name, email, phone, website, account_reference, notes) | P(manage_purchasing) (same columns + archived_at; `supplier_has_open_orders`) | — (archive) |
+| supplier_products | S, every column except `last_unit_cost` | RPC `set_supplier_product` (P(manage_purchasing); shop-owned products only, `purchase_line_not_shop_owned`); `receive_purchase` | same | RPC `remove_supplier_product` |
+| purchase_orders | S | RPC `create_purchase_order` (P(manage_purchasing)) | RPCs (`update_purchase_order`, `submit_purchase_order`, `cancel_purchase_order`, `receive_purchase`) | never |
+| purchase_order_lines | S, every column except `unit_cost`, `ordered_total` | RPC `set_purchase_order_line` (P(manage_purchasing)) | same | RPC `remove_purchase_order_line` |
+| purchase_order_events | S with P(view_costs) or P(manage_purchasing) (D60: payloads carry costs) | triggers only | never | never |
+| purchase_receipts | S | RPC `receive_purchase` (P(manage_purchasing)) | never (`purchase_receipt_immutable`) | never |
+| purchase_receipt_lines | S, every column except `unit_cost_actual`, `received_total` | RPC `receive_purchase` | never | never |
+| supplier_products_staff, purchase_order_lines_staff, purchase_receipt_lines_staff, purchase_order_totals_staff (definer views) | P(view_costs) or P(manage_purchasing) (D60 cost set: last, line, actual costs and totals) | — | — | — |
+| reporting.purchase_order_progress, product_on_order | S (security_invoker over staff-only RLS; no cost columns) | — | — | — |
 | label_templates, printer_profiles | S | A | A | A |
 | print_jobs | S | S | S | — |
 | integration_events, retry queue, sync | A | service role only | service role / RPC | — |
@@ -1973,7 +2170,19 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `list_sales(from_at = null, to_at = null, q = null, max_rows = 50)` → `id, sale_number, source, status, recognized_at, customer_id, customer_label, line_count, first_description, has_consignment, restocked_lines, sale_total, refunded_total, cost_total, yield_total, cult_commons_share` | S | Built (Phase 6 step 2). `[from_at, to_at)`; `q`: sale number ignoring case and dash (exact or contained), customer name words, or line description words; voided excluded; newest first then id; clamp 1..200. The last three NULL without view_costs (D48). |
 | `sale_lines_detail(sale_id)` → `id, line_number, description_snapshot, quantity, unit_sale_price_snapshot, sale_total, restocked_at, restocked_by_name, product_id, product_short_id, inventory_unit_id, unit_short_id, unit_status, unit_sold_sale_line_id, unit_ownership_type, bike_id, bike_short_id, consignment_item_id, consignment_short_id, consignor_id, consignor_name, unit_direct_cost_snapshot, cost_total, yield_total, cult_commons_rate_snapshot, cult_commons_share, consignor_payout_snapshot` | S | Built (Phase 6 step 2). Line order; an unknown sale returns no rows. Cost, yield, rate and Cult Commons NULL without view_costs; the payout NULL without consignment money access (D48). |
 | `saleable_stock(q, max_results = 20)` → `kind, product_id, product_short_id, inventory_unit_id, unit_short_id, title, subtitle, location_id, location_name, on_hand, unit_price, ownership_type, consignment_item_id, consignment_short_id, consignor_name, rank` | S | Built (Phase 6 step 2). `unit`: available shop-owned and consigned units (item active), `unit_price = private.selling_price(product, unit)`; `product`: shop-owned active quantity products per location with on-hand > 0 (`selling_price(product)`), and consigned quantity products per active item with remaining > 0 and each location where that item has stock (D54), `on_hand = least(item on-hand there, location on-hand, remaining)`, `unit_price = coalesce(item asking, product default)`. Rank: exact U-/P-/C- ID, SKU or serial 1.0; ID containing the key (≥ 3) 0.6; every word in name/brand/consignor 0.45 + 0.4 × word similarity. Blank q nothing; clamp 1..50. No cost. |
-| `receive_purchase(po_id, idempotency_key, lines[])` | P(manage_purchasing) | §10. |
+| `create_purchase_order(id, supplier_id, expected_at = null, supplier_reference = null, notes = null)` → `purchase_orders` | P(manage_purchasing) | Built (Phase 7). 22004 for null ids; replay by id first, FOR UPDATE (same supplier → the row unchanged, no event; another → `purchase_order_conflict`); P0002 / `supplier_archived`; insert in the shop currency (D62) catching a `purchase_orders_pkey` race. Never ON CONFLICT (the number trigger would burn a PO number per replay). |
+| `update_purchase_order(purchase_order_id, supplier_id, expected_at, supplier_reference, notes)` → `purchase_orders` | P(manage_purchasing) | Sets all four exactly (null clears); locks the PO; `purchase_order_closed`; `purchase_order_supplier_locked` outside draft; identical → no update, no event. |
+| `submit_purchase_order(purchase_order_id)` → `purchase_orders` | P(manage_purchasing) | Already submitted or further → unchanged; cancelled → `purchase_order_closed`; `purchase_order_needs_lines`; `supplier_archived`; else submitted_at/by. |
+| `cancel_purchase_order(purchase_order_id, reason)` → `purchase_orders` | P(manage_purchasing) | D61. `reason_required` / `reason_too_long`; cancelled → unchanged; received → `purchase_order_closed`; receipts, movements and stock stay. |
+| `set_purchase_order_line(id, purchase_order_id, product_id, quantity_ordered, unit_cost, expected_at = null, notes = null, reason = null)` → `purchase_order_lines` | P(manage_purchasing) | Upsert by id under the PO lock. Closed → `purchase_order_closed` (D65); existing: `purchase_line_conflict`, `purchase_line_below_received`, identical → unchanged; new: P0002, `purchase_line_unique_product`, `purchase_line_not_shop_owned`, `purchase_line_product_inactive`, `purchase_currency_mismatch`, `purchase_line_duplicate_product` (D62). 0 is a valid cost. Refreshes the status (a cut to the received total completes the PO). |
+| `remove_purchase_order_line(line_id, reason = null)` → setof `purchase_order_lines` | P(manage_purchasing) | Unknown → no row. Locks the PO; `purchase_order_closed`; `purchase_line_has_receipts`; after submission `reason_required` and never the last line (`purchase_order_needs_lines`). Refreshes the status. |
+| `receive_purchase(purchase_order_id, idempotency_key, lines jsonb, reference = null, received_at = null, notes = null)` → `purchase_receipts` | P(manage_purchasing) | Built (Phase 7); the 14 steps in §10 (replay, over-receipt, D64 dating, lock_stock, one movement per receipt line, D63 last cost, `received` event, status). |
+| `purchase_receipt_by_key(idempotency_key)` → setof `purchase_receipts` | P(manage_purchasing) | Zero or one row, after a lost response. |
+| `purchase_cost_defaults(supplier_id, product_ids uuid[])` → `table(product_id, unit_cost, source)` | P(manage_purchasing) | ≤ 200 ids (22023); only products a PO can hold (quantity-tracked, shop-owned, active, not archived; any other id is omitted like an unknown one, so it never reveals a unique or consigned product's cost, D60); per such product the supplier's last cost (`supplier_last`), else the product's (`product`, 0 included), else 0 (`none`). The PO line sheet's prefill (D60, D66). |
+| `set_supplier_product(supplier_id, product_id, supplier_sku = null, lead_days = null, preferred = false)` → `supplier_products` | P(manage_purchasing) | Locks the product row, then upserts the link (never the last cost; a new link takes the product's currency); `preferred` clears the product's other preferred row. P0002 / `purchase_line_not_shop_owned` (a consigned or customer-owned product, D62) / `supplier_archived`. |
+| `remove_supplier_product(supplier_id, product_id)` → setof `supplier_products` | P(manage_purchasing) | Deletes the link; no row on a replay. |
+| `reorder_suggestions(supplier_id = null)` → `table(product_id, short_id, sku, name, on_hand, reorder_point, on_order, suggested_quantity, supplier_linked, preferred_supplier_id, supplier_sku, draft_po_numbers text[])` | S | Built (Phase 7, D66 D-REORDER; `20261005000500_purchasing_reorder.sql`). The shop-owned `reporting.low_stock` products (a consigned product below its reorder point is never listed, D62); `on_order` from `reporting.product_on_order` (submitted and partially received POs, never drafts); `suggested_quantity` = max(2 × reorder_point − on_hand − on_order, 0); `supplier_linked` / `supplier_sku` relative to the given supplier (false / null without one); `preferred_supplier_id` whatever was asked; `draft_po_numbers` the draft POs (any supplier) already holding the product, ascending, `{}` when none. Ordered by supplier_linked desc, suggested_quantity desc, name. No cost column (D60). |
+| `create_purchase_order_from_low_stock(id, supplier_id, product_ids uuid[])` → `purchase_orders` | P(manage_purchasing) | Built (Phase 7, D66). 22004 for a null id/supplier or a null element; null or empty selection → `reorder_nothing_selected`; more than 100 ids → 22023. Replay by id with `create_purchase_order`'s mechanism (FOR UPDATE first, insert only when absent, `purchase_orders_pkey` unique_violation fallback, never ON CONFLICT): the same supplier returns the PO unchanged with no line added and the PO sequence untouched; another supplier → `purchase_order_conflict`. Else `supplier_archived` / P0002, a draft in `private.shop_currency()`, then one line per DISTINCT product in ascending id with `set_purchase_order_line`'s checks (P0002, `purchase_line_unique_product`, `purchase_line_not_shop_owned`, `purchase_line_product_inactive`, `purchase_currency_mismatch`, `purchase_line_duplicate_product`): quantity max(suggestion computed now, 1), capped at the line limit 100000; unit cost `private.default_purchase_unit_cost` (supplier last cost, else product cost incl. 0, else 0). `line_added` events come from the trigger, without a reason. Locks only the new PO row; products and stock are read unlocked. |
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) within the D11 ceiling | Permission rows (`granted_by` = caller); replay-safe (no row change, no event). One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
@@ -1989,7 +2198,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Never public for a customer record or an undecoded original (`attachment_original_never_public`). Locks the row; `visibility_changed` event; replay is a no-op. |
 | `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload. Returns a set: the deleted row (the server then removes the object), or no row on replay (PostgREST: `[]`). |
 | `attachment_stray_objects(entity_type, entity_id)` | S | Objects under `{entity_type}/{entity_id}/` in either photo bucket that no attachment points at and that are safe to remove now (older than 10 minutes; in `media-internal`, with history or older than a day), at most 100. The server removes them when it shows the record. |
-| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Phase 6 step 2 adds `consignor` (every word in name/email 0.5 + 0.4 × word similarity, phone digits contained 0.6, exact email or phone 0.95; title the name, subtitle email · phone; archived consignors only with `archived` true), `consignment_item` (exact C- ID 1.0, C- ID containing the key ≥ 3 0.6, every word in product name/brand and consignor name 0.45 + 0.4 × word similarity; title the product name, subtitle `consignor · status · U-…` or `Qty n`; never archived) and `sale` (exact S- number 1.0, number containing the key ≥ 3 0.6; title `S-… · $total`, subtitle the customer or `Walk-in` · the shop day; never archived; voided left out). Later phases add a `private.search_<kind>` function and a branch. |
+| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Phase 6 step 2 adds `consignor` (every word in name/email 0.5 + 0.4 × word similarity, phone digits contained 0.6, exact email or phone 0.95; title the name, subtitle email · phone; archived consignors only with `archived` true), `consignment_item` (exact C- ID 1.0, C- ID containing the key ≥ 3 0.6, every word in product name/brand and consignor name 0.45 + 0.4 × word similarity; title the product name, subtitle `consignor · status · U-…` or `Qty n`; never archived) and `sale` (exact S- number 1.0, number containing the key ≥ 3 0.6; title `S-… · $total`, subtitle the customer or `Walk-in` · the shop day; never archived; voided left out). From Phase 7 (`20261005000400_purchasing_search.sql`), suppliers (`supplier`: every word of q in name/contact/email/account reference 0.5 + 0.4 × word similarity, exact email or exact phone (with or without +65) 0.95, phone digits contained 0.6; title the name, subtitle `contact · phone · email`, no short_id; archived suppliers only with `archived`) and purchase orders (`purchase_order`: exact PO number key — `PO-000002`, `po 000002`, `PO000002` — 1.0, exact supplier reference key 0.95, PO number containing the key (≥ 3 characters) 0.6, every word of q in the supplier's search text 0.4 + 0.4 × word similarity; title the supplier's name, short_id the PO number, subtitle `status · expected 12 Oct 2026 · R of N received` (the date only when set, the count only when the PO has lines); POs are never archived, so none with `archived`; cancelled and received POs are found). **Merge hazard:** each phase's migration replaces the whole function, so the latest definition must contain every branch; the merged line's latest is `20261005000400_purchasing_search.sql`, which carries Phase 6's three kinds and Phase 7's two. `tests/db/staff-search.test.ts` checks that staff_search accepts every `SEARCH_KINDS` entry of `src/lib/search.ts`, which the app asks for by default. Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |
@@ -2099,11 +2308,11 @@ every request id used once.
 | P-000003 | Road inner tube 700x23-28c Presta 60mm | 9.00 / 3.80 | 20 | 40 Shop floor + 20 Workshop store |
 | P-000004 | Marathon Racer 16x1.35 tyre | 55.00 / 30.00 | 3 | 6 Shop floor (one consumed by J-000010, then reversed) |
 | P-000005 | Inner tube 16in Schrader | 14.00 / 6.00 | 6 | 12 Shop floor (15 opening, one on J-000010, two sold on Phase 6's S-000002) |
-| P-000006 | X11 11-speed chain | 45.00 / 24.00 | 5 | 8 Shop floor |
-| P-000007 | 105 CS-R7000 11-34 cassette (draft) | 109.00 / 68.00 | 2 | 3 Shop floor |
+| P-000006 | X11 11-speed chain | 45.00 / 24.00 | 5 | 26 Shop floor (8 opening + 18 received on Phase 7's PO-000002) |
+| P-000007 | 105 CS-R7000 11-34 cassette (draft) | 109.00 / 68.00 | 2 | 7 Shop floor (3 opening + 4 received on Phase 7's PO-000001) |
 | P-000008 | Pro brake cable kit | 35.00 / 16.00 | 4 | 2 Shop floor (low) |
 | P-000009 | SM-BH90 hydraulic hose 1000mm | 28.00 / 12.00 | 5 | 1 Shop floor (low) |
-| P-000010 | Dry chain lube 120ml | 16.00 / 7.00 | 6 | 18 Shop floor |
+| P-000010 | Dry chain lube 120ml | 16.00 / 7.00 | 6 | 18 Shop floor (28 after Phase 7's PO-000002) |
 | P-000011 | DSP 3.2mm bar tape | 49.00 / 26.00 | 4 | 7 Shop floor |
 | P-000012 | Tubeless sealant 237ml | 32.00 / 17.00 | 3 | 1 Shop floor + 1 Workshop store (low) |
 | P-000013 | Colnago C64 Disc 52s (pre-owned), unique | 6800.00 / 4200.00 | — | unit U-000001 (bike B-000011) |
@@ -2308,3 +2517,72 @@ settlements, `7c` reversals, `7e` returns (`CONSIGNOR`, `CONSIGNMENT_ITEM`,
   (`SEED_DAYS`): d5 1 / 140.00 / 70.00, d3 1 / 1000.00 / 500.00, d0 1 /
   70.00 / 35.00, other days 0. `tests/db/consignment-reporting.test.ts`
   proves them.
+
+Phase 7 part (done): **purchasing, built through the RPCs.** A section at
+the end of `supabase/seed.sql`, run with `request.jwt.claims` naming Asha
+Admin (reset to '' afterwards), so PO history, the `purchase_received`
+movements and the supplier last costs are what the app writes. It runs after
+the Phase 6 part and creates no products, units, bikes or customers, so
+Phase 6's short IDs (P-000023 .. P-000026, U-000004 .. U-000006) are
+unchanged: it uses Phase 4's products (`PRODUCT`) and the Shop floor
+(`LOCATION.shopFloor`). Ids use the `d7` prefix
+(`tests/fixtures/ids.ts`):
+
+- Suppliers `d7000000-…-00000000000N` (`SUPPLIER`), inserted directly
+  (suppliers have no create RPC; the app inserts them under RLS), dated
+  −20d: `veloParts` Velo Parts Asia Pte Ltd (Kenneth Lim,
+  sales@veloparts.test, +65 6123 4501, https://veloparts.test, account
+  BICII-0042, "Order by Thursday noon for Monday delivery."), `tropicTyre`
+  Tropic Tyre & Tube Co (Siti Rahman, orders@tropictyre.test, +65 6234
+  5502, account TT-1187) and `oldSpoke` Old Spoke Trading (archived −15d;
+  no links, no POs).
+- Links (`set_supplier_product`, SKU, lead days, preferred): Velo Parts
+  supplies the cassette, chainX11, chainLube, cableKit, hydraulicHose
+  (preferred) and the GP5000 tyre (not preferred); Tropic Tyre the GP5000
+  tyre and roadTube (preferred). The low-stock sealant has no supplier.
+- POs `d7100000-…-00000000000N` (`PURCHASE_ORDER`, `PO_NUMBER`
+  PO-000001…PO-000005 in creation order), lines
+  `d7200000-…-0000000000NN` (`PURCHASE_ORDER_LINE`), receipt idempotency
+  keys `d7300000-…-00000000000N` (`RECEIPT_KEY`). Every line's unit cost is
+  the product's current cost:
+
+| PO | Supplier | Lines (qty × cost) | Dates (d = shop days before the reset day, Singapore time) | State |
+|---|---|---|---|---|
+| PO-000001 | Velo Parts, ref SO-7702 | cassette 4 × 68.00 | expected d9; created d12 10:00, submitted d11 09:30, received d9 14:00 at the Shop floor (DN-5402) | received; cassette 3 → 7 |
+| PO-000002 | Velo Parts, ref SO-7781 | chainX11 20 × 24.00, chainLube 10 × 7.00 | expected d1; created d6 10:00, submitted d5 09:30; one receipt d3 11:30, DN-5531: 18 chains + 10 lubes | partially received (SPEC §14: 20 ordered, 18 received, 2 outstanding), overdue; chainX11 8 → 26, chainLube 18 → 28 |
+| PO-000003 | Tropic Tyre | gp5000Tyre 6 × 52.00 | expected in 3 days; created d2 10:00, submitted d2 10:20 | submitted, nothing received; 6 on order |
+| PO-000004 | Velo Parts | cableKit 6 × 16.00, hydraulicHose 9 × 12.00 (their D66 suggestions) | created d1 09:00 | draft ("In draft PO-000004" on the reorder screen) |
+| PO-000005 | Tropic Tyre | roadTube 20 × 3.80 | created d1 15:00, submitted d1 15:10, cancelled at seed time | cancelled, "Supplier out of stock until next quarter"; 20 cancelled |
+
+On order after the seed (`reporting.product_on_order`): GP5000 tyre 6,
+chainX11 2. Supplier last costs: Velo Parts cassette 68.00, chainX11
+24.00, chainLube 7.00 (the receipts upsert the links).
+
+Chronology (D64 D-RECEIPT-TIME): each PO is created and submitted through
+the RPCs, then, BEFORE it is received, its `created_at` and `submitted_at`
+are back-dated with a plain UPDATE as the owner (those columns write no PO
+event; `pg_temp.seed_at`), and `receive_purchase` records the receipt with
+its past `received_at`. The `purchase_received` movements keep seed time
+(Phase 4's ledger is append-only with no effective date; their reason
+carries the delivery date, e.g. "PO-000002 received 2 Oct 2026 11:30").
+PO events are moved to the moment each stands for, so an order's History
+agrees with its Details and Receipts: created at `created_at`, lines a
+minute apart after it, submitted at `submitted_at`, received at the
+receipt's `received_at` (its status change a second later); PO-000005's
+cancellation stays at seed time. The append-only trigger is disabled for
+that one seed-only UPDATE and re-enabled straight after
+(`purchasing-seed.test.ts` checks the chronology).
+
+Fences on the earlier phases: (1) every receipt cost equals the product's
+current `default_direct_cost`, so D63 changes no cost and writes no
+`cost_changed` event; (2) receipts touch only the cassette, chainX11 and
+chainLube, none of them low stock or with an on-hand figure a test pins
+(the brief's suggested brake pads for PO-000001 were swapped for the
+cassette because `staff-search.test.ts` pins "34 in stock"), and each stays
+above its reorder point, so `reporting.low_stock` still lists exactly
+P-000008, P-000009 and P-000012 and Today and `tests/fixtures/reporting.ts`
+are unchanged; (3) the draft's products are low-stock products no receipt
+touches; (4) Phase 5's daily summary and Today count only
+`job_consumption`, `reversal`, `stock_adjustment` and `damaged` movements,
+never `purchase_received`. `tests/db/purchasing-seed.test.ts` checks the
+state.

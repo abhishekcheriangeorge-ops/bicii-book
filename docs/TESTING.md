@@ -417,7 +417,15 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Appointment counts (Phase 2, D30, D41) | `appointment-reporting.test.ts`: `public.appointment_daily` over the seeded days (anchor −10 … +21) equals the counts the appointments table implies by scheduled shop day and current status, zero-filled, and `reporting.appointment_daily` (owner) holds exactly the days with appointments; `daily_summary`'s three appointment columns equal its booked / arrived / no_shows for every seeded day; `today_dashboard(null)` gives mechanic2 the same counts as the admin; customers (Chloe's login) and anon 42501; the range rules match `daily_summary`; booking, arriving, a no-show and a cancel today move today's counts exactly, and a no-show marked now on an older appointment counts on its own day; every checked_in or completed appointment has exactly one work order with its customer and bike. `reporting.test.ts` checks the columns against `appointment_daily` on test days with appointments; `reporting-access.test.ts` lists the RPC and the view. |
 | Seeded schedule and appointments (Phase 2) | `appointment-seed.test.ts` (reads only, days from the anchor): settings, the eight weekly rows (inactive Monday, split Saturday), the four types (one staff-only; anon sees the three public ones in order), the two closures as whole days within 14 days; each appointment's customer, bike, type snapshot, day, time, status and source as in `ids.ts`, booked ahead; nothing beyond 14 days, upcoming days Tuesday–Friday off the closures; Daniel has no upcoming booked/confirmed appointment, Chloe at most two upcoming online bookings, today at most three expected arrivals; Tan's appointment linked to J-000014 and completed at its completion, J-000014's timeline `checked_in, appointment_linked, …`; each status reached one update at a time; Chloe's login linked and `my_appointments()` exactly her upcoming rows with the D42 keys. |
 | Schedule configuration (Phase 2, D35, D38) | `schedule-settings.test.ts`: only admins call `update_shop_settings`, `set_shop_hours`, `save_closure_override`, `delete_closure_override`, `save_appointment_type` (mechanic1, mechanic2, anon → 42501); no time zone or currency parameter and an owner write of an unknown time zone → `shop_timezone_invalid`; null keeps, values round-trip (`customer_cancel_cutoff_minutes`; 10081 → `shop_settings_cancel_cutoff_check`; a slot length not dividing 1440 → `shop_settings_slot_minutes_check`); `shop_capacity_below_type` (inactive types ignored); the row cannot be deleted; `set_shop_hours` replaces atomically, rejects overlaps (also for the owner), bad JSON and weekdays (22023) and inverted intervals, a replay appends nothing; closure shapes store the documented Singapore instants; `closure_custom_hours_overlap`; `closure_invalid_range` and reason rules; is_new replays, `closure_conflict` / `appointment_type_conflict` after an edit (the edit survives), P0002 for a missing edit; deletion needs a reason and is kept in `schedule_events`; `appointment_type_capacity_too_large`, names unique ignoring case; one `schedule_events` row per real change with its actor, append-only. `appointments.test.ts`: `private.shop_timezone()` / `shop_currency()` follow the settings row. |
-| Duplicate receipt cannot double stock | `receive_purchase` same idempotency key twice → one receipt, stock +18 once; partial then remainder → PO `received`; over-receipt → raises. |
+| Duplicate receipt cannot double stock | Phase 7, proven at every layer. Database (`purchasing.test.ts`, `purchasing-concurrency.test.ts`): `receive_purchase` with the same idempotency key twice → the first receipt back, one receipt, one line, one movement, stock +18 once and the cost set once; the same key with other lines or on another PO → `purchase_receipt_key_reused` and nothing written; a replay that omits the cost matches the stored cost (an omitted cost is the PO line's); the same key from two connections at once → one receipt, stock added once; `purchase_receipt_by_key` returns that receipt (zero or one row). Ledger backstop: Phase 4's unique index `inventory_movements_receipt_line_once` (one `purchase_received` movement per receipt line, the only unique index on the column). App: `receive-form.test.ts` (the key is kept across reloads and refusals, an unknown outcome locks the form until the lookup, a retry reuses the key and the values, a new key only with fresh values). E2E (`purchasing.spec.ts`): a double-clicked "Receive 18 items" makes one receipt and one `Received +18` movement; a lost response (server committed, connection dropped) is found by the lookup and shown as recorded, one receipt, stock +6 once; a lost request (never sent) is checked, not recorded, and retried with the same key, one new receipt. |
+| Partial receipt adds the right stock (Phase 7) | 18 of 20 → `partially_received`, on hand +18, outstanding 2 in `reporting.purchase_order_progress`; the remaining 2 → `received` with `received_at`; quantities reduced to what arrived complete the PO; seeded PO-000002 is SPEC §14's 20/18/2, overdue (`purchasing.test.ts`, `purchasing-seed.test.ts`; E2E "18 of 20 received · 2 to come"). |
+| Over-receipt is refused and a received PO is closed (D65) | more than outstanding (summed per PO line across a receipt's locations) → `purchase_over_receipt`, nothing written; draft → `purchase_order_not_submitted`; received or cancelled → `purchase_order_closed`; two racing keys each receiving 18 of 20 → one succeeds, one over-receipt; receipts and their lines refuse UPDATE/DELETE (`purchase_receipt_immutable`). App: typing more than is to come shows "Only 2 still to come. Raise the ordered quantity on the order first." and blocks the commit; the receive page of a received PO shows the closed state with "Start a new order for this supplier" (E2E). |
+| Last cost by received_at; 0 is a known cost; snapshots untouched (D5, D63, D24 as amended) | a receipt sets `products.default_direct_cost` and the supplier link's `last_unit_cost` only when no later-received receipt holds the product (a back-dated receipt entered after a newer one changes no cost; ties by created_at then id; within a receipt the highest line number); `last_received_at` is the greatest; receiving upserts the supplier link; a 0 line cost and a 0 actual cost are accepted and become the last cost; the cost change is Phase 4's `cost_changed` event with "Received on PO-… (delivery note …)"; earlier `work_order_line_items` and `inventory_movements` snapshots are unchanged (`purchasing.test.ts`, concurrency file for racing receipts). E2E: received at $12.50 → the product's supplier shows "Last cost $12.50". Unit: `buildReceiptLines` keeps "0.00", `receivePurchaseSchema` accepts 0. |
+| Back-dated receipt dating (D64) | `received_at` defaults to now; up to 30 days back accepted, older → `purchase_receipt_too_old`; more than 5 minutes ahead → `purchase_receipt_in_future`; before `submitted_at` → `purchase_receipt_before_submission`; the movement's reason carries the shop-time delivery date. Unit: `receivedAtBounds` and `receivedAtForSubmit` (sent only when changed, from shop time); the three codes land on the Received field (reducer test). |
+| Purchase cost visibility (D60) | `purchasing-access.test.ts`: mechanic2 reads suppliers, PO quantities, statuses and dates, but no cost column (42501 on the base tables' cost columns, 0 rows from the four `*_staff` views, no history) and writes nothing; mechanic1 (view_costs) reads costs and history but writes nothing; a manage_purchasing-only holder reads purchase costs and writes, gets the `purchase_cost_defaults` prefill only for an orderable product (a unique, consigned, customer-owned, inactive or archived product's id returns no row), and the Phase 3/4/5 cost surfaces stay closed to them (`products.default_direct_cost`, `product_costs`, `inventory_unit_costs`, `inventory_movement_costs`, `inventory_movements.unit_cost_snapshot`, `services_staff`, `work_order_line_items_staff`, `work_order_totals_staff`, `work_order_yield`, `financial_lines`, the money in `daily_summary` / `today_dashboard`). E2E: mechanic2's PO page has no "$", no Totals or History, no Receive link; the receive and reorder routes are a real 403. |
+| Purchase history is append-only (Phase 7) | every PO change appends one `purchase_order_events` row with actor, correlation ID and reason (cancel and line changes after submission need one); replays append none; UPDATE/DELETE refused for the owner too (`purchase_order_history_append_only`). |
+| Reorder suggestions (D66) | `purchasing-reorder.test.ts`: `suggested_reorder_quantity` = max(2 × reorder point − on hand − on order, 0); `reorder_suggestions` lists shop-owned `reporting.low_stock` products only, on order counts submitted and partially received POs (never drafts), names drafts holding the product, carries no cost; `create_purchase_order_from_low_stock` makes one draft, a 0 suggestion ordered at 1, cost = supplier last cost, else product cost (0 included), else 0, replay by id adds nothing; manage_purchasing only. E2E: after receiving 18 of 20 and using 1, the product is pre-ticked with on order 2 and suggestion 21, and the draft has it × 21 at $12.50. |
+| Consigned stock is never purchased (Phase 7 integration with Phase 6, D45, D62) | `purchasing.test.ts` "Phase 6's consigned stock is never purchased": the seeded consignment-owned jerseys (counted, active, in stock) are refused as a PO line, in `create_purchase_order_from_low_stock` and as a supplier link (`purchase_line_not_shop_owned`), and `purchase_cost_defaults` returns no row for them. For `reorder_suggestions` the test first gives the jersey a reorder point above its stock and proves it is in `reporting.low_stock`, then that the suggestions (with and without a supplier) still return no row: only its ownership keeps it out. |
 | Manual adjustment records actor/time/reason | `adjust_stock` without reason → raises; with reason → row has `created_by`, `reason`. |
 | Public QR exposes only published | `public_items` as anon: draft/internal rows absent; public row shows no cost; sold unique shows `sold`. Built in Phase 4: `inventory-publication.test.ts` (row below). |
 | Archived entities stay referenceable | archive a service used on a historical job → job line still joins. Phase 3: the service, the job's bike and its customer archived → the line still joins the service and the job its bike and customer; the archived service is refused for new lines. |
@@ -496,10 +504,11 @@ Each invariant from SPEC §23 has at least one test, named after it:
 
 Harness (`playwright.config.mts`, `tests/e2e/`): Chromium only, two projects
 — `phone` (iPhone 13, 390 px: bottom tab bar) and `tablet` (iPad gen 7,
-810 px: side rail). `webServer` runs `npm run build && next start -p 3100`
-with the devstack URL and local demo keys passed explicitly (so `.env.local`
-does not matter). `tests/e2e/global-setup.mts` resets and seeds `bicii_dev`
-(`E2E_RESET=0` skips), starts the devstack if needed, and waits until the
+810 px: side rail). `webServer` runs `npm run build && next start -p $E2E_PORT`
+(default 3100) with the devstack URL and local demo keys passed explicitly
+(so `.env.local` does not matter). `tests/e2e/global-setup.mts` resets and
+seeds the dev database, `PGDATABASE` (default `bicii_dev`; `E2E_RESET=0`
+skips), starts the devstack if needed, and waits until the
 seeded admin can sign in through the gateway and call `my_staff_profile`.
 Tests run serially (one shared database). The browser is
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when set, else `/opt/pw-browsers/chromium`
@@ -509,10 +518,14 @@ downloaded), else Playwright's own Chromium, installed once with
 ([ENGINEERING.md](ENGINEERING.md#prerequisites-and-access)).
 
 ```sh
-npm run test:e2e                       # build + start on :3100, reset bicii_dev, run
+npm run test:e2e                       # build + start on E2E_PORT (3100), reset PGDATABASE (bicii_dev), run
 E2E_REUSE_SERVER=1 npm run test:e2e    # reuse an app already on E2E_PORT (3100)
-E2E_RESET=0 npm run test:e2e           # keep bicii_dev as it is
+E2E_RESET=0 npm run test:e2e           # keep the dev database as it is
 ```
+
+A second checkout (README "Postgres somewhere else?") sets its own
+`PGDATABASE`, `BICII_*_PORT` and `E2E_PORT` first, so its E2E run resets
+only its own database and serves on its own port.
 
 The seed's history is relative to the day it was reset (DATA-MODEL §18
 "Phase 5 part"). Global setup reads that anchor day once, from the seeded
@@ -852,6 +865,43 @@ from the sale line → "Restocked" and the unit Available again (D46);
 mechanic2 sells one "DSP 3.2mm bar tape" (only "Below the asking price"
 warns; no Preview, cost, yield or Cult Commons in the sheet or on the
 sale, no "$26.00", no Record refund) and the stock drops by one.
+
+Phase 7 (`purchasing.spec.ts`, phone and iPad; suppliers, products and
+orders tagged with `tagFor`, the seeded orders `PURCHASE_ORDER` only read;
+helpers in `tests/e2e/purchasing-helpers.ts`: `createSupplier`,
+`startOrderFromSupplier`, `addOrderLine`, `submitOrder`,
+`createSubmittedOrder`, `openReceive`, `receiveLine` and
+`interceptReceiveActions`, which drops the receive page's Server Action
+POSTs (`next-action` header) on purpose). Suppliers and orders: a buyer
+adds a supplier (tel: and https links), orders from it with the supplier
+preset, changes a line, submits and finds the PO from the header search
+however typed; mechanic2 follows PO-000002 (18 of 20, Overdue, DN-5531)
+without any cost or control; a cancel needs a reason and keeps it in the
+history; a received PO is closed. Journey 3's receiving step: a counted
+product (reorder point 20, cost 12.00) and a tagged supplier; an order of
+20 × $12.00 submitted and received: the line defaults to 20, 18 at an
+actual cost of $12.50 ("Differs"), the default location, the commit
+button DOUBLE-CLICKED; the order shows the toast "Received 18 items. 2
+still to come.", Partially received and "18 of 20 received · 2 to come"
+with one receipt; the product shows 18 in stock before and after a reload,
+exactly one `Received +18` movement, the supplier with "Last cost $12.50"
+and "On order: 2"; one part used on a job → 17; `/purchasing/reorder` for
+the supplier lists it ticked with on order 2 and "Suggested 21", and
+Create draft order opens a draft with it × 21 at $12.50. Lost response:
+the receive POST reaches the server and the connection is then reset →
+the error toast, the form read-only while checking, then "This delivery
+was recorded … (6 items)" with no Retry; one receipt, stock +6 once;
+"Receive another delivery" shows 4 to come with an empty delivery note,
+and typing the same note (any case) shows the duplicate warning with the
+commit disabled until "This is a different delivery" is ticked. Lost
+request: the next POST is reset before it leaves → checking → "It was not
+recorded. Retrying is safe…" → Retry → "Order fully received.", exactly
+two receipts, 10 in stock. The receive page of PO-000001 shows the closed
+state; mechanic2 gets a real 403 on `/purchasing/receive/<PO-000002>` and
+`/purchasing/reorder` and sees no Receive or Reorder link; the admin sees
+Receive on an open PO, "Submit the order before receiving" on a draft,
+and Reorder on the Inventory low-stock filter. Phase 4's journey-3 spec
+still seeds its stock by an opening count; Phase 8 adds the labels step.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
