@@ -141,3 +141,54 @@ export async function createSubmittedOrder(
   await submitOrder(page, order.poNumber);
   return { supplierId, ...order };
 }
+
+// ---------------------------------------------------------------------------
+// Receiving (Phase 7 step 4)
+// ---------------------------------------------------------------------------
+
+/** On an order's page: Receive, then the receive page with its form ready (editable). */
+export async function openReceive(page: Page, purchaseOrderId: string): Promise<void> {
+  await page.getByRole("link", { name: "Receive", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/purchasing/receive/${purchaseOrderId}$`));
+  // The form checks its key store on mount; it is editable once that is done.
+  await expect(page.getByRole("button", { name: "All to come" })).toBeEnabled();
+}
+
+/** One line of the Receive form, by its product name. */
+export function receiveLine(page: Page, productName: string): Locator {
+  return page
+    .getByRole("list", { name: "Lines to receive" })
+    .getByRole("group", { name: productName });
+}
+
+/**
+ * Intercepts the receive page's Server Action POSTs (next-action header) on
+ * `purchaseOrderId`'s receive URL: `plan[i]` decides the i-th one —
+ * "lostResponse" lets it reach the server (which commits) and then drops
+ * the connection, "lostRequest" drops it before it leaves, "slow" delays it
+ * 1.5 s (so a locked state can be seen), "pass" lets it through.
+ */
+export async function interceptReceiveActions(
+  page: Page,
+  purchaseOrderId: string,
+  plan: readonly ("lostResponse" | "lostRequest" | "slow" | "pass")[],
+): Promise<void> {
+  let n = 0;
+  await page.route(new RegExp(`/purchasing/receive/${purchaseOrderId}$`), async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST" || !request.headers()["next-action"]) {
+      await route.fallback();
+      return;
+    }
+    const step = plan[n++] ?? "pass";
+    if (step === "lostResponse") {
+      await route.fetch();
+      await route.abort("connectionreset");
+    } else if (step === "lostRequest") {
+      await route.abort("connectionreset");
+    } else {
+      if (step === "slow") await new Promise((r) => setTimeout(r, 1_500));
+      await route.continue();
+    }
+  });
+}

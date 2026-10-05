@@ -1,11 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { PO_NUMBER, PURCHASE_ORDER } from "../fixtures/ids";
-import { signIn, tagFor, toast } from "./helpers";
+import { createJobViaIntake, createProduct, pickPart, signIn, tagFor, toast } from "./helpers";
 import {
   addOrderLine,
   createSubmittedOrder,
   createSupplier,
+  interceptReceiveActions,
+  openReceive,
+  receiveLine,
   section,
   startOrderFromSupplier,
   submitOrder,
@@ -166,4 +169,255 @@ test("a fully received order is closed: a calm note and no line editing", async 
   for (const name of ["Add line", "Edit details", "Submit order", "Cancel order…"]) {
     await expect(page.getByRole("button", { name })).toHaveCount(0);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Receiving and reorder (Phase 7 step 4; SPEC §2 "retries cannot duplicate
+// stock", §27.3 journey 3; D63 D-LASTCOST, D65 D-OVERRECEIPT, D66 D-REORDER)
+// ---------------------------------------------------------------------------
+
+const productId = (url: string) => new URL(url).pathname.split("/").at(-1)!;
+
+test("journey 3, receiving: a double-tapped delivery is received once, sets the last cost and feeds reorder", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const tag = tagFor(testInfo);
+  const name = `Brake cable ${tag}`;
+  const sku = `BC-${tag}`;
+  const supplierName = `Cables ${tag}`;
+
+  await signIn(page, "admin");
+  // 1. A counted product (reorder at 20, cost 12.00) and a tagged supplier.
+  const product = await createProduct(page, {
+    name,
+    sku,
+    price: "20.00",
+    cost: "12.00",
+    reorderPoint: "20",
+  });
+
+  // 2. New order: 20 x $12.00, submitted, then Receive.
+  const order = await createSubmittedOrder(page, {
+    supplierName,
+    query: sku,
+    option: new RegExp(name),
+    quantity: "20",
+    unitCost: "12.00",
+  });
+  await openReceive(page, order.id);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Receive ${order.poNumber}`);
+  const line = receiveLine(page, name);
+  const quantity = line.getByLabel("Receive now");
+  await expect(quantity).toHaveValue("20");
+  await expect(line).toContainText("Ordered at $12.00");
+  await quantity.fill("18");
+  await line.getByLabel("Actual unit cost").fill("12.50");
+  await expect(line.getByText("Differs", { exact: true })).toBeVisible();
+  await expect(line.getByLabel("Location")).toHaveValue(
+    await page.getByLabel("Receive into").inputValue(),
+  );
+  await expect(page.getByText("18 items on 1 line")).toBeVisible();
+  // A double tap is one receipt (the button locks; the key is the same anyway).
+  await page.getByRole("button", { name: "Receive 18 items" }).dblclick();
+
+  // 3. Back on the order.
+  await expect(toast(page, "Received 18 items. 2 still to come.")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/purchasing/orders/${order.id}$`));
+  await expect(
+    page.locator("header").getByText("Partially received", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("table", { name: "Order lines" })).toContainText(
+    "18 of 20 received · 2 to come",
+  );
+  const receipts = section(page, "Receipts");
+  await expect(receipts.getByRole("list", { name: "Receipts" }).locator(":scope > li")).toHaveCount(
+    1,
+  );
+  await expect(receipts).toContainText("18 ×");
+  await expect(receipts).toContainText("$12.50 each");
+
+  // 4. The product: 18 on hand (also after a reload), one Received +18
+  // movement, the supplier with last cost $12.50 (D63), 2 on order.
+  await page.goto(product.url);
+  await expect(section(page, "Stock").getByText("18 in stock")).toBeVisible();
+  await page.reload();
+  await expect(section(page, "Stock").getByText("18 in stock")).toBeVisible();
+  const purchasing = section(page, "Suppliers & orders");
+  await expect(purchasing).toContainText("On order: 2");
+  await expect(
+    purchasing
+      .getByRole("list", { name: "Suppliers" })
+      .getByRole("link", { name: new RegExp(supplierName) }),
+  ).toContainText("Last cost $12.50");
+  await page.goto(`/inventory/movements?product=${productId(product.url)}`);
+  const movements = page.getByRole("list", { name: "Stock movements" });
+  await expect(movements.getByRole("listitem", { name: "Received +18" })).toHaveCount(1);
+  await expect(movements.getByRole("listitem", { name: /^Received/ })).toHaveCount(1);
+
+  // 5. One used on a job: 17.
+  await createJobViaIntake(page, { tag });
+  const { sheet, choice } = await pickPart(page, sku, new RegExp(name));
+  await choice.click();
+  await sheet.getByRole("button", { name: "Add part" }).click();
+  await expect(toast(page, `Added 1 × ${name}. 17 left at Shop floor.`)).toBeVisible();
+
+  // 6. Reorder for that supplier: listed and ticked, on order 2, suggested
+  // 2 x 20 - 17 - 2 = 21 (D66); the draft has it x 21 at the last cost.
+  await page.goto(`/purchasing/reorder?supplier=${order.supplierId}`);
+  const row = page
+    .getByRole("list", { name: "Below reorder point" })
+    .getByRole("listitem")
+    .filter({ hasText: name });
+  await expect(row).toContainText("On hand 17 / reorder at 20");
+  await expect(row).toContainText("On order 2");
+  await expect(row).toContainText("Suggested 21");
+  await expect(row.getByRole("checkbox")).toBeChecked();
+  await page.getByRole("button", { name: "Create draft order (1 product)" }).click();
+  await expect(page).toHaveURL(/\/purchasing\/orders\/[0-9a-f-]{36}$/);
+  await expect(page.locator("header").getByText("Draft", { exact: true })).toBeVisible();
+  const draftLines = page.getByRole("table", { name: "Order lines" });
+  await expect(draftLines).toContainText(name);
+  await expect(draftLines).toContainText("0 of 21 received");
+  await expect(draftLines).toContainText("$12.50");
+});
+
+test("a lost response is found, not received twice; a lost request is retried with the same key", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const tag = tagFor(testInfo);
+  const name = `Grip tape ${tag}`;
+  const sku = `GT-${tag}`;
+  const note = `DN-${tag}`;
+
+  await signIn(page, "admin");
+  const product = await createProduct(page, {
+    name,
+    sku,
+    price: "9.00",
+    cost: "4.00",
+    reorderPoint: "2",
+  });
+  const order = await createSubmittedOrder(page, {
+    supplierName: `Grips ${tag}`,
+    query: sku,
+    option: new RegExp(name),
+    quantity: "10",
+    unitCost: "4.00",
+  });
+
+  // Lost response: the server commits, the connection drops before the answer.
+  await openReceive(page, order.id);
+  const line = receiveLine(page, name);
+  await line.getByLabel("Receive now").fill("6");
+  await page.getByLabel("Delivery note reference").fill(note);
+  await interceptReceiveActions(page, order.id, ["lostResponse", "slow"]);
+  await page.getByRole("button", { name: "Receive 6 items" }).click();
+  await expect(
+    toast(page, "We could not confirm the receipt. Checking whether it was recorded…"),
+  ).toBeVisible();
+  await expect(page.getByText("Checking whether this delivery was recorded…")).toBeVisible();
+  await expect(line.getByLabel("Receive now")).toBeDisabled();
+  await expect(page.getByText(/^This delivery was recorded at .+ \(6 items\)\.$/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await page.unrouteAll({ behavior: "wait" });
+
+  // Exactly one receipt; stock rose by 6 once.
+  const orderPage = await page.context().newPage();
+  await orderPage.goto(`/purchasing/orders/${order.id}`);
+  await expect(
+    section(orderPage, "Receipts").getByRole("list", { name: "Receipts" }).locator(":scope > li"),
+  ).toHaveCount(1);
+  await expect(orderPage.getByRole("table", { name: "Order lines" })).toContainText(
+    "6 of 10 received · 4 to come",
+  );
+  await orderPage.goto(product.url);
+  await expect(section(orderPage, "Stock").getByText("6 in stock")).toBeVisible();
+
+  // A fresh form: 4 to come by default; the same delivery note is caught.
+  await page.getByRole("button", { name: "Receive another delivery" }).click();
+  await expect(line.getByLabel("Receive now")).toHaveValue("4");
+  await expect(page.getByLabel("Delivery note reference")).toHaveValue("");
+  await page.getByLabel("Delivery note reference").fill(note.toLowerCase());
+  await expect(
+    page.getByText(new RegExp(`^${note} was already recorded at .+ \\(6 items\\)$`)),
+  ).toBeVisible();
+  const commit = page.getByRole("button", { name: "Receive 4 items" });
+  await expect(commit).toBeDisabled();
+  await page.getByText("This is a different delivery").click();
+  await expect(commit).toBeEnabled();
+  await page.getByLabel("Delivery note reference").fill(`${note}-B`);
+
+  // Lost request: it never reached the server. Checked, not recorded, retried.
+  await interceptReceiveActions(page, order.id, ["lostRequest", "slow"]);
+  await commit.click();
+  await expect(page.getByText("Checking whether this delivery was recorded…")).toBeVisible();
+  await expect(line.getByLabel("Receive now")).toBeDisabled();
+  await expect(
+    page.getByText("It was not recorded. Retrying is safe: it will not be received twice."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(toast(page, "Order fully received.")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/purchasing/orders/${order.id}$`));
+  await expect(
+    section(page, "Receipts").getByRole("list", { name: "Receipts" }).locator(":scope > li"),
+  ).toHaveCount(2);
+  await expect(page.locator("header").getByText("Received", { exact: true })).toBeVisible();
+  await page.goto(product.url);
+  await expect(section(page, "Stock").getByText("10 in stock")).toBeVisible();
+});
+
+test("a received order shows the closed state on its receive page", async ({ page }) => {
+  await signIn(page, "admin", `/purchasing/receive/${PURCHASE_ORDER.receivedInFull}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    `Receive ${PO_NUMBER.receivedInFull}`,
+  );
+  await expect(
+    page.getByText("This order is fully received. Extra or late units go on a new order."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start a new order for this supplier" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Receive \d/ })).toHaveCount(0);
+  await page
+    .getByRole("link", { name: `Back to ${PO_NUMBER.receivedInFull}` })
+    .last()
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/purchasing/orders/${PURCHASE_ORDER.receivedInFull}$`));
+});
+
+test("staff without purchasing access get a 403 on receiving and reorder, and no links to them", async ({
+  page,
+}) => {
+  await signIn(page, "mechanic2", `/purchasing/orders/${PURCHASE_ORDER.partial}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(PO_NUMBER.partial);
+  await expect(page.getByRole("link", { name: "Receive", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("navigation", { name: "Purchasing" }).getByRole("link", { name: "Reorder" }),
+  ).toHaveCount(0);
+  for (const path of [`/purchasing/receive/${PURCHASE_ORDER.partial}`, "/purchasing/reorder"]) {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(403);
+  }
+});
+
+test("a buyer sees Receive on an open order and Reorder beside low stock", async ({ page }) => {
+  await signIn(page, "admin", `/purchasing/orders/${PURCHASE_ORDER.partial}`);
+  await expect(page.getByRole("link", { name: "Receive", exact: true })).toHaveAttribute(
+    "href",
+    `/purchasing/receive/${PURCHASE_ORDER.partial}`,
+  );
+  await page.goto(`/purchasing/orders/${PURCHASE_ORDER.draft}`);
+  await expect(page.getByText("Submit the order before receiving")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Receive", exact: true })).toHaveCount(0);
+
+  await page.goto("/inventory?filter=low");
+  await page.getByRole("link", { name: "Reorder" }).click();
+  await expect(page).toHaveURL(/\/purchasing\/reorder$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Reorder" })).toBeVisible();
+  // No supplier chosen yet: nothing ticked, nothing to create.
+  await expect(
+    page.getByRole("button", { name: "Create draft order (0 products)" }),
+  ).toBeDisabled();
 });
