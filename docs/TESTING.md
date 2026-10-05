@@ -316,6 +316,8 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Today flows vs snapshot (D31) | `reporting.test.ts`: inserting a job with today's check-in, start, line and completion raises today's flows by exactly those milestones and the money by its line; the `*_now` counts equal direct status counts grouped as `BOARD_GROUPS`, D20 overdue via `isOverdue` and `low_stock` rows; a past day has `is_today` false and every `*_now` NULL; tomorrow → `report_range_invalid`. Range rules: `daily_summary` from > to and 367 days raise, 366 pass; `financial_lines` 31 pass, 32 and from > to raise; null bounds mean today. |
 | Significant adjustments (D33) | `reporting.test.ts`: `private.is_significant_adjustment` cases (−6, +5, −1, 4 × 24.99 vs 4 × 25.00, a unit, 2 × 60.00, non-adjustment types false); `stock_adjustments_on(TEST_DAY)` over owner-inserted movements returns the day's six (00:00 and 23:59:59 in, the neighbouring days out), newest first, with `significant`, `actor_name` and `reason` for mechanic2 and `value_at_cost` NULL; the admin sees \|delta\| × unit cost (snapshot, else product default, else 0). |
 | Operational exceptions incl. 7-day overdue boundary (D34, D20) | `reporting.test.ts`: an open job checked in exactly `OVERDUE_AFTER_DAYS` days ago is not `overdue_job`, one second earlier is; a collected job checked in 30 days ago is neither; `work_order_activity.is_overdue` equals `isOverdue` for the same rows; a ready job completed 7 shop days ago is `uncollected_job`, 6 days ago not; a forced negative on-hand is `negative_stock` (danger, all danger rows first); an owner-held unit with no live line is `unit_hold_stale`, a unit held by `add_inventory_line` on an open job is not; a completed USD job's line is `currency_mismatch` and out of the day's totals; `exceptions_now` equals the row count; max_rows clamped to 1..200. |
+| Seeded history reconciles (Phase 5; SPEC §10 examples, SEED_DAYS) | `reporting-seed.test.ts` (reads only; days counted back from the seed's anchor, `seedToday()`): H1–H4 (and H5's rounding) through `work_order_yield` (admin) and Σ `financial_lines(anchor−6, anchor)` per job equal `SPEC_EXAMPLE_JOBS` / `ROUNDING_JOB`, recognised on their days, H4's CC 12.00 not 7.50; `daily_summary(anchor−n, anchor−n)` equals `SEED_DAYS[n]` exactly for n = 0…6 (every column, placeholders NULL); Σ entries by `recognized_day` equal each day's money columns; every completed seeded job (Phase 3, 4, 5) has entries equal to `work_order_totals_staff` and `work_order_yield` on its completion day, open and cancelled ones none; parts consumed/returned and adjustment counts equal the ledger's sums; every seeded entry's share ≥ 0 and equals its line's (H4's tyre a loss at 0); `stock_adjustments_on(anchor−n)` gives A1–A3 as `SEED_ADJUSTMENTS` (A2 significant, `value_at_cost` NULL for mechanic2, 30.00 for the admin). When the anchor is the shop's today (else skipped with a message): `today_dashboard(null)` is the anchor, `is_today`, flows = `SEED_DAYS[0]`, the `*_now` snapshot equals direct counts and `SEED_SNAPSHOT` (exactly in a fresh per-file database, at least otherwise); `operational_exceptions` has `SEED_EXCEPTIONS` and not H5, J-000002, J-000003 or J-000005. `display-parity.test.ts`: `private.shop_timezone()` = `SHOP_TIME_ZONE`, and `work_order_activity_on`'s `bike_title` / `customer_label` equal `bikeTitle()` / `customerLabel()` for every seeded job of days 0–6. |
+| Seeded ledger consistent (Phase 5) | `reporting-seed.test.ts` "The seeded ledger is consistent": every seeded inventory line has exactly one `job_consumption` movement (−quantity, cost snapshot = the line's unit cost), at the line's own time for the Phase 5 lines (J-000010's, written by `add_inventory_line`, just after); no line created at or after its job's completion; no stock level below zero and the Phase 5 products' on-hand as documented; no seeded job, line, event, assignment or movement later than `now()`, and no Phase 5 row later than J-000007's seed-time check-in. |
 | Cost-pending lines flagged (D14) | `reporting.test.ts`: a `cost_pending` manual line on a completed job is recognised at cost 0 with `cost_pending` true; `today_dashboard(day).cost_pending_lines` and `work_order_yield.cost_pending_count` count it. |
 | No float money in function results (Phase 5) | `meta.test.ts`: no money-named OUT/TABLE argument of a function in `public` or `private` is `real` or `double precision`; every reporting RPC compiles and answers with exactly its documented columns (`reporting.test.ts`). |
 
@@ -337,6 +339,14 @@ npm run test:e2e                       # build + start on :3100, reset bicii_dev
 E2E_REUSE_SERVER=1 npm run test:e2e    # reuse an app already on E2E_PORT (3100)
 E2E_RESET=0 npm run test:e2e           # keep bicii_dev as it is
 ```
+
+The seed's history is relative to the day it was reset (DATA-MODEL §18
+"Phase 5 part"). Global setup reads that anchor day once, from the seeded
+T3 job's check-in, into `E2E_SEED_ANCHOR` ('YYYY-MM-DD'; the workers
+inherit it); specs use `seedAnchor()` and `anchorDay(n)` from
+`tests/e2e/helpers.ts`, never the wall clock, because with `E2E_RESET=0`,
+`E2E_EXTERNAL_STACK=1` or a run across Singapore midnight the anchor is not
+today.
 
 Phase 0 specs (`auth.spec.ts`, `staff.spec.ts`): signed-out `/` redirects to
 `/login`; `?next=` deep links survive sign-in and cannot leave the origin
@@ -518,6 +528,27 @@ create their own workshop rows pick service and category names the seed
 does not use (active names are unique) and scope counts to their own job or
 customer; the seed's own shape and timelines are pinned by
 `workshop-seed.test.ts`.
+
+Since Phase 5 the seed is a week of shop history **relative to the shop day
+`db:reset` ran** (the anchor): every Phase 3, 4 and 5 timestamp goes through
+the session-temporary `pg_temp.seed_at(days_ago, local_time)`. The figures
+it must produce are written by hand in `tests/fixtures/reporting.ts`
+(`SEED_DAYS` for days 0–6, `SPEC_EXAMPLE_JOBS`, `SEED_SNAPSHOT`,
+`SEED_EXCEPTIONS`, `SEED_ADJUSTMENTS`) and the Phase 5 rows' ids in
+`tests/fixtures/ids.ts` (`REPORT_JOB`, `REPORT_JOB_NUMBER`, `REPORT_LINE`,
+`REPORT_PRODUCT`, `REPORT_PRODUCT_SHORT_ID`). The anchor rule: the anchor
+need not be today (the DB test template is built once per run,
+existing-database mode keeps an old seed, a run can cross Singapore
+midnight), so seed assertions read it with `seedToday()`
+(`tests/db/reporting-fixtures.ts`, from T3's check-in, not through the
+functions under test) and use explicit days `anchor − n`, never
+`shop_today()` or null bounds; assertions that need anchor = today
+(`today_dashboard(null)`, `is_today`, the `*_now` snapshot, the exceptions)
+compare the two first and skip with a message when they differ; tests that
+take a short ID or sequence value skip when `isolatedDatabase()` is false.
+E2E reads the same anchor in global setup (`E2E_SEED_ANCHOR`). Tests that
+list a seeded customer's jobs list the Phase 5 jobs too
+(`workshop-customer-access.test.ts`).
 
 ## CI
 

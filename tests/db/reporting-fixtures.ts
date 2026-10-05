@@ -21,6 +21,7 @@ import type pg from "pg";
 
 import type { WorkOrderStatus } from "@/lib/workshop";
 
+import { REPORT_JOB } from "../fixtures/ids";
 import { makeLocation, makeProduct, readAsOwner } from "./inventory-fixtures";
 import { makeCustomerWithBike, makeService, type WorkOrderRow } from "./workshop-fixtures";
 
@@ -589,6 +590,31 @@ export async function shopToday(tx: pg.Client): Promise<string> {
   const { rows } = await readAsOwner(tx, () =>
     tx.query<{ d: string }>("select to_char(private.shop_today(), 'YYYY-MM-DD') as d"),
   );
+  return rows[0].d;
+}
+
+/**
+ * The seed's anchor: the shop day `db:reset` ran, as 'YYYY-MM-DD'. Read
+ * from T3's check-in (REPORT_JOB.todayReceived, checked in "today" by the
+ * seed) without the functions under test. It need not be today: the test
+ * template is built once per run, an existing database keeps an old seed,
+ * and a run can cross Singapore midnight. Seed assertions count days back
+ * from it (addDays(anchor, -n)); those that need anchor = today compare it
+ * with shopToday() first and skip when they differ.
+ */
+export async function seedToday(tx: pg.Client): Promise<string> {
+  const { rows } = await readAsOwner(tx, () =>
+    tx.query<{ d: string }>(
+      `select (checked_in_at at time zone 'Asia/Singapore')::date::text as d
+         from public.work_orders where id = $1`,
+      [REPORT_JOB.todayReceived],
+    ),
+  );
+  if (rows.length === 0) {
+    throw new Error(
+      "seedToday: the seed's anchor job (REPORT_JOB.todayReceived) is missing; run `npm run db:reset`.",
+    );
+  }
   return rows[0].d;
 }
 
