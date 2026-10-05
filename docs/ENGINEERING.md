@@ -186,8 +186,10 @@ from the code:
   phone and iPad projects and give every record a unique tag
   (`tagFor(testInfo)`), never counting rows in the shared database.
 - **Decisions and docs.** A new business decision takes the next free
-  number in D43–D59 (D60 and up belong to the purchasing track), with a
-  row in [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) and a record in
+  number in its phase's own range (the allocation in
+  [PLAN §6](PLAN.md#6-open-decisions-for-the-owner): D80–D89 Shopify,
+  D90–D99 staff roles, D100–D119 reporting, D120–D139 public site, D140
+  and up later), with a row in [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) and a record in
   [decisions/](decisions/README.md). Update the canonical doc that owns
   each changed fact ([README.md](../README.md#where-each-fact-lives) lists
   them), record new shortcuts in [RISKS.md](RISKS.md), and answer the

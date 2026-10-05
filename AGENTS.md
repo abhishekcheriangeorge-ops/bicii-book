@@ -63,9 +63,12 @@ The repository follows
    - setup, commands, tests: `docs/ENGINEERING.md`, `docs/TESTING.md`;
    - administration, hosting, release, recovery: `docs/OPERATIONS.md`,
      `docs/RUNBOOK.md`;
-   - a new business decision: the next free D43–D59 row in
-     [PLAN §6](docs/PLAN.md#6-open-decisions-for-the-owner) plus a record
-     (D60 and up belong to the purchasing track).
+   - a new business decision: the next free row in the phase's own range
+     in [PLAN §6](docs/PLAN.md#6-open-decisions-for-the-owner) plus a
+     record (D43–D59 main line, used; D60–D69 purchasing; D70–D79 staff
+     email sign-in; D80–D89 Shopify; D90–D99 staff roles; D100–D119
+     reporting; D120–D139 public site; D140 and up later; records
+     ADR-018 to ADR-023 in the same order).
 3. Record problems, shortcuts and uncertainty with evidence in
    `docs/RISKS.md`. There is one backlog: the PLAN phases, the RISKS next
    actions and NOW.md.

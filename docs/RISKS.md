@@ -741,26 +741,26 @@ URLs, or customer data in this file.
 ## R-028 — The main-line decision range D43–D59 is exhausted
 
 - Category: process gap.
-- Status and owner: open; orchestrator and owner.
+- Status and owner: resolved 2026-10-06; orchestrator.
 - Trigger: the next main-line phase needs a new D-row (for example
   Shopify, Phase 10, or Phase 9 reporting's refund row).
-- Impact: [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) reserves
+- Impact: [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) reserved
   D43–D59 for this line and D60 and up for the purchasing track (D60–D66
   on `feat/p7-purchasing`). Phase 8 took D56–D59, the last four numbers,
-  so there is no free main-line number; a later phase that picks one on
-  its own risks a collision at the integration step.
-- Evidence and confidence: high; PLAN §6 on `feat/p8-labels` ends at D59
-  (checked again at the end of Phase 8, step 4, which added no decision);
-  the purchasing range is stated in PLAN §6 and
-  [decisions/README.md](decisions/README.md).
-- Workaround or containment: none; a phase needing a decision row stops
-  and asks.
-- Next action: the orchestrator or owner opens a new main-line range (for
-  example D70–D89) in PLAN §6 and decisions/README.md before the next
-  phase that adds a decision.
-- Revisit trigger: the next main-line decision; the integration of the
-  purchasing track.
-- Last checked: 2026-10-05.
+  so there was no free main-line number; a later phase picking one on its
+  own risked a collision at the integration step.
+- Evidence and confidence: high. Resolved by the orchestrator's allocation
+  of 2026-10-06, now stated in PLAN §6's introduction,
+  [decisions/README.md](decisions/README.md), AGENTS.md's maintenance
+  contract and [ENGINEERING.md](ENGINEERING.md): D60–D69 purchasing,
+  D70–D79 staff email sign-in, D80–D89 Shopify (used by Phase 10, ADR-020),
+  D90–D99 staff roles, D100–D119 Phase 9 reporting, D120–D139 Phase 11
+  public site, D140 and up later; ADR-018 to ADR-023 likewise.
+- Workaround or containment: none needed.
+- Next action: none; each phase uses only its own range.
+- Revisit trigger: a phase exhausts its range; the purchasing track is
+  integrated.
+- Last checked: 2026-10-06.
 
 ## R-029 — The purchase receive screen has no "Print N labels" shortcut yet
 

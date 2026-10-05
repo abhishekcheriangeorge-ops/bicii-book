@@ -15,6 +15,12 @@ and unit status change only through `restock_unit`; evidence in
 `tests/db/sales.test.ts` and `tests/e2e/sales.spec.ts` (a partial refund
 leaves the stock unchanged). Online refunds remain Phase 10's.
 
+Status update 2026-10-06 (D7): applied to online refunds by Phase 10 (D85,
+[ADR-020](ADR-020-shopify.md)): `process_shopify_refund` writes one
+`sale_refunds` row (capped like D49) and nothing else; Shopify's restock
+claims stay in the event's result; evidence in
+`tests/db/shopify-webhooks.test.ts` ("Refunds are financial only").
+
 ## Context
 
 The plan had to choose defaults for three phases that are not built on this
