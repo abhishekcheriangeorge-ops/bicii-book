@@ -29,9 +29,10 @@ export const STAFF_EMAIL = {
 export type SeedStaff = keyof typeof STAFF;
 
 /**
- * public.customers.id (Phase 1). None has a login: tests that act as a
- * customer create an Auth user and link it (tests/db/customer-fixtures.ts).
- * tan and daniel have internal_notes; nurul has no email.
+ * public.customers.id (Phase 1). Only chloe has a login (Phase 2,
+ * CUSTOMER_LOGIN); other tests that act as a customer create an Auth user
+ * and link it (tests/db/customer-fixtures.ts), never to chloe. tan and
+ * daniel have internal_notes; nurul has no email.
  */
 export const CUSTOMER = {
   tan: "c1000000-0000-4000-8000-000000000001",
@@ -441,4 +442,103 @@ export const REPORT_PRODUCT_SHORT_ID: Record<ReportProduct, string> = {
 /** public.categories.id (Phase 5): the 'Wheels' product category, sort_order 8. */
 export const REPORT_PRODUCT_CATEGORY = {
   wheels: "ca000000-0000-4000-8000-000000000013",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Phase 2: the schedule and appointments (supabase/seed.sql "Phase 2").
+// Days are counted from the shop day the seed ran (the anchor, as in
+// tests/fixtures/reporting.ts); "Tue-Fri >= n" is the first Tuesday-Friday
+// at least n days ahead.
+// ---------------------------------------------------------------------------
+
+/**
+ * public.shop_hours.id (0 = Sunday, as extract(dow)): Monday is one
+ * INACTIVE row (closed, hours remembered); Tuesday-Friday 10:00-19:00; a
+ * split Saturday (09:00-12:30 and 13:30-18:00); Sunday 09:00-13:00.
+ */
+export const SHOP_HOURS = {
+  mondayInactive: "e3000000-0000-4000-8000-000000000001",
+  tuesday: "e3000000-0000-4000-8000-000000000002",
+  wednesday: "e3000000-0000-4000-8000-000000000003",
+  thursday: "e3000000-0000-4000-8000-000000000004",
+  friday: "e3000000-0000-4000-8000-000000000005",
+  saturdayMorning: "e3000000-0000-4000-8000-000000000006",
+  saturdayAfternoon: "e3000000-0000-4000-8000-000000000007",
+  sunday: "e3000000-0000-4000-8000-000000000008",
+} as const;
+
+/**
+ * public.appointment_types.id: serviceDropOff (30 min, 1 unit, public, sort
+ * 1), repairAssessment (30 min, 1 unit, public, 2), buildConsultation
+ * ("Custom build consultation", 60 min, 2 units, public, 3) and
+ * warrantyInspection (30 min, 1 unit, staff-only, 4). All active.
+ */
+export const APPOINTMENT_TYPE = {
+  serviceDropOff: "e1000000-0000-4000-8000-000000000001",
+  repairAssessment: "e1000000-0000-4000-8000-000000000002",
+  buildConsultation: "e1000000-0000-4000-8000-000000000003",
+  warrantyInspection: "e1000000-0000-4000-8000-000000000004",
+} as const;
+
+/**
+ * public.closure_overrides.id: taipeiShow = closed the whole first
+ * Wednesday at least 7 days ahead ("Team at the Taipei Cycle show");
+ * stocktake = custom hours 12:00-16:00 on the first Thursday at least 8 days
+ * ahead ("Short day for stocktake"). Both within 14 days.
+ */
+export const CLOSURE = {
+  taipeiShow: "e4000000-0000-4000-8000-000000000001",
+  stocktake: "e4000000-0000-4000-8000-000000000002",
+} as const;
+
+/**
+ * public.appointments.id (D41 counts by scheduled day and current status):
+ *   tanTarmacCompleted   day -3 10:00 Repair assessment, Tan's Tarmac;
+ *                        checked in at J-000014's check-in, linked to it
+ *                        (REPORT_JOB.lossLine, D40) and completed at its
+ *                        completed_at (D36).
+ *   danielNoShow         day -1 11:00 Service drop-off, Daniel's Cannondale;
+ *                        no_show (11:20).
+ *   priyaArrived         today 10:00 Service drop-off, Priya's Domane;
+ *                        arrived, not checked in.
+ *   hafizConfirmed       today 10:30 Repair assessment, Hafiz's Brompton;
+ *                        confirmed (J-000010 is open on that bike).
+ *   chloeGiantOnline     today 15:00 Service drop-off, Chloe's Giant;
+ *                        booked online (source customer), with a note.
+ *   nurulBooked          today 16:00 Repair assessment, Nurul's Bianchi;
+ *                        booked.
+ *   tanBromptonConfirmed Tue-Fri >= 1 day ahead 11:00 Service drop-off,
+ *                        Tan's Brompton; confirmed.
+ *   priyaTernCancelled   Tue-Fri >= 3 days ahead 10:00 Repair assessment,
+ *                        Priya's Tern; cancelled by staff ("Customer
+ *                        travelling").
+ *   chloeSurlyOnline     Tue-Fri >= 5 days ahead 14:00 Custom build
+ *                        consultation, Chloe's Surly; booked online.
+ * Every other one was booked by Asha Admin. Daniel has no upcoming booked
+ * or confirmed appointment.
+ */
+export const APPOINTMENT = {
+  tanTarmacCompleted: "e2000000-0000-4000-8000-000000000001",
+  danielNoShow: "e2000000-0000-4000-8000-000000000002",
+  priyaArrived: "e2000000-0000-4000-8000-000000000003",
+  hafizConfirmed: "e2000000-0000-4000-8000-000000000004",
+  chloeGiantOnline: "e2000000-0000-4000-8000-000000000005",
+  nurulBooked: "e2000000-0000-4000-8000-000000000006",
+  tanBromptonConfirmed: "e2000000-0000-4000-8000-000000000007",
+  priyaTernCancelled: "e2000000-0000-4000-8000-000000000008",
+  chloeSurlyOnline: "e2000000-0000-4000-8000-000000000009",
+} as const;
+
+export type SeedAppointment = keyof typeof APPOINTMENT;
+
+/**
+ * The one seeded customer login (Phase 2): Chloe Lim, password
+ * SEED_PASSWORD, linked to CUSTOMER.chloe (E2E journey 2, customer-access
+ * tests). Tests must not link another login to CUSTOMER.chloe.
+ */
+export const CUSTOMER_LOGIN = {
+  chloe: {
+    authUserId: "a0000000-0000-4000-8000-000000000101",
+    email: "chloe.lim@example.com",
+  },
 } as const;

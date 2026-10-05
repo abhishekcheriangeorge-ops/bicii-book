@@ -3,6 +3,209 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      appointment_events: {
+        Row: {
+          actor_staff_id: string | null;
+          actor_user_id: string | null;
+          appointment_id: string;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["appointment_event_type"];
+          from_status: Database["public"]["Enums"]["appointment_status"] | null;
+          id: number;
+          payload: NonNullable<Json>;
+          reason: string | null;
+          to_status: Database["public"]["Enums"]["appointment_status"] | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          appointment_id: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["appointment_event_type"];
+          from_status?: Database["public"]["Enums"]["appointment_status"] | null;
+          id?: never;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+          to_status?: Database["public"]["Enums"]["appointment_status"] | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          appointment_id?: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["appointment_event_type"];
+          from_status?: Database["public"]["Enums"]["appointment_status"] | null;
+          id?: never;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+          to_status?: Database["public"]["Enums"]["appointment_status"] | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "appointment_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "appointment_events_appointment_id_fkey";
+            columns: ["appointment_id"];
+            isOneToOne: false;
+            referencedRelation: "appointments";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      appointment_types: {
+        Row: {
+          active: boolean;
+          capacity_units: number;
+          created_at: string;
+          description: string | null;
+          duration_minutes: number;
+          id: string;
+          name: string;
+          public: boolean;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          active?: boolean;
+          capacity_units?: number;
+          created_at?: string;
+          description?: string | null;
+          duration_minutes: number;
+          id?: string;
+          name: string;
+          public?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          active?: boolean;
+          capacity_units?: number;
+          created_at?: string;
+          description?: string | null;
+          duration_minutes?: number;
+          id?: string;
+          name?: string;
+          public?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      appointments: {
+        Row: {
+          appointment_type_id: string;
+          arrived_at: string | null;
+          bike_id: string | null;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_via: Database["public"]["Enums"]["appointment_source"] | null;
+          capacity_units: number;
+          checked_in_at: string | null;
+          completed_at: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+          created_by_staff_id: string | null;
+          created_by_user_id: string | null;
+          customer_id: string;
+          customer_note: string | null;
+          ends_at: string;
+          id: string;
+          internal_note: string | null;
+          no_show_at: string | null;
+          source: Database["public"]["Enums"]["appointment_source"];
+          starts_at: string;
+          status: Database["public"]["Enums"]["appointment_status"];
+          updated_at: string;
+        };
+        Insert: {
+          appointment_type_id: string;
+          arrived_at?: string | null;
+          bike_id?: string | null;
+          cancellation_reason?: string | null;
+          cancelled_at?: string | null;
+          cancelled_via?: Database["public"]["Enums"]["appointment_source"] | null;
+          capacity_units: number;
+          checked_in_at?: string | null;
+          completed_at?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
+          created_by_staff_id?: string | null;
+          created_by_user_id?: string | null;
+          customer_id: string;
+          customer_note?: string | null;
+          ends_at: string;
+          id?: string;
+          internal_note?: string | null;
+          no_show_at?: string | null;
+          source: Database["public"]["Enums"]["appointment_source"];
+          starts_at: string;
+          status?: Database["public"]["Enums"]["appointment_status"];
+          updated_at?: string;
+        };
+        Update: {
+          appointment_type_id?: string;
+          arrived_at?: string | null;
+          bike_id?: string | null;
+          cancellation_reason?: string | null;
+          cancelled_at?: string | null;
+          cancelled_via?: Database["public"]["Enums"]["appointment_source"] | null;
+          capacity_units?: number;
+          checked_in_at?: string | null;
+          completed_at?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
+          created_by_staff_id?: string | null;
+          created_by_user_id?: string | null;
+          customer_id?: string;
+          customer_note?: string | null;
+          ends_at?: string;
+          id?: string;
+          internal_note?: string | null;
+          no_show_at?: string | null;
+          source?: Database["public"]["Enums"]["appointment_source"];
+          starts_at?: string;
+          status?: Database["public"]["Enums"]["appointment_status"];
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "appointments_appointment_type_id_fkey";
+            columns: ["appointment_type_id"];
+            isOneToOne: false;
+            referencedRelation: "appointment_types";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "appointments_bike_id_fkey";
+            columns: ["bike_id"];
+            isOneToOne: false;
+            referencedRelation: "bikes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "appointments_created_by_staff_id_fkey";
+            columns: ["created_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "appointments_customer_id_fkey";
+            columns: ["customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       attachment_events: {
         Row: {
           actor_staff_id: string | null;
@@ -293,6 +496,53 @@ export type Database = {
             columns: ["parent_id"];
             isOneToOne: false;
             referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      closure_overrides: {
+        Row: {
+          closes_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          ends_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          closes_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          ends_at: string;
+          id?: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at?: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at?: string;
+        };
+        Update: {
+          closes_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          ends_at?: string;
+          id?: string;
+          kind?: Database["public"]["Enums"]["closure_kind"];
+          opens_at?: string | null;
+          reason?: string;
+          starts_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "closure_overrides_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
             referencedColumns: ["id"];
           },
         ];
@@ -895,6 +1145,53 @@ export type Database = {
           },
         ];
       };
+      schedule_events: {
+        Row: {
+          actor_staff_id: string | null;
+          actor_user_id: string | null;
+          correlation_id: string | null;
+          created_at: string;
+          entity: Database["public"]["Enums"]["schedule_entity"];
+          entity_id: string | null;
+          event_type: Database["public"]["Enums"]["schedule_event_type"];
+          id: number;
+          payload: NonNullable<Json>;
+          reason: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity: Database["public"]["Enums"]["schedule_entity"];
+          entity_id?: string | null;
+          event_type: Database["public"]["Enums"]["schedule_event_type"];
+          id?: never;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity?: Database["public"]["Enums"]["schedule_entity"];
+          entity_id?: string | null;
+          event_type?: Database["public"]["Enums"]["schedule_event_type"];
+          id?: never;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "schedule_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       services: {
         Row: {
           active: boolean;
@@ -947,6 +1244,89 @@ export type Database = {
             columns: ["category_id"];
             isOneToOne: false;
             referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      shop_hours: {
+        Row: {
+          active: boolean;
+          closes_at: string;
+          created_at: string;
+          id: string;
+          opens_at: string;
+          updated_at: string;
+          weekday: number;
+        };
+        Insert: {
+          active?: boolean;
+          closes_at: string;
+          created_at?: string;
+          id?: string;
+          opens_at: string;
+          updated_at?: string;
+          weekday: number;
+        };
+        Update: {
+          active?: boolean;
+          closes_at?: string;
+          created_at?: string;
+          id?: string;
+          opens_at?: string;
+          updated_at?: string;
+          weekday?: number;
+        };
+        Relationships: [];
+      };
+      shop_settings: {
+        Row: {
+          booking_horizon_days: number;
+          booking_min_notice_minutes: number;
+          customer_cancel_cutoff_minutes: number;
+          customer_max_active_bookings: number;
+          default_currency: string;
+          id: number;
+          intake_capacity_units: number;
+          intake_slot_minutes: number;
+          public_site_url: string | null;
+          timezone: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          booking_horizon_days?: number;
+          booking_min_notice_minutes?: number;
+          customer_cancel_cutoff_minutes?: number;
+          customer_max_active_bookings?: number;
+          default_currency?: string;
+          id?: number;
+          intake_capacity_units?: number;
+          intake_slot_minutes?: number;
+          public_site_url?: string | null;
+          timezone?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          booking_horizon_days?: number;
+          booking_min_notice_minutes?: number;
+          customer_cancel_cutoff_minutes?: number;
+          customer_max_active_bookings?: number;
+          default_currency?: string;
+          id?: number;
+          intake_capacity_units?: number;
+          intake_slot_minutes?: number;
+          public_site_url?: string | null;
+          timezone?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "shop_settings_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
             referencedColumns: ["id"];
           },
         ];
@@ -1446,6 +1826,13 @@ export type Database = {
         };
         Relationships: [
           {
+            foreignKeyName: "work_orders_appointment_id_fkey";
+            columns: ["appointment_id"];
+            isOneToOne: false;
+            referencedRelation: "appointments";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "work_orders_bike_id_fkey";
             columns: ["bike_id"];
             isOneToOne: false;
@@ -1839,6 +2226,18 @@ export type Database = {
           on_hand: number;
         }[];
       };
+      appointment_daily: {
+        Args: { from_day?: string; to_day?: string };
+        Returns: {
+          arrived: number;
+          booked: number;
+          cancelled: number;
+          checked_in: number;
+          day: string;
+          expected: number;
+          no_shows: number;
+        }[];
+      };
       assign_staff: {
         Args: {
           role?: Database["public"]["Enums"]["assignment_role"];
@@ -1869,6 +2268,106 @@ export type Database = {
           path: string;
         }[];
       };
+      available_slots: {
+        Args: { appointment_type_id: string; day: string };
+        Returns: {
+          remaining_units: number;
+          slot_end: string;
+          slot_start: string;
+        }[];
+      };
+      book_appointment: {
+        Args: {
+          appointment_id: string;
+          appointment_type_id: string;
+          bike_id?: string;
+          customer_id: string;
+          customer_note?: string;
+          internal_note?: string;
+          starts_at: string;
+        };
+        Returns: {
+          appointment_type_id: string;
+          arrived_at: string | null;
+          bike_id: string | null;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_via: Database["public"]["Enums"]["appointment_source"] | null;
+          capacity_units: number;
+          checked_in_at: string | null;
+          completed_at: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+          created_by_staff_id: string | null;
+          created_by_user_id: string | null;
+          customer_id: string;
+          customer_note: string | null;
+          ends_at: string;
+          id: string;
+          internal_note: string | null;
+          no_show_at: string | null;
+          source: Database["public"]["Enums"]["appointment_source"];
+          starts_at: string;
+          status: Database["public"]["Enums"]["appointment_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "appointments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      book_my_appointment: {
+        Args: {
+          appointment_id: string;
+          appointment_type_id: string;
+          bike_id?: string;
+          customer_note?: string;
+          starts_at: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["my_appointment"];
+        SetofOptions: {
+          from: "*";
+          to: "my_appointment";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      cancel_appointment: {
+        Args: { appointment_id: string; reason: string };
+        Returns: {
+          appointment_type_id: string;
+          arrived_at: string | null;
+          bike_id: string | null;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_via: Database["public"]["Enums"]["appointment_source"] | null;
+          capacity_units: number;
+          checked_in_at: string | null;
+          completed_at: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+          created_by_staff_id: string | null;
+          created_by_user_id: string | null;
+          customer_id: string;
+          customer_note: string | null;
+          ends_at: string;
+          id: string;
+          internal_note: string | null;
+          no_show_at: string | null;
+          source: Database["public"]["Enums"]["appointment_source"];
+          starts_at: string;
+          status: Database["public"]["Enums"]["appointment_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "appointments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       cancel_cult_commons_rate: {
         Args: { rate_id: string };
         Returns: {
@@ -1883,6 +2382,34 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "cult_commons_rates";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      cancel_my_appointment: {
+        Args: { appointment_id: string; reason?: string };
+        Returns: Database["public"]["CompositeTypes"]["my_appointment"];
+        SetofOptions: {
+          from: "*";
+          to: "my_appointment";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      check_in_appointment: {
+        Args: {
+          appointment_id: string;
+          bike_id: string;
+          intake_notes?: string;
+          lead_mechanic_id?: string;
+          link_existing?: boolean;
+          requested_work?: string;
+          work_order_id: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["appointment_check_in"];
+        SetofOptions: {
+          from: "*";
+          to: "appointment_check_in";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -2046,6 +2573,27 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      delete_closure_override: {
+        Args: { closure_id: string; reason: string };
+        Returns: {
+          closes_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          ends_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "closure_overrides";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       financial_lines: {
         Args: { from_day: string; to_day: string };
         Returns: {
@@ -2099,6 +2647,54 @@ export type Database = {
           to: "staff_permissions";
           isOneToOne: true;
           isSetofReturn: false;
+        };
+      };
+      mark_appointment_status: {
+        Args: {
+          appointment_id: string;
+          reason?: string;
+          status: Database["public"]["Enums"]["appointment_status"];
+        };
+        Returns: {
+          appointment_type_id: string;
+          arrived_at: string | null;
+          bike_id: string | null;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_via: Database["public"]["Enums"]["appointment_source"] | null;
+          capacity_units: number;
+          checked_in_at: string | null;
+          completed_at: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+          created_by_staff_id: string | null;
+          created_by_user_id: string | null;
+          customer_id: string;
+          customer_note: string | null;
+          ends_at: string;
+          id: string;
+          internal_note: string | null;
+          no_show_at: string | null;
+          source: Database["public"]["Enums"]["appointment_source"];
+          starts_at: string;
+          status: Database["public"]["Enums"]["appointment_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "appointments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      my_appointments: {
+        Args: { include_past?: boolean };
+        Returns: Database["public"]["CompositeTypes"]["my_appointment"][];
+        SetofOptions: {
+          from: "*";
+          to: "my_appointment";
+          isOneToOne: false;
+          isSetofReturn: true;
         };
       };
       my_bike_attachments: {
@@ -2218,6 +2814,23 @@ export type Database = {
           subject_label: string;
         }[];
       };
+      public_appointment_types: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          description: string;
+          duration_minutes: number;
+          id: string;
+          name: string;
+        }[];
+      };
+      public_shop_hours: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          closes_at: string;
+          opens_at: string;
+          weekday: number;
+        }[];
+      };
       record_attachment: {
         Args: {
           attachment_id: string;
@@ -2269,6 +2882,67 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "staff_permissions";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      save_appointment_type: {
+        Args: {
+          active: boolean;
+          appointment_type_id: string;
+          capacity_units: number;
+          description: string;
+          duration_minutes: number;
+          is_new: boolean;
+          name: string;
+          public: boolean;
+          sort_order?: number;
+        };
+        Returns: {
+          active: boolean;
+          capacity_units: number;
+          created_at: string;
+          description: string | null;
+          duration_minutes: number;
+          id: string;
+          name: string;
+          public: boolean;
+          sort_order: number;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "appointment_types";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      save_closure_override: {
+        Args: {
+          closure_id: string;
+          first_day: string;
+          from_time?: string;
+          is_new: boolean;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          last_day: string;
+          reason: string;
+          to_time?: string;
+        };
+        Returns: {
+          closes_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          ends_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "closure_overrides";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -2372,6 +3046,24 @@ export type Database = {
         };
       };
       set_service_archived: { Args: { archived: boolean; service_id: string }; Returns: string };
+      set_shop_hours: {
+        Args: { active?: boolean; intervals: Json; weekday: number };
+        Returns: {
+          active: boolean;
+          closes_at: string;
+          created_at: string;
+          id: string;
+          opens_at: string;
+          updated_at: string;
+          weekday: number;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "shop_hours";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       set_staff_active: {
         Args: { active: boolean; reason?: string; target_staff_id: string };
         Returns: {
@@ -2627,6 +3319,46 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      update_appointment: {
+        Args: {
+          appointment_id: string;
+          bike_id?: string;
+          clear_bike?: boolean;
+          customer_note?: string;
+          internal_note?: string;
+        };
+        Returns: {
+          appointment_type_id: string;
+          arrived_at: string | null;
+          bike_id: string | null;
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_via: Database["public"]["Enums"]["appointment_source"] | null;
+          capacity_units: number;
+          checked_in_at: string | null;
+          completed_at: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+          created_by_staff_id: string | null;
+          created_by_user_id: string | null;
+          customer_id: string;
+          customer_note: string | null;
+          ends_at: string;
+          id: string;
+          internal_note: string | null;
+          no_show_at: string | null;
+          source: Database["public"]["Enums"]["appointment_source"];
+          starts_at: string;
+          status: Database["public"]["Enums"]["appointment_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "appointments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_my_profile: {
         Args: { display_name?: string; first_name?: string; last_name?: string; phone?: string };
         Returns: Database["public"]["CompositeTypes"]["customer_profile"];
@@ -2649,6 +3381,37 @@ export type Database = {
           service_id: string;
         };
         Returns: string;
+      };
+      update_shop_settings: {
+        Args: {
+          booking_horizon_days?: number;
+          booking_min_notice_minutes?: number;
+          customer_cancel_cutoff_minutes?: number;
+          customer_max_active_bookings?: number;
+          intake_capacity_units?: number;
+          intake_slot_minutes?: number;
+          public_site_url?: string;
+        };
+        Returns: {
+          booking_horizon_days: number;
+          booking_min_notice_minutes: number;
+          customer_cancel_cutoff_minutes: number;
+          customer_max_active_bookings: number;
+          default_currency: string;
+          id: number;
+          intake_capacity_units: number;
+          intake_slot_minutes: number;
+          public_site_url: string | null;
+          timezone: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "shop_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       update_staff: {
         Args: {
@@ -2793,6 +3556,19 @@ export type Database = {
       };
     };
     Enums: {
+      appointment_event_type:
+        | "booked"
+        | "confirmed"
+        | "arrived"
+        | "checked_in"
+        | "completed"
+        | "cancelled"
+        | "no_show"
+        | "details_changed"
+        | "work_order_linked";
+      appointment_source: "staff" | "customer";
+      appointment_status:
+        "booked" | "confirmed" | "arrived" | "checked_in" | "completed" | "cancelled" | "no_show";
       assignment_role: "lead" | "additional";
       attachment_entity:
         "bike" | "work_order" | "product" | "inventory_unit" | "customer" | "consignment_item";
@@ -2800,6 +3576,7 @@ export type Database = {
       attachment_visibility: "internal" | "customer" | "public";
       bike_ownership_event_type: "registered" | "transferred";
       category_kind: "service" | "product";
+      closure_kind: "closed" | "custom_hours";
       customer_job_status:
         | "received"
         | "awaiting_customer"
@@ -2849,6 +3626,8 @@ export type Database = {
         | "archived"
         | "unarchived";
       publication_status: "draft" | "internal_only" | "public" | "sold" | "archived";
+      schedule_entity: "shop_settings" | "shop_hours" | "closure_override" | "appointment_type";
+      schedule_event_type: "created" | "updated" | "deleted";
       staff_event_type:
         | "created"
         | "details_changed"
@@ -2884,7 +3663,8 @@ export type Database = {
         | "line_added"
         | "line_voided"
         | "stock_consumed"
-        | "stock_reversed";
+        | "stock_reversed"
+        | "appointment_linked";
       work_order_note_kind: "note" | "diagnosis";
       work_order_status:
         | "received"
@@ -2900,6 +3680,13 @@ export type Database = {
         | "cancelled";
     };
     CompositeTypes: {
+      appointment_check_in: {
+        appointment_id: string | null;
+        appointment_status: Database["public"]["Enums"]["appointment_status"] | null;
+        work_order_id: string | null;
+        job_number: string | null;
+        created: boolean | null;
+      };
       customer_profile: {
         id: string | null;
         first_name: string | null;
@@ -2915,6 +3702,22 @@ export type Database = {
         location_id: string | null;
         on_hand_after: number | null;
         replayed: boolean | null;
+      };
+      my_appointment: {
+        id: string | null;
+        appointment_type_id: string | null;
+        appointment_type_name: string | null;
+        starts_at: string | null;
+        ends_at: string | null;
+        status: Database["public"]["Enums"]["appointment_status"] | null;
+        bike_id: string | null;
+        bike_short_id: string | null;
+        bike_title: string | null;
+        customer_note: string | null;
+        cancelled_at: string | null;
+        cancelled_via: Database["public"]["Enums"]["appointment_source"] | null;
+        created_at: string | null;
+        can_cancel: boolean | null;
       };
       publication_result: {
         product_id: string | null;
@@ -2942,6 +3745,18 @@ export type Database = {
       [_ in never]: never;
     };
     Views: {
+      appointment_daily: {
+        Row: {
+          arrived: number | null;
+          booked: number | null;
+          cancelled: number | null;
+          checked_in: number | null;
+          day: string | null;
+          expected: number | null;
+          no_shows: number | null;
+        };
+        Relationships: [];
+      };
       daily_summary: {
         Row: {
           appointments_arrived: number | null;
@@ -3262,6 +4077,27 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      appointment_event_type: [
+        "booked",
+        "confirmed",
+        "arrived",
+        "checked_in",
+        "completed",
+        "cancelled",
+        "no_show",
+        "details_changed",
+        "work_order_linked",
+      ],
+      appointment_source: ["staff", "customer"],
+      appointment_status: [
+        "booked",
+        "confirmed",
+        "arrived",
+        "checked_in",
+        "completed",
+        "cancelled",
+        "no_show",
+      ],
       assignment_role: ["lead", "additional"],
       attachment_entity: [
         "bike",
@@ -3275,6 +4111,7 @@ export const Constants = {
       attachment_visibility: ["internal", "customer", "public"],
       bike_ownership_event_type: ["registered", "transferred"],
       category_kind: ["service", "product"],
+      closure_kind: ["closed", "custom_hours"],
       customer_job_status: [
         "received",
         "awaiting_customer",
@@ -3329,6 +4166,8 @@ export const Constants = {
         "unarchived",
       ],
       publication_status: ["draft", "internal_only", "public", "sold", "archived"],
+      schedule_entity: ["shop_settings", "shop_hours", "closure_override", "appointment_type"],
+      schedule_event_type: ["created", "updated", "deleted"],
       staff_event_type: [
         "created",
         "details_changed",
@@ -3367,6 +4206,7 @@ export const Constants = {
         "line_voided",
         "stock_consumed",
         "stock_reversed",
+        "appointment_linked",
       ],
       work_order_note_kind: ["note", "diagnosis"],
       work_order_status: [

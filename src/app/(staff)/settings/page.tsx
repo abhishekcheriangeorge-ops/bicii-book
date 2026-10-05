@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 
 import {
   BoxIcon,
+  CalendarIcon,
   ChevronRightIcon,
+  ClockIcon,
   ShareIcon,
   UserIcon,
   UsersIcon,
@@ -47,6 +49,18 @@ export default async function SettingsPage() {
       label: "Locations",
       description: "Where stock is kept, and the default location",
       icon: BoxIcon,
+    },
+    {
+      href: "/settings/schedule",
+      label: "Shop hours and closures",
+      description: "Opening hours, closures and intake capacity",
+      icon: ClockIcon,
+    },
+    {
+      href: "/settings/appointment-types",
+      label: "Appointment types",
+      description: "What can be booked, how long it takes, and online booking",
+      icon: CalendarIcon,
     },
     {
       href: "/settings/install",

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { CustomerAppointmentRows } from "@/components/domain/appointments/appointment-list";
 import { ArchiveControl } from "@/components/domain/archive-control";
+import { BookAppointmentButton } from "@/components/domain/book-appointment-sheet";
 import { NewBikeButton } from "@/components/domain/bike-sheet";
 import { EditCustomerButton } from "@/components/domain/customer-sheet";
 import { JobHistoryList } from "@/components/domain/job-history";
@@ -10,11 +12,18 @@ import { ShortId } from "@/components/domain/short-id";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { BikeIcon, ChevronRightIcon, PlusIcon, WrenchIcon } from "@/components/ui/icons";
+import {
+  BikeIcon,
+  CalendarIcon,
+  ChevronRightIcon,
+  PlusIcon,
+  WrenchIcon,
+} from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowLink, RowList } from "@/components/ui/row-list";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDate } from "@/lib/dates";
+import { CUSTOMER_PAST_APPOINTMENTS, customerAppointments } from "@/lib/domain/appointments";
 import { listPhotos } from "@/lib/domain/attachments";
 import { getCustomer } from "@/lib/domain/customers";
 import { listWorkOrdersForCustomer } from "@/lib/domain/workshop";
@@ -26,18 +35,22 @@ export const metadata: Metadata = { title: "Customer" };
 
 /**
  * One customer (SPEC §21): how to reach them, staff notes, the bikes they
- * own now (add one here), their jobs (latest 20, "New job"), photos on their record (never public, PLAN D13),
- * and archiving.
+ * own now (add one here), their appointments (upcoming first, then the
+ * last CUSTOMER_PAST_APPOINTMENTS; "Book appointment" with the customer
+ * fixed), their jobs (latest 20, "New job"), photos on their record (never
+ * public, PLAN D13), and archiving. Archived customers can't be booked or
+ * given bikes.
  */
 export default async function CustomerPage({ params }: PageProps<"/customers/[id]">) {
   await requireStaff();
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const supabase = await createClient();
-  const [customer, photos, jobs] = await Promise.all([
+  const [customer, photos, jobs, appointments] = await Promise.all([
     getCustomer(supabase, id),
     listPhotos(supabase, { entityType: "customer", entityId: id }),
     listWorkOrdersForCustomer(supabase, id),
+    customerAppointments(supabase, id),
   ]);
   if (!customer) notFound();
   const archived = customer.archivedAt !== null;
@@ -155,6 +168,55 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
               </RowLink>
             ))}
           </RowList>
+        )}
+      </Card>
+      <Card
+        title="Appointments"
+        actions={
+          <BookAppointmentButton
+            presetCustomer={{ id: customer.id, label: customer.label }}
+            lockCustomer
+            disabled={archived}
+            buttonVariant="outline"
+            size="sm"
+          />
+        }
+      >
+        {archived ? (
+          <p className="mb-3 text-sm text-dust-500">
+            Archived customers cannot be booked in. Unarchive them first.
+          </p>
+        ) : null}
+        {appointments.upcoming.length === 0 && appointments.past.length === 0 ? (
+          <p className="flex items-center gap-2 text-dust-700">
+            <CalendarIcon className="size-5 shrink-0 text-dust-500" />
+            No appointments for {customer.label} yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {appointments.upcoming.length > 0 ? (
+              <CustomerAppointmentRows
+                label={`Upcoming appointments of ${customer.label}`}
+                appointments={appointments.upcoming}
+              />
+            ) : (
+              <p className="text-dust-700">Nothing booked from today on.</p>
+            )}
+            {appointments.past.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                <h3 className="font-display text-xs font-bold tracking-wide text-dust-700 uppercase">
+                  Past
+                  {appointments.past.length === CUSTOMER_PAST_APPOINTMENTS
+                    ? ` (latest ${CUSTOMER_PAST_APPOINTMENTS})`
+                    : ""}
+                </h3>
+                <CustomerAppointmentRows
+                  label={`Past appointments of ${customer.label}`}
+                  appointments={appointments.past}
+                />
+              </div>
+            ) : null}
+          </div>
         )}
       </Card>
       <Card

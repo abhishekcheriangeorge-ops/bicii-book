@@ -33,6 +33,7 @@ import {
   linkCustomerLogin,
   putStorageObject,
 } from "./customer-fixtures";
+import { insertAppointment, makeType } from "./appointment-fixtures";
 import { actAs, connect, inTransaction, isolatedDatabase, scalar, staffClaims } from "./harness";
 import {
   addManualLine,
@@ -648,7 +649,7 @@ describe.skipIf(!isolatedDatabase())("status machine (D15, D16)", () => {
     });
   });
 
-  it("an appointment is linked to a job at most once (Phase 2 extension point)", async () => {
+  it("an appointment is linked to a job at most once: null -> value once, then work_order_immutable (D40)", async () => {
     await scenario(ADMIN, async (tx, ids) => {
       const job = await createWorkOrder(tx, { ...ids, leadId: STAFF.mechanic1 });
       await setStatus(tx, job.id, "in_progress");
@@ -659,30 +660,58 @@ describe.skipIf(!isolatedDatabase())("status machine (D15, D16)", () => {
         delete rows[0].updated_at;
         return rows[0];
       };
+      // A checked_in appointment of a customer and bike (owner insert: the
+      // link triggers accept only those, D40).
+      const type = await makeType(tx);
+      const checkedIn = (customerId: string, bikeId: string) =>
+        insertAppointment(tx, {
+          customerId,
+          bikeId,
+          typeId: type,
+          startsAt: new Date(Date.now() - 60 * 60_000).toISOString(),
+          endsAt: new Date(Date.now() - 30 * 60_000).toISOString(),
+          status: "checked_in",
+        });
+      const appointmentId = await checkedIn(ids.customerId, ids.bikeId);
       const before = await row();
       const eventsBefore = await events(tx, job.id);
-      const appointmentId = randomUUID();
       const setAppointment = (value: string | null) =>
         tx.query("update public.work_orders set appointment_id = $2 where id = $1", [
           job.id,
           value,
         ]);
 
-      // null -> a value: once, with no event and nothing else changed.
+      // null -> a value: once, nothing else on the row changes, and exactly
+      // one appointment_linked event (created false) joins the timeline.
       await setAppointment(appointmentId);
       expect(await row()).toEqual({ ...before, appointment_id: appointmentId });
-      expect(await events(tx, job.id)).toEqual(eventsBefore);
+      // (Dated at the later of the two check-ins: inside one test
+      // transaction that is the job's, so the event sits after checked_in.)
+      const linked = await events(tx, job.id);
+      const known = new Set(eventsBefore.map((e) => e.id));
+      expect(linked.filter((e) => known.has(e.id))).toEqual(eventsBefore);
+      expect(linked.filter((e) => !known.has(e.id)).map((e) => [e.event_type, e.payload])).toEqual([
+        [
+          "appointment_linked",
+          expect.objectContaining({ appointment_id: appointmentId, created: false }),
+        ],
+      ]);
 
-      // Leaving it as it is changes nothing.
+      // Leaving it as it is changes nothing and records nothing more.
       await setAppointment(appointmentId);
       await tx.query(
         "update public.work_orders set internal_notes = 'Linked to the booking' where id = $1",
         [job.id],
       );
       expect((await workOrder(tx, job.id)).appointment_id).toBe(appointmentId);
+      expect(
+        (await events(tx, job.id)).filter((e) => e.event_type === "appointment_linked"),
+      ).toHaveLength(1);
 
-      // Once linked it never changes and is never cleared.
-      for (const value of [randomUUID(), null]) {
+      // Once linked it never changes and is never cleared, even to another
+      // checked_in appointment of the same customer and bike.
+      const another = await checkedIn(ids.customerId, ids.bikeId);
+      for (const value of [another, randomUUID(), null]) {
         await failsWith(tx, () => setAppointment(value), {
           code: "P0001",
           message: "work_order_immutable",
@@ -692,10 +721,11 @@ describe.skipIf(!isolatedDatabase())("status machine (D15, D16)", () => {
       }
       expect((await workOrder(tx, job.id)).appointment_id).toBe(appointmentId);
 
-      // private.create_work_order (Phase 2's new-job path) stores it at
-      // check-in; it is just as fixed afterwards.
+      // private.create_work_order (check-in's new-job path) stores it at
+      // insert, with one appointment_linked event (created true) right after
+      // checked_in; it is just as fixed afterwards.
       const other = await makeCustomerWithBike(tx);
-      const booked = randomUUID();
+      const booked = await checkedIn(other.customerId, other.bikeId);
       const { rows } = await tx.query<{ id: string; appointment_id: string }>(
         `select (w).id, (w).appointment_id from (
            select private.create_work_order(
@@ -705,7 +735,13 @@ describe.skipIf(!isolatedDatabase())("status machine (D15, D16)", () => {
         [STAFF.admin, randomUUID(), other.customerId, other.bikeId, booked],
       );
       expect(rows[0].appointment_id).toBe(booked);
-      for (const value of [randomUUID(), null]) {
+      expect(
+        (await events(tx, rows[0].id)).map((e) => [e.event_type, e.payload.created ?? null]),
+      ).toEqual([
+        ["checked_in", null],
+        ["appointment_linked", true],
+      ]);
+      for (const value of [another, randomUUID(), null]) {
         await failsWith(
           tx,
           () =>

@@ -136,20 +136,121 @@ in `customers-bikes`, `customer-access`, `attachments`, `media-storage` and
 
 ### Phase 2 — Appointments, shop hours, capacity, check-in
 
-- Migrations: shop_settings, shop_hours, closure_overrides,
-  appointment_types, appointments; `book_appointment`,
-  `cancel_appointment`, `mark_appointment_status`, `check_in_appointment`
-  (creates the work order; depends on Phase 3 tables, so this RPC lands in
-  Phase 3 and Phase 2 ships "arrived" only).
-- Domain: slot generation (SQL function `available_slots(date, type_id)`
-  mirrored by a TS pure function for the UI), booking, cancellation,
+Phase 2 owns the whole appointment surface: the schedule configuration,
+booking, capacity, status, check-in and the customer booking RPCs that the
+public site (Phase 11) consumes. Phase 11 creates none of these objects; it
+adds only the public-site screens and a thin `bookable_slots` range wrapper
+over `private.available_slots_at`. Built after Phases 3–5 (it depends on
+Phase 3's work orders), in four steps.
+
+- Migrations: shop_settings (single row; the time zone is fixed at
+  Asia/Singapore, D35, and `private.shop_timezone()` /
+  `private.shop_currency()` now read it), shop_hours, closure_overrides,
+  appointment_types, schedule_events, appointments, appointment_events;
+  admin RPCs `update_shop_settings`, `set_shop_hours`,
+  `save_closure_override`, `delete_closure_override`,
+  `save_appointment_type`; public reads `public_appointment_types`,
+  `public_shop_hours`, `available_slots(date, type_id)`; staff RPCs
+  `book_appointment`, `mark_appointment_status`, `cancel_appointment`,
+  `update_appointment`; customer RPCs `my_appointments`,
+  `book_my_appointment`, `cancel_my_appointment` (D37, D42);
+  `check_in_appointment` lands in Phase 2 (step 2), built on Phase 3's
+  `private.create_work_order` for a new job or linking one open, unlinked
+  job (D40), with the `work_orders.appointment_id` foreign key, the
+  automatic completion (D36) and the appointment counts in
+  `daily_summary` (D41).
+- Domain: slot generation (`private.available_slots_at`, mirrored by a TS
+  pure function for the UI, step 3, proven against
+  `tests/fixtures/appointment-slot-cases.ts`), booking, cancellation,
   calendar queries.
 - UI: Appointments list (day view, week strip), create for walk-in-ahead
   bookings by staff, shop-hours and closures settings, appointment types
-  settings, "Arrived" action.
+  settings, Arrived / No-show / Cancel, Check in (steps 3–4).
+- Decisions D36–D42 (§6). Reschedule is cancel + rebook (no reschedule RPC);
+  no customer notifications in the MVP.
 
 Tests: capacity under concurrency; hours/closures; statuses; customer sees
 only own appointments; anon sees public appointment types only.
+
+Shipped (database, step 1): migrations `…2700_appointment_enum_values`
+(the `appointment_linked` job event), `…2800_schedule`,
+`…2900_appointments`, `…3000_appointment_customer_access`; the error codes
+in `src/lib/db-errors.ts`; the shared fixtures
+`tests/fixtures/appointment-slot-cases.ts` and
+`tests/fixtures/appointment-transitions.ts`; database tests
+`appointments`, `appointment-slots`, `schedule-settings`,
+`appointment-customer-access` and `appointment-concurrency` (helpers in
+`tests/db/appointment-fixtures.ts`).
+
+Shipped (database, step 2): `…3100_appointment_check_in` (the
+`work_orders.appointment_id` foreign key and partial unique index; the
+`work_orders_appointment_rules`, `work_orders_sync_appointment_link` and
+`work_orders_sync_appointment_completion` triggers; `check_in_appointment`
+returning `appointment_check_in`, D36, D40; P3's null -> value-once rule is
+relied on, not replaced) and `…3200_appointment_reporting`
+(`reporting.appointment_daily`, `public.appointment_daily`, and
+`daily_summary`'s three appointment columns filled by D41 with no RPC
+change); the Phase 2 seed (settings, hours, four types, two closures,
+Chloe Lim's customer login, nine appointments, Tan's appointment linked to
+J-000014); database tests `appointment-check-in`, `appointment-reporting`,
+`appointment-seed` and the check-in race. So the Phase 2 database is
+complete: migrations `…2700`–`…3200`, every RPC above, D36–D42. Steps 3–4
+build the app.
+
+Shipped (app core, step 3): the pure mirror `src/lib/appointments/`
+(`slots.ts` = `private.available_slots_at` / `appointment_slot_problem`
+exactly, proven on the shared fixtures; `status.ts` actions = the status
+machine; `history.ts`, `time.ts`, `format.ts`), `src/lib/domain/appointments.ts`
+(`listDay`, `listWeek`, `loadSchedule`, `getAppointment`, `bookAppointment`,
+`markStatus`, `cancel`, `update`, `checkIn`, `openUnlinkedJobs`;
+the bike pickers reuse P3's `listIntakeBikes`), the Server Actions, `/appointments` (day/week),
+`BookAppointmentSheet`, `/appointments/[id]` and its check-in, the shared
+`LeadPicker`, and `appointments.spec.ts` (journey 2 and the no-show
+reinstatement).
+
+Shipped (Phase 2 as a whole, step 4 completing the app): migrations
+`20261004002700_appointment_enum_values`, `…2800_schedule`,
+`…2900_appointments`, `…3000_appointment_customer_access`,
+`…3100_appointment_check_in` and `…3200_appointment_reporting` (Phase 5's
+SQL untouched except `private.shop_timezone()` / `shop_currency()`, same
+signatures, now reading `shop_settings`, D35). Routes: `/appointments`
+(day/week, with a link to the schedule), `/appointments/[id]`,
+`/appointments/[id]/check-in`, `/settings/schedule` and
+`/settings/appointment-types` (readable by every staff member, each with
+its own `loading.tsx`; edit controls for admins), plus Today's appointment
+tiles with "Still expected" and the arrivals list (D41 counts, D30: every
+staff member), the customer page's Appointments card with Book (customer
+locked, not for archived customers) and the job's "Booked appointment"
+chip and "Opened from / Linked to the appointment on …" timeline line
+linking back (D40). Domain modules: `src/lib/domain/appointments.ts`
+(adds `todaySummary` over `public.appointment_daily` and
+`customerAppointments`) and `src/lib/domain/schedule.ts`
+(`getShopSettings`, `getWeeklyHours`, `listClosures` with the bookings
+each affects, `getClosure`, `listAppointmentTypes`, `affectedBySchedule`,
+and the admin writes `updateShopSettings`, `setShopHours`, `saveClosure`,
+`deleteClosure`, `saveAppointmentType`); the pure `src/lib/schedule.ts`
+(wording and the form schemas mirroring the database checks) and
+`src/lib/appointments/`. Actions: `appointments/actions.ts`,
+`settings/schedule/actions.ts` and `settings/appointment-types/actions.ts`
+(admin). Components: `BookAppointmentSheet` / `BookAppointmentButton`, the
+appointment list, actions, edit and check-in components, `LeadPicker`,
+`TodayArrivals`, `CustomerAppointmentRows`, the schedule settings sheets
+and `AppointmentTypeSheet`. Decisions D36–D42 (§6) with D2, D8, D9, D12,
+D18, D30 and D35. Tests: the database files `appointments`,
+`appointment-slots`, `schedule-settings`, `appointment-customer-access`,
+`appointment-concurrency`, `appointment-check-in`, `appointment-reporting`
+and `appointment-seed`; unit tests for the slot mirror, statuses, times,
+the timeline text and link, Today's appointment components and the
+schedule forms; E2E `appointments.spec.ts` (journey 2 through Today and the
+job, the no-show reinstatement, capacity closing a slot) and
+`appointment-settings.spec.ts`. Phase 11 consumes `available_slots`,
+`public_appointment_types`, `public_shop_hours`,
+`my_appointments(include_past)`, `book_my_appointment` and
+`cancel_my_appointment`, and wraps `private.available_slots_at` (keep its
+signature) in its `bookable_slots` range RPC; Phase 8 decides whether
+`shop_settings.public_site_url` or `NEXT_PUBLIC_PUBLIC_SITE_URL` is the QR
+base (D9); Phase 9's activity report uses the D41 basis
+(`public.appointment_daily`).
 
 ### Phase 3 — Workshop
 
@@ -599,7 +700,7 @@ build proceeds with; confirm or change before the phase that uses it.
 | D6 | Unique unit added to a job as a part | Unit becomes `held_for_customer` on add, `sold` when the job is completed; voiding before completion returns it to `available`. Interacts with D15 (reopen): the unit follows `completed_at`, with no stock movement — whenever `completed_at` goes from non-null to null (a reopen) every unit on a non-voided inventory line of the job goes sold -> held_for_customer, and whenever it goes from null to non-null (including re-completion after a reopen) they go held_for_customer -> sold. Refined by SOLD-AT-COMPLETION (D25). | Phase 4 |
 | D7 | Refund of an online sale | Financial `sale_refunds` row only; stock and unit status untouched until staff runs `restock_unit`. | Phase 10 |
 | D8 | Customer-visible timeline | Customers (later, public site) see status changes, completion, collection and `customer`/`public` photos; never notes, lines' costs, or assignments. | Phase 11 |
-| D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. The Admin also answers `/q/{short_id}` for staff and redirects to the record (`resolveShortId`, Phase 4); it is the only Admin /q route. | Phase 1 |
+| D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. The Admin also answers `/q/{short_id}` for staff and redirects to the record (`resolveShortId`, Phase 4); it is the only Admin /q route. Phase 2 stores `shop_settings.public_site_url` (nullable, informational): Phase 8 decides whether it or `NEXT_PUBLIC_PUBLIC_SITE_URL` is the QR base; until then the env var is. | Phase 1 |
 | D10 | Staff login method | Supabase email + password for staff; invitations by admin from Staff settings. No magic links in MVP. | Phase 0 |
 | D11 | What a `manage_staff` holder who is not an admin may change (SPEC §4.2 asks for granular permissions but does not say who may grant them) | Delegation ceiling: they may grant or revoke only permissions they hold themselves, never `manage_staff` (admins only), never on their own row and never on an admin's row; they may invite (role staff only) and deactivate/reactivate non-admins. Admins are unrestricted. Residual risk to confirm: an inviter sees the new login's temporary password, so a manager could keep a second login at their own permission level; closing that fully needs invite links or a forced password change on first sign-in (not in MVP). | Phase 0 |
 | D12 | Who sees a bike's customer-visible photos after it changes hands (SPEC §5 "Ownership changes preserve history" does not say what a new or previous owner sees) | The current owner sees every `customer`/`public` photo of the bike, including ones taken before they owned it; a previous owner stops seeing the bike and its photos once it is transferred (`my_bikes`, `my_bike_attachments` read current ownership). Staff history (`bike_ownership_events`) keeps every owner. Alternative to confirm before Phase 11: limit each owner to photos taken during their ownership. | Phase 1 (enforced), Phase 11 (shown) |
@@ -626,6 +727,13 @@ build proceeds with; confirm or change before the phase that uses it.
 | D33 | SIGNIFICANT-ADJ: significant stock adjustment | A `stock_adjustment` or `damaged` movement is significant when \|quantity_delta\| ≥ 5, or it is on a unique unit, or \|quantity_delta\| × unit cost ≥ 100.00 SGD; unit cost = `unit_cost_snapshot`, else `products.default_direct_cost`, else 0. One function, `private.is_significant_adjustment`, holds the rule; Phase 9 or shop settings may replace it. The flag is shown to all staff (it reveals only that a value reached the threshold, never the value); the value at cost needs `view_costs`. | Phase 5 |
 | D34 | EXCEPTIONS: operational exception rules (the Phase 5 set) | `overdue_job`: exactly D20 (`private.work_order_status_is_open(status)` and `now() - checked_in_at > interval '7 days'`, 7 = `OVERDUE_AFTER_DAYS`; exactly 7 × 24 h is not yet overdue). `uncollected_job`: status completed or ready_for_collection and completed ≥ 7 shop days ago. `negative_stock`: any product/location with on-hand < 0. `unit_hold_stale`: a `held_for_customer` unit with no non-voided inventory line on an OPEN job referencing it (D6/D25). `currency_mismatch`: a line that would be recognised but whose currency is not the shop currency; such entries are excluded from totals. Kinds are text; Phases 6, 9 and 10 add kinds (unit_state_mismatch, unsettled_consignment, integration_failed) by create or replace of the view, keeping these columns first. | Phase 5 |
 | D35 | SHOP-TZ: shop time zone and currency before Phase 2 | `private.shop_timezone()` returns 'Asia/Singapore' and `private.shop_currency()` returns 'SGD'; Phase 2 replaces both bodies (create or replace, same signatures) to read `shop_settings` (timezone, default_currency) with those fallbacks, and Phases 7 and 9 call these functions and create no alternatives. Every shop-day computation in SQL goes through `private.shop_day()` / `private.shop_today()` / `private.shop_day_start()`: never `current_date`, never `ts::date` without `at time zone`; the app lets the database decide which day is today. Totals sum the shop currency only. | Phase 5 |
+| D36 | APPT-COMPLETION: when an appointment is completed | An appointment becomes `completed` automatically when its linked work order first reaches completed, ready_for_collection or collected (a trigger on `work_orders`, Phase 2 step 2); staff never mark `completed` by hand (`mark_appointment_status` refuses it); reopening the job does not reopen the appointment; a cancelled job leaves the appointment `checked_in`. | Phase 2 |
+| D37 | APPT-SELF-BOOKING: customer booking and cancelling rules (final; Phase 11 references this row and defines no booking or cancel rules of its own) | Customers book only active AND public types; `starts_at >= now() + booking_min_notice_minutes` (default 120); `starts_at <= now() + booking_horizon_days` (default 60); at most `customer_max_active_bookings` (default 3) upcoming (`starts_at > now()`) booked/confirmed appointments with `source = 'customer'` per customer, enforced under a per-customer advisory lock (staff-made bookings never count). A customer may cancel their own booked/confirmed appointment (whoever booked it) until `customer_cancel_cutoff_minutes` (default 120) before its start; after that they contact the shop. `appointments.cancelled_via` records whether staff or the customer cancelled. Staff bookings are exempt from notice, horizon, limit, the public flag and the cutoff, never from hours, closures or capacity, and cannot book an appointment that has already ended (`appointment_in_past`); staff may cancel any booked/confirmed/arrived appointment at any time with a reason. Available slots are readable anonymously (no sign-in needed to see times). | Phase 2 |
+| D38 | APPT-GRID: the slot grid and what settings changes do | Capacity windows are aligned to shop-local midnight in steps of `intake_slot_minutes`; a booking starts on the grid; the whole `[starts_at, ends_at)` lies inside one continuous open stretch of one shop-local date; a `custom_hours` override replaces ALL weekly intervals on each date it covers; a `closed` override blocks any overlapping appointment and beats custom hours. Settings changes (hours, closures, slot length, capacity, type duration/units) never move, shrink or cancel existing appointments (appointments snapshot `ends_at` and `capacity_units`; screens flag the affected ones). | Phase 2 |
+| D39 | APPT-LATE-ARRIVAL: the status machine's edges | `no_show -> arrived` is allowed only on the appointment's own shop-local date and re-checks capacity; cancelled and completed are final (rebook instead); `arrived -> cancelled` is allowed with a reason (left before check-in); `no_show` only once `starts_at` has passed (`appointment_not_started`). | Phase 2 |
+| D40 | APPT-CHECK-IN: what check-in needs and does | Check-in needs a bike owned by the appointment's customer (transfer it first otherwise; shop bikes refused); it either creates a new work order (through Phase 3's `private.create_work_order`) or links one existing OPEN work order (`private.work_order_status_is_open`, i.e. before completed) of the same customer and bike that has no appointment; `work_orders.appointment_id` goes null -> value once and never changes afterwards. Built in Phase 2 step 2. | Phase 2 |
+| D41 | APPT-COUNTS: how Today and reports count appointments | Today and report counts of appointments, arrivals and no-shows are by the appointment's scheduled shop-local date and its CURRENT status (not by when staff tapped): `appointments_scheduled` = non-cancelled appointments starting that shop day; `appointments_arrived` = of those, currently arrived/checked_in/completed; `appointments_no_show` = of those, currently no_show. The basis of `daily_summary`'s appointment columns (Phase 2 step 2) and of Phase 9's activity report. Operational counts: every active staff member sees them (D30). | Phase 2 |
+| D42 | APPT-CUSTOMER-FIELDS: what customers see of their appointments (extends D8) | Type name, times, status, their bike (short ID + brand/model) only while it is still theirs and not archived (D12), their own note, `cancelled_at`, `cancelled_via` (a channel, never a person) and whether they may cancel online (`can_cancel`). Never `internal_note`, `cancellation_reason`, capacity units, source or who acted (D8). One projection (`public.my_appointment`) serves `my_appointments`, `book_my_appointment` and `cancel_my_appointment`. | Phase 2 |
 
 ## 7. Out of scope (restated from SPEC §30)
 

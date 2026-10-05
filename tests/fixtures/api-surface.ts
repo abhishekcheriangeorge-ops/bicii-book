@@ -11,8 +11,17 @@
  * which is the moment to check its RLS policies and guard.
  */
 
-/** Functions anonymous visitors may call. Phase 2+ adds the public booking RPCs. */
-export const ANON_FUNCTIONS: readonly string[] = [];
+/**
+ * Functions anonymous visitors may call: the public booking reads (Phase 2,
+ * D37): bookable times, the online-bookable appointment types (no capacity
+ * units) and the weekly hours. Phase 11's public site consumes them and
+ * must not revoke anon.
+ */
+export const ANON_FUNCTIONS: readonly string[] = [
+  "public.available_slots(date, uuid)",
+  "public.public_appointment_types()",
+  "public.public_shop_hours()",
+];
 
 /**
  * Relations (tables, views, sequences) anonymous visitors may touch, with
@@ -95,6 +104,24 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.today_dashboard(date)",
   "public.work_order_activity_on(date)",
   "public.work_order_yield(uuid)",
+  // Appointments (Phase 2): active staff; schedule settings admin only.
+  // The three public booking reads are callable by everyone (D37).
+  "public.available_slots(date, uuid)",
+  "public.book_appointment(uuid, uuid, uuid, timestamp with time zone, uuid, text, text)",
+  "public.cancel_appointment(uuid, text)",
+  "public.delete_closure_override(uuid, text)",
+  "public.mark_appointment_status(uuid, appointment_status, text)",
+  "public.public_appointment_types()",
+  "public.public_shop_hours()",
+  "public.save_appointment_type(uuid, boolean, text, text, integer, integer, boolean, boolean, integer)",
+  "public.save_closure_override(uuid, boolean, closure_kind, date, date, text, time without time zone, time without time zone)",
+  "public.set_shop_hours(smallint, jsonb, boolean)",
+  "public.update_appointment(uuid, uuid, boolean, text, text)",
+  "public.update_shop_settings(integer, integer, integer, integer, integer, integer, text)",
+  // Check-in (D40) creates or links the appointment's one work order; the
+  // appointment counts (D41) are operational, every active staff member (D30)
+  "public.appointment_daily(date, date)",
+  "public.check_in_appointment(uuid, uuid, uuid, boolean, text, text, uuid)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -106,6 +133,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.my_work_order_lines(uuid)",
   "public.my_work_order_timeline(uuid)",
   "public.my_work_orders()",
+  // Customer appointments (Phase 2, consumed by Phase 11): own rows only,
+  // the D42 projection; booking and cancelling under D37
+  "public.book_my_appointment(uuid, uuid, timestamp with time zone, uuid, text)",
+  "public.cancel_my_appointment(uuid, text)",
+  "public.my_appointments(boolean)",
 ];
 
 /**
@@ -160,6 +192,15 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   // The anonymous projection, readable by signed-in users (customers) too
   "reporting.public_items": ["SELECT"],
   "reporting.stock_levels": ["SELECT"],
+  // Appointments (Phase 2): staff read (RLS is_staff); every write is an
+  // RPC; customers read none of them (zero rows), only the my_* RPCs
+  "public.appointment_events": ["SELECT"],
+  "public.appointment_types": ["SELECT"],
+  "public.appointments": ["SELECT"],
+  "public.closure_overrides": ["SELECT"],
+  "public.schedule_events": ["SELECT"],
+  "public.shop_hours": ["SELECT"],
+  "public.shop_settings": ["SELECT"],
 };
 
 /**

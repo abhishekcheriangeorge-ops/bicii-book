@@ -8,7 +8,7 @@
  * ran (Asia/Singapore, D35), read from REPORT_JOB.todayReceived's check-in
  * (tests/db/reporting-fixtures.ts seedToday(); E2E_SEED_ANCHOR in E2E).
  * Day 0 is the anchor. Money is a fixed-2 string (compare with money()),
- * counts are numbers, Phase 2/6 placeholders are null.
+ * counts are numbers, Phase 6 placeholders are null.
  *
  * Recognition (D32): a non-voided line counts on the shop day of its job's
  * current completed_at; open and cancelled jobs never count. Cult Commons
@@ -41,6 +41,16 @@
  *          completed, ready, collected T2. T2's chain and J-000010's tube
  *          and tyre consumed, the tyre returned (voided). A3. Money T2
  *          (2 lines): 165.00 / 22.00 / 143.00 / 42.90 (36.00 + 6.90).
+ *
+ * Appointments (Phase 2, D41: by scheduled shop day and CURRENT status;
+ * scheduled = not cancelled, arrived = arrived/checked_in/completed):
+ *   day 3  Tan's Tarmac, checked in as J-000014 and completed with it:
+ *          scheduled 1, arrived 1.
+ *   day 1  Daniel's Cannondale, a no-show: scheduled 1, no-show 1.
+ *   day 0  Priya arrived, Hafiz confirmed, Chloe (online) and Nurul booked:
+ *          scheduled 4, arrived 1.
+ *   Days 2, 4, 5 and 6 have none; the cancelled and future ones fall after
+ *   the anchor.
  */
 import { REPORT_JOB, REPORT_PRODUCT, WORK_ORDER } from "./ids";
 
@@ -70,9 +80,9 @@ export type DayExpectation = {
   parts_returned_qty: number;
   stock_adjustments: number;
   significant_stock_adjustments: number;
-  appointments_scheduled: null;
-  appointments_arrived: null;
-  appointments_no_show: null;
+  appointments_scheduled: number;
+  appointments_arrived: number;
+  appointments_no_show: number;
   consignment_sales: null;
   consignment_sales_total: null;
   new_consignor_liability: null;
@@ -88,13 +98,18 @@ export const DAY_MONEY_COLUMNS = [
   "loss_total",
 ] as const;
 
+/** Phase 6's columns, still NULL. */
 const PLACEHOLDERS = {
-  appointments_scheduled: null,
-  appointments_arrived: null,
-  appointments_no_show: null,
   consignment_sales: null,
   consignment_sales_total: null,
   new_consignor_liability: null,
+} as const;
+
+/** D41 appointment counts of a day with no appointments. */
+const NO_APPOINTMENTS = {
+  appointments_scheduled: 0,
+  appointments_arrived: 0,
+  appointments_no_show: 0,
 } as const;
 
 const NO_MONEY = {
@@ -130,6 +145,9 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     parts_returned_qty: 1,
     stock_adjustments: 1,
     significant_stock_adjustments: 0,
+    appointments_scheduled: 4,
+    appointments_arrived: 1,
+    appointments_no_show: 0,
     ...PLACEHOLDERS,
   },
   1: {
@@ -153,6 +171,9 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     parts_returned_qty: 0,
     stock_adjustments: 1,
     significant_stock_adjustments: 1,
+    appointments_scheduled: 1,
+    appointments_arrived: 0,
+    appointments_no_show: 1,
     ...PLACEHOLDERS,
   },
   2: {
@@ -176,6 +197,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     parts_returned_qty: 0,
     stock_adjustments: 1,
     significant_stock_adjustments: 0,
+    ...NO_APPOINTMENTS,
     ...PLACEHOLDERS,
   },
   3: {
@@ -199,6 +221,9 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     parts_returned_qty: 0,
     stock_adjustments: 0,
     significant_stock_adjustments: 0,
+    appointments_scheduled: 1,
+    appointments_arrived: 1,
+    appointments_no_show: 0,
     ...PLACEHOLDERS,
   },
   4: {
@@ -222,6 +247,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     parts_returned_qty: 0,
     stock_adjustments: 0,
     significant_stock_adjustments: 0,
+    ...NO_APPOINTMENTS,
     ...PLACEHOLDERS,
   },
   5: {
@@ -238,6 +264,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     parts_returned_qty: 0,
     stock_adjustments: 0,
     significant_stock_adjustments: 0,
+    ...NO_APPOINTMENTS,
     ...PLACEHOLDERS,
   },
   6: {
@@ -261,6 +288,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     parts_returned_qty: 0,
     stock_adjustments: 0,
     significant_stock_adjustments: 0,
+    ...NO_APPOINTMENTS,
     ...PLACEHOLDERS,
   },
 };

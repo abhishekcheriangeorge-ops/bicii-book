@@ -75,6 +75,14 @@ export function ChevronRightIcon(props: IconProps) {
   );
 }
 
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M15 5l-7 7 7 7" />
+    </Icon>
+  );
+}
+
 export function AlertIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -158,6 +166,15 @@ export function CalendarIcon(props: IconProps) {
     <Icon {...props}>
       <rect x="4" y="5" width="16" height="15" rx="2" />
       <path d="M4 10h16M8.5 3v4M15.5 3v4" />
+    </Icon>
+  );
+}
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
     </Icon>
   );
 }

@@ -4,7 +4,7 @@ import { Suspense, type ReactNode } from "react";
 
 import { ActivityList } from "@/components/domain/today/activity-list";
 import { AdjustmentList } from "@/components/domain/today/adjustment-list";
-import { AppointmentsSection } from "@/components/domain/today/appointments-section";
+import { AppointmentsSection, TodayArrivals } from "@/components/domain/today/appointments-section";
 import { DayNavigator } from "@/components/domain/today/day-navigator";
 import { ExceptionList } from "@/components/domain/today/exception-list";
 import { FinancialEntries } from "@/components/domain/today/financial-entries";
@@ -28,6 +28,7 @@ import {
   shopToday,
 } from "@/lib/dates";
 import { DbError } from "@/lib/db-errors";
+import { todaySummary } from "@/lib/domain/appointments";
 import {
   getDailySummaries,
   getFinancialEntriesOn,
@@ -78,13 +79,13 @@ async function loadDashboard(
 }
 
 /**
- * Today (SPEC §19.1; PLAN D30-D35): the shop's day on one screen. The
+ * Today (SPEC §19.1; PLAN D30-D35, D41): the shop's day on one screen. The
  * dashboard row comes first (one RPC); each list streams in its own
  * Suspense boundary. The database decides which day is today, and every
  * other read and label uses the day it returned. `?day=YYYY-MM-DD` shows
  * an earlier day, from EARLIEST_SHOP_DAY (flows, money, stock and
- * activity; no snapshot, no exceptions); `?entries=open` opens "What makes
- * up these figures".
+ * activity; no snapshot, no exceptions, no arrivals list); `?entries=open`
+ * opens "What makes up these figures".
  *
  * No loading.tsx at the group root (DESIGN "Loading"): it would commit a
  * 200 before child pages' 403s.
@@ -181,7 +182,15 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         </TodaySection>
       ) : null}
 
-      <AppointmentsSection appointments={dash.appointments} />
+      <AppointmentsSection appointments={dash.appointments}>
+        {isToday ? (
+          <Suspense fallback={<SectionSkeleton rows={3} />}>
+            <SectionLoader name="arrivals" load={() => todaySummary(supabase, day)}>
+              {(summary) => <TodayArrivals summary={summary} />}
+            </SectionLoader>
+          </Suspense>
+        ) : null}
+      </AppointmentsSection>
 
       <TodaySection
         id="today-flows"

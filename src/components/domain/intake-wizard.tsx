@@ -15,7 +15,7 @@ import { createWorkOrder, listIntakeBikes, searchIntakeOptions } from "@/app/(st
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Chip, ChipRadioGroup } from "@/components/ui/chip";
+import { Chip } from "@/components/ui/chip";
 import { Field } from "@/components/ui/field";
 import { PlusIcon, SearchIcon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,7 @@ import { archivedOwnerMessage } from "@/lib/workshop";
 
 import { BikeSheet } from "./bike-sheet";
 import { CustomerSheet } from "./customer-sheet";
+import { LeadPicker } from "./lead-picker";
 import { ShortId } from "./short-id";
 
 export type IntakeWizardProps = {
@@ -755,24 +756,7 @@ function PeopleStep({
   const ordered = [...staff.filter((s) => s.id === me.id), ...staff.filter((s) => s.id !== me.id)];
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <h3 id="lead-label" className="font-display text-xs font-bold tracking-wide uppercase">
-          Lead mechanic
-        </h3>
-        <ChipRadioGroup<string | null>
-          labelledBy="lead-label"
-          value={leadId}
-          onChange={onLead}
-          options={[
-            ...ordered.map((s) => ({
-              value: s.id,
-              children: s.id === me.id ? "Me" : s.name,
-              label: s.id === me.id ? `Me (${s.name})` : s.name,
-            })),
-            { value: null, children: "Unassigned" },
-          ]}
-        />
-      </div>
+      <LeadPicker me={me} staff={staff} value={leadId} onChange={onLead} labelId="lead-label" />
       <div className="flex flex-col gap-2">
         <h3
           id="additional-label"

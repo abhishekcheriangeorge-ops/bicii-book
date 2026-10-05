@@ -38,10 +38,13 @@ export function RowList({
 /** One row of a RowList: the whole row is the link (≥ 64px tall). */
 export function RowLink({
   href,
+  label,
   className,
   children,
 }: {
   href: string;
+  /** The link's accessible name when its text alone would run together. */
+  label?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -49,6 +52,7 @@ export function RowLink({
     <li className="group/row">
       <Link
         href={href}
+        aria-label={label}
         className={cn(
           "flex min-h-16 items-center gap-4 px-4 py-3 focus-inset transition-colors hover:bg-dust-100",
           // Inner radius of the panel's 16px corner minus its 1px border.

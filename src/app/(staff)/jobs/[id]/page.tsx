@@ -16,8 +16,9 @@ import { TotalsSummary } from "@/components/domain/totals-summary";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CheckIcon } from "@/components/ui/icons";
+import { CalendarIcon, CheckIcon } from "@/components/ui/icons";
 import { StatusPill } from "@/components/ui/status-pill";
+import { formatAppointmentMoment } from "@/lib/appointments/format";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime, shopDaysBetween } from "@/lib/dates";
@@ -77,7 +78,8 @@ function sharedRate(job: WorkOrderDetail): string | null {
  * first; then what the customer asked for, the lines with running totals
  * (services, parts from stock and manual lines; costs, yield and Cult
  * Commons only with view_costs: the DTO has none otherwise), photos, the
- * people on it, notes and the timeline. Straight after intake (`?intake=photos`) the intake photos come first: the job
+ * people on it, notes and the timeline. A job checked in from an
+ * appointment (D40) links back to it under the header. Straight after intake (`?intake=photos`) the intake photos come first: the job
  * has to exist before a photo can be recorded against it. The timeline
  * shows its newest events; `?events=all` shows up to TIMELINE_ALL_ROWS.
  */
@@ -160,6 +162,20 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
           Checked in {formatDateTime(job.stamps.checkedInAt)} · {age(job.stamps.checkedInAt, now)}
           {overdue ? ` · open more than ${OVERDUE_AFTER_DAYS} days` : ""}
         </p>
+        {job.appointment ? (
+          <p>
+            <Link
+              href={`/appointments/${job.appointment.id}`}
+              className="inline-flex min-h-tap items-center gap-2 rounded-full border border-hairline bg-card px-4 text-sm font-medium transition-colors hover:bg-dust-100"
+            >
+              <CalendarIcon className="size-4 shrink-0 text-dust-500" />
+              <span>
+                Booked appointment · {formatAppointmentMoment(job.appointment.startsAt)} ·{" "}
+                {job.appointment.typeName}
+              </span>
+            </Link>
+          </p>
+        ) : null}
       </header>
 
       <JobStatusActions

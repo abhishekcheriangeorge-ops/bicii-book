@@ -8,7 +8,8 @@
  *   * The job yield panel (work_order_yield) needs view_costs only.
  *   * Operational counts are visible to all active staff.
  *   * Customers, anonymous visitors and inactive staff reach none of it,
- *     and no API role can select the Phase 5 reporting views directly.
+ *     and no API role can select the Phase 5 reporting views (or Phase 2's
+ *     reporting.appointment_daily) directly.
  *
  * The data-dependent cases build a job (J-/B- sequences), so they skip in
  * existing-database mode; the refusals run everywhere.
@@ -50,6 +51,8 @@ const RPC_CALLS: ReadonlyArray<[string, string, unknown[]]> = [
   ["operational_exceptions", "select * from public.operational_exceptions(50)", []],
   ["financial_lines", "select * from public.financial_lines($1, $1)", [DAY]],
   ["work_order_yield", "select * from public.work_order_yield(gen_random_uuid())", []],
+  // Phase 2 (D41): operational, but staff only.
+  ["appointment_daily", "select * from public.appointment_daily(null, null)", []],
 ];
 
 const VIEWS = [
@@ -57,6 +60,7 @@ const VIEWS = [
   "reporting.work_order_activity",
   "reporting.daily_summary",
   "reporting.operational_exceptions",
+  "reporting.appointment_daily",
 ];
 
 /** A completed job on DAY with a profitable line and a loss line, plus a manual adjustment. */

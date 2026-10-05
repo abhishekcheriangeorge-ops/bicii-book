@@ -86,6 +86,8 @@ export type WorkOrderDetail = {
   /** Older events exist beyond `timeline` (the check-in among them). */
   timelineTruncated: boolean;
   allowedTransitions: Transition[];
+  /** The appointment the job was checked in from (D40; Phase 2), or null. */
+  appointment: { id: string; startsAt: string; typeName: string } | null;
 };
 
 const NOT_FOUND = "That job no longer exists. Refresh and try again.";
@@ -133,7 +135,7 @@ export async function getWorkOrder(
     supabase
       .from("work_orders")
       .select(
-        "id, job_number, status, currency, requested_work, intake_notes, internal_notes, completion_notes, approval_flag, approval_note, checked_in_at, status_changed_at, started_at, completed_at, ready_for_collection_at, collected_at, cancelled_at, cancellation_reason, customer:customers(id, first_name, last_name, display_name, email, phone, archived_at), bike:bikes(id, short_id, brand, model, variant, colour, archived_at)",
+        "id, job_number, status, currency, requested_work, intake_notes, internal_notes, completion_notes, approval_flag, approval_note, checked_in_at, status_changed_at, started_at, completed_at, ready_for_collection_at, collected_at, cancelled_at, cancellation_reason, customer:customers(id, first_name, last_name, display_name, email, phone, archived_at), bike:bikes(id, short_id, brand, model, variant, colour, archived_at), appointment:appointments(id, starts_at, type:appointment_types(name))",
       )
       .eq("id", id)
       .maybeSingle(),
@@ -227,6 +229,14 @@ export async function getWorkOrder(
     timeline,
     timelineTruncated,
     allowedTransitions: allowedTransitions(row.status),
+    appointment:
+      row.appointment && row.appointment.type
+        ? {
+            id: row.appointment.id,
+            startsAt: row.appointment.starts_at,
+            typeName: row.appointment.type.name,
+          }
+        : null,
   };
 }
 
