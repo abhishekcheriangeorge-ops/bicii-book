@@ -130,3 +130,39 @@ export function toShopLocal(value: DateInput): string {
     parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
+
+const SHOP_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * A shop day as "YYYY-MM-DD" when `value` is exactly that and a real
+ * calendar date (no 31 February, no extra text); otherwise null. For
+ * `?day=` parameters and other untrusted input.
+ */
+export function parseShopDay(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const m = SHOP_DAY.exec(value);
+  if (!m) return null;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10) === value ? value : null;
+}
+
+/**
+ * The shop day `n` calendar days after `day` (negative: before), across
+ * month and year ends. Throws a RangeError for a day that is not
+ * "YYYY-MM-DD".
+ */
+export function shiftShopDay(day: string, n: number): string {
+  const valid = parseShopDay(day);
+  if (valid === null) throw new RangeError(`Invalid shop day: ${String(day)}`);
+  if (!Number.isInteger(n)) throw new RangeError(`Invalid day offset: ${String(n)}`);
+  return new Date(Date.parse(`${valid}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The shop's calendar day at `now` (default: this instant) as "YYYY-MM-DD".
+ * Display only: the database decides which day is today for reports (D35).
+ */
+export function shopToday(now: DateInput = new Date()): string {
+  return shopDateKey(now);
+}

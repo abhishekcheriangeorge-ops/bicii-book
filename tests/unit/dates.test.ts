@@ -5,7 +5,10 @@ import {
   formatDayShort,
   formatTime,
   fromShopLocal,
+  parseShopDay,
   SHOP_TIME_ZONE,
+  shiftShopDay,
+  shopToday,
   shopDayStart,
   toShopLocal,
   shopDateKey,
@@ -76,5 +79,53 @@ describe("shop-local wall-clock times (Singapore, UTC+8, no daylight saving)", (
     for (const bad of ["", "2026-10-05", "2026-02-31T10:00", "2026-10-05T25:00", "yesterday"]) {
       expect(fromShopLocal(bad), bad).toBeNull();
     }
+  });
+});
+
+describe("shop days as YYYY-MM-DD (D35)", () => {
+  it("parses exactly a real calendar date", () => {
+    expect(parseShopDay("2026-10-05")).toBe("2026-10-05");
+    expect(parseShopDay("2024-02-29")).toBe("2024-02-29");
+    for (const bad of [
+      "2026-02-29",
+      "2026-02-31",
+      "2026-13-01",
+      "2026-00-10",
+      "2026-10-5",
+      "26-10-05",
+      " 2026-10-05",
+      "2026-10-05T00:00",
+      "2026/10/05",
+      "",
+      "today",
+    ]) {
+      expect(parseShopDay(bad), bad).toBeNull();
+    }
+    for (const bad of [null, undefined, 20261005, new Date("2026-10-05"), ["2026-10-05"]]) {
+      expect(parseShopDay(bad)).toBeNull();
+    }
+  });
+
+  it("shifts by calendar days across month and year ends", () => {
+    expect(shiftShopDay("2026-10-05", 0)).toBe("2026-10-05");
+    expect(shiftShopDay("2026-10-05", -6)).toBe("2026-09-29");
+    expect(shiftShopDay("2026-03-01", -1)).toBe("2026-02-28");
+    expect(shiftShopDay("2024-03-01", -1)).toBe("2024-02-29");
+    expect(shiftShopDay("2026-12-31", 1)).toBe("2027-01-01");
+    expect(shiftShopDay("2027-01-03", -7)).toBe("2026-12-27");
+    expect(shiftShopDay("2026-01-31", 30)).toBe("2026-03-02");
+  });
+
+  it("refuses a malformed day or offset", () => {
+    expect(() => shiftShopDay("2026-02-30", 1)).toThrow(RangeError);
+    expect(() => shiftShopDay("yesterday", 1)).toThrow(RangeError);
+    expect(() => shiftShopDay("2026-10-05", 1.5)).toThrow(RangeError);
+  });
+
+  it("today is the Singapore calendar day, not the UTC one", () => {
+    // 16:30 UTC on 4 Oct is 00:30 on 5 Oct in Singapore.
+    expect(shopToday(new Date("2026-10-04T16:30:00Z"))).toBe("2026-10-05");
+    expect(shopToday(new Date("2026-10-04T15:59:59Z"))).toBe("2026-10-04");
+    expect(parseShopDay(shopToday())).not.toBeNull();
   });
 });
