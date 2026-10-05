@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   cancelPurchaseOrderSchema,
+  createPurchaseOrderFromLowStockSchema,
   createPurchaseOrderSchema,
   purchaseOrderLineSchema,
   purchaseUnitCostSchema,
+  receivePurchaseSchema,
   removePurchaseOrderLineSchema,
   supplierProductSchema,
   supplierSchema,
@@ -179,5 +181,69 @@ describe("supplier schemas", () => {
         supplierProductSchema.safeParse({ supplierId: ID, productId: ID2, leadDays: "366" }),
       ),
     ).toEqual(["leadDays"]);
+  });
+});
+
+describe("receivePurchaseSchema (Phase 7 step 4)", () => {
+  const base = {
+    purchaseOrderId: "8a3f0c55-1111-4aaa-8bbb-000000000001",
+    idempotencyKey: "8a3f0c55-4444-4aaa-8bbb-000000000001",
+    lines: [
+      {
+        purchaseOrderLineId: "8a3f0c55-2222-4aaa-8bbb-00000000000a",
+        quantityReceived: 18,
+        unitCostActual: "0",
+        locationId: "8a3f0c55-3333-4aaa-8bbb-000000000001",
+      },
+    ],
+  };
+
+  it("accepts a 0 actual cost as a known cost (D24 as amended) and omits receivedAt as null", () => {
+    const parsed = receivePurchaseSchema.parse(base);
+    expect(parsed.lines[0].unitCostActual).toBe("0.00");
+    expect(parsed.receivedAt).toBeNull();
+    expect(parsed.reference).toBeNull();
+  });
+
+  it("takes an ISO instant with an offset and refuses other dates", () => {
+    expect(
+      receivePurchaseSchema.parse({ ...base, receivedAt: "2026-10-04T08:30:00.000Z" }).receivedAt,
+    ).toBe("2026-10-04T08:30:00.000Z");
+    expect(
+      receivePurchaseSchema.safeParse({ ...base, receivedAt: "2026-10-04T16:30:00+08:00" }).success,
+    ).toBe(true);
+    expect(
+      receivePurchaseSchema.safeParse({ ...base, receivedAt: "2026-10-04T16:30" }).success,
+    ).toBe(false);
+  });
+
+  it("refuses fractional or zero quantities, no lines and more than 200", () => {
+    const line = base.lines[0];
+    for (const quantityReceived of [0, 1.5, 100_001]) {
+      expect(
+        receivePurchaseSchema.safeParse({ ...base, lines: [{ ...line, quantityReceived }] })
+          .success,
+      ).toBe(false);
+    }
+    expect(receivePurchaseSchema.safeParse({ ...base, lines: [] }).success).toBe(false);
+    expect(
+      receivePurchaseSchema.safeParse({ ...base, lines: Array.from({ length: 201 }, () => line) })
+        .success,
+    ).toBe(false);
+    expect(receivePurchaseSchema.safeParse({ ...base, reference: "x".repeat(101) }).success).toBe(
+      false,
+    );
+  });
+
+  it("creates from low stock with 1..100 products", () => {
+    const ok = {
+      id: base.idempotencyKey,
+      supplierId: base.purchaseOrderId,
+      productIds: [base.lines[0].locationId],
+    };
+    expect(createPurchaseOrderFromLowStockSchema.safeParse(ok).success).toBe(true);
+    expect(createPurchaseOrderFromLowStockSchema.safeParse({ ...ok, productIds: [] }).success).toBe(
+      false,
+    );
   });
 });

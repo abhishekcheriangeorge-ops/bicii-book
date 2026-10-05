@@ -6,7 +6,10 @@ import { staffAction } from "@/lib/actions";
 import {
   cancelPurchaseOrder as cancel,
   createPurchaseOrder as create,
+  createPurchaseOrderFromLowStock as createFromLowStock,
+  findReceiptByKey,
   getPurchaseCostDefaults,
+  receivePurchase as receive,
   removePurchaseOrderLine as removeLine,
   searchPurchasableProducts as searchProducts,
   setPurchaseOrderLine as setLine,
@@ -16,11 +19,14 @@ import {
 import { searchSupplierOptions } from "@/lib/domain/suppliers";
 import {
   cancelPurchaseOrderSchema,
+  createPurchaseOrderFromLowStockSchema,
   createPurchaseOrderSchema,
+  lookupReceiptSchema,
   purchaseCostDefaultsSchema,
   purchaseOrderIdSchema,
   purchaseOrderLineSchema,
   purchasingSearchSchema,
+  receivePurchaseSchema,
   removePurchaseOrderLineSchema,
   updatePurchaseOrderSchema,
 } from "@/lib/purchasing-forms";
@@ -115,4 +121,39 @@ export const searchSuppliers = staffAction(
   purchasingSearchSchema,
   { name: "purchasing.search_suppliers" },
   async ({ q }, { supabase }) => (q ? searchSupplierOptions(supabase, q) : []),
+);
+
+/**
+ * Receive a delivery (SPEC §2 "retries cannot duplicate stock"; D63, D64,
+ * D65). The idempotency key is the form's: a retry with the same key and
+ * lines returns the first receipt and writes nothing. A refusal carries
+ * its business code (ActionResult.code: purchase_over_receipt,
+ * purchase_order_closed, purchase_receipt_key_reused, the date codes) so
+ * the form can branch on it.
+ */
+export const receivePurchase = staffAction(
+  receivePurchaseSchema,
+  { name: "purchasing.receive", permission: "manage_purchasing" },
+  async (input, { supabase }) => {
+    const result = await receive(supabase, input);
+    refresh();
+    return result;
+  },
+);
+
+/** After an unknown outcome: the receipt recorded under the key, or null. */
+export const lookupReceipt = staffAction(
+  lookupReceiptSchema,
+  { name: "purchasing.lookup_receipt", permission: "manage_purchasing" },
+  async ({ idempotencyKey }, { supabase }) => findReceiptByKey(supabase, idempotencyKey),
+);
+
+/** A draft order from the low-stock list (D66); the id is the page's key. */
+export const createPurchaseOrderFromLowStock = staffAction(
+  createPurchaseOrderFromLowStockSchema,
+  { name: "purchasing.create_from_low_stock", permission: "manage_purchasing" },
+  async ({ id, supplierId, productIds }, { supabase }) => {
+    const created = await createFromLowStock(supabase, id, supplierId, productIds);
+    return { id: created.id };
+  },
 );

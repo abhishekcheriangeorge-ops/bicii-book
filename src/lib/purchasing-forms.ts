@@ -210,3 +210,53 @@ export const purchaseCostDefaultsSchema = z.object({
 });
 
 export const purchasingSearchSchema = z.object({ q: z.string().trim().max(200) });
+
+// ---------------------------------------------------------------------------
+// Receiving and reorder (Phase 7 step 4)
+// ---------------------------------------------------------------------------
+
+/** One received line: a whole quantity 1..100,000, the actual cost (0 valid), a location. */
+export const receiptLineSchema = z.object({
+  purchaseOrderLineId: z.uuid({ error: "Refresh the order and try again." }),
+  quantityReceived: z
+    .number({ error: "Enter a whole number of units received." })
+    .int({ error: "Enter a whole number of units received." })
+    .min(1, { error: "Receive at least 1 unit on a line." })
+    .max(MAX_PURCHASE_QUANTITY, { error: "Receive at most 100,000 units on a line." }),
+  unitCostActual: purchaseUnitCostSchema,
+  locationId: z.uuid({ error: "Choose where the units go." }),
+});
+
+/**
+ * Receive a delivery (receive_purchase). The idempotency key is the form's
+ * (made when it first mounts, kept across retries); receivedAt is sent only
+ * when staff changed it (an ISO instant), else the server uses now() (D64).
+ */
+export const receivePurchaseSchema = z.object({
+  purchaseOrderId: z.uuid({ error: "Unknown order." }),
+  idempotencyKey: z.uuid({ error: "Reload the page and try again." }),
+  reference: text(100, "delivery note reference"),
+  receivedAt: z.iso
+    .datetime({ offset: true, error: "Enter the delivery date and time." })
+    .nullish()
+    .transform((v) => v ?? null),
+  notes: text(2_000, "notes"),
+  lines: z
+    .array(receiptLineSchema)
+    .min(1, { error: "Receive at least one line." })
+    .max(200, { error: "Receive at most 200 lines at once." }),
+});
+
+export const lookupReceiptSchema = z.object({
+  idempotencyKey: z.uuid({ error: "Unknown delivery." }),
+});
+
+/** A draft order from the low-stock list (D66); the id is the page's idempotency key. */
+export const createPurchaseOrderFromLowStockSchema = z.object({
+  id: z.uuid({ error: "Reload the page and try again." }),
+  supplierId: z.uuid({ error: "Choose a supplier from the list." }),
+  productIds: z
+    .array(z.uuid())
+    .min(1, { error: "Choose at least one product." })
+    .max(100, { error: "Choose at most 100 products." }),
+});

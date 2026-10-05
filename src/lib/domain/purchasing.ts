@@ -2,6 +2,7 @@ import "server-only";
 
 import type { StaffDTO } from "@/lib/auth/permissions";
 import { DbError, mapDbError, unwrap } from "@/lib/db-errors";
+import { defaultLocation } from "@/lib/inventory";
 import { toMoneyString } from "@/lib/money";
 import {
   PURCHASE_ORDER_FILTERS,
@@ -15,6 +16,12 @@ import {
   type PurchaseOrderFilter,
   type PurchaseOrderStatus,
 } from "@/lib/purchasing";
+import {
+  normaliseReference,
+  toRpcLines,
+  type ReceiptSummary,
+  type ReceiveActionLine,
+} from "@/lib/receive-form";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
 import { DomainError } from "./errors";
@@ -1043,4 +1050,323 @@ export async function getProductPurchasing(
     nextExpectedAt: onOrder?.next_expected_at ?? null,
     openOrders,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Receiving (Phase 7 step 4; SPEC §2 "retries cannot duplicate stock", §14;
+// D63 D-LASTCOST, D64 D-RECEIPT-TIME, D65 D-OVERRECEIPT)
+// ---------------------------------------------------------------------------
+
+export type ReceiveFormLine = {
+  id: string;
+  product: { id: string; shortId: string; name: string; sku: string | null };
+  ordered: number;
+  received: number;
+  outstanding: number;
+  onHand: number;
+  /** The PO line's unit cost (D60: manage_purchasing always sees it); null otherwise. */
+  unitCost: Money | null;
+};
+
+export type ReceiveFormLocation = { id: string; name: string; kind: string; sortOrder: number };
+
+export type ReceiptBrief = {
+  id: string;
+  receivedAt: string;
+  receivedBy: string;
+  reference: string | null;
+  units: number;
+};
+
+export type ReceiveFormData = {
+  id: string;
+  poNumber: string;
+  status: PurchaseOrderStatus;
+  currency: string;
+  submittedAt: string | null;
+  supplier: { id: string; name: string; archived: boolean };
+  /** Open lines only (something still to come). */
+  lines: ReceiveFormLine[];
+  /** Active locations, by sort order then name. */
+  locations: ReceiveFormLocation[];
+  /** Phase 4's defaultLocation(): active, lowest sort order, then name. */
+  defaultLocationId: string | null;
+  /** This order's receipts from the last 24 hours, newest first. */
+  recentReceipts: ReceiptBrief[];
+  /** Every receipt's delivery note on this order, for the soft duplicate guard (D65). */
+  allReferences: {
+    reference: string;
+    normalised: string;
+    receivedAt: string;
+    receivedBy: string;
+    units: number;
+  }[];
+};
+
+/** The Receive screen's data: the order, its open lines, locations and earlier receipts. */
+export async function getReceiveForm(
+  supabase: ServerSupabase,
+  purchaseOrderId: string,
+  staff: StaffDTO,
+  now: Date = new Date(),
+): Promise<ReceiveFormData | null> {
+  const [po, locationRows] = await Promise.all([
+    getPurchaseOrder(supabase, purchaseOrderId, staff),
+    supabase
+      .from("locations")
+      .select("id, name, kind, active, sort_order")
+      .eq("active", true)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true }),
+  ]);
+  if (!po) return null;
+  const locations = (unwrap(locationRows) ?? []).map((l) => ({
+    id: l.id,
+    name: l.name,
+    kind: l.kind as string,
+    active: l.active,
+    sortOrder: l.sort_order,
+  }));
+  const units = (r: PurchaseReceipt) => r.lines.reduce((n, l) => n + l.quantity, 0);
+  const since = now.getTime() - 86_400_000;
+  return {
+    id: po.id,
+    poNumber: po.poNumber,
+    status: po.status,
+    currency: po.currency,
+    submittedAt: po.submittedAt,
+    supplier: po.supplier,
+    lines: po.lines
+      .filter((l) => l.outstanding > 0)
+      .map((l) => ({
+        id: l.id,
+        product: l.product,
+        ordered: l.ordered,
+        received: l.received,
+        outstanding: l.outstanding,
+        onHand: l.onHand,
+        unitCost: l.costs?.unitCost ?? null,
+      })),
+    locations: locations.map(({ id, name, kind, sortOrder }) => ({ id, name, kind, sortOrder })),
+    defaultLocationId: defaultLocation(locations)?.id ?? null,
+    recentReceipts: po.receipts
+      .filter((r) => new Date(r.receivedAt).getTime() >= since)
+      .map((r) => ({
+        id: r.id,
+        receivedAt: r.receivedAt,
+        receivedBy: r.receivedBy,
+        reference: r.reference,
+        units: units(r),
+      })),
+    allReferences: po.receipts.flatMap((r) =>
+      r.reference && r.reference.trim()
+        ? [
+            {
+              reference: r.reference,
+              normalised: normaliseReference(r.reference),
+              receivedAt: r.receivedAt,
+              receivedBy: r.receivedBy,
+              units: units(r),
+            },
+          ]
+        : [],
+    ),
+  };
+}
+
+export type ReceivePurchaseInput = {
+  purchaseOrderId: string;
+  idempotencyKey: string;
+  reference: string | null;
+  /** ISO instant; null: the server's now(). */
+  receivedAt: string | null;
+  notes: string | null;
+  lines: ReceiveActionLine[];
+};
+
+export type ReceivePurchaseResult = {
+  receiptId: string;
+  unitsReceived: number;
+  /** Units still to come on the whole order after this receipt. */
+  outstandingAfter: number;
+  status: PurchaseOrderStatus;
+};
+
+/**
+ * Records a delivery (receive_purchase): quantities as integers, costs as
+ * decimal STRINGS and ALWAYS sent (0 is a known cost). A replay with the
+ * same key and lines returns the first receipt and writes nothing; other
+ * lines under the key raise purchase_receipt_key_reused. Business refusals
+ * propagate as DbError so the action carries their code to the client.
+ */
+export async function receivePurchase(
+  supabase: ServerSupabase,
+  input: ReceivePurchaseInput,
+): Promise<ReceivePurchaseResult> {
+  const receipt = unwrap(
+    await supabase.rpc("receive_purchase", {
+      purchase_order_id: input.purchaseOrderId,
+      idempotency_key: input.idempotencyKey,
+      lines: toRpcLines(input.lines),
+      reference: input.reference ?? undefined,
+      received_at: input.receivedAt ?? undefined,
+      notes: input.notes ?? undefined,
+    }),
+  );
+  if (!receipt) throw new DomainError("The delivery was not recorded. Try again.");
+  const [linesResult, progressResult, poResult] = await Promise.all([
+    supabase
+      .from("purchase_receipt_lines")
+      .select("quantity_received")
+      .eq("purchase_receipt_id", receipt.id),
+    supabase
+      .schema("reporting")
+      .from("purchase_order_progress")
+      .select("quantity_outstanding")
+      .eq("purchase_order_id", receipt.purchase_order_id),
+    supabase.from("purchase_orders").select("status").eq("id", receipt.purchase_order_id).single(),
+  ]);
+  return {
+    receiptId: receipt.id,
+    unitsReceived: (unwrap(linesResult) ?? []).reduce((n, l) => n + l.quantity_received, 0),
+    outstandingAfter: (unwrap(progressResult) ?? []).reduce(
+      (n, p) => n + (p.quantity_outstanding ?? 0),
+      0,
+    ),
+    status: unwrap(poResult)!.status as PurchaseOrderStatus,
+  };
+}
+
+/** After a lost response: the receipt recorded under `idempotencyKey`, or null. */
+export async function findReceiptByKey(
+  supabase: ServerSupabase,
+  idempotencyKey: string,
+): Promise<ReceiptSummary | null> {
+  const rows =
+    unwrap(await supabase.rpc("purchase_receipt_by_key", { idempotency_key: idempotencyKey })) ??
+    [];
+  const receipt = rows[0];
+  if (!receipt) return null;
+  const [poResult, linesResult, names] = await Promise.all([
+    supabase
+      .from("purchase_orders")
+      .select("po_number")
+      .eq("id", receipt.purchase_order_id)
+      .single(),
+    supabase
+      .from("purchase_receipt_lines")
+      .select("quantity_received")
+      .eq("purchase_receipt_id", receipt.id),
+    staffNames(supabase),
+  ]);
+  return {
+    receiptId: receipt.id,
+    purchaseOrderId: receipt.purchase_order_id,
+    poNumber: unwrap(poResult)?.po_number ?? "",
+    receivedAt: receipt.received_at,
+    receivedBy: actorOf(names, receipt.received_by) ?? "Someone",
+    reference: receipt.reference,
+    units: (unwrap(linesResult) ?? []).reduce((n, l) => n + l.quantity_received, 0),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Reorder from low stock (D66 D-REORDER)
+// ---------------------------------------------------------------------------
+
+export type ReorderSuggestion = {
+  productId: string;
+  shortId: string;
+  sku: string | null;
+  name: string;
+  onHand: number;
+  reorderPoint: number;
+  /** Submitted and partially received orders only, never drafts. */
+  onOrder: number;
+  /** max(2 x reorder point - on hand - on order, 0). */
+  suggested: number;
+  /** Linked to the chosen supplier. */
+  supplierLinked: boolean;
+  supplierSku: string | null;
+  preferredSupplier: { id: string; name: string } | null;
+  /** Draft orders already holding the product. */
+  draftPoNumbers: string[];
+  /** D60: the draft line's default cost (supplier's last, else product cost, else 0). */
+  defaultCost?: { unitCost: Money; source: string };
+};
+
+/** reorder_suggestions for `supplierId` (or none chosen), with the default cost for cost-visible staff. */
+export async function getReorderSuggestions(
+  supabase: ServerSupabase,
+  supplierId: string | null,
+  staff: StaffDTO,
+): Promise<ReorderSuggestion[]> {
+  const rows =
+    unwrap(
+      await supabase.rpc("reorder_suggestions", supplierId ? { supplier_id: supplierId } : {}),
+    ) ?? [];
+  if (rows.length === 0) return [];
+  const preferredIds = [
+    ...new Set(rows.map((r) => r.preferred_supplier_id).filter((v): v is string => !!v)),
+  ];
+  const [suppliersResult, defaults] = await Promise.all([
+    preferredIds.length > 0
+      ? supabase.from("suppliers").select("id, name").in("id", preferredIds)
+      : Promise.resolve({ data: [], error: null }),
+    supplierId && canSeePurchaseCosts(staff)
+      ? getPurchaseCostDefaults(
+          supabase,
+          supplierId,
+          rows.map((r) => r.product_id),
+        )
+      : Promise.resolve([] as CostDefault[]),
+  ]);
+  const supplierNames = new Map(
+    ((unwrap(suppliersResult) ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]),
+  );
+  const costs = new Map(defaults.map((d) => [d.productId, d]));
+  return rows.map((r) => {
+    const c = costs.get(r.product_id);
+    return {
+      productId: r.product_id,
+      shortId: r.short_id,
+      sku: r.sku,
+      name: r.name,
+      onHand: r.on_hand ?? 0,
+      reorderPoint: r.reorder_point ?? 0,
+      onOrder: r.on_order ?? 0,
+      suggested: r.suggested_quantity ?? 0,
+      supplierLinked: r.supplier_linked === true,
+      supplierSku: r.supplier_sku,
+      preferredSupplier: r.preferred_supplier_id
+        ? {
+            id: r.preferred_supplier_id,
+            name: supplierNames.get(r.preferred_supplier_id) ?? "Another supplier",
+          }
+        : null,
+      draftPoNumbers: r.draft_po_numbers ?? [],
+      ...(c ? { defaultCost: { unitCost: c.unitCost, source: c.source } } : {}),
+    };
+  });
+}
+
+/** A draft order for `supplierId` with the chosen low-stock products (replay by id returns it). */
+export async function createPurchaseOrderFromLowStock(
+  supabase: ServerSupabase,
+  id: string,
+  supplierId: string,
+  productIds: readonly string[],
+): Promise<{ id: string; poNumber: string }> {
+  try {
+    const row = unwrap(
+      await supabase.rpc("create_purchase_order_from_low_stock", {
+        id,
+        supplier_id: supplierId,
+        product_ids: [...productIds],
+      }),
+    );
+    return { id: row?.id ?? id, poNumber: row?.po_number ?? "" };
+  } catch (err) {
+    rethrowFields(err, { supplier_archived: "supplierId", reorder_nothing_selected: "productIds" });
+  }
 }
