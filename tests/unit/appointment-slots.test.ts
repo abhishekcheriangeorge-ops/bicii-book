@@ -13,6 +13,7 @@ import {
   SLOT_PROBLEM_ORDER,
   availableSlots,
   openStretches,
+  scheduleWarning,
   slotProblem,
   windowUsage,
   type ScheduleContext,
@@ -187,5 +188,36 @@ describe("openStretches", () => {
       [new Date(at("09:00")).toISOString(), new Date(at("12:00")).toISOString()],
       [new Date(at("13:00")).toISOString(), new Date(at("18:00")).toISOString()],
     ]);
+  });
+});
+
+describe("scheduleWarning (bookings a settings change left behind, D38)", () => {
+  const base = { settings: SETTINGS, hours: WEEK, closures: [] };
+
+  it("is null for a booking inside the hours, whatever the grid", () => {
+    expect(scheduleWarning({ startsAt: at("10:00"), endsAt: at("10:30") }, base)).toBeNull();
+    expect(scheduleWarning({ startsAt: at("10:15"), endsAt: at("10:45") }, base)).toBeNull();
+  });
+
+  it("flags a booking outside the hours", () => {
+    expect(scheduleWarning({ startsAt: at("08:00"), endsAt: at("08:30") }, base)).toBe(
+      "outside_hours",
+    );
+    expect(
+      scheduleWarning(
+        { startsAt: at("10:00", "2031-03-03"), endsAt: at("10:30", "2031-03-03") },
+        base,
+      ),
+    ).toBe("outside_hours");
+  });
+
+  it("flags a closure first, even outside the hours", () => {
+    const closures = [{ kind: "closed" as const, startsAt: at("00:00"), endsAt: at("24:00") }];
+    expect(
+      scheduleWarning({ startsAt: at("10:00"), endsAt: at("10:30") }, { ...base, closures }),
+    ).toBe("closed");
+    expect(
+      scheduleWarning({ startsAt: at("08:00"), endsAt: at("08:30") }, { ...base, closures }),
+    ).toBe("closed");
   });
 });

@@ -382,3 +382,26 @@ export function openStretches(
   }
   return out;
 }
+
+/**
+ * Why an existing booking no longer fits the schedule (D38: settings
+ * changes never move or cancel bookings, so screens flag them):
+ * "outside_hours" when it is not inside one open stretch of its own date,
+ * "closed" when it overlaps a closed override, else null. Unlike
+ * slotProblem, the grid is not checked (a changed slot length is no reason
+ * to warn) and an earlier rule never hides a later one: a closure is
+ * reported even for a booking that is also outside the hours.
+ */
+export function scheduleWarning(
+  appt: { startsAt: string | Date; endsAt: string | Date },
+  ctx: Pick<ScheduleContext, "settings" | "hours" | "closures">,
+): "outside_hours" | "closed" | null {
+  const start = ms(appt.startsAt);
+  const end = ms(appt.endsAt);
+  const tz = ctx.settings.timezone;
+  if (closedRanges(ctx.closures, start, end).length > 0) return "closed";
+  const day = localParts(new Date(start), tz).dateKey;
+  const sameDay = localParts(new Date(end - 1), tz).dateKey === day;
+  const open = shopHoursRanges(day, { ...ctx, timezone: tz });
+  return sameDay && open.some((r) => r.start <= start && end <= r.end) ? null : "outside_hours";
+}
