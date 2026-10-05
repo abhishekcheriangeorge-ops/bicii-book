@@ -1,0 +1,91 @@
+# BICII Admin end-to-end tests (docs/TESTING.md "CI"): Playwright (phone +
+# iPad) against next start + the devstack on a Postgres 16 service container.
+#
+# Runs on manual dispatch, nightly, and on pull requests labelled "e2e" (when
+# the label is added, and on every push while it is on). Kept out of ci.yml
+# on purpose: this workflow reacts to `labeled`, and its job names are not
+# required checks, so a skipped run here can never satisfy branch
+# protection for check/test/build.
+#
+# No secrets: the devstack uses the well-known Supabase local demo keys.
+
+name: E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+  schedule:
+    # 18:23 UTC = 02:23 in Singapore (the shop's timezone).
+    - cron: "23 18 * * *"
+
+# One e2e run per PR at a time; a new push or re-adding "e2e" replaces it.
+# Any OTHER label gets a group of its own (its run skips the job), so adding
+# "ready" while e2e runs does not cancel it.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'e2e') && format('ignored-{0}', github.run_id) || 'run' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Every devstack script, the DB test harness and Playwright read the libpq
+  # variables (DATABASE_URL would win; it is deliberately unset). The user
+  # must be a superuser: the scripts create databases and the platform roles.
+  PGHOST: 127.0.0.1
+  PGPORT: "5432"
+  PGUSER: postgres
+  PGPASSWORD: postgres
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  e2e:
+    name: e2e (Playwright)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'e2e') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'e2e'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/prepare
+        with:
+          devstack: "true"
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Build bicii_dev and start the devstack
+        run: |
+          npm run db:reset
+          npm run devstack:start
+      # playwright.config.mts builds the app and runs next start on :3100;
+      # global setup resets bicii_dev again and checks a seeded login works.
+      - name: Playwright
+        run: npm run test:e2e
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+            .devstack/logs/
+          retention-days: 14
+          if-no-files-found: ignore
+          include-hidden-files: true

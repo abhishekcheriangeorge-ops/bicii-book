@@ -1,28 +1,122 @@
 # BICII Admin (bicii-book)
 
-Staff-facing operations app for BICII, a custom bicycle workshop: intake and
-work orders, appointments, inventory and consignment, purchasing, QR labels,
-reporting and the Shopify boundary. It shares one Supabase backend with the
-public site (`abhishekcheriangeorge-ops/bicii`), which stays the
-customer-facing client.
+The staff-facing operations app for BICII, a custom bicycle workshop in
+Singapore: intake and work orders, appointments, inventory and consignment,
+purchasing, QR labels, reporting and the Shopify boundary. It is a
+phone-first PWA (iPhone in the workshop, iPad at the counter).
 
-Status: planning. The application scaffold lands in the next PR.
+It shares **one Supabase backend** with the public site
+(`abhishekcheriangeorge-ops/bicii`), which stays the customer-facing client.
+Business rules live in Postgres (RLS, constraints, RPCs); this app and the
+public site are two frontends over the same database.
+
+**Status:** Phase 0 (foundation), milestone M1.1. In place: the Next.js 16
+scaffold, design tokens and UI primitives, the Docker-free Supabase devstack,
+the foundation, staff and staff-management migrations, the DB test harness,
+email + password sign-in, the staff shell (phone tab bar / iPad rail), Staff
+settings (invite, permissions, deactivate), the PWA manifest and service
+worker, Playwright E2E, and CI. Next: M1.2 customers and bikes
+([PLAN §3](docs/PLAN.md)).
+
+## Quickstart
+
+Needs Node 22 (`.nvmrc`) with npm, a Postgres 16 you can reach as a superuser
+(default `postgres`/`postgres` on 127.0.0.1:5432), and curl, tar and git.
+No Docker. The devstack binaries are linux-x64; on macOS or Windows use the
+Supabase CLI with Docker instead ([RUNBOOK](docs/RUNBOOK.md#local-supabase-with-docker-supabase-cli)).
+
+```sh
+npm ci
+npm run devstack:setup   # once per machine: Auth, PostgREST, Storage into ~/.cache/bicii-devstack
+npm run devstack:start   # Auth, PostgREST, Storage + gateway on http://127.0.0.1:54321
+                         # (builds bicii_dev on first run)
+npm run db:reset         # rebuild bicii_dev: roles, Auth, Storage, migrations, seed (~1s)
+npm run devstack:env     # write the local URLs and demo keys into .env.local
+npm run dev              # http://localhost:3000
+```
+
+Open **http://localhost:3000** (not 127.0.0.1: Next 16 blocks dev resources
+on other origins) and sign in with a seeded login. The password for all of
+them is `bicii-dev-password`:
+
+| Email | Role | Permissions |
+|---|---|---|
+| `admin@bicii.test` | admin | all |
+| `mechanic1@bicii.test` | staff | `view_costs` |
+| `mechanic2@bicii.test` | staff | none |
+
+Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
+`PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
+shell before any of the commands (they do not read `.env.local`). `npm run devstack:stop` stops the services.
+
+## Scripts
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Next dev server (Turbopack) on :3000. Primitives gallery at `/dev/ui`. |
+| `npm run build` / `npm start` | Production build / serve it. |
+| `npm run check` | `next typegen` + `tsc --noEmit`, ESLint, `prettier --check`. |
+| `npm run check:types` | Regenerate the database types from a throwaway database and fail if `src/lib/database.types.ts` differs (CI runs it). |
+| `npm test` | Every Vitest project (unit + db). |
+| `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. |
+| `npm run test:db` | DB project: invariants, RLS and RPCs on clones of a template built with the real Supabase Auth and Storage migrations. Includes a live-stack smoke test when the devstack is running. |
+| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on :3100, resets `bicii_dev`, starts the devstack if needed. |
+| `npm run format` / `npm run lint` | Prettier write / ESLint. |
+| `npm run tokens:contrast` | Recompute WCAG ratios for the colour tokens; fails on a miss. |
+| `npm run icons` | Regenerate the PWA icons from `brand/logo-source.png`. |
+| `npm run devstack:setup` | Download and build the devstack components (idempotent; `-- --force` rebuilds). |
+| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321. |
+| `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. |
+| `npm run db:reset` | Drop and rebuild the dev database, then seed it. |
+| `npm run db:migrate` | Apply pending migrations without a reset. |
+| `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database from the migrations first; CI diffs that). |
+
+## Project layout
+
+```
+.github/            CI workflow and the shared "prepare" action
+brand/              logo source for the icons
+docs/               spec, plan, ADR, data model, testing, design, runbook
+public/             logo, icons, service worker (sw.js)
+scripts/            contrast and icon generators
+  devstack/         Docker-free Supabase: setup, start/stop, db reset/migrate/types, gateway
+src/
+  app/              App Router: (auth)/login, (staff)/... screens, manifest, error pages
+  components/ui/    design-system primitives
+  components/shell/ tab bar, rail, header, profile chip
+  lib/              money, ids, dates, env, logger, actions, db errors
+    auth/           session, requireStaff, permissions, redirects
+    supabase/       server, browser and (restricted) service-role clients
+    domain/         typed wrappers over the RPCs
+    admin/          Auth admin API (service role)
+  proxy.ts          session refresh and sign-in redirect (Next 16's middleware)
+  instrumentation.ts
+supabase/
+  migrations/       the schema, RLS and RPCs (Supabase CLI timestamp names)
+  seed.sql          demo data and test fixtures
+  devstack/         roles.sql: platform roles for plain Postgres (never a migration)
+tests/
+  unit/  db/  e2e/  fixtures/
+```
 
 ## Documents
 
 | File | What it is |
 |---|---|
-| [docs/SPEC.md](docs/SPEC.md) | The authoritative build brief (v1.0, 3 Oct 2026), converted verbatim from the Word document. |
-| [docs/PLAN.md](docs/PLAN.md) | Phases, the first vertical-slice milestone, environment, risks, and the open decisions for the owner. |
-| [docs/ADR-001-architecture.md](docs/ADR-001-architecture.md) | Stack, layering, auth, migrations, Supabase client/server boundary, caching, PWA, observability, repo layout. |
+| [docs/SPEC.md](docs/SPEC.md) | The authoritative build brief (v1.0, 3 Oct 2026). |
+| [docs/PLAN.md](docs/PLAN.md) | Phases, the first milestone, environment, risks, open decisions. |
+| [docs/ADR-001-architecture.md](docs/ADR-001-architecture.md) | Stack, layering, auth, migrations, the Supabase client/server boundary, PWA, observability. |
 | [docs/DATA-MODEL.md](docs/DATA-MODEL.md) | Every table, constraint, ledger, view, RLS rule and RPC. |
-| [docs/TESTING.md](docs/TESTING.md) | Unit, database and end-to-end harnesses and the invariant-by-invariant test list. |
+| [docs/TESTING.md](docs/TESTING.md) | Unit, database and E2E harnesses, the invariant test list, CI. |
+| [docs/DESIGN.md](docs/DESIGN.md) | Design tokens and UI primitives. |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Supabase CLI with Docker, hosted projects, first admin, key rotation, Vercel. |
 
-Read them in that order.
+Read SPEC, PLAN, ADR, DATA-MODEL and TESTING in that order before changing
+code, and see [AGENTS.md](AGENTS.md) for the rules that are not negotiable.
 
-## Stack (decided)
+## Stack
 
-Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind 4,
-Supabase (Postgres, Auth, Storage, RLS), Vitest, Playwright, Vercel.
-
-This Next.js version differs from older ones; see `AGENTS.md`.
+Next.js 16 (App Router, Turbopack), React 19, TypeScript 5, Tailwind 4,
+Supabase (Postgres, Auth, Storage, RLS), zod, decimal.js, pino, Vitest,
+Playwright, GitHub Actions, Vercel. This Next.js differs from older ones
+(`proxy.ts`, async request APIs); see `AGENTS.md`.

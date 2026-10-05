@@ -24,7 +24,8 @@ caching or proxy.
 - Admin repo `abhishekcheriangeorge-ops/bicii-book`: empty, no commits.
 - Toolchain available to the cloud agent: Node 22, npm 10, Supabase CLI via
   `npx supabase`, Postgres 16 locally (no Docker, so no `supabase start`
-  there; see TESTING.md for the shim).
+  there; the Docker-free devstack in `scripts/devstack/` runs the real
+  Supabase Auth, PostgREST and Storage instead; see TESTING.md).
 - Next.js 16 specifics that change how code is written are listed in
   ADR-001 "Context".
 
@@ -60,14 +61,22 @@ Deliverables:
 
 - Next.js 16 scaffold: `create-next-app@latest --ts --tailwind --eslint --app
   --src-dir --import-alias "@/*"`, then prettier, `vitest.config.mts`,
-  `playwright.config.ts`, `.github/workflows/ci.yml`, `.env.example`,
+  `playwright.config.mts`, `.github/workflows/ci.yml`, `.env.example`,
   `.nvmrc` (22).
 - `supabase init`; `supabase/config.toml`; migration `0001_extensions_and_
   helpers.sql` (pgcrypto, citext, `private` and `reporting` schemas,
   `money_amount` domain, `set_updated_at()` trigger function,
-  `private.next_short_id()` and sequences, `private.current_*()` helpers,
-  `private.require_permission()`); migration `0002_staff.sql` (staff,
-  staff_permissions, permission enum, RLS); `supabase/tests/auth-shim.sql`;
+  `private.next_short_id()` and sequences, `private.current_staff_id()` and
+  the other staff helpers, `private.require_permission()`;
+  `private.current_customer_id()` moves to Phase 1, with the customers table
+  it reads); migration `0002_staff.sql` (staff, staff_permissions,
+  permission enum, RLS) — shipped as `20261004000100_foundation.sql` and
+  `20261004000200_staff.sql` (CLI timestamp names), plus staff management
+  (`…0300_staff_management.sql`), `NaN`-proof money and rate domains
+  (`…0400_money_not_nan.sql`) and staff history with the delegation ceiling
+  (`…0500_staff_history.sql`: `staff_events`, RPC-only staff writes,
+  `update_staff`, `staff_history`, D11); the Docker-free devstack (`scripts/devstack/`,
+  `supabase/devstack/roles.sql`) in place of the auth shim;
   `tests/db/harness.ts` (`asUser`, `asAnon`, `asServiceRole`, rollback per
   test).
 - Design tokens: copy `globals.css` theme from the public site; add
@@ -86,12 +95,18 @@ Deliverables:
   create the staging project, how to rotate keys.
 
 Tests: harness runs; `staff` RLS (inactive staff sees nothing; admin has all
-permissions; `require_permission` raises); env schema; login E2E smoke.
+permissions; `require_permission` raises); staff history (one event per
+change, with actor and reason) and the D11 ceiling; the API-surface meta
+tests with their allow-list fixture; env schema; login E2E smoke.
 
 ### Phase 1 — Customers, bicycles, attachments
 
 - Migrations: customers, bikes, bike_ownership_events, attachments, enums,
-  RLS, storage buckets + policies (via migration on `storage.objects`).
+  RLS, storage buckets + policies (via migration on `storage.objects`);
+  `private.current_customer_id()` (security definer, stable,
+  `search_path = ''`; the active customers row for `auth.uid()`) with
+  EXECUTE granted to `authenticated` only, for the "C own" policies; the new
+  RPCs and tables added to `tests/fixtures/api-surface.ts`.
 - Domain: `customers.ts` (search by name/phone/email, create, update,
   archive), `bikes.ts` (create, link to customer, transfer ownership with
   event, search by brand/model/serial/short ID), `attachments.ts` (signed
@@ -101,7 +116,8 @@ permissions; `require_permission` raises); env schema; login E2E smoke.
   camera capture component (`CaptureButton`) used everywhere photos are taken.
 
 Tests: RLS customer A/B; anon denied; attachment visibility move; serial
-search; ownership change preserves history.
+search; ownership change preserves history; `current_customer_id()` is null
+for anonymous callers and for staff without a customers row.
 
 ### Phase 2 — Appointments, shop hours, capacity, check-in
 
@@ -287,15 +303,20 @@ never sees production keys.
 
 ## 5. Risks and mitigations
 
-- **Docker-less environments cannot run Supabase Auth locally.** Mitigated
-  by the auth shim for DB tests and by E2E against staging. Login E2E in the
-  cloud agent uses staging credentials from secrets, or is skipped with a
-  clear message.
+- **Docker-less environments cannot run `supabase start`.** Mitigated by the
+  devstack (`scripts/devstack/`): the real Supabase Auth, PostgREST and
+  Storage on a plain Postgres 16 behind a local gateway, so DB tests and
+  login E2E run against real Supabase services without Docker or staging
+  credentials.
 - **Turbopack + PWA tooling.** Serwist needs webpack; a hand-written service
   worker avoids it. Offline is out of MVP scope anyway.
 - **RLS and column-level grants are easy to get subtly wrong.** The RLS
   matrix test enumerates every table for anon and customer; it fails if a
-  new table appears without a policy row in the matrix fixture.
+  new table appears without a policy row in the matrix fixture. Its first
+  half exists from Phase 0: the devstack recreates hosted Supabase's default
+  grants on `public`, and the API-surface meta tests compare everything
+  `anon` and `authenticated` can execute or touch with
+  `tests/fixtures/api-surface.ts`. Phase 1 adds the customer rows.
 - **Shopify API versions move quarterly.** The client pins a version
   constant and the sync records `api_version` per event.
 - **iOS camera and PWA quirks.** `capture="environment"` input, not
@@ -323,6 +344,7 @@ build proceeds with; confirm or change before the phase that uses it.
 | D8 | Customer-visible timeline | Customers (later, public site) see status changes, completion, collection and `customer`/`public` photos; never notes, lines' costs, or assignments. | Phase 11 |
 | D9 | Short ID format and QR base URL | `B-/J-/P-/U-/C-/PO-/S-` + 6 digits; QR = `{public_site_url}/q/{short_id}`. | Phase 1 |
 | D10 | Staff login method | Supabase email + password for staff; invitations by admin from Staff settings. No magic links in MVP. | Phase 0 |
+| D11 | What a `manage_staff` holder who is not an admin may change (SPEC §4.2 asks for granular permissions but does not say who may grant them) | Delegation ceiling: they may grant or revoke only permissions they hold themselves, never `manage_staff` (admins only), never on their own row and never on an admin's row; they may invite (role staff only) and deactivate/reactivate non-admins. Admins are unrestricted. Residual risk to confirm: an inviter sees the new login's temporary password, so a manager could keep a second login at their own permission level; closing that fully needs invite links or a forced password change on first sign-in (not in MVP). | Phase 0 |
 
 ## 7. Out of scope (restated from SPEC §30)
 

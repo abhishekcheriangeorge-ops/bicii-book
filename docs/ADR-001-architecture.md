@@ -47,7 +47,8 @@ memory):
   `src/lib/database.types.ts`.
 - `@supabase/ssr` for cookie-based sessions in Server Components, Server
   Actions, Route Handlers and `proxy.ts`. `@supabase/supabase-js` with the
-  service-role key only inside `src/lib/integrations/` and never in anything a
+  service-role key only inside `src/lib/admin/` (Supabase Auth admin API, e.g.
+  creating a staff login) and `src/lib/integrations/`, and never in anything a
   browser can import.
 - Validation: `zod` at every trust boundary (Server Action inputs, webhook
   payloads, env vars via a `src/lib/env.ts` parsed once at startup).
@@ -77,9 +78,13 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
 
 - Components never import `@supabase/supabase-js` directly and never contain
   business rules. They render DTOs and call actions.
-- Every Server Action starts with `const ctx = await requireStaff()` (or
-  `requireCustomer()`), parses input with zod, and delegates to one domain
-  function. Actions are thin.
+- Every Server Action is built with `staffAction()` (`src/lib/actions.ts`):
+  it authorizes on one Supabase client (`authorizeStaff(client, …)`, the
+  action-side twin of `requireStaff()`), parses input with zod, and the
+  handler delegates to one domain function with that same client. Actions
+  are thin: workflows (e.g. inviting staff: Auth login, `create_staff`,
+  compensation) live in the domain module, which throws `DomainError` for a
+  refused business rule; the action maps it to a safe message.
 - Domain services are `import 'server-only'` modules. They compose reads
   (through the RLS-scoped client) and writes (through RPCs). They return plain
   DTOs with only the fields the caller needs; cost and yield fields are only
@@ -95,7 +100,8 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
   requests under `/(staff)` to `/login`. That is all it does. It is an
   optimisation, not a guard.
 - The guard is the data access layer: `src/lib/auth/session.ts` exports
-  `getSession()` (React `cache`d per request), `requireStaff(permission?)`,
+  `getSession()` (React `cache`d per render; `cache()` does not memoise
+  inside a Server Action, hence `authorizeStaff` there), `requireStaff(permission?)`,
   `requireCustomer()`. They read the session from cookies and the `staff` row
   through RLS, and throw `redirect('/login')` or `forbidden()` as appropriate.
   `experimental.authInterrupts` is on so `forbidden.tsx` / `unauthorized.tsx`
@@ -117,12 +123,37 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
   grants, so a table never exists without its policies in the same commit.
 - `supabase/seed.sql` seeds local and preview databases. It is deterministic
   (fixed UUIDs) so tests reference seeded rows by ID.
-- After every migration: `supabase gen types typescript --local >
-  src/lib/database.types.ts` is committed. A CI check regenerates and diffs.
-- Environments: local (`supabase start` on a dev machine, or a plain
-  Postgres 16 with the `supabase/tests/auth-shim.sql` applied where Docker is
-  unavailable), a hosted `bicii-staging` Supabase project for previews, and
-  `bicii-prod`. Branch previews on Vercel point at staging.
+- Migration files use Supabase CLI timestamp names
+  (`20261004000100_foundation.sql`) and are applied in filename order, each
+  in one transaction, and recorded in
+  `supabase_migrations.schema_migrations` exactly as the CLI records them, so
+  the CLI and our devstack scripts agree on what has run.
+- Migrations never rely on Supabase's default privileges (hosted Supabase
+  grants new `public` objects to `anon`/`authenticated`; plain Postgres
+  grants EXECUTE on functions to PUBLIC). Every object is revoked from
+  `public, anon, authenticated, service_role` and granted exactly what it
+  needs, so behaviour is identical on hosted Supabase and locally. Meta tests
+  enforce it (RLS on every `public` table; no function executable by PUBLIC).
+- After every migration: `npm run db:types` regenerates
+  `src/lib/database.types.ts` with the Supabase CLI's own generator
+  (`supabase gen types typescript --db-url`, which needs no Docker) and the
+  file is committed. `npm run db:types -- --fresh` generates from a
+  throwaway database built from the migrations; CI regenerates and diffs.
+- Environments: local, a hosted `bicii-staging` Supabase project for
+  previews, and `bicii-prod`. Branch previews on Vercel point at staging.
+  Local is either `supabase start` (Docker) or the **devstack**
+  (`scripts/devstack/`), which runs the real Supabase services without
+  Docker: Supabase Auth v2.178.0 and PostgREST v12.2.3 as release binaries,
+  Supabase Storage v1.79.31 built from source, against a plain Postgres 16,
+  behind a small Node gateway on `http://127.0.0.1:54321` with Supabase's
+  URL layout (`/auth/v1`, `/rest/v1`, `/storage/v1`). Auth and Storage run
+  their own migrations, so the `auth` and `storage` schemas are the real
+  ones, not a shim. The only devstack-specific SQL is
+  `supabase/devstack/roles.sql`: the platform roles and schemas that hosted
+  Supabase already has (`anon`, `authenticated`, `service_role`,
+  `authenticator`, `supabase_auth_admin`, `supabase_storage_admin`, the
+  `auth`/`storage`/`extensions` schemas). It is never a migration. The same
+  scripts run in CI against a Postgres service container.
 
 ### A5. Client/server boundary with Supabase
 
@@ -131,8 +162,9 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
 | Server Components, Actions, Route Handlers | `createServerClient` from `@supabase/ssr` with the `cookies()` store | anon key | RLS applies. The only way the UI reads data. |
 | `proxy.ts` | `createServerClient` with request/response cookies | anon key | Refresh only. |
 | Client Components | `createBrowserClient` | anon key | Only for realtime subscriptions (board updates) and Storage uploads from the camera. No business reads. |
-| Integration workers, webhook handlers | `createClient` with service role | service role | Lives in `src/lib/integrations/**`, `import 'server-only'`, never reachable from a component import graph. |
-| Tests | `pg` directly | DB superuser / set role | See TESTING.md. |
+| Auth admin, integration workers, webhook handlers | `createServiceClient()` (`src/lib/supabase/service.ts`) | service role | Imported only from `src/lib/admin/**` and `src/lib/integrations/**` (ESLint `no-restricted-imports`), `import 'server-only'`, never reachable from a component import graph. Staff rows are still created through `create_staff` as the inviting user, so the database checks authorization. |
+| Tests | `pg` directly | DB superuser + `set local role` and `request.jwt.claims`, as PostgREST does | See TESTING.md. |
+| Local development | Same clients against the devstack gateway `http://127.0.0.1:54321` (or `supabase start`) | local demo anon / service-role keys written to `.env.local` by `npm run devstack:env` | Keys are signed with the well-known local demo secret; never used outside local. |
 
 Image delivery: `next/image` with `images.remotePatterns` for the Supabase
 Storage host. Local development adds `images.dangerouslyAllowLocalIP` only in
@@ -168,10 +200,11 @@ repo and may cache; this app does not.
 ### A8. Observability
 
 - `instrumentation.ts` with `onRequestError` forwarding to the log sink.
-- `proxy.ts` sets `x-request-id` on the upstream request; the DAL reads it
-  through `headers()` and attaches it to every RPC call as
-  `correlation_id` (a `set_config('app.correlation_id', …, true)` at the start
-  of each RPC, stored on events and integration rows).
+- `proxy.ts` sets `x-request-id` on the upstream request; the server
+  Supabase client sends it on every PostgREST call as `x-correlation-id`,
+  and `private.current_correlation_id()` reads it from PostgREST's
+  `request.headers` (or from `set_config('app.correlation_id', …, true)`
+  when an RPC sets one), so event and integration rows store it.
 - Structured JSON logs (`pino`) from actions and integration code, emitted in
   `after()` so they never delay the response. Critical mutations log
   `{correlationId, actor, rpc, entityId, outcome}`.
@@ -185,7 +218,7 @@ bicii-book/
     config.toml
     migrations/
     seed.sql
-    tests/                   SQL fixtures, auth shim for plain Postgres
+    devstack/roles.sql       platform roles/schemas for plain Postgres (never a migration)
   src/
     app/
       (auth)/login
@@ -217,8 +250,8 @@ bicii-book/
     unit/                    vitest
     db/                      vitest over pg
     e2e/                     playwright
-  proxy.ts
-  instrumentation.ts
+    proxy.ts                 in src/ (next to app/), as the Next 16 docs require with a src dir
+    instrumentation.ts       likewise
 ```
 
 ## Consequences
@@ -229,10 +262,12 @@ bicii-book/
 - Every ledger-affecting feature costs a migration, an RPC, a policy, a DB
   test and a UI. That is the spec's definition of done, so the cost is
   deliberate.
-- Running the test suite needs a Postgres. Developer machines use
-  `supabase start`; the cloud agent container uses the local Postgres 16 with
-  the auth shim; CI uses a Postgres service container plus the shim. The shim
-  is small (auth schema, `auth.uid()`, `auth.jwt()`, the three roles) and is
-  the only place where "not real Supabase" leaks in.
+- Running the test suite needs a Postgres 16 and the devstack cache
+  (`npm run devstack:setup`, once per machine or CI cache). The DB tests
+  build their databases with the real Supabase Auth and Storage migrations,
+  so the only place where "not real Supabase" leaks in is
+  `supabase/devstack/roles.sql` (roles and grants hosted Supabase already
+  has). The test helpers work unchanged against `supabase start` or a hosted
+  database (`BICII_TEST_DATABASE_URL`).
 - Shopify is behind an interface from the first commit, so the first eleven
   phases do not need Shopify credentials.

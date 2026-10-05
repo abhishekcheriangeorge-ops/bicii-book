@@ -14,9 +14,16 @@ Conventions used throughout:
   `created_at timestamptz not null default now()`, and `updated_at` maintained
   by a shared trigger where the row is mutable. `updated_at` is not an audit
   log; auditable facts get their own event or ledger row.
-- Money: domain `money_amount` = `numeric(12,2)`. Rates: `numeric(5,4)`.
-  Quantities on stock are `integer`; quantities on line items are
-  `numeric(10,2)` with a check that inventory-backed lines are whole numbers.
+- Money: domain `money_amount` = `numeric(12,2)`. Rates: domain
+  `rate_fraction` = `numeric(5,4)` (0.3000 = 30%; tables add their own
+  range checks). Both domains reject `NaN` (`check (value <> 'NaN')`):
+  Postgres numeric accepts it, it poisons every sum, and it passes range
+  checks because NaN sorts above every number. Every other numeric column
+  uses a domain with the same check too (a meta test requires it), e.g.
+  quantities on line items are domain `line_quantity` = `numeric(10,2)`
+  (added with the first line-item table, Phase 3), with a check that
+  inventory-backed lines are whole numbers. Quantities on stock
+  are `integer`.
 - Every money-bearing row carries `currency char(3) not null default 'SGD'`.
 - Timestamps are `timestamptz`. Display defaults to `Asia/Singapore`.
 - Soft delete is `archived_at timestamptz null`; archived rows stay readable to
@@ -49,24 +56,65 @@ staff_permissions
   granted_by uuid -> staff(id)
   granted_at timestamptz
   PK (staff_id, permission)
+  -- current state only; history is in staff_events
 
 permission_key enum:
   view_costs | manage_inventory | adjust_stock | manage_consignments |
   manage_purchasing | manage_staff | view_financial_reports
+
+staff_events                           -- append-only history
+  id uuid PK
+  staff_id uuid not null -> staff(id) on delete restrict
+  event_type staff_event_type not null
+    -- created | details_changed | role_changed | deactivated |
+    -- reactivated | permission_granted | permission_revoked
+  permission permission_key null       -- set exactly for permission_* events
+  actor_staff_id uuid null -> staff(id) -- null: changed outside the app (seed, SQL editor)
+  payload jsonb not null default '{}'   -- what changed: {"role": {"from","to"}},
+                                        -- a revoked grant's granted_by/granted_at,
+                                        -- the created row's fields
+  reason text null                      -- required for deactivated (by the RPC); ≤ 500 chars
+  correlation_id text null              -- the request's x-request-id (ADR-001 A8)
+  created_at timestamptz not null default clock_timestamp()
+  index (staff_id, created_at desc), index (actor_staff_id)
 ```
 
 Rules:
 
 - `role = admin` implies every permission. `staff` has only the rows granted.
+- An update can never leave the shop without an active admin (trigger
+  `staff_keep_an_active_admin`, serialised with an advisory lock).
 - "Staff" in any policy means `staff.active = true` for the calling
   `auth.uid()`. Deactivating a staff member revokes everything at once.
+- History over overwrites (SPEC §2, §22): every insert or update of a
+  `staff` row and every insert or delete of a `staff_permissions` row
+  appends one `staff_events` row, written by triggers
+  (`staff_record_history`, `staff_permissions_record_history`), so no path
+  (RPC, seed, the RUNBOOK's first-admin SQL) skips it. A grant's actor is
+  its `granted_by`; otherwise the actor is `private.current_staff_id()`. The
+  reason reaches the trigger through a transaction-local setting the RPC
+  sets and clears (`private.set_staff_event_reason`). Replays that change
+  nothing append nothing. `staff_events` refuses UPDATE and DELETE for
+  every role (`staff_history_append_only`); API roles have no grant on it
+  and read it through `staff_history()`.
+- Staff rows change only through RPCs: `authenticated` and `service_role`
+  have no INSERT/UPDATE/DELETE on `staff` or `staff_permissions`. A BEFORE
+  trigger (`staff_enforce_rules`) holds for every writer, the owner
+  included: `staff.email` must equal the Auth login's email (P0001
+  `staff_email_mismatch`), and a signed-in user never deactivates their
+  own row (42501).
+- Delegation ceiling (PLAN D11, `private.authorize_permission_change`):
+  admins grant and revoke anything; a `manage_staff` holder who is not an
+  admin only permissions they hold themselves, never `manage_staff`, never
+  on their own row, never on an admin's row (42501).
 - Helpers in `private`, all `security definer`, `stable`, with
   `search_path = ''`:
   - `private.current_staff_id() returns uuid`
   - `private.is_staff() returns boolean`
   - `private.is_admin() returns boolean`
   - `private.has_permission(permission_key) returns boolean`
-  - `private.current_customer_id() returns uuid`
+  - `private.current_customer_id() returns uuid` (Phase 1, with the
+    `customers` table it reads; PLAN Phase 1)
   - `private.require_permission(permission_key)` raises
     `insufficient_privilege` when the caller lacks it. Every privileged RPC
     calls this first.
@@ -269,7 +317,7 @@ services
   created_at, updated_at, archived_at
 
 cult_commons_rates
-  id, rate numeric(5,4) not null check (rate >= 0 and rate <= 1),
+  id, rate rate_fraction not null check (rate >= 0 and rate <= 1),
   effective_from timestamptz not null unique,
   created_by, created_at
   -- seed: 0.3000 effective 1970-01-01
@@ -282,10 +330,10 @@ work_order_line_items
   source_product_id uuid null -> products
   source_inventory_unit_id uuid null -> inventory_units
   description_snapshot text not null
-  quantity numeric(10,2) not null check (quantity > 0)
+  quantity line_quantity not null check (quantity > 0)   -- numeric(10,2), NaN-free domain
   unit_sale_price_snapshot money_amount not null
   unit_direct_cost_snapshot money_amount not null
-  cult_commons_rate_snapshot numeric(5,4) not null
+  cult_commons_rate_snapshot rate_fraction not null
   currency char(3) not null
   -- generated, stored:
   sale_total        = round(quantity * unit_sale_price_snapshot, 2)
@@ -454,9 +502,9 @@ sale_lines
   inventory_unit_id uuid null unique       -- a unit sells once, full stop
   consignment_item_id uuid null
   description_snapshot text not null
-  quantity numeric(10,2) not null check (quantity > 0)
+  quantity line_quantity not null check (quantity > 0)   -- numeric(10,2), NaN-free domain
   unit_sale_price_snapshot, unit_direct_cost_snapshot money_amount not null
-  cult_commons_rate_snapshot numeric(5,4) not null
+  cult_commons_rate_snapshot rate_fraction not null
   currency char(3)
   sale_total, cost_total, yield_total, cult_commons_share  -- generated as in §5
   shopify_line_item_id text null unique
@@ -705,8 +753,9 @@ security-definer function. Blank = no access.
 
 | Table | select | insert | update | delete |
 |---|---|---|---|---|
-| staff | S (own row + names of others); A full | A | A | — |
-| staff_permissions | A, own | A / P(manage_staff) | same | same |
+| staff | S (own row + names of others); A full; A or P(manage_staff) via `staff_roster()` | RPC `create_staff` (A or P(manage_staff); only A creates A) | RPC `update_staff`, `set_staff_active` | — |
+| staff_permissions | A, own | RPC `grant_permission` (A, or P(manage_staff) within D11) | — | RPC `revoke_permission` (same) |
+| staff_events | A or P(manage_staff) via `staff_history()` | triggers only | never | never |
 | customers | S; C own | S; C own on sign-up | S; C own (name/phone only) | — |
 | bikes | S; C own | S; C own | S; C own (non-internal cols) | — |
 | attachments | S; C where visibility ≠ internal and entity is own | S | S | S |
@@ -745,6 +794,13 @@ as appropriate, runs in a single transaction, locks the rows it mutates, and
 returns the created/affected row. Idempotent ones accept an idempotency key or
 rely on a unique index and return the existing row on replay.
 
+Business errors an RPC raises on purpose use SQLSTATE `P0001` with `MESSAGE`
+set to a stable snake_case code (for example `staff_email_mismatch`) and
+`DETAIL` set to an explanation. `src/lib/db-errors.ts` maps known codes to
+user-facing messages; unknown codes become a generic error. Authorization
+failures are `42501`, missing rows `P0002`, the last-admin guard `55000`.
+Unique (`23505`) and check (`23514`) violations are mapped by constraint name.
+
 | RPC | Guard | Effects |
 |---|---|---|
 | `book_appointment(type_id, starts_at, customer_id, bike_id, note)` | C own / S | Capacity + hours check under advisory lock; insert. |
@@ -768,12 +824,21 @@ rely on a unique index and return the existing row on replay.
 | `receive_purchase(po_id, idempotency_key, lines[])` | P(manage_purchasing) | §10. |
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
-| `grant_permission` / `revoke_permission` / `set_staff_active` | A or P(manage_staff) | Permission rows. |
+| `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) within the D11 ceiling | Permission rows (`granted_by` = caller); replay-safe (no row change, no event). One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
+| `set_staff_active(target_staff_id, active, reason)` | A or P(manage_staff) | Deactivating needs a reason (P0001 `reason_required`; `reason_too_long` over 500). Nobody deactivates themselves; only an admin changes an admin's status; the last active admin stays (55000). One `deactivated`/`reactivated` event with the reason; replaying the current state is a no-op. |
+| `update_staff(target_staff_id, display_name, role, reason)` | A or P(manage_staff); role changes A only | Null leaves a field as it is. Nobody changes their own role; only an admin renames an admin; the last active admin cannot be demoted (55000). `role_changed` / `details_changed` events. Email is not editable (it must stay the login's email). |
+| `staff_history(target_staff_id, max_rows)` | A or P(manage_staff) | `staff_events` for one person, newest first, with the actor's display name (≤ 500 rows, default 100). |
+| `my_staff_profile()` | authenticated | Caller's staff row + effective permissions (admin → all; inactive → none); zero rows for non-staff. |
+| `create_staff(auth_user_id, display_name, email, role)` | A or P(manage_staff); only A creates `admin` | Links an existing Auth login (created server-side with the service-role admin API) to a new active staff row. Email must equal the login's email (`P0001 staff_email_mismatch`); duplicate email → 23505 `staff_email_key`. |
+| `staff_roster()` | A or P(manage_staff) | Every staff row with its *granted* permissions, for Staff settings (a manage_staff holder could otherwise grant but not see permissions, §15). |
+| `staff_directory()` | S | `id, display_name, role, active` of every staff member: how staff see colleagues' names (§15) without reading the `staff` table. |
 
 ## 17. Sequences and short IDs
 
 `private.next_short_id(prefix text) returns text` reads a per-prefix sequence
-(`seq_short_id_B`, `seq_short_id_J`, …) and zero-pads to six digits. Sequences
+(`private.seq_short_id_b`, `private.seq_short_id_j`, …, `maxvalue 999999 no
+cycle`, so exhaustion raises rather than truncating) and zero-pads to six
+digits. Unknown prefixes raise SQLSTATE 22023. Sequences
 are never reset. The UUID is the primary key everywhere; short IDs are for
 humans and QR codes.
 
