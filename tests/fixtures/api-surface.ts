@@ -106,6 +106,19 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.my_work_order_lines(uuid)",
   "public.my_work_order_timeline(uuid)",
   "public.my_work_orders()",
+  // Purchasing (Phase 7): every write, the cost defaults and the receipt
+  // lookup need manage_purchasing (D60 D-PO-COSTS)
+  "public.cancel_purchase_order(uuid, text)",
+  "public.create_purchase_order(uuid, uuid, date, text, text)",
+  "public.purchase_cost_defaults(uuid, uuid[])",
+  "public.purchase_receipt_by_key(uuid)",
+  "public.receive_purchase(uuid, uuid, jsonb, text, timestamp with time zone, text)",
+  "public.remove_purchase_order_line(uuid, text)",
+  "public.remove_supplier_product(uuid, uuid)",
+  "public.set_purchase_order_line(uuid, uuid, uuid, integer, money_amount, date, text, text)",
+  "public.set_supplier_product(uuid, uuid, text, integer, boolean)",
+  "public.submit_purchase_order(uuid)",
+  "public.update_purchase_order(uuid, uuid, date, text, text)",
 ];
 
 /**
@@ -160,6 +173,25 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   // The anonymous projection, readable by signed-in users (customers) too
   "reporting.public_items": ["SELECT"],
   "reporting.stock_levels": ["SELECT"],
+  // Purchasing (Phase 7): staff read suppliers, POs, lines, receipts and
+  // progress; manage_purchasing writes suppliers (column grants) and
+  // everything else through RPCs. SELECT on supplier_products,
+  // purchase_order_lines and purchase_receipt_lines excludes the purchase
+  // cost columns, which only the *_staff views return; PO history rows are
+  // visible to view_costs or manage_purchasing (D60 D-PO-COSTS)
+  "public.purchase_order_events": ["SELECT"],
+  "public.purchase_order_lines": ["SELECT"],
+  "public.purchase_order_lines_staff": ["SELECT"],
+  "public.purchase_order_totals_staff": ["SELECT"],
+  "public.purchase_orders": ["SELECT"],
+  "public.purchase_receipt_lines": ["SELECT"],
+  "public.purchase_receipt_lines_staff": ["SELECT"],
+  "public.purchase_receipts": ["SELECT"],
+  "public.supplier_products": ["SELECT"],
+  "public.supplier_products_staff": ["SELECT"],
+  "public.suppliers": ["INSERT", "SELECT", "UPDATE"],
+  "reporting.product_on_order": ["SELECT"],
+  "reporting.purchase_order_progress": ["SELECT"],
 };
 
 /**
@@ -184,4 +216,10 @@ export const DEFINER_VIEWS: readonly string[] = [
   "public.work_order_totals_staff",
   // Inventory (Phase 4): the anonymous /q projection
   "reporting.public_items",
+  // Purchasing (Phase 7): purchase costs for view_costs or
+  // manage_purchasing only (private.can_view_purchase_costs(), D60)
+  "public.purchase_order_lines_staff",
+  "public.purchase_order_totals_staff",
+  "public.purchase_receipt_lines_staff",
+  "public.supplier_products_staff",
 ];

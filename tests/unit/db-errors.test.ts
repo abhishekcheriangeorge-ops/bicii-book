@@ -186,6 +186,45 @@ describe("mapDbError", () => {
     });
   });
 
+  it("maps the purchasing business errors, unique keys and checks (Phase 7)", () => {
+    expect(mapDbError(pgrst("P0001", "purchase_over_receipt"))).toMatchObject({
+      kind: "business",
+      reason: "purchase_over_receipt",
+      message:
+        "That is more than is still to come on this order. Check the counts, or raise the ordered quantity first.",
+    });
+    expect(mapDbError(pgrst("P0001", "purchase_receipt_key_reused")).message).toBe(
+      "This submission was already recorded. Check the order before receiving again.",
+    );
+    expect(mapDbError(pgrst("P0001", "purchase_order_closed")).message).toBe(
+      "This order is closed: it has been fully received or cancelled. Extra units go on a new order.",
+    );
+    expect(mapDbError(pgrst("P0001", "supplier_has_open_orders")).message).toBe(
+      "This supplier still has open orders. Receive or cancel them first.",
+    );
+    expect(mapDbError(pgrst("P0001", "purchase_receipt_before_submission")).message).toBe(
+      "The delivery date is before the order was submitted.",
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "suppliers_name_active_key" }),
+    ).toMatchObject({ kind: "duplicate", message: "A supplier with that name already exists." });
+    expect(
+      mapDbError(
+        pgrst(
+          "23514",
+          'new row for relation "purchase_order_lines" violates check constraint "purchase_order_lines_unit_cost_check"',
+        ),
+      ).message,
+    ).toMatch(/^Unit cost must be between \S*0\.00 and \S*99,999\.99\.$/);
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "inventory_movements_purchase_received_has_receipt_line",
+      }).message,
+    ).toBe("Stock from a supplier is received through its purchase order.");
+  });
+
   it("maps numeric overflow (22003) to a plain message", () => {
     expect(mapDbError(pgrst("22003", "numeric field overflow"))).toEqual({
       message: "That amount is too large.",
