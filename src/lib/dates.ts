@@ -166,3 +166,32 @@ export function shiftShopDay(day: string, n: number): string {
 export function shopToday(now: DateInput = new Date()): string {
   return shopDateKey(now);
 }
+
+/**
+ * A shop day ("YYYY-MM-DD") as an instant at noon Singapore time, so any
+ * formatter in the shop zone shows that same calendar day (midnight would
+ * slip a day in a formatter left at UTC). Throws a RangeError for a day
+ * that is not "YYYY-MM-DD".
+ */
+export function shopDayToDate(day: string): Date {
+  const valid = parseShopDay(day);
+  if (valid === null) throw new RangeError(`Invalid shop day: ${String(day)}`);
+  return new Date(`${valid}T12:00:00${SHOP_UTC_OFFSET}`);
+}
+
+/** A shop day for people: "Sat, 3 Oct 2026". */
+export function formatShopDay(day: string): string {
+  return fmt({ weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(
+    shopDayToDate(day),
+  );
+}
+
+/** A shop day as a heading: "Saturday, 3 Oct". */
+export function formatShopDayLong(day: string): string {
+  return fmt({ weekday: "long", day: "numeric", month: "short" }).format(shopDayToDate(day));
+}
+
+/** A shop day in a compact list: "Sat, 3 Oct". */
+export function formatShopDayShort(day: string): string {
+  return formatDayShort(shopDayToDate(day));
+}

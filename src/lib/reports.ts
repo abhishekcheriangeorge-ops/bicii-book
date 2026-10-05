@@ -1,0 +1,565 @@
+/**
+ * The Today dashboard's and the financial reports' shapes and wording
+ * (SPEC §19.1, §22; PLAN D30 FIN-ACCESS, D31 TODAY-TILES, D32 RECOGNITION,
+ * D33 SIGNIFICANT-ADJ, D34 EXCEPTIONS, D35 SHOP-TZ). Pure and client-safe:
+ * the server-only reads are in src/lib/domain/reports.ts, which maps the
+ * RPC rows onto these DTOs.
+ *
+ * Money: every amount here was computed by Postgres and arrives as a
+ * fixed-2 string with its currency. Nothing in this module adds, subtracts
+ * or multiplies money; it formats, compares and words what it is given. A
+ * figure the database withheld (D30) is null, and the UI says it is hidden
+ * rather than deriving it.
+ *
+ * Phase 9 adds its period-report exports beside these without changing
+ * them; each export here is self-contained.
+ */
+import { formatRate } from "@/lib/cult-commons";
+import type { Database } from "@/lib/database.types";
+import { hrefForRecord, isShortId } from "@/lib/ids";
+import { formatMoney, toDecimal, toMoneyString } from "@/lib/money";
+import {
+  DEFAULT_BOARD_FILTERS,
+  OVERDUE_AFTER_DAYS,
+  boardQuery,
+  type BoardFilters,
+  type StatusTone,
+  type WorkOrderStatus,
+} from "@/lib/workshop";
+import { shiftShopDay } from "@/lib/dates";
+
+// ---------------------------------------------------------------------------
+// Today (public.today_dashboard)
+// ---------------------------------------------------------------------------
+
+type Nullable<T> = { [K in keyof T]: T[K] | null };
+
+/**
+ * One public.today_dashboard row as PostgREST returns it. The generated
+ * types call every column non-null; in fact the money columns are NULL
+ * without view_financial_reports / view_costs (D30), the snapshot is NULL
+ * on past days (D31) and the Phase 2/6 placeholders are NULL until those
+ * phases fill them, so every column is read as nullable.
+ */
+export type TodayDashboardRow = Nullable<
+  Database["public"]["Functions"]["today_dashboard"]["Returns"][number]
+>;
+
+export type TodayDashboard = {
+  /** The shop day shown ("YYYY-MM-DD"), as the database decided it (D35). */
+  day: string;
+  /** Whether `day` is the shop's today (the database's answer). */
+  isToday: boolean;
+  /** When the database answered (ISO timestamp). */
+  generatedAt: string;
+  /** Flows: jobs whose CURRENT stamp falls on `day` (D31). */
+  workshop: {
+    checkedIn: number;
+    started: number;
+    completed: number;
+    readyForCollection: number;
+    collected: number;
+    cancelled: number;
+  };
+  /** The current snapshot (D31), grouped as BOARD_GROUPS; null on a past day. */
+  now: null | {
+    received: number;
+    waiting: number;
+    readyToStart: number;
+    inProgress: number;
+    awaitingCollection: number;
+    open: number;
+    overdue: number;
+    lowStock: number;
+    exceptions: number;
+  };
+  /** Null while Phase 2 has not filled the appointment columns. */
+  appointments: null | { scheduled: number; arrived: number; noShow: number };
+  /** Null without view_financial_reports (D30). */
+  money: null | {
+    currency: string;
+    grossSales: string;
+    linesRecognised: number;
+    /** Recognised lines with no cost entered (D14): the cost side is provisional while > 0. */
+    costPendingLines: number;
+    /** Null until Phase 6 fills the consignment columns. */
+    consignmentSales: null | { count: number; total: string };
+    /** Null without view_costs (D30). */
+    costs: null | {
+      cogs: string;
+      yield: string;
+      cultCommons: string;
+      biciiAfterCc: string;
+      /** ≤ 0: the sum of the loss-making lines' yields. */
+      lossTotal: string;
+      lossLines: number;
+      /** Null until Phase 6. */
+      newConsignorLiability: string | null;
+    };
+  };
+  stock: {
+    partsConsumedQty: number;
+    partsConsumedLines: number;
+    partsReturnedQty: number;
+    adjustments: number;
+    significantAdjustments: number;
+  };
+};
+
+const int = (v: number | null | undefined): number => v ?? 0;
+
+/** A database amount as a fixed-2 string in `currency`; null stays null. */
+function amount(v: number | string | null | undefined, currency: string): string | null {
+  return v === null || v === undefined ? null : toMoneyString(v, currency);
+}
+
+/** The Today DTO from one today_dashboard row. */
+export function toTodayDashboard(row: TodayDashboardRow): TodayDashboard {
+  if (!row.day) throw new RangeError("today_dashboard returned no day");
+  const isToday = row.is_today === true;
+  const currency = row.currency ?? "SGD";
+  const fin = row.can_see_financials === true;
+  const costs = fin && row.can_see_costs === true;
+  const appointmentsTracked =
+    row.appointments_scheduled !== null ||
+    row.appointments_arrived !== null ||
+    row.appointments_no_show !== null;
+  const consignmentTracked = row.consignment_sales !== null || row.consignment_sales_total !== null;
+  return {
+    day: row.day,
+    isToday,
+    generatedAt: row.generated_at ?? new Date().toISOString(),
+    workshop: {
+      checkedIn: int(row.jobs_checked_in),
+      started: int(row.jobs_started),
+      completed: int(row.jobs_completed),
+      readyForCollection: int(row.jobs_ready_for_collection),
+      collected: int(row.jobs_collected),
+      cancelled: int(row.jobs_cancelled),
+    },
+    now:
+      isToday && row.received_now !== null
+        ? {
+            received: int(row.received_now),
+            waiting: int(row.waiting_now),
+            readyToStart: int(row.ready_to_start_now),
+            inProgress: int(row.in_progress_now),
+            awaitingCollection: int(row.awaiting_collection_now),
+            open: int(row.open_jobs_now),
+            overdue: int(row.overdue_now),
+            lowStock: int(row.low_stock_now),
+            exceptions: int(row.exceptions_now),
+          }
+        : null,
+    appointments: appointmentsTracked
+      ? {
+          scheduled: int(row.appointments_scheduled),
+          arrived: int(row.appointments_arrived),
+          noShow: int(row.appointments_no_show),
+        }
+      : null,
+    money:
+      fin && row.gross_sales !== null
+        ? {
+            currency,
+            grossSales: amount(row.gross_sales, currency)!,
+            linesRecognised: int(row.lines_recognised),
+            costPendingLines: int(row.cost_pending_lines),
+            consignmentSales: consignmentTracked
+              ? {
+                  count: int(row.consignment_sales),
+                  total: amount(row.consignment_sales_total ?? 0, currency)!,
+                }
+              : null,
+            costs:
+              costs && row.cogs !== null
+                ? {
+                    cogs: amount(row.cogs, currency)!,
+                    yield: amount(row.yield_total ?? 0, currency)!,
+                    cultCommons: amount(row.cult_commons_share ?? 0, currency)!,
+                    biciiAfterCc: amount(row.bicii_yield_after_cc ?? 0, currency)!,
+                    lossTotal: amount(row.loss_total ?? 0, currency)!,
+                    lossLines: int(row.loss_lines),
+                    newConsignorLiability: amount(row.new_consignor_liability, currency),
+                  }
+                : null,
+          }
+        : null,
+    stock: {
+      partsConsumedQty: int(row.parts_consumed_qty),
+      partsConsumedLines: int(row.parts_consumed_lines),
+      partsReturnedQty: int(row.parts_returned_qty),
+      adjustments: int(row.stock_adjustments),
+      significantAdjustments: int(row.significant_stock_adjustments),
+    },
+  };
+}
+
+/** What a tile says for a measure a later phase has not started tracking. */
+export const NOT_TRACKED = "not tracked yet";
+
+/** A placeholder measure for display: its value, or "not tracked yet" while NULL. */
+export function notTracked<T extends string | number>(value: T | null | undefined): T | string {
+  return value === null || value === undefined ? NOT_TRACKED : value;
+}
+
+// ---------------------------------------------------------------------------
+// Money wording
+// ---------------------------------------------------------------------------
+
+/** A real minus sign (U+2212), so a negative amount reads as one. */
+const MINUS = "−";
+
+/** formatMoney with a real minus sign: "−$15.00". */
+export function formatSignedMoney(value: string, currency: string): string {
+  return formatMoney(value, currency).replace("-", MINUS);
+}
+
+/** The loss note shared by Today and the job yield panel (D1): null when no line lost money. */
+export function lossNote(lossLines: number, lossTotal: string, currency: string): string | null {
+  if (lossLines <= 0) return null;
+  const lines = lossLines === 1 ? "1 line" : `${lossLines} lines`;
+  return `${lines} sold at a loss: ${formatSignedMoney(lossTotal, currency)}. Losses don't reduce Cult Commons on other lines.`;
+}
+
+/** Today's provisional note (D14): null when every recognised line has a cost. */
+export function provisionalNote(costPendingLines: number): string | null {
+  if (costPendingLines <= 0) return null;
+  return costPendingLines === 1
+    ? "Provisional: 1 line has no cost entered, so cost, yield and Cult Commons count it at 0."
+    : `Provisional: ${costPendingLines} lines have no cost entered, so cost, yield and Cult Commons count them at 0.`;
+}
+
+/**
+ * The Cult Commons rates a job's lines snapshotted (fractions), as a label:
+ * "30%", or "25–30%" when lines carry different rates; null for none.
+ */
+export function formatRateRange(rates: readonly string[]): string | null {
+  if (rates.length === 0) return null;
+  const sorted = [...rates].sort((a, b) => toDecimal(a).comparedTo(toDecimal(b)));
+  const low = formatRate(sorted[0]);
+  const high = formatRate(sorted[sorted.length - 1]);
+  return low === high ? low : `${low.replace(/%$/, "")}–${high}`;
+}
+
+// ---------------------------------------------------------------------------
+// Daily summaries (public.daily_summary) and the week strip
+// ---------------------------------------------------------------------------
+
+export type DailySummary = {
+  day: string;
+  jobsCheckedIn: number;
+  jobsStarted: number;
+  jobsCompleted: number;
+  jobsReadyForCollection: number;
+  jobsCollected: number;
+  jobsCancelled: number;
+  /** Null without view_financial_reports (as every money field below). */
+  currency: string | null;
+  linesRecognised: number | null;
+  grossSales: string | null;
+  /** Null without view_costs (as yield, Cult Commons, after CC and losses). */
+  cogs: string | null;
+  yield: string | null;
+  cultCommons: string | null;
+  biciiAfterCc: string | null;
+  lossLines: number | null;
+  lossTotal: string | null;
+  partsConsumedQty: number;
+  stockAdjustments: number;
+  significantAdjustments: number;
+};
+
+/** One entry of the week strip: the day and its summary (null if the database returned none). */
+export type WeekStripDay = { day: string; summary: DailySummary | null };
+
+/**
+ * Exactly the 7 shop days ending at `endDay`, oldest first, each with its
+ * summary. Quiet days are kept (a zero row is a real answer); a day the
+ * database did not return at all has a null summary.
+ */
+export function weekStrip(rows: readonly DailySummary[], endDay: string): WeekStripDay[] {
+  const byDay = new Map(rows.map((r) => [r.day, r]));
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = shiftShopDay(endDay, i - 6);
+    return { day, summary: byDay.get(day) ?? null };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The snapshot tiles' links to the workshop board (D31; P3's BOARD_GROUPS)
+// ---------------------------------------------------------------------------
+
+export type SnapshotTile =
+  "received" | "waiting" | "ready_to_start" | "in_progress" | "awaiting_collection" | "overdue";
+
+/** The board filters each snapshot tile opens (a group, statuses or the overdue age filter). */
+export const TILE_BOARD_FILTERS: Readonly<Record<SnapshotTile, Partial<BoardFilters>>> = {
+  received: { group: "received" },
+  waiting: { group: "waiting" },
+  ready_to_start: { group: "ready" },
+  in_progress: { group: "in_progress" },
+  awaiting_collection: { statuses: ["completed", "ready_for_collection"] },
+  overdue: { age: "overdue" },
+};
+
+/** Snapshot tile → the P3 board URL showing the same jobs. */
+export const TILE_LINKS: Readonly<Record<SnapshotTile, string>> = Object.fromEntries(
+  (Object.keys(TILE_BOARD_FILTERS) as SnapshotTile[]).map((tile) => [
+    tile,
+    `/jobs${boardQuery(DEFAULT_BOARD_FILTERS, TILE_BOARD_FILTERS[tile])}`,
+  ]),
+) as Record<SnapshotTile, string>;
+
+// ---------------------------------------------------------------------------
+// Activity, adjustments, low stock
+// ---------------------------------------------------------------------------
+
+/** One job behind the day's flows (public.work_order_activity_on). */
+export type ActivityRow = {
+  workOrderId: string;
+  jobNumber: string;
+  status: WorkOrderStatus;
+  customerLabel: string;
+  bikeTitle: string;
+  leadName: string | null;
+  /** Which of the job's current stamps fall on the day. */
+  on: {
+    checkedIn: boolean;
+    started: boolean;
+    completed: boolean;
+    readyForCollection: boolean;
+    collected: boolean;
+    cancelled: boolean;
+  };
+  isOpen: boolean;
+  isOverdue: boolean;
+  ageDays: number;
+  /** The live lines' sale total (sale only: every staff member sees it). */
+  saleTotal: string;
+  currency: string;
+};
+
+export type ActivityFlow = keyof ActivityRow["on"];
+
+/** The Activity lists, in order, with the anchors the flow tiles link to. */
+export const ACTIVITY_FLOWS: readonly { flow: ActivityFlow; label: string; anchor: string }[] = [
+  { flow: "checkedIn", label: "Checked in", anchor: "activity-checked-in" },
+  { flow: "started", label: "Started", anchor: "activity-started" },
+  { flow: "completed", label: "Completed", anchor: "activity-completed" },
+  { flow: "readyForCollection", label: "Ready for collection", anchor: "activity-ready" },
+  { flow: "collected", label: "Collected", anchor: "activity-collected" },
+  { flow: "cancelled", label: "Cancelled", anchor: "activity-cancelled" },
+];
+
+/** One manual stock change of the day (public.stock_adjustments_on). */
+export type AdjustmentRow = {
+  movementId: number;
+  createdAt: string;
+  movementType: string;
+  productId: string;
+  productShortId: string;
+  productName: string;
+  unitId: string | null;
+  unitShortId: string | null;
+  locationName: string;
+  quantityDelta: number;
+  reason: string | null;
+  actorName: string | null;
+  /** D33, shown to everyone. */
+  significant: boolean;
+  /** |delta| × unit cost; null without view_costs (D30). */
+  valueAtCost: string | null;
+  currency: string;
+};
+
+/** A product at or below its reorder point, or below zero (P4's reporting.low_stock). */
+export type LowStockItem = {
+  productId: string;
+  shortId: string;
+  name: string;
+  sku: string | null;
+  onHand: number;
+  reorderPoint: number | null;
+  negativeLocations: number;
+  shortfall: number;
+};
+
+// ---------------------------------------------------------------------------
+// Operational exceptions (D34)
+// ---------------------------------------------------------------------------
+
+export type OperationalException = {
+  /** Text: later phases add kinds; unknown ones still render. */
+  kind: string;
+  severity: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string | null;
+  subjectLabel: string | null;
+  days: number | null;
+  quantity: number | null;
+  since: string | null;
+};
+
+const days = (n: number | null) => (n === 1 ? "1 day" : `${n ?? 0} days`);
+
+/** The tone for an exception: danger stays danger, anything else is a warning. */
+function exceptionTone(severity: string): StatusTone {
+  return severity === "danger" ? "danger" : "waiting";
+}
+
+const EXCEPTION_LABELS: Readonly<Record<string, string>> = {
+  overdue_job: "Overdue",
+  uncollected_job: "Not collected",
+  negative_stock: "Below zero",
+  unit_hold_stale: "Stale hold",
+  currency_mismatch: "Other currency",
+};
+
+/** The pill text for an exception kind ("Needs attention" for kinds this build does not know). */
+export function exceptionLabel(kind: string): string {
+  return EXCEPTION_LABELS[kind] ?? "Needs attention";
+}
+
+/** What an exception means, in a sentence, with its tone. Unknown kinds never throw. */
+export function exceptionCopy(
+  kind: string,
+  row: Pick<
+    OperationalException,
+    "severity" | "entityLabel" | "subjectLabel" | "days" | "quantity"
+  >,
+): { text: string; tone: StatusTone } {
+  const tone = exceptionTone(row.severity);
+  switch (kind) {
+    case "overdue_job":
+      return {
+        text: `Open ${days(row.days)} — over the ${OVERDUE_AFTER_DAYS}-day limit`,
+        tone,
+      };
+    case "uncollected_job":
+      return { text: `Waiting for collection ${days(row.days)}`, tone };
+    case "negative_stock": {
+      const location = (row.subjectLabel ?? "").split(" · ").at(-1) || "a location";
+      const q = row.quantity ?? 0;
+      return {
+        text: `Below zero at ${location}: ${q < 0 ? `${MINUS}${Math.abs(q)}` : q}`,
+        tone: "danger",
+      };
+    }
+    case "unit_hold_stale":
+      return {
+        text: `Held for a customer, but no open job uses it (${days(row.days)})`,
+        tone,
+      };
+    case "currency_mismatch":
+      return {
+        text: "A line in another currency is left out of the totals",
+        tone,
+      };
+    default: {
+      const what = [row.entityLabel, row.subjectLabel].filter(Boolean).join(" · ");
+      return { text: what ? `Check ${what}` : "Something needs checking", tone };
+    }
+  }
+}
+
+/** Where an exception's row opens; null when this build has no page for it. */
+export function exceptionHref(
+  row: Pick<OperationalException, "entityType" | "entityId" | "entityLabel">,
+): string | null {
+  switch (row.entityType) {
+    case "work_order":
+      return hrefForRecord("work_order", row.entityId);
+    case "product":
+      return hrefForRecord("product", row.entityId);
+    case "inventory_unit":
+      return hrefForRecord("inventory_unit", row.entityId);
+    case "work_order_line":
+      // The row names the line's job by its J- number; /q opens it.
+      return row.entityLabel && isShortId(row.entityLabel) ? `/q/${row.entityLabel}` : null;
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Financial entries (public.financial_lines) and the job yield panel
+// ---------------------------------------------------------------------------
+
+/** One recognised entry (D32). Cost-derived fields are null without view_costs (D30). */
+export type FinancialEntry = {
+  entryKey: string;
+  source: string;
+  /** The job (work_orders.id) for a workshop line. */
+  documentId: string;
+  /** J- number (S- for Phase 6 sales). */
+  documentNumber: string;
+  channel: string;
+  recognizedAt: string;
+  lineType: string | null;
+  description: string;
+  quantity: string;
+  unitSalePrice: string;
+  saleTotal: string;
+  costTotal: string | null;
+  yield: string | null;
+  cultCommons: string | null;
+  /** Fraction ("0.3000"). */
+  ccRate: string | null;
+  isLoss: boolean | null;
+  costPending: boolean;
+  currency: string;
+};
+
+/** Entries grouped by their document (job), in the order they arrive. */
+export function groupEntries(
+  entries: readonly FinancialEntry[],
+): { documentId: string; documentNumber: string; source: string; entries: FinancialEntry[] }[] {
+  const groups = new Map<
+    string,
+    { documentId: string; documentNumber: string; source: string; entries: FinancialEntry[] }
+  >();
+  for (const e of entries) {
+    const key = `${e.source}:${e.documentId}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        documentId: e.documentId,
+        documentNumber: e.documentNumber,
+        source: e.source,
+        entries: [],
+      };
+      groups.set(key, g);
+    }
+    g.entries.push(e);
+  }
+  return [...groups.values()];
+}
+
+/** Where an entry's document opens (a workshop line: its job). */
+export function documentHref(entry: Pick<FinancialEntry, "source" | "documentId">): string | null {
+  return entry.source === "work_order" ? hrefForRecord("work_order", entry.documentId) : null;
+}
+
+/** One job's economics from public.work_order_yield (view_costs only). */
+export type WorkOrderYield = {
+  workOrderId: string;
+  jobNumber: string;
+  status: WorkOrderStatus;
+  currency: string;
+  lineCount: number;
+  saleTotal: string;
+  costTotal: string;
+  yieldTotal: string;
+  cultCommons: string;
+  biciiAfterCc: string;
+  lossLineCount: number;
+  lossTotal: string;
+  /** The distinct Cult Commons rates the live lines snapshotted, as fractions ("0.3000"), ascending. */
+  ccRates: string[];
+  /** The job's current completed_at (D32); null while open, cancelled or reopened. */
+  recognizedAt: string | null;
+  recognizedDay: string | null;
+  costPendingCount: number;
+};

@@ -3,6 +3,9 @@ import {
   formatDate,
   formatDateTime,
   formatDayShort,
+  formatShopDay,
+  formatShopDayLong,
+  formatShopDayShort,
   formatTime,
   fromShopLocal,
   parseShopDay,
@@ -10,6 +13,7 @@ import {
   shiftShopDay,
   shopToday,
   shopDayStart,
+  shopDayToDate,
   toShopLocal,
   shopDateKey,
   shopDaysBetween,
@@ -127,5 +131,29 @@ describe("shop days as YYYY-MM-DD (D35)", () => {
     expect(shopToday(new Date("2026-10-04T16:30:00Z"))).toBe("2026-10-05");
     expect(shopToday(new Date("2026-10-04T15:59:59Z"))).toBe("2026-10-04");
     expect(parseShopDay(shopToday())).not.toBeNull();
+  });
+});
+
+describe("shop days for people", () => {
+  it("today flips at Singapore midnight, 16:00 UTC", () => {
+    expect(shopToday(new Date("2026-10-03T15:59:59Z"))).toBe("2026-10-03");
+    expect(shopToday(new Date("2026-10-03T16:00:00Z"))).toBe("2026-10-04");
+  });
+
+  it("puts a shop day at noon Singapore time, so it formats as that day anywhere", () => {
+    expect(shopDayToDate("2026-10-03").toISOString()).toBe("2026-10-03T04:00:00.000Z");
+    expect(shopDateKey(shopDayToDate("2026-10-03"))).toBe("2026-10-03");
+    expect(shopDateKey(shopDayToDate("2024-02-29"))).toBe("2024-02-29");
+    expect(shopDateKey(shopDayToDate("2026-12-31"), { timeZone: "UTC" })).toBe("2026-12-31");
+    expect(() => shopDayToDate("2026-02-30")).toThrow(RangeError);
+    expect(() => shopDayToDate("3 Oct")).toThrow(RangeError);
+  });
+
+  it("formats a shop day in full, as a heading and compactly", () => {
+    expect(formatShopDay("2026-10-03")).toBe("Sat, 3 Oct 2026");
+    expect(formatShopDay("2027-01-01")).toBe("Fri, 1 Jan 2027");
+    expect(formatShopDayLong("2026-10-03")).toBe("Saturday, 3 Oct");
+    expect(formatShopDayShort("2026-10-05")).toBe("Mon, 5 Oct");
+    expect(formatShopDayShort("2026-10-05")).toBe(formatDayShort("2026-10-05T12:00:00+08:00"));
   });
 });
