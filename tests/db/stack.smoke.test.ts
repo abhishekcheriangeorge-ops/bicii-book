@@ -18,6 +18,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { ANON_KEY, SERVICE_ROLE_KEY, devDatabaseUrl } from "../../scripts/devstack/config.mjs";
 import { mailCursor, waitForMessage } from "../../scripts/devstack/mail-client.mjs";
+import { classifyCodeRequestError } from "@/lib/auth/sign-in-errors";
 import type { Database } from "@/lib/database.types";
 
 import { BIKE, STAFF, STAFF_EMAIL } from "../fixtures/ids";
@@ -129,6 +130,67 @@ describe.skipIf(!reachable)("devstack through the gateway", () => {
     await expect(waitForMessage({ to: email, after, timeoutMs: 1500 })).rejects.toThrow(
       /No email to/,
     );
+  });
+
+  it("asking twice in a row: Auth's answers differ by account, the Admin's classification does not (D70)", async () => {
+    // The per-address interval (max_frequency: 1 s here, 60 s hosted)
+    // applies only to an address with a login. Hold it open the way 60 s
+    // would (Auth times it from auth.users.recovery_sent_at).
+    const withLogin = await throwawayLogin("twice");
+    const unknown = throwawayEmail("twice-unknown");
+    const ask = async (email: string) =>
+      (await anonClient().auth.signInWithOtp({ email, options: { shouldCreateUser: false } }))
+        .error;
+    await emailCode(anonClient(), withLogin);
+    const db = new pg.Client({ connectionString: devDatabaseUrl() });
+    await db.connect();
+    try {
+      await db.query(
+        "update auth.users set recovery_sent_at = now() + interval '5 minutes' where email = $1",
+        [withLogin],
+      );
+    } finally {
+      await db.end();
+    }
+    const refused = await ask(withLogin);
+    expect(refused?.status).toBe(429);
+    expect(refused?.code).toBe("over_email_send_rate_limit");
+    const unknownAnswers = [await ask(unknown), await ask(unknown)];
+    for (const error of unknownAnswers) expect(error?.code).toBe("otp_disabled");
+
+    // What the Admin makes of them: "sent" every time, so one screen.
+    expect(classifyCodeRequestError(refused)).toBe("sent");
+    expect(unknownAnswers.map(classifyCodeRequestError)).toEqual(["sent", "sent"]);
+  });
+
+  it("setting a password needs reauthentication once a session is a day old (secure password change)", async () => {
+    // Staff have no password path (D10), but Auth's PUT /user is reachable
+    // with any session: without reauthentication, a stolen session could
+    // set a password and later sign in without the mailbox.
+    const email = await throwawayLogin("password");
+    const { code } = await emailCode(anonClient(), email);
+    const client = anonClient();
+    const { data, error } = await client.auth.verifyOtp({ email, token: code, type: "email" });
+    expect(error).toBeNull();
+    const sessionId = JSON.parse(
+      Buffer.from(data.session!.access_token.split(".")[1], "base64url").toString(),
+    ).session_id as string;
+    const db = new pg.Client({ connectionString: devDatabaseUrl() });
+    await db.connect();
+    try {
+      const aged = await db.query(
+        "update auth.sessions set created_at = now() - interval '25 hours' where id = $1",
+        [sessionId],
+      );
+      expect(aged.rowCount).toBe(1);
+    } finally {
+      await db.end();
+    }
+    const { error: updateError } = await client.auth.updateUser({
+      password: `Stack-${randomUUID()}`,
+    });
+    expect(updateError?.code).toBe("reauthentication_needed");
+    await client.auth.signOut();
   });
 
   it("a code works once", async () => {

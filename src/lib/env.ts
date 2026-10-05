@@ -34,6 +34,16 @@ export const serverEnvSchema = z.object({
   /** Integrations only (src/lib/integrations/**); never in a client bundle. */
   SUPABASE_SERVICE_ROLE_KEY: nonEmpty.optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  /**
+   * Raises every sign-in limit of the Admin's own (PLAN D72) by this
+   * factor. Tests only (Playwright sets 1000); 1 everywhere else.
+   */
+  SIGN_IN_LIMIT_MULTIPLIER: z.coerce
+    .number({ error: "must be a whole number from 1 to 100000" })
+    .int({ error: "must be a whole number from 1 to 100000" })
+    .min(1, { error: "must be a whole number from 1 to 100000" })
+    .max(100_000, { error: "must be a whole number from 1 to 100000" })
+    .default(1),
   SHOPIFY_SHOP_DOMAIN: nonEmpty.optional(),
   SHOPIFY_ADMIN_TOKEN: nonEmpty.optional(),
   SHOPIFY_WEBHOOK_SECRET: nonEmpty.optional(),

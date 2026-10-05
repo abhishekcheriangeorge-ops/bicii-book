@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { SIGN_IN_MESSAGES } from "../../src/lib/auth/sign-in-errors";
 import { STAFF } from "../fixtures/ids";
 
+import { sql, sqlTransaction } from "./db";
 import { isPhone, requestCodeOnForm, signIn, signInAs, toast } from "./helpers";
 
 test("mechanic2 (no manage_staff) gets the 403 page on /settings/staff", async ({ page }) => {
@@ -149,7 +150,7 @@ test("the admin invites a colleague who signs in with an emailed code", async ({
     // Auth sessions, and on the devstack (HS256) getClaims asks Auth, so the
     // next navigation lands on the sign-in page. (Hosted asymmetric keys
     // keep the access token valid until it expires; requireStaff's 403
-    // covers that window, see the DB and stack tests.)
+    // covers that window: the next test, and tests/unit/session-guard.)
     await colleaguePage.goto("/settings/staff");
     await expect(colleaguePage).toHaveURL(/\/login\?next=%2Fsettings%2Fstaff$/);
     await expect(colleaguePage.getByRole("heading", { name: "Staff sign in" })).toBeVisible();
@@ -168,6 +169,65 @@ test("the admin invites a colleague who signs in with an emailed code", async ({
     // No session was kept.
     await colleaguePage.goto("/");
     await expect(colleaguePage).toHaveURL(/\/login$/);
+  } finally {
+    await colleague.close();
+  }
+});
+
+test("a deactivated person whose session is still valid gets the 403 page (D71's hosted window)", async ({
+  browser,
+  page,
+}, testInfo) => {
+  const email = `e2e-window-${testInfo.project.name}-${Date.now()}@bicii.test`;
+  await signIn(page, "admin");
+  await page.goto("/settings/staff/new");
+  await page.getByLabel("Name").fill("Wendy Window");
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Invite" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: `${email} can now sign in.` }),
+  ).toBeVisible();
+
+  const colleague = await browser.newContext({ ...testInfo.project.use });
+  const colleaguePage = await colleague.newPage();
+  try {
+    await signInAs(colleaguePage, email);
+    await expect(colleaguePage.getByRole("heading", { level: 1 })).toContainText("Wendy");
+
+    // On a hosted project that verifies JWTs locally, deactivation leaves an
+    // issued access token valid until it expires (PLAN D71). The devstack
+    // asks Auth instead, so recreate that window: deactivate them with the
+    // session-revoking trigger held off for this one transaction, so their
+    // session stays valid at Auth.
+    await sqlTransaction(async (query) => {
+      await query("alter table public.staff disable trigger staff_revoke_sessions");
+      const updated = await query(
+        "update public.staff set active = false where email = $1 returning id",
+        [email],
+      );
+      expect(updated).toHaveLength(1);
+      await query("alter table public.staff enable trigger staff_revoke_sessions");
+    });
+    const sessions = await sql<{ n: number }>(
+      "select count(*)::int as n from auth.sessions s join auth.users u on u.id = s.user_id " +
+        "where u.email = $1",
+      [email],
+    );
+    expect(sessions[0].n).toBeGreaterThan(0);
+
+    // Today and their own profile need no permission: only the active check
+    // in requireStaff refuses them, with the 403 page, not the sign-in page
+    // and not their data. (The HTTP status may be 200: once a page has
+    // started streaming its shell, forbidden() can no longer change it.)
+    for (const path of ["/", "/settings/profile"]) {
+      await colleaguePage.goto(path);
+      await expect(colleaguePage).toHaveURL(new RegExp(`${path.replace(/\//g, "\\/")}$`));
+      await expect(
+        colleaguePage.getByRole("heading", { name: "You can't open this" }),
+      ).toBeVisible();
+      await expect(colleaguePage.getByText("403 · No access")).toBeVisible();
+      await expect(colleaguePage.getByRole("heading", { name: /Wendy/ })).toHaveCount(0);
+    }
   } finally {
     await colleague.close();
   }

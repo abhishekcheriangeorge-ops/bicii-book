@@ -56,6 +56,93 @@ test("an unknown email gets exactly the screen a staff email gets, and no accoun
   );
 });
 
+/**
+ * What the screen shows, as markup: the main region's HTML with the
+ * address, React's generated ids and the live countdown's digits
+ * normalised, plus which field has focus.
+ */
+async function screen(page: Page, email: string): Promise<string> {
+  const html = await page.getByRole("main").innerHTML();
+  const focused = await page.evaluate(
+    () => document.activeElement?.getAttribute("name") ?? document.activeElement?.tagName ?? "",
+  );
+  return `${html
+    .replaceAll(email, "{email}")
+    .replace(/\b(id|for|aria-describedby|aria-labelledby|aria-controls)="[^"]*"/g, '$1="…"')
+    .replace(/Send a new code in \d+:\d\d/g, "Send a new code in …")}\nfocus: ${focused}`;
+}
+
+test("asking twice in a row looks the same for an address with a login and for an unknown one", async ({
+  page,
+}, testInfo) => {
+  // Auth's per-address interval (max_frequency: 60 s on hosted projects,
+  // 1 s here) refuses a second email to an address WITH a login with 429
+  // over_email_send_rate_limit; an unknown address is answered 422
+  // otp_disabled first, every time. The Admin must show both the same
+  // "Check your email" screen (D70), the second time too.
+  const { ANON_KEY, GATEWAY_URL, SERVICE_ROLE_KEY } =
+    await import("../../scripts/devstack/config.mjs");
+  const stamp = `${testInfo.project.name}-${Date.now()}`;
+  const withLogin = `e2e-twice-login-${stamp}@bicii.test`;
+  const unknown = `e2e-twice-unknown-${stamp}@bicii.test`;
+  const admin = { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` };
+  const created = await fetch(`${GATEWAY_URL}/auth/v1/admin/users`, {
+    method: "POST",
+    headers: { ...admin, "Content-Type": "application/json" },
+    body: JSON.stringify({ email: withLogin, email_confirm: true }),
+  });
+  expect(created.status).toBe(200);
+  const { id } = (await created.json()) as { id: string };
+
+  /** Asks, goes back with "Use a different email", asks again; both screens. */
+  async function askTwice(email: string, beforeSecond: () => Promise<void>) {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: "Email me a code" }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    const first = await screen(page, email);
+    await page.getByRole("button", { name: "Use a different email" }).click();
+    await expect(page.getByLabel("Email")).toHaveValue(email);
+    await beforeSecond();
+    await page.getByRole("button", { name: "Email me a code" }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    return [first, await screen(page, email)];
+  }
+
+  try {
+    // Hold the address's interval open, as 60 s would on a hosted project:
+    // Auth times it from auth.users.recovery_sent_at (TESTING.md).
+    const loginScreens = await askTwice(withLogin, async () => {
+      const held = await sql(
+        "update auth.users set recovery_sent_at = now() + interval '5 minutes' " +
+          "where email = $1 returning id",
+        [withLogin],
+      );
+      expect(held).toHaveLength(1);
+    });
+    // The second ask really was refused by Auth's per-address limit.
+    const direct = await fetch(`${GATEWAY_URL}/auth/v1/otp`, {
+      method: "POST",
+      headers: { apikey: ANON_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: withLogin, create_user: false }),
+    });
+    expect(direct.status).toBe(429);
+    expect(((await direct.json()) as { error_code?: string }).error_code).toBe(
+      "over_email_send_rate_limit",
+    );
+
+    const unknownScreens = await askTwice(unknown, async () => {});
+
+    expect(loginScreens[0]).toBe(unknownScreens[0]);
+    expect(loginScreens[1]).toBe(unknownScreens[1]);
+    expect(loginScreens[1]).toBe(loginScreens[0]);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(page.getByLabel("Code")).toBeFocused();
+  } finally {
+    await fetch(`${GATEWAY_URL}/auth/v1/admin/users/${id}`, { method: "DELETE", headers: admin });
+  }
+});
+
 test("a wrong code is refused with one message and keeps the email; the real code then works", async ({
   page,
 }) => {

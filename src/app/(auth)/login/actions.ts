@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { noteSignInAttempt } from "@/lib/admin/sign-in-throttle";
 import { normaliseCode } from "@/lib/auth/otp";
 import { safeNextPath } from "@/lib/auth/redirect";
 import {
@@ -11,6 +12,7 @@ import {
   SIGN_IN_MESSAGES,
   classifyCodeRequestError,
   classifyCodeVerifyError,
+  isPerAddressEmailLimit,
 } from "@/lib/auth/sign-in-errors";
 import { getCorrelationId, readStaffProfile } from "@/lib/auth/session";
 import { child } from "@/lib/logger";
@@ -28,7 +30,11 @@ export type LoginState =
       email?: string;
       next?: string;
       error?: string;
-      /** The field the error is about; the form marks it invalid and focuses it. */
+      /**
+       * Set only when the error is about what was typed (the email's
+       * format, or an email without access); the form marks the field
+       * invalid. Focus goes to the field either way.
+       */
       errorField?: "email";
     }
   | {
@@ -37,6 +43,7 @@ export type LoginState =
       next?: string;
       sentAt: number;
       error?: string;
+      /** Set only for a missing, malformed or refused code. */
       errorField?: "code";
       /** A polite confirmation ("We've sent a new code."). */
       notice?: string;
@@ -63,11 +70,15 @@ function previousSentAt(prev: LoginState, email: string): number | undefined {
 
 /**
  * Step 1, and "Send a new code": asks Supabase Auth to email a code.
- * `shouldCreateUser: false`, so signing in never creates an account; an
- * unknown email gets exactly the screen a staff email gets (Auth's 422
- * `otp_disabled` counts as sent). A rate limit or an outage says so and
- * keeps the email; on a resend it keeps the code step, whose earlier code
- * may still work.
+ * `shouldCreateUser: false`, so signing in never creates an account. An
+ * unknown email gets exactly the screen an email with a login gets (D70):
+ * Auth's 422 `otp_disabled` counts as sent, and so does its per-address
+ * refusal (`over_email_send_rate_limit`, which only an address with a login
+ * can get; the code sent earlier is still valid). The Admin's own limits
+ * (D72) are checked first, the same for every email. A limit that does not
+ * depend on the address, or an outage, says so and keeps the email; on a
+ * resend it keeps the code step, whose earlier code may still work. Those
+ * errors are not about what was typed, so no field is marked invalid.
  */
 export async function requestCode(prev: LoginState, formData: FormData): Promise<LoginState> {
   const typed = text(formData, "email") ?? "";
@@ -84,29 +95,40 @@ export async function requestCode(prev: LoginState, formData: FormData): Promise
     };
   }
   const email = parsed.data;
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: false },
-  });
-  const outcome = classifyCodeRequestError(error);
-
   // Never the email: who asked for a code is not the log's business.
   const log = child(await getCorrelationId(), { action: "auth.request_code" });
-  after(() =>
-    log[outcome === "sent" ? "info" : "error"](
-      { outcome, status: error?.status, code: error?.code },
-      "sign-in code requested",
-    ),
-  );
+
+  const throttle = await noteSignInAttempt("request", email);
+  let outcome: "sent" | "rate_limited" | "unavailable";
+  if (throttle !== "ok") {
+    outcome = throttle === "limited" ? "rate_limited" : "unavailable";
+    after(() =>
+      log[throttle === "limited" ? "warn" : "error"](
+        { outcome, limit: "admin" },
+        "sign-in code request refused by the Admin",
+      ),
+    );
+  } else {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false },
+    });
+    outcome = classifyCodeRequestError(error);
+    // Auth's per-address refusal is shown as sent; log it as a warning so
+    // a real email-quota problem still shows up.
+    const level = outcome !== "sent" ? "error" : isPerAddressEmailLimit(error) ? "warn" : "info";
+    after(() =>
+      log[level]({ outcome, status: error?.status, code: error?.code }, "sign-in code requested"),
+    );
+  }
 
   if (outcome !== "sent") {
     const sentAt = resend ? previousSentAt(prev, email) : undefined;
     if (sentAt !== undefined) {
       return { step: "code", email, next, sentAt, error: SIGN_IN_MESSAGES[outcome] };
     }
-    return { step: "email", email, next, error: SIGN_IN_MESSAGES[outcome], errorField: "email" };
+    return { step: "email", email, next, error: SIGN_IN_MESSAGES[outcome] };
   }
   return {
     step: "code",
@@ -118,7 +140,8 @@ export async function requestCode(prev: LoginState, formData: FormData): Promise
 }
 
 /**
- * Step 2: exchanges the code for a session (`verifyOtp`, type `email`),
+ * Step 2: within the Admin's own limits (D72), exchanges the code for a
+ * session (`verifyOtp`, type `email`),
  * then admits only active staff (`my_staff_profile`): anyone else is
  * signed out at once and told this email has no access. On success the
  * browser goes to `next` (same-origin paths only) or Today.
@@ -149,8 +172,20 @@ export async function verifyCode(prev: LoginState, formData: FormData): Promise<
     };
   }
 
-  const supabase = await createClient();
   const log = child(await getCorrelationId(), { action: "auth.verify_code" });
+  const throttle = await noteSignInAttempt("verify", email);
+  if (throttle !== "ok") {
+    const failure = throttle === "limited" ? "rate_limited" : "unavailable";
+    after(() =>
+      log[throttle === "limited" ? "warn" : "error"](
+        { outcome: "failed", failure, limit: "admin" },
+        "sign-in code refused by the Admin",
+      ),
+    );
+    return { step: "code", email, next, sentAt, error: SIGN_IN_MESSAGES[failure] };
+  }
+
+  const supabase = await createClient();
   const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
   if (error) {
     const failure = classifyCodeVerifyError(error);
@@ -166,7 +201,8 @@ export async function verifyCode(prev: LoginState, formData: FormData): Promise<
       next,
       sentAt,
       error: SIGN_IN_MESSAGES[failure],
-      errorField: "code",
+      // Only a refused code is about what was typed.
+      errorField: failure === "invalid_code" ? "code" : undefined,
     };
   }
 
@@ -188,7 +224,13 @@ export async function verifyCode(prev: LoginState, formData: FormData): Promise<
     // colleague, a customer login): end the session it just created.
     await supabase.auth.signOut({ scope: "local" });
     after(() => log.warn({ outcome: "refused", failure }, "signed in but not active staff"));
-    return { step: "email", email, next, error: SIGN_IN_MESSAGES[failure], errorField: "email" };
+    return {
+      step: "email",
+      email,
+      next,
+      error: SIGN_IN_MESSAGES[failure],
+      errorField: failure === "not_staff" ? "email" : undefined,
+    };
   }
 
   after(() => log.info({ outcome: "ok" }, "signed in with a code"));

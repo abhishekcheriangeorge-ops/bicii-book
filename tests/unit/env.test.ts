@@ -40,4 +40,17 @@ describe("env", () => {
     expect(() => parseServerEnv({ DATABASE_URL: "mysql://x" })).toThrow(/DATABASE_URL/);
     expect(() => parseServerEnv({ LOG_LEVEL: "loud" })).toThrow(/LOG_LEVEL/);
   });
+
+  it("the sign-in limit multiplier defaults to 1 and takes whole numbers from 1 (PLAN D72)", () => {
+    expect(parseServerEnv({}).SIGN_IN_LIMIT_MULTIPLIER).toBe(1);
+    expect(parseServerEnv({ SIGN_IN_LIMIT_MULTIPLIER: "" }).SIGN_IN_LIMIT_MULTIPLIER).toBe(1);
+    expect(parseServerEnv({ SIGN_IN_LIMIT_MULTIPLIER: "1000" }).SIGN_IN_LIMIT_MULTIPLIER).toBe(
+      1000,
+    );
+    for (const bad of ["0", "-1", "1.5", "lots", "100001"]) {
+      expect(() => parseServerEnv({ SIGN_IN_LIMIT_MULTIPLIER: bad })).toThrow(
+        /SIGN_IN_LIMIT_MULTIPLIER/,
+      );
+    }
+  });
 });

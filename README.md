@@ -81,6 +81,10 @@ A code is valid for 10 minutes and only the newest one works.
 Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
 `PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
 shell before any of the commands (they do not read `.env.local`). `npm run devstack:stop` stops the services.
+`npm run devstack:start` is safe to run again after a pull or a merge: it
+restarts any service whose command or settings changed since it was
+started (for example an Auth started before sign-in codes, which would
+send no email).
 
 ### The devstack and its mail catcher
 

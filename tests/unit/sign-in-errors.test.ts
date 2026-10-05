@@ -5,6 +5,7 @@ import {
   SIGN_IN_MESSAGES,
   classifyCodeRequestError,
   classifyCodeVerifyError,
+  isPerAddressEmailLimit,
 } from "@/lib/auth/sign-in-errors";
 
 describe("classifyCodeRequestError", () => {
@@ -20,15 +21,31 @@ describe("classifyCodeRequestError", () => {
     expect(classifyCodeRequestError({ status: 404, code: "user_not_found" })).toBe("sent");
   });
 
-  it("reports rate limits separately, by status or by code", () => {
+  it("Auth's per-address email limit looks sent: only an address with a login gets it (D70)", () => {
+    // The live answers (stack.smoke.test.ts): an address with a login asked
+    // again within max_frequency gets 429 over_email_send_rate_limit, an
+    // unknown one 422 otp_disabled every time. Both must be "sent".
     expect(classifyCodeRequestError({ status: 429, code: "over_email_send_rate_limit" })).toBe(
+      "sent",
+    );
+    expect(classifyCodeRequestError({ status: 400, code: "over_email_send_rate_limit" })).toBe(
+      "sent",
+    );
+    expect(classifyCodeRequestError({ status: 429, code: "over_email_send_rate_limit" })).toBe(
+      classifyCodeRequestError({ status: 422, code: "otp_disabled" }),
+    );
+    expect(isPerAddressEmailLimit({ status: 429, code: "over_email_send_rate_limit" })).toBe(true);
+    expect(isPerAddressEmailLimit({ status: 429, code: "over_request_rate_limit" })).toBe(false);
+    expect(isPerAddressEmailLimit({ status: 429 })).toBe(false);
+    expect(isPerAddressEmailLimit(null)).toBe(false);
+  });
+
+  it("reports the limits that do not depend on the address separately, by status or by code", () => {
+    expect(classifyCodeRequestError({ status: 429, code: "over_request_rate_limit" })).toBe(
       "rate_limited",
     );
     expect(classifyCodeRequestError({ status: 429 })).toBe("rate_limited");
     expect(classifyCodeRequestError({ status: 400, code: "over_request_rate_limit" })).toBe(
-      "rate_limited",
-    );
-    expect(classifyCodeRequestError({ status: 400, code: "over_email_send_rate_limit" })).toBe(
       "rate_limited",
     );
   });
@@ -83,7 +100,8 @@ describe("messages", () => {
         "That code is wrong or has expired. Check your latest email or send a new code.",
       rate_limited: "Too many attempts. Wait a minute and try again.",
       unavailable: "Sign-in is unavailable right now. Try again in a minute.",
-      not_staff: "This email doesn't have access to BICII Admin. Ask an admin to invite you.",
+      not_staff:
+        "This email doesn't have access to BICII Admin. Ask an admin to invite or reactivate you.",
     });
     expect(SIGN_IN_FIELD_MESSAGES).toEqual({
       email: "Enter your email address.",

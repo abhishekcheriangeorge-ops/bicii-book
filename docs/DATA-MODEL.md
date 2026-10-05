@@ -139,6 +139,33 @@ Customers are not staff. A person can be both (a mechanic who owns a bike) by
 having a `staff` row and a `customers` row pointing at the same
 `auth_user_id`.
 
+Sign-in attempt counters (PLAN D72; migration
+`20261005006000_sign_in_throttle.sql`): the Admin's own limits on `/login`,
+because its Server Actions call Supabase Auth from the server, so Auth's
+per-IP limits count the server's address for everyone.
+
+```
+private.sign_in_attempts               -- counters, not history
+  bucket text not null                 -- 1-200 chars: "<request|verify>:<client|email>:<sha256 hex>"
+  window_start timestamptz not null    -- fixed window, aligned to its length
+  hits integer not null (> 0)
+  PK (bucket, window_start), index (window_start)
+```
+
+- Written only by `public.note_sign_in_attempt(buckets text[],
+  window_seconds integer) returns table (bucket_key text, hit_count
+  integer)` (security definer, `search_path = ''`, EXECUTE for
+  `service_role` only): adds one to each named bucket (named twice: once)
+  in the current window with `insert ... on conflict do update`, so
+  concurrent attempts are all counted, returns the counts and deletes
+  counters older than a day. 1-8 buckets of 1-200 characters and a window
+  of 60-3600 s, else 22023. RLS on, no policy, no grant to any API role:
+  a caller who could name any bucket could fill someone else's.
+- Keys hold SHA-256 digests of the client address (IPv6 per /64) and of
+  the lower-cased email, never either in clear. The app
+  (`src/lib/auth/sign-in-limits.ts`, `src/lib/admin/sign-in-throttle.ts`)
+  builds them, holds the limits and decides.
+
 ## 2. Customers, bikes, attachments
 
 Phase 1 migrations: `…0600_customers`, `…0700_bikes`, `…0800_media_storage`,
@@ -1452,6 +1479,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) within the D11 ceiling | Permission rows (`granted_by` = caller); replay-safe (no row change, no event). One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
 | `set_staff_active(target_staff_id, active, reason)` | A or P(manage_staff) | Deactivating needs a reason (P0001 `reason_required`; `reason_too_long` over 500). Nobody deactivates themselves; only an admin changes an admin's status; the last active admin stays (55000). One `deactivated`/`reactivated` event with the reason; replaying the current state is a no-op. Deactivation also deletes the person's Supabase Auth sessions (trigger `staff_revoke_sessions`, D71). |
+| `note_sign_in_attempt(buckets, window_seconds)` | service role only (the Admin's login actions) | Counts one sign-in attempt in each bucket for the current fixed window and returns the counts (PLAN D72, §1 "Sign-in attempt counters"); 22023 for malformed arguments. Not callable with the anon key or a user session. |
 | `update_staff(target_staff_id, display_name, role, reason)` | A or P(manage_staff); role changes A only | Null leaves a field as it is. Nobody changes their own role; only an admin renames an admin; the last active admin cannot be demoted (55000). `role_changed` / `details_changed` events. Email is not editable (it must stay the login's email). |
 | `staff_history(target_staff_id, max_rows)` | A or P(manage_staff) | `staff_events` for one person, newest first, with the actor's display name (≤ 500 rows, default 100). |
 | `my_staff_profile()` | authenticated | Caller's staff row + effective permissions (admin → all; inactive → none); zero rows for non-staff. |

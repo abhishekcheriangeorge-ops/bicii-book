@@ -68,6 +68,10 @@ export default defineConfig({
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
       DATABASE_URL: devDatabaseUrl(),
       LOG_LEVEL: process.env.LOG_LEVEL ?? "warn",
+      // The suite signs in hundreds of times from one address, past the
+      // Admin's own sign-in limits (PLAN D72), as the devstack raises
+      // Auth's. The limits themselves are covered by unit and stack tests.
+      SIGN_IN_LIMIT_MULTIPLIER: "1000",
     },
   },
 });

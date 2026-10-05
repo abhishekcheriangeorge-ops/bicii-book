@@ -83,8 +83,15 @@ BICII sign-in code") and template, calls `rpc('my_staff_profile')`, and
 round-trips an object through Storage with the service key. It also pins
 the code rules Auth enforces: an unknown address with `shouldCreateUser:
 false` gets 422 `otp_disabled` (the Admin will show it as sent, D70),
-creates no `auth.users` row and receives no email; a code works once (the
-second `verifyOtp` is 403 `otp_expired`); a newer code voids the older one.
+creates no `auth.users` row and receives no email; asked again while Auth's
+per-address interval is held open (`recovery_sent_at` set ahead, as the
+hosted 60 s would), an address with a login gets 429
+`over_email_send_rate_limit` and an unknown one 422 `otp_disabled` again,
+and `classifyCodeRequestError` makes "sent" of every one of them (D70); a
+code works once (the second `verifyOtp` is 403 `otp_expired`); a newer
+code voids the older one; and setting a password on a session aged past
+24 h is refused with `reauthentication_needed` (secure password change,
+PLAN D10).
 Those cases use unique throwaway `.test` logins made with the admin API and
 deleted after the file. Every other live test signs in with
 `tests/db/stack.ts`: `otpClient(email)` gets the code from the service-role
@@ -95,7 +102,14 @@ admin API (`auth.admin.generateLink({ type: 'magiclink' })` returns
 `tests/db/staff-sessions.stack.test.ts` invites a uniquely named throwaway
 staff login, signs it in and deactivates it (PLAN D71); staff rows are
 history and are never deleted, so it stays, deactivated, until the next
-`npm run db:reset`. `tests/db/photo-moves.stack.test.ts` runs the app's own
+`npm run db:reset`. `tests/db/sign-in-throttle.stack.test.ts` drives the
+Admin's own sign-in limits (PLAN D72) through the app's module
+(`countSignInAttempt` in `src/lib/admin/sign-in-throttle.ts`) and
+PostgREST with the real limits: an email past its limit is refused from
+any client while other emails and its verifications are not; a client
+past its limit is refused for any email while other clients are not; a
+staff email reaches its limit no later than an unknown one; the anon key
+and a staff session get 42501. `tests/db/photo-moves.stack.test.ts` runs the app's own
 photo domain code (`src/lib/domain/attachments.ts`, loaded with
 `server-only` aliased to its empty module in the db project) as mechanic2
 against real Storage: moves between buckets, deletes, refused moves and
@@ -159,7 +173,7 @@ same PR.
 | `npm run db:reset` | Drop and rebuild the dev database (`bicii_dev`): roles → Auth → Storage → migrations → seed. |
 | `npm run db:migrate` | Apply only pending app migrations. |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
-| `npm run devstack:start` / `stop` / `status` | The mail catcher (HTTP :8025, SMTP :2525), Auth :9999, PostgREST :3001, Storage :5000, gateway :54321, started in that order; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, restarts services that were started against a different database, and refuses to start a service whose port (or SMTP port) another process holds. Ports: `BICII_MAIL_HTTP_PORT`, `BICII_SMTP_PORT`, `BICII_AUTH_PORT`, `BICII_REST_PORT`, `BICII_STORAGE_PORT`, `BICII_GATEWAY_PORT`. |
+| `npm run devstack:start` / `stop` / `status` | The mail catcher (HTTP :8025, SMTP :2525), Auth :9999, PostgREST :3001, Storage :5000, gateway :54321, started in that order; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, restarts services that were started against a different database, restarts a service that is unhealthy or was started with another configuration (a digest of its command, env and the checkout's files it runs, kept next to its pid as `<name>.config`; after a pull or merge changes `services.mjs`, say), together with the services started after it (their clients, stopped first), and refuses to start a service whose port (or SMTP port) another process holds. Ports: `BICII_MAIL_HTTP_PORT`, `BICII_SMTP_PORT`, `BICII_AUTH_PORT`, `BICII_REST_PORT`, `BICII_STORAGE_PORT`, `BICII_GATEWAY_PORT`. |
 | `npm run devstack:env` | Write `.env.local` with the gateway URL and the local anon/service keys (what the app reads). The scripts and tests never read `.env.local`: `DATABASE_URL` / `PG*` come from the shell. |
 
 ### The devstack mail catcher
@@ -275,6 +289,34 @@ the phase), same worktree and ports:
 - `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
   Docker).
 
+Verification of the review fixes (2026-10-05, OTP phase: per-address
+limit shown as sent, D70; the Admin's own sign-in limits, D72; the
+inactive-session 403 tests, D71; secure password change; devstack
+restarts on a changed configuration), same worktree and ports:
+
+- Established on the devstack before the fix (`POST /auth/v1/otp`,
+  `create_user: false`, twice in a row): an address with a login got 200
+  then 429 `over_email_send_rate_limit`, an unknown one 422 `otp_disabled`
+  both times.
+- `npm run devstack:start` after the change restarted every service whose
+  recorded configuration differed (here all five, none had a record yet);
+  a second run left all five running; with `rest` and `auth` marked stale
+  it restarted them and the services after them, gateway first: **pass**.
+  (Before stopping the clients first, a restarted PostgREST failed to bind
+  its port: TIME_WAIT from the gateway's connections.)
+- Mutation checks: with `guard()`'s `!staff.active` removed,
+  `session-guard.test.ts` (2 tests) and the E2E "hosted window" test
+  fail; with the per-address code classified as before, the E2E "asking
+  twice in a row" test fails: **pass** (both restored).
+- `npm run check`: **pass**. `npm run check:types` (fresh database):
+  **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 77 files, 986
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet): 102 tests: **pass**.
+- Hosted steps (password reset SQL, "Secure password change", Auth's
+  per-IP limits): **not run** (no hosted project; owner's step).
+
 ## What is tested where
 
 ### Unit (SPEC §27.1)
@@ -292,10 +334,25 @@ the phase), same worktree and ports:
   minutes, 60 s cooldown; `normaliseCode` drops spaces and hyphens from a
   pasted code and refuses anything else; `resendSecondsLeft` rounds up and
   never exceeds the cooldown; the countdown text) and
-  `sign-in-errors.test.ts` (asking for a code: rate limits and outages say
-  so, every other 4xx, 422 `otp_disabled` for an unknown email included,
-  counts as sent; verifying: every other 4xx is one invalid-code failure;
-  the agreed messages).
+  `sign-in-errors.test.ts` (asking for a code: Auth's per-address
+  `over_email_send_rate_limit` counts as sent, exactly like 422
+  `otp_disabled` for an unknown email and every other 4xx; per-IP
+  `over_request_rate_limit`, a bare 429 and outages say so; verifying:
+  every other 4xx is one invalid-code failure; the agreed messages).
+- The Admin's own sign-in limits (PLAN D72, `sign-in-limits.test.ts`):
+  the client address (first `x-forwarded-for` entry, else `x-real-ip`;
+  IPv6 per /64, IPv4-mapped as IPv4, ports dropped, anything else null),
+  buckets per client and per email holding SHA-256 digests (email
+  lower-cased; no address in clear; clients without an address share one
+  bucket), requests and verifications apart, the multiplier, and "over the
+  limit" only past it. `env.test.ts`: `SIGN_IN_LIMIT_MULTIPLIER` defaults
+  to 1 and takes whole numbers 1-100000.
+- The staff guard (PLAN D71, `session-guard.test.ts`, with Next's
+  `forbidden`/`redirect` and the Supabase client mocked): `authorizeStaff`,
+  `requireStaff` and `requireAdmin` answer 403 for an inactive person
+  whose session still verifies, even with no permission required and even
+  for an inactive admin; a login with no staff row is 403, a signed-out
+  caller goes to `/login`, active staff pass.
 - Label template rendering (QR payload is exactly the public URL).
 - Shopify payload mapping (variant → product; unmapped → structured error).
 - Short ID formatting and scanner URL parsing.
@@ -463,6 +520,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
+| The Admin's sign-in limits (PLAN D72) | `sign-in-throttle.test.ts`: `note_sign_in_attempt` adds one per bucket per call (a bucket named twice counts once) and returns the counts; a new window starts a new count, windows are aligned, counters older than a day are deleted; 6 concurrent committed calls count 6; anon and staff get 42501 on the function and the table, the service role on the table; malformed arguments (no, 0 or 9 buckets, an empty, null or 201-character key, a window under 60 s, over 3600 s or null) are 22023. Live: `sign-in-throttle.stack.test.ts` (above). |
 | Deactivation ends Auth sessions (PLAN D71) | `staff-sessions.test.ts`, with sessions and refresh tokens inserted for mechanic1 and mechanic2: the admin deactivating mechanic2 (with a reason) deletes mechanic2's sessions and refresh tokens (with and without a session) and leaves mechanic1's; a replayed deactivation (with or without a reason) neither errors nor deletes; reactivation deletes nothing; a `manage_staff` holder who is not an admin deactivating a non-admin has the same effect; a refused deactivation (P0001 `reason_required`) leaves the sessions intact; a direct superuser `update staff set active = false` revokes too (false over false and updates of other columns do not); the migration's first statement passes for the migration role and fails, naming RUNBOOK, for a role without DELETE on `auth.sessions`. Live (`staff-sessions.stack.test.ts`): a throwaway staff login (admin API without a password, then `create_staff` as the admin) signs in with a code and is deactivated by the admin; Auth then answers its access token with 403 `session_not_found` (supabase-js: `AuthSessionMissingError`), its refresh token gets `refresh_token_not_found`, PostgREST still accepts the unexpired token but `my_staff_profile` says `active = false` (the hosted window), and a fresh code still verifies at Auth while `my_staff_profile` says `active = false`, which the Admin's `verifyCode` and `requireStaff` refuse. |
 | RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. Phase 3: a signed-in customer reads nothing of their own job (job, assignments, events, lines, line and totals views, services, categories, rates) and cannot call the workshop RPCs (42501); their projection is tested in `workshop-customer-access.test.ts` (row below). |
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
@@ -553,9 +611,14 @@ email, next?)` / `signInOnFormAs(page, email)` (any login) all end off
 email" and returns `waitForCode({ to, after: cursor })` from the mail
 catcher, so an older email to the same address is never used. Auth sends
 at most one email per address per second (`max_frequency` 1s, kept in the
-devstack and config.toml), so when the rate-limit alert appears the helper
-waits 1.1 s, reloads the page (so the old alert cannot be read as the next
-answer) and asks again, up to 5 times. Specs reach the mail client through
+devstack and config.toml) and the Admin shows a refusal there as "Check
+your email" (D70), so the helper waits until 1.1 s have passed since this
+worker last asked for that address, and if no email arrives within 5 s it
+goes back with "Use a different email", waits again and asks again, up to
+5 times. The app runs with `SIGN_IN_LIMIT_MULTIPLIER=1000`
+(`playwright.config.mts`): the suite signs in hundreds of times from one
+address, past the Admin's own limits (D72), which the unit and stack
+tests cover. Specs reach the mail client through
 `tests/e2e/mail.ts` (a dynamic import: Playwright compiles specs to
 CommonJS) and the database through `tests/e2e/db.ts` (`sql()` on
 `devDatabaseUrl()`, for the two assertions no screen can make).
@@ -584,7 +647,13 @@ countdown, and only the newest code works; a confirmed login with no
 staff row gets the not-staff message after its code and keeps no session;
 the admin lands on Today with the tab bar (phone) or rail (iPad);
 sign-out ends the session; mechanic2 gets a real 403 on
-`/settings/staff`; a permission the admin grants shows on mechanic2's
+`/settings/staff`; asking twice in a row ("Use a different email", then
+the same address) gives an address with a login and an unknown address
+the same "Check your email" screen both times (the main region's markup
+compared with the address, React ids and countdown digits normalised,
+plus the focused field), while Auth's per-address interval is held open
+for the login (`recovery_sent_at` set ahead; a direct `/otp` call then
+gets 429 `over_email_send_rate_limit`, D70); a permission the admin grants shows on mechanic2's
 profile and in the staff history (then is revoked), and on a phone the
 confirmation toast leaves the Scan tab tappable; a rejected invite keeps
 the typed name and email; the invite's success view says how to sign in
@@ -597,7 +666,14 @@ sessions, and on the devstack's HS256 keys `getClaims` asks Auth, so their
 next navigation lands on `/login?next=…`); they can still ask for a code
 and see the same "Check your email" screen, but after typing the emailed
 code they stay on `/login` with the not-staff message, and `/` still
-redirects to `/login`.
+redirects to `/login`. The hosted window of D71 is driven too: a second
+invited colleague signs in, is deactivated with `staff_revoke_sessions`
+disabled inside that one transaction (`sqlTransaction` in
+`tests/e2e/db.ts`), so their session still verifies at Auth, and `/` and
+`/settings/profile` (no permission needed) show the 403 page ("403 · No
+access", "You can't open this") and none of their data. The HTTP status
+is not asserted there: a page whose shell has started streaming keeps
+200 (Next's `forbidden()` docs).
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
 tag made of the project name and a timestamp, so the phone and iPad runs and

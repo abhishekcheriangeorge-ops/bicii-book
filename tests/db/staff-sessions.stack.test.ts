@@ -10,7 +10,9 @@
  *     the Admin asks Auth: the session ends at once);
  *   * PostgREST still accepts the unexpired access token on its own (the
  *     hosted window, until jwt_expiry), but the database treats the person
- *     as inactive: my_staff_profile says active = false;
+ *     as inactive: my_staff_profile says active = false (the app's 403 for
+ *     that window: tests/unit/session-guard.test.ts and the "hosted window"
+ *     test in tests/e2e/staff.spec.ts);
  *   * a fresh code still verifies at Auth (shouldCreateUser false knows
  *     nothing about staff), yet my_staff_profile says active = false, so
  *     the Admin's verifyCode and requireStaff refuse it (D70).

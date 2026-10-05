@@ -250,10 +250,19 @@ upload itself, below).
   resend says "We've sent a new code." in a polite status) and "Use a
   different email" (back to step 1, email kept). One action state for both
   steps (`signInStep` routes on `intent`), every form carries `next`.
-  Errors show in one `role="alert"` above the step and mark the field
-  `aria-invalid`; focus goes to Code when step 2 opens or a code is
-  refused, and to Email after an error there. The code is never echoed
-  back. Full-width 56px primary buttons, 48px secondary ones.
+  Errors show in one `role="alert"` above the step. Only an error about
+  what was typed marks the field `aria-invalid` and points its
+  `aria-describedby` at the alert: an email that is not an email, an
+  email without access ("This email doesn't have access to BICII Admin.
+  Ask an admin to invite or reactivate you."), a missing or malformed
+  code, a refused code. "Too many attempts. Wait a minute and try again."
+  and "Sign-in is unavailable right now…" mark nothing, because retyping
+  cannot help. Focus goes to Code when step 2 opens or a code is refused,
+  and to Email after an error there, either way. Asking again for an
+  address Auth will not email yet (its per-address interval) shows "Check
+  your email" exactly as for any other address (D70). The code is never
+  echoed back. Under the form: "No access? Ask an admin to invite or
+  reactivate you in Settings → Staff." Full-width 56px primary buttons, 48px secondary ones.
 - **Invites** (Settings → Staff → Invite): the success view says "{email}
   can now sign in." and how (the email, then the emailed code; no password
   to hand over), with "Invite another" and "Set permissions".

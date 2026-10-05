@@ -111,16 +111,65 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
      works with sign-ups off, and sign-in asks for a code with
      `shouldCreateUser: false`, so it never creates an account.
    - **Rate Limits**: the minimum interval between emails to one address
-     **60** seconds (it matches "Send a new code", `RESEND_COOLDOWN_SECONDS`);
-     emails per hour and token verifications sized for the staff (a few
-     sign-ins per person per day plus retries, with headroom; the
-     provider's own sending limit is the real ceiling).
+     **60** seconds (it matches "Send a new code", `RESEND_COOLDOWN_SECONDS`).
+     The Admin asks Auth from its server, so Auth's per-IP limits count the
+     Admin's server address for every staff member and visitor together:
+     they are one shared bucket, not a per-person limit. The Admin applies
+     its own per-client and per-email limits first (PLAN D72: per 5
+     minutes, 10 code requests and 20 verifications per client address, 5
+     and 10 per email), so set Auth's **sign-ins and sign-ups** and **token
+     verifications** (per 5 minutes per IP) well above those, at least
+     **150** each, so one visitor cannot fill them; emails per hour sized
+     for the staff with headroom (the provider's own sending limit is the
+     real ceiling). Auth's per-address interval and hourly email cap are
+     shown on the sign-in screen as "Check your email" (only an address with
+     a login can reach them, D70), and logged as warnings
+     (`auth.request_code`, code `over_email_send_rate_limit`): watch for
+     them if staff report missing codes.
+   - **Sign In / Providers → Email → Secure password change: ON.** The
+     Admin has no password path, but Auth's password change is reachable
+     with any session; with this on, a session older than 24 h needs an
+     emailed nonce to set a password (config.toml `secure_password_change`,
+     the devstack's `GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION`).
+   - The Admin's server must see each visitor's own address in
+     `x-forwarded-for` (Vercel sets it and overwrites what the client sent).
+     A host that passes on a client's own `x-forwarded-for` would let a
+     visitor pick a fresh per-client bucket for every attempt (the
+     per-email limits still hold).
    - **Configure SMTP and test it with the owner's own address BEFORE
      deploying the release that switches sign-in to codes**: on the Users
      page, "Send magic link" to the owner's login must deliver a mail with a
      6-digit code and no link. Without working email nobody can sign in.
-   - Passwords already set on hosted logins stay in Auth but are unused:
-     the Admin has no password sign-in. Removing them is optional cleanup.
+   - **REQUIRED before deploying the release that switches sign-in to
+     codes: replace every staff login's password and end its sessions.**
+     The Admin has no password form, but Supabase Auth's password grant
+     (`/auth/v1/token?grant_type=password`, callable with the public anon
+     key while the Email provider is on, which codes need) still signs a
+     login in with its password. Logins created by the old invite flow have
+     the temporary password their inviter saw (PLAN D11). In the SQL editor
+     (runs as `postgres`), once per project:
+
+     ```sql
+     begin;
+     -- The hash of a random secret nobody holds, as the seed and Auth's
+     -- own passwordless createUser store.
+     update auth.users u
+     set encrypted_password = extensions.crypt(
+           encode(extensions.gen_random_bytes(48), 'base64'),
+           extensions.gen_salt('bf', 10)),
+         updated_at = now()
+     where u.id in (select s.auth_user_id from public.staff s);
+     -- Sessions signed in with an old password end; everyone signs in
+     -- again with a code.
+     delete from auth.sessions where user_id in (select auth_user_id from public.staff);
+     delete from auth.refresh_tokens
+     where user_id in (select auth_user_id::text from public.staff);
+     commit;
+     ```
+
+     The update must report as many rows as there are staff (`select
+     count(*) from public.staff;`). Run it after SMTP works (step above):
+     everyone, the owner included, then signs in with a code.
    - Accepted residual risk (D70): Auth's own `/otp` endpoint, callable by
      anyone with the public anon key, answers an unknown email with 422
      `otp_disabled`, so a direct API caller can learn whether an address
