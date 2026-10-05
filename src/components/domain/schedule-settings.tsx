@@ -167,7 +167,7 @@ function BookingSettingsSheet({
         <FormError state={state} />
         <Field
           label="Slot length"
-          hint="Bookings start every slot from midnight, so it divides the day: 15, 20, 30 or 60 minutes."
+          hint="5 to 240 minutes, dividing the day evenly (e.g. 15, 20, 30, 45 or 60): bookings start every slot from midnight."
           error={errors?.slotMinutes?.[0]}
           required
         >

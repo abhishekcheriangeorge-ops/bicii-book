@@ -286,8 +286,9 @@ The seed's schedule is demo data. Before the shop takes real bookings
 1. **Shop hours and closures → Weekly hours.** Tap each weekday: switch
    "Open on <day>" and enter up to four stretches (a lunch break is two).
    A closing time of 00:00 means midnight.
-2. **Booking capacity → Edit.** The slot length (it must divide the day:
-   15, 20, 30 or 60 minutes; bookings start on that grid from midnight)
+2. **Booking capacity → Edit.** The slot length (5 to 240 minutes and
+   dividing the day evenly, e.g. 15, 20, 30, 45 or 60; bookings start on
+   that grid from midnight)
    and how many bikes the shop takes in per slot (one shared pool, PLAN
    D2). The online booking rules (D37): minimum notice (default 120
    minutes), how far ahead customers may book (60 days), how many upcoming
