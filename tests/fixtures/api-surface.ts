@@ -11,8 +11,16 @@
  * which is the moment to check its RLS policies and guard.
  */
 
-/** Functions anonymous visitors may call. Phase 2+ adds the public booking RPCs. */
-export const ANON_FUNCTIONS: readonly string[] = [];
+/**
+ * Functions anonymous visitors may call: the public booking reads (Phase 2,
+ * D37): the online-bookable appointment types (no capacity units) and the
+ * weekly hours; bookable times follow with the appointments migration.
+ * Phase 11's public site consumes them and must not revoke anon.
+ */
+export const ANON_FUNCTIONS: readonly string[] = [
+  "public.public_appointment_types()",
+  "public.public_shop_hours()",
+];
 
 /**
  * Relations (tables, views, sequences) anonymous visitors may touch, with
@@ -95,6 +103,14 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.today_dashboard(date)",
   "public.work_order_activity_on(date)",
   "public.work_order_yield(uuid)",
+  // Appointments (Phase 2): active staff; schedule settings admin only.
+  "public.delete_closure_override(uuid, text)",
+  "public.public_appointment_types()",
+  "public.public_shop_hours()",
+  "public.save_appointment_type(uuid, boolean, text, text, integer, integer, boolean, boolean, integer)",
+  "public.save_closure_override(uuid, boolean, closure_kind, date, date, text, time without time zone, time without time zone)",
+  "public.set_shop_hours(smallint, jsonb, boolean)",
+  "public.update_shop_settings(integer, integer, integer, integer, integer, integer, text)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -160,6 +176,13 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   // The anonymous projection, readable by signed-in users (customers) too
   "reporting.public_items": ["SELECT"],
   "reporting.stock_levels": ["SELECT"],
+  // Appointments (Phase 2): staff read (RLS is_staff); every write is an
+  // RPC; customers read none of them (zero rows), only the my_* RPCs
+  "public.appointment_types": ["SELECT"],
+  "public.closure_overrides": ["SELECT"],
+  "public.schedule_events": ["SELECT"],
+  "public.shop_hours": ["SELECT"],
+  "public.shop_settings": ["SELECT"],
 };
 
 /**

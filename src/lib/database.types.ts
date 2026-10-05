@@ -3,6 +3,45 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      appointment_types: {
+        Row: {
+          active: boolean;
+          capacity_units: number;
+          created_at: string;
+          description: string | null;
+          duration_minutes: number;
+          id: string;
+          name: string;
+          public: boolean;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          active?: boolean;
+          capacity_units?: number;
+          created_at?: string;
+          description?: string | null;
+          duration_minutes: number;
+          id?: string;
+          name: string;
+          public?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          active?: boolean;
+          capacity_units?: number;
+          created_at?: string;
+          description?: string | null;
+          duration_minutes?: number;
+          id?: string;
+          name?: string;
+          public?: boolean;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       attachment_events: {
         Row: {
           actor_staff_id: string | null;
@@ -293,6 +332,53 @@ export type Database = {
             columns: ["parent_id"];
             isOneToOne: false;
             referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      closure_overrides: {
+        Row: {
+          closes_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          ends_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          closes_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          ends_at: string;
+          id?: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at?: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at?: string;
+        };
+        Update: {
+          closes_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          ends_at?: string;
+          id?: string;
+          kind?: Database["public"]["Enums"]["closure_kind"];
+          opens_at?: string | null;
+          reason?: string;
+          starts_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "closure_overrides_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
             referencedColumns: ["id"];
           },
         ];
@@ -895,6 +981,53 @@ export type Database = {
           },
         ];
       };
+      schedule_events: {
+        Row: {
+          actor_staff_id: string | null;
+          actor_user_id: string | null;
+          correlation_id: string | null;
+          created_at: string;
+          entity: Database["public"]["Enums"]["schedule_entity"];
+          entity_id: string | null;
+          event_type: Database["public"]["Enums"]["schedule_event_type"];
+          id: number;
+          payload: NonNullable<Json>;
+          reason: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity: Database["public"]["Enums"]["schedule_entity"];
+          entity_id?: string | null;
+          event_type: Database["public"]["Enums"]["schedule_event_type"];
+          id?: never;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          actor_user_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          entity?: Database["public"]["Enums"]["schedule_entity"];
+          entity_id?: string | null;
+          event_type?: Database["public"]["Enums"]["schedule_event_type"];
+          id?: never;
+          payload?: NonNullable<Json>;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "schedule_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       services: {
         Row: {
           active: boolean;
@@ -947,6 +1080,89 @@ export type Database = {
             columns: ["category_id"];
             isOneToOne: false;
             referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      shop_hours: {
+        Row: {
+          active: boolean;
+          closes_at: string;
+          created_at: string;
+          id: string;
+          opens_at: string;
+          updated_at: string;
+          weekday: number;
+        };
+        Insert: {
+          active?: boolean;
+          closes_at: string;
+          created_at?: string;
+          id?: string;
+          opens_at: string;
+          updated_at?: string;
+          weekday: number;
+        };
+        Update: {
+          active?: boolean;
+          closes_at?: string;
+          created_at?: string;
+          id?: string;
+          opens_at?: string;
+          updated_at?: string;
+          weekday?: number;
+        };
+        Relationships: [];
+      };
+      shop_settings: {
+        Row: {
+          booking_horizon_days: number;
+          booking_min_notice_minutes: number;
+          customer_cancel_cutoff_minutes: number;
+          customer_max_active_bookings: number;
+          default_currency: string;
+          id: number;
+          intake_capacity_units: number;
+          intake_slot_minutes: number;
+          public_site_url: string | null;
+          timezone: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          booking_horizon_days?: number;
+          booking_min_notice_minutes?: number;
+          customer_cancel_cutoff_minutes?: number;
+          customer_max_active_bookings?: number;
+          default_currency?: string;
+          id?: number;
+          intake_capacity_units?: number;
+          intake_slot_minutes?: number;
+          public_site_url?: string | null;
+          timezone?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          booking_horizon_days?: number;
+          booking_min_notice_minutes?: number;
+          customer_cancel_cutoff_minutes?: number;
+          customer_max_active_bookings?: number;
+          default_currency?: string;
+          id?: number;
+          intake_capacity_units?: number;
+          intake_slot_minutes?: number;
+          public_site_url?: string | null;
+          timezone?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "shop_settings_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
             referencedColumns: ["id"];
           },
         ];
@@ -2046,6 +2262,27 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      delete_closure_override: {
+        Args: { closure_id: string; reason: string };
+        Returns: {
+          closes_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          ends_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "closure_overrides";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       financial_lines: {
         Args: { from_day: string; to_day: string };
         Returns: {
@@ -2218,6 +2455,23 @@ export type Database = {
           subject_label: string;
         }[];
       };
+      public_appointment_types: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          description: string;
+          duration_minutes: number;
+          id: string;
+          name: string;
+        }[];
+      };
+      public_shop_hours: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          closes_at: string;
+          opens_at: string;
+          weekday: number;
+        }[];
+      };
       record_attachment: {
         Args: {
           attachment_id: string;
@@ -2269,6 +2523,67 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "staff_permissions";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      save_appointment_type: {
+        Args: {
+          active: boolean;
+          appointment_type_id: string;
+          capacity_units: number;
+          description: string;
+          duration_minutes: number;
+          is_new: boolean;
+          name: string;
+          public: boolean;
+          sort_order?: number;
+        };
+        Returns: {
+          active: boolean;
+          capacity_units: number;
+          created_at: string;
+          description: string | null;
+          duration_minutes: number;
+          id: string;
+          name: string;
+          public: boolean;
+          sort_order: number;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "appointment_types";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      save_closure_override: {
+        Args: {
+          closure_id: string;
+          first_day: string;
+          from_time?: string;
+          is_new: boolean;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          last_day: string;
+          reason: string;
+          to_time?: string;
+        };
+        Returns: {
+          closes_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          ends_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["closure_kind"];
+          opens_at: string | null;
+          reason: string;
+          starts_at: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "closure_overrides";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -2372,6 +2687,24 @@ export type Database = {
         };
       };
       set_service_archived: { Args: { archived: boolean; service_id: string }; Returns: string };
+      set_shop_hours: {
+        Args: { active?: boolean; intervals: Json; weekday: number };
+        Returns: {
+          active: boolean;
+          closes_at: string;
+          created_at: string;
+          id: string;
+          opens_at: string;
+          updated_at: string;
+          weekday: number;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "shop_hours";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       set_staff_active: {
         Args: { active: boolean; reason?: string; target_staff_id: string };
         Returns: {
@@ -2650,6 +2983,37 @@ export type Database = {
         };
         Returns: string;
       };
+      update_shop_settings: {
+        Args: {
+          booking_horizon_days?: number;
+          booking_min_notice_minutes?: number;
+          customer_cancel_cutoff_minutes?: number;
+          customer_max_active_bookings?: number;
+          intake_capacity_units?: number;
+          intake_slot_minutes?: number;
+          public_site_url?: string;
+        };
+        Returns: {
+          booking_horizon_days: number;
+          booking_min_notice_minutes: number;
+          customer_cancel_cutoff_minutes: number;
+          customer_max_active_bookings: number;
+          default_currency: string;
+          id: number;
+          intake_capacity_units: number;
+          intake_slot_minutes: number;
+          public_site_url: string | null;
+          timezone: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "shop_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_staff: {
         Args: {
           display_name?: string;
@@ -2800,6 +3164,7 @@ export type Database = {
       attachment_visibility: "internal" | "customer" | "public";
       bike_ownership_event_type: "registered" | "transferred";
       category_kind: "service" | "product";
+      closure_kind: "closed" | "custom_hours";
       customer_job_status:
         | "received"
         | "awaiting_customer"
@@ -2849,6 +3214,8 @@ export type Database = {
         | "archived"
         | "unarchived";
       publication_status: "draft" | "internal_only" | "public" | "sold" | "archived";
+      schedule_entity: "shop_settings" | "shop_hours" | "closure_override" | "appointment_type";
+      schedule_event_type: "created" | "updated" | "deleted";
       staff_event_type:
         | "created"
         | "details_changed"
@@ -3276,6 +3643,7 @@ export const Constants = {
       attachment_visibility: ["internal", "customer", "public"],
       bike_ownership_event_type: ["registered", "transferred"],
       category_kind: ["service", "product"],
+      closure_kind: ["closed", "custom_hours"],
       customer_job_status: [
         "received",
         "awaiting_customer",
@@ -3330,6 +3698,8 @@ export const Constants = {
         "unarchived",
       ],
       publication_status: ["draft", "internal_only", "public", "sold", "archived"],
+      schedule_entity: ["shop_settings", "shop_hours", "closure_override", "appointment_type"],
+      schedule_event_type: ["created", "updated", "deleted"],
       staff_event_type: [
         "created",
         "details_changed",

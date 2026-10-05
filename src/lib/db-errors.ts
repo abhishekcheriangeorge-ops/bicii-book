@@ -159,6 +159,18 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   attachment_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
   // Reporting (Phase 5; Phase 9 reuses it)
   report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
+  // Appointments and schedule (Phase 2)
+  schedule_history_append_only: "Schedule history cannot be changed.",
+  shop_hours_overlap: "Those opening hours overlap.",
+  closure_invalid_range: "Check the closure's days and times.",
+  closure_custom_hours_overlap: "Another short day already covers those days.",
+  closure_conflict: "Someone changed this closure in the meantime. Reload and try again.",
+  appointment_type_conflict: "Someone changed this type in the meantime. Reload and try again.",
+  shop_capacity_below_type:
+    "An active appointment type needs more capacity than that. Change the type first.",
+  appointment_type_capacity_too_large: "That is more than the shop can take in one slot.",
+  shop_timezone_invalid: "That is not a time zone the database knows.",
+  shop_settings_required: "The shop settings cannot be deleted, only changed.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -206,6 +218,11 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   inventory_movements_sale_line_once: "That sale has already taken its stock.",
   inventory_movements_receipt_line_once: "That delivery has already been received.",
   inventory_movements_reversal_of_id_key: "That stock change has already been reversed.",
+  // Appointments and schedule (Phase 2)
+  appointment_types_name_key: "An appointment type with that name already exists.",
+  appointment_types_pkey: "That appointment type has already been saved.",
+  closure_overrides_pkey: "That closure has already been saved.",
+  shop_hours_weekday_opens_at_key: "Two opening intervals of that day start at the same time.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -328,6 +345,29 @@ export const CHECK_ERRORS: Record<string, string> = {
   product_events_payload_object: "That product history entry is not consistent.",
   inventory_unit_events_payload_object: "That unit history entry is not consistent.",
   attachments_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
+  // Appointments and schedule (Phase 2)
+  shop_settings_singleton: "There is only one settings row.",
+  shop_settings_currency_check: "Use a three-letter currency code.",
+  shop_settings_slot_minutes_check:
+    "The slot length must divide the day evenly (5 to 240 minutes).",
+  shop_settings_capacity_check: "Capacity per slot must be between 1 and 50.",
+  shop_settings_notice_check: "Minimum notice must be between 0 minutes and 7 days.",
+  shop_settings_horizon_check: "Customers can book between 1 and 365 days ahead.",
+  shop_settings_customer_limit_check: "Allow between 1 and 20 upcoming online bookings.",
+  shop_settings_cancel_cutoff_check:
+    "The online cancellation cutoff must be between 0 minutes and 7 days.",
+  shop_settings_public_site_url_check: "Enter the public site's address, starting with https://.",
+  shop_hours_interval_check: "Opening time must be before closing time.",
+  shop_hours_weekday_check: "Pick a day of the week.",
+  closure_overrides_range_check: "A closure ends after it starts and lasts at most 366 days.",
+  closure_overrides_hours_shape: "Different opening hours need an opening and a closing time.",
+  closure_overrides_reason_check: "Give a reason, under 200 characters.",
+  appointment_types_name_check: "Enter a name under 80 characters.",
+  appointment_types_description_check: "Keep the description under 500 characters.",
+  appointment_types_duration_check: "Duration must be 5 to 480 minutes, in steps of 5.",
+  appointment_types_capacity_check: "Capacity units must be between 1 and 50.",
+  schedule_events_payload_object: "That schedule history entry is not consistent.",
+  schedule_events_reason_check: "Keep the reason under 500 characters.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */
@@ -345,6 +385,9 @@ const SQLSTATE_ERRORS: Record<string, Pick<MappedError, "message" | "kind">> = {
   "22023": { message: "Some values are not allowed.", kind: "invalid" },
   "22P02": { message: "Some values are not in the right format.", kind: "invalid" },
   "22003": { message: "That amount is too large.", kind: "invalid" },
+  // Exclusion constraints (Phase 2: closure_overrides_custom_hours_no_overlap,
+  // the backstop of closure_custom_hours_overlap).
+  "23P01": { message: "That overlaps with another entry.", kind: "conflict" },
 };
 
 /** Constraint name from the error, or parsed from Postgres's message. */
