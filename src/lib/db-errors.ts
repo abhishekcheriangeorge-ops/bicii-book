@@ -160,6 +160,26 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   // Reporting (Phase 5; Phase 9 reuses it)
   report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
   // Appointments and schedule (Phase 2)
+  appointment_slot_misaligned: "Pick one of the listed times.",
+  appointment_outside_hours: "The shop is not open for the whole of that time.",
+  appointment_closed: "The shop is closed then.",
+  appointment_capacity_exceeded: "That time has just filled up. Pick another time.",
+  appointment_in_past: "That appointment would already be over. Pick a later time.",
+  appointment_too_soon: "That is too soon to book online. Pick a later time.",
+  appointment_too_far_ahead: "That is too far ahead to book online.",
+  appointment_customer_limit:
+    "You already have the most upcoming online bookings allowed. Cancel one or contact the shop.",
+  appointment_type_unavailable: "That appointment type is not available.",
+  appointment_conflict: "That booking clashes with another one. Start again.",
+  appointment_bike_not_owned:
+    "That bike belongs to someone else. Transfer it first or pick another bike.",
+  appointment_bike_archived: "That bike is archived. Unarchive it or pick another bike.",
+  appointment_immutable: "That part of the appointment can no longer be changed.",
+  appointment_transition_invalid: "That appointment cannot move to that status.",
+  appointment_use_check_in: "Use Check in to check this appointment in.",
+  appointment_use_cancel: "Use Cancel appointment, with a reason.",
+  appointment_not_started: "Mark a no-show only after the appointment has started.",
+  appointment_history_append_only: "Appointment history cannot be changed.",
   schedule_history_append_only: "Schedule history cannot be changed.",
   shop_hours_overlap: "Those opening hours overlap.",
   closure_invalid_range: "Check the closure's days and times.",
@@ -219,6 +239,7 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   inventory_movements_receipt_line_once: "That delivery has already been received.",
   inventory_movements_reversal_of_id_key: "That stock change has already been reversed.",
   // Appointments and schedule (Phase 2)
+  appointments_pkey: "That appointment has already been booked.",
   appointment_types_name_key: "An appointment type with that name already exists.",
   appointment_types_pkey: "That appointment type has already been saved.",
   closure_overrides_pkey: "That closure has already been saved.",
@@ -368,6 +389,17 @@ export const CHECK_ERRORS: Record<string, string> = {
   appointment_types_capacity_check: "Capacity units must be between 1 and 50.",
   schedule_events_payload_object: "That schedule history entry is not consistent.",
   schedule_events_reason_check: "Keep the reason under 500 characters.",
+  appointments_range_check: "An appointment ends after it starts.",
+  appointments_capacity_units_check: "Capacity units must be between 1 and 50.",
+  appointments_customer_note_check: "Keep the note under 1,000 characters.",
+  appointments_internal_note_check: "Keep the internal note under 5,000 characters.",
+  appointments_cancellation_reason_check: "Keep the reason under 500 characters.",
+  appointments_status_stamps:
+    "The appointment's times don't match its status. Refresh and try again.",
+  appointments_cancelled_via_check:
+    "The appointment's cancellation doesn't match its status. Refresh and try again.",
+  appointment_events_payload_object: "That appointment history entry is not consistent.",
+  appointment_events_reason_check: "Keep the reason under 500 characters.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */

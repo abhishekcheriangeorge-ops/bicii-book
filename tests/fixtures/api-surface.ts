@@ -13,11 +13,12 @@
 
 /**
  * Functions anonymous visitors may call: the public booking reads (Phase 2,
- * D37): the online-bookable appointment types (no capacity units) and the
- * weekly hours; bookable times follow with the appointments migration.
- * Phase 11's public site consumes them and must not revoke anon.
+ * D37): bookable times, the online-bookable appointment types (no capacity
+ * units) and the weekly hours. Phase 11's public site consumes them and
+ * must not revoke anon.
  */
 export const ANON_FUNCTIONS: readonly string[] = [
+  "public.available_slots(date, uuid)",
   "public.public_appointment_types()",
   "public.public_shop_hours()",
 ];
@@ -104,12 +105,18 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.work_order_activity_on(date)",
   "public.work_order_yield(uuid)",
   // Appointments (Phase 2): active staff; schedule settings admin only.
+  // The three public booking reads are callable by everyone (D37).
+  "public.available_slots(date, uuid)",
+  "public.book_appointment(uuid, uuid, uuid, timestamp with time zone, uuid, text, text)",
+  "public.cancel_appointment(uuid, text)",
   "public.delete_closure_override(uuid, text)",
+  "public.mark_appointment_status(uuid, appointment_status, text)",
   "public.public_appointment_types()",
   "public.public_shop_hours()",
   "public.save_appointment_type(uuid, boolean, text, text, integer, integer, boolean, boolean, integer)",
   "public.save_closure_override(uuid, boolean, closure_kind, date, date, text, time without time zone, time without time zone)",
   "public.set_shop_hours(smallint, jsonb, boolean)",
+  "public.update_appointment(uuid, uuid, boolean, text, text)",
   "public.update_shop_settings(integer, integer, integer, integer, integer, integer, text)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
@@ -178,7 +185,9 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "reporting.stock_levels": ["SELECT"],
   // Appointments (Phase 2): staff read (RLS is_staff); every write is an
   // RPC; customers read none of them (zero rows), only the my_* RPCs
+  "public.appointment_events": ["SELECT"],
   "public.appointment_types": ["SELECT"],
+  "public.appointments": ["SELECT"],
   "public.closure_overrides": ["SELECT"],
   "public.schedule_events": ["SELECT"],
   "public.shop_hours": ["SELECT"],
