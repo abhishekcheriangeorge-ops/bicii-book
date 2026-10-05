@@ -12,8 +12,10 @@ import { EditUnitButton, WriteOffUnitControl } from "@/components/domain/unit-sh
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
-import { hasPermission } from "@/lib/auth/permissions";
+import { canViewConsignmentMoney, hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
+import { CONSIGNED_STOCK_NOTE } from "@/lib/consignment";
+import { consignmentForUnit } from "@/lib/domain/consignment";
 import { formatDateTime } from "@/lib/dates";
 import { getUnit, listLocations } from "@/lib/domain/inventory";
 import { publicationLabel, unitStatusLabel, unitStatusTone } from "@/lib/inventory";
@@ -39,7 +41,9 @@ const OWNERSHIP_LABELS: Record<string, string> = {
  * the selling price and, only for view_costs holders, cost, yield and Cult
  * Commons; photos (internal or public), movements and history. Edit
  * details and Transfer need manage_inventory (Transfer only while in
- * stock: available or reserved); Write off needs adjust_stock. Its QR URL
+ * stock: available or reserved); Write off needs adjust_stock and is never
+ * offered for a consigned unit (D50), which shows its Consignment card
+ * instead (C- link, consignor, the agreed amount for money users, D48). Its QR URL
  * and what the public sees (read-only: publication is the product's).
  */
 export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
@@ -55,7 +59,13 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
     listLocations(supabase),
   ]);
   if (!unit) notFound();
-  const qr = await qrUrl(unit.shortId);
+  // D50: consigned stock is never written off; D44: its consignment card.
+  const consigned = unit.ownershipType === "consignment";
+  const seesConsignmentMoney = canViewConsignmentMoney(staff);
+  const [qr, consignment] = await Promise.all([
+    qrUrl(unit.shortId),
+    consigned ? consignmentForUnit(supabase, unit.id) : Promise.resolve(null),
+  ]);
 
   const inStock = unit.status === "available" || unit.status === "reserved";
   const archived = unit.archivedAt !== null;
@@ -110,6 +120,7 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
                   ownSalePrice: unit.ownSalePrice,
                   ...(viewCosts ? { cost: unit.cost ?? null } : {}),
                   internalNotes: unit.internalNotes,
+                  consigned,
                 }}
                 viewCosts={viewCosts}
               />
@@ -215,6 +226,40 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
         </Card>
       </div>
 
+      {consignment ? (
+        <Card title="Consignment">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+            <dt className="text-sm text-dust-500">Consignment</dt>
+            <dd>
+              <Link
+                href={`/consignment/items/${consignment.itemId}`}
+                className="inline-flex items-center gap-2 underline"
+              >
+                <ShortId value={consignment.shortId} />
+              </Link>
+            </dd>
+            <dt className="text-sm text-dust-500">Consignor</dt>
+            <dd>
+              <Link
+                href={`/consignment/consignors/${consignment.consignor.id}`}
+                className="underline"
+              >
+                {consignment.consignor.name}
+              </Link>
+            </dd>
+            {seesConsignmentMoney && consignment.agreedAmountOwed !== null ? (
+              <>
+                <dt className="text-sm text-dust-500">Agreed amount owed</dt>
+                <dd className="tabular-nums">
+                  {formatMoney(consignment.agreedAmountOwed, consignment.currency)}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+          <p className="mt-3 text-sm text-dust-700">{CONSIGNED_STOCK_NOTE}</p>
+        </Card>
+      ) : null}
+
       <Card title="Public listing">
         <div className="flex flex-col gap-4">
           <p className="text-sm text-dust-700">
@@ -261,7 +306,7 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
         </Card>
       </div>
 
-      {canAdjust && inStock ? (
+      {canAdjust && inStock && !consigned ? (
         <Card title="Write off">
           <p className="mb-3 text-dust-700">
             For a unit that is damaged beyond sale or lost. It leaves stock with the reason.

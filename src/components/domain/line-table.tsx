@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -214,12 +215,23 @@ function stockReturn(part: NonNullable<Line["part"]>): string | null {
   return `${part.unitId ? part.shortId : part.quantity} to ${part.locationName}`;
 }
 
-/** The part's P- or U- number, linked, and what is left where it came from. */
+/**
+ * The part's P- or U- number, linked, and what is left where it came from;
+ * a consigned part (D44) also links its consignment: "Consigned · <consignor>".
+ */
 function PartInfo({ part, voided }: { part: NonNullable<Line["part"]>; voided: boolean }) {
   const href = part.unitId ? `/units/${part.unitId}` : `/products/${part.productId}`;
   return (
     <span className="flex flex-wrap items-center gap-2">
       <ShortIdLink href={href} value={part.shortId} />
+      {part.consigned ? (
+        <Link
+          href={`/consignment/items/${part.consigned.itemId}`}
+          className="inline-flex min-h-tap items-center text-sm underline underline-offset-2"
+        >
+          Consigned · {part.consigned.consignorName || part.consigned.shortId}
+        </Link>
+      ) : null}
       {!voided && !part.unitId && part.onHandAtLocation !== null ? (
         <StockBadge
           onHand={part.onHandAtLocation}

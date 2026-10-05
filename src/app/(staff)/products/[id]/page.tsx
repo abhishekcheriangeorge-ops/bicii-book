@@ -7,6 +7,7 @@ import { ArchiveControl } from "@/components/domain/archive-control";
 import { HistoryList, MovementList } from "@/components/domain/movement-list";
 import { NoActiveLocation } from "@/components/domain/no-active-location";
 import { PhotoGrid } from "@/components/domain/photo-grid";
+import { ConsignmentItemRow } from "@/components/domain/consignment-item-row";
 import { EditProductButton } from "@/components/domain/product-sheet";
 import { PublicationControls } from "@/components/domain/publication-card";
 import { ShortId } from "@/components/domain/short-id";
@@ -17,9 +18,12 @@ import { AddUnitButton } from "@/components/domain/unit-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ChevronRightIcon } from "@/components/ui/icons";
+import { RowList } from "@/components/ui/row-list";
 import { StatusPill } from "@/components/ui/status-pill";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
+import { CONSIGNED_STOCK_NOTE, consignmentStatusPill } from "@/lib/consignment";
+import { consignmentsForProduct } from "@/lib/domain/consignment";
 import { getProduct, listLocations, listProductCategories } from "@/lib/domain/inventory";
 import {
   publicationLabel,
@@ -66,7 +70,13 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
     manage ? listProductCategories(supabase) : Promise.resolve([]),
   ]);
   if (!product) notFound();
-  const qr = await qrUrl(product.shortId);
+  // D50: consigned stock moves only through intake, sale, restock, a job,
+  // return to the consignor and transfers.
+  const consigned = product.ownershipType === "consignment";
+  const [qr, consignments] = await Promise.all([
+    qrUrl(product.shortId),
+    consigned ? consignmentsForProduct(supabase, product.id) : Promise.resolve([]),
+  ]);
 
   const archived = product.archivedAt !== null;
   const counted = product.trackingType === "quantity";
@@ -135,7 +145,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
           actions={
             counted && !archived && (canAdjust || manage) ? (
               <>
-                {canAdjust && manage ? (
+                {canAdjust && manage && !consigned ? (
                   <SplitToUniqueButton
                     sourceProductId={product.id}
                     productName={product.name}
@@ -143,7 +153,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
                     stock={sheetStock}
                   />
                 ) : null}
-                {canAdjust ? (
+                {canAdjust && !consigned ? (
                   <AdjustStockButton
                     productId={product.id}
                     productName={product.name}
@@ -214,6 +224,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
               Low stock: at or below the reorder point of {product.reorderPoint}.
             </p>
           ) : null}
+          {consigned ? <p className="mt-3 text-sm text-dust-700">{CONSIGNED_STOCK_NOTE}</p> : null}
           {counted && locations.defaultLocationId === null ? (
             <p className="mt-3 text-sm text-dust-700">
               <NoActiveLocation />
@@ -242,7 +253,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
                 <dt>Cult Commons share</dt>
                 <dd className="text-right">{money(product.expectedCultCommons)}</dd>
               </dl>
-              {product.cost === null ? (
+              {product.cost === null && !consigned ? (
                 <p className="text-sm text-waiting-deep">
                   No cost yet: this product can&apos;t go on a job until it has one.
                 </p>
@@ -256,7 +267,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
         <Card
           title="Units"
           actions={
-            manage && !archived ? (
+            manage && !archived && !consigned ? (
               <AddUnitButton
                 productId={product.id}
                 locations={locations.locations}
@@ -268,7 +279,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
         >
           {product.units.length === 0 ? (
             <p className="text-dust-700">
-              No units yet.{manage ? " Add the item itself with Add unit." : ""}
+              No units yet.{manage && !consigned ? " Add the item itself with Add unit." : ""}
             </p>
           ) : (
             <ul aria-label="Units" className="-mx-2 flex flex-col">
@@ -296,6 +307,27 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
                 </li>
               ))}
             </ul>
+          )}
+        </Card>
+      ) : null}
+
+      {consigned ? (
+        <Card title="Consignments" eyebrow="Consigned stock">
+          {consignments.length === 0 ? (
+            <p className="text-dust-700">No consignment on this product.</p>
+          ) : (
+            <RowList label="Consignments">
+              {consignments.map((c) => (
+                <ConsignmentItemRow
+                  key={c.id}
+                  href={`/consignment/items/${c.id}`}
+                  shortId={c.shortId}
+                  name={c.consignorName}
+                  pill={consignmentStatusPill(c.status, null)}
+                  details={[]}
+                />
+              ))}
+            </RowList>
           )}
         </Card>
       ) : null}
