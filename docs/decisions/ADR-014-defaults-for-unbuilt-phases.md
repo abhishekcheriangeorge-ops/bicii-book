@@ -9,6 +9,12 @@ Status update 2026-10-05 (D4): implemented by Phase 6 (a charge's `bearer`
 has no default and a missing one is refused with `charge_bearer_required`),
 see [ADR-016](ADR-016-consignment-and-sales.md).
 
+Status update 2026-10-05 (D7): applied to retail refunds by Phase 6 (D49):
+`record_sale_refund` writes a financial `sale_refunds` row only, and stock
+and unit status change only through `restock_unit`; evidence in
+`tests/db/sales.test.ts` and `tests/e2e/sales.spec.ts` (a partial refund
+leaves the stock unchanged). Online refunds remain Phase 10's.
+
 ## Context
 
 The plan had to choose defaults for three phases that are not built on this

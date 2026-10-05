@@ -5,6 +5,22 @@ every row is "Accepted: build default, owner to confirm". Decision owner:
 Abhishek Cherian George (owner) for business meaning; defaults proposed by
 the build agent.
 
+Status update 2026-10-05 (end of Phase 6): D44-D53 are implemented on
+`feat/p6-consignment` and still await the owner's confirmation; D53's
+open question stands. Final evidence per row: D44
+`tests/db/consignment-job-parts.test.ts`, `tests/e2e/consignment.spec.ts`;
+D45 `tests/db/consignment.test.ts`, `tests/db/sales.test.ts`; D46
+`tests/db/sales.test.ts`, `tests/db/settlements.test.ts`,
+`tests/e2e/sales.spec.ts` (restock); D47 `tests/db/settlements.test.ts`,
+`tests/e2e/consignment-journey.spec.ts`; D48
+`tests/db/consignment-access.test.ts`, the mechanic checks in
+`consignment.spec.ts`, `sales.spec.ts` and `consignment-journey.spec.ts`;
+D49 `tests/db/sales.test.ts`, `tests/e2e/sales.spec.ts`; D50 and D51
+`tests/db/consignment.test.ts`; D52 `tests/db/consignment.test.ts`,
+`tests/e2e/consignment-journey.spec.ts`; D53 `tests/unit/sales.test.ts`
+(`priceWarnings`) and `tests/e2e/sales.spec.ts`. Gate results are in
+[NOW.md](../../NOW.md).
+
 ## Context
 
 SPEC §13 asks for consignment with liability kept apart from settlement,
@@ -106,3 +122,4 @@ refund-reporting row (D49).
 - [ADR-010](ADR-010-stock-and-units-on-jobs.md) (D27, D29),
   [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) (D4, D7).
 - Verification for step 1 is recorded in [NOW.md](../../NOW.md).
+- Phase 6 as shipped: [PLAN Phase 6](../PLAN.md#phase-6--consignment).

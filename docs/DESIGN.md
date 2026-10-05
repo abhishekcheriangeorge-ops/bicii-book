@@ -358,6 +358,48 @@ its price and cost (they are the consignment's terms) and the unit page
 gains a Consignment card; a consigned product lists its consignments; a
 job's consigned part links "Consigned · <consignor>" to its item.
 
+#### Sales (Phase 6)
+
+Sale status (`saleStatusLabel` / `saleStatusTone` in `src/lib/sales.ts`;
+a refund changes only the status, D49):
+
+| State | Tone | Label |
+|---|---|---|
+| `recorded` | done | Recorded |
+| `partially_refunded` | waiting | Partly refunded |
+| `refunded` | danger | Refunded |
+| `voided` (reserved, never written) | neutral | Voided |
+| A line restocked | info badge | Restocked |
+
+| Component | Notes |
+|---|---|
+| `RecordSaleButton` / `RecordSaleSheet` | "New sale" on `/sales`, "Sell" on the consignment item, unit and product pages (any staff, D48; a Sell entry point presets its item by searching its short ID). Lines: title, short ID, "3 in stock at Shop floor" (a unit: "At Shop floor"), "Consigned · <consignor>" (a consigned quantity row is one consignment and the line sends its `consignment_item_id`, D45), a money `NumberInput` prefilled with the database selling price (`unit_price`), a quantity stepper capped at what the row holds, Remove. `priceWarnings` under the price: "Below the asking price" for everyone, "Below cost: this sale loses money" for view_costs (D53; never blocks). Add item reveals the picker again; Customer (optional `CustomerPicker`, walk-in otherwise); "Sold earlier?" reveals a shop-time `datetime-local` (max now; NULL while closed or empty); Notes. A view_costs "Preview" (cost, yield, Cult Commons) per line and in total, through `previewSale` (`lineEconomics`). Footer: the Decimal running total and "Record sale · $X". The sale id is made when the sheet opens; errors show as an alert, the lines stay, and a unit sold meanwhile is outlined with "Already sold or taken. Remove this line.". Success: toast "S-000123 recorded" and the sale page. |
+| `SaleablePicker` | `SearchPicker` over `searchSaleableAction` (`saleable_stock`): U-, P- and C- numbers, SKU, serial, name. Each result: title and price, short ID, a `StockBadge` with where and how many, the consignor badge; a unit already on the sale is disabled. |
+| `RecordRefundButton` / `RefundSheet` | Admins only (`canRecordRefund`, D49), shown while something is left to refund. Amount defaults to `refundableAmount` and is capped at it; the info note "A refund does not put anything back in stock. If the item came back, restock it separately." (D7); the reason through `ReasonConfirm` ("Record refund of $5.00…" then "Refund $5.00"); the refund id is made when the sheet opens. |
+| `RestockControl` | `ReasonConfirm` "Restock… U-000123" on a unit line still sold on this sale (`unit_sold_sale_line_id` = the line) and on the unit page's Restock card; for adjust_stock holders, and for a consigned unit only with manage_consignments too (D46). It always sends this line's id; "Back to" location segments (default: where it was sold) while confirming when there is more than one active location; a consigned unit says "It goes back on sale for the consignor and is no longer owed to them." |
+
+Pages: `/sales` (`PageHeader` "Sales" with New sale; range links Today /
+7 days (default) / 30 days as `?range=`, Singapore shop days; a
+`SearchField` whose query searches every date; rows with the S- number
+and time, Partly refunded / Refunded, Restocked and Consigned badges, the
+first item "+N more", the customer or "Walk-in", the total and, for
+view_costs, "Yield $x · Cult Commons $y"; empty state "No sales in this
+period") and `/sales/[id]` (the S- number as the h1, status, date and
+time, "In store", the customer link or Walk-in, "Recorded by …", Record
+refund; Items: each line linked to its unit, consignment or product,
+quantity × price and total, "Consigned by <name> · C-…" and, for
+consignment money users, "owed $500.00, paid separately", a bike line's
+link and "Ownership is not transferred automatically; use Transfer on the
+bike page." (D51), Restocked with when and by whom, per-line cost, yield
+and Cult Commons for view_costs, Restock; a "Yield" card for view_costs:
+Sale, Direct cost (incl. consignor payout), Yield, Cult Commons (30% of
+positive yield), BICII after Cult Commons; Refunds with what is left to
+refund; Notes). The unit page shows "Sold on S-…" and a Restock card when
+a sale sold it. Today's "Consignment sales" tile links to
+`/sales?range=today` (another day: `/sales`) and "New consignor
+liability" (view_financial_reports and view_costs, D30) to `/consignment`;
+both always show an amount now.
+
 ### Scanning
 
 - **Scan screen** (`/scan`, `Scanner`): mobile-first; the square
@@ -490,8 +532,8 @@ job's consigned part links "Consigned · <consignor>" to its item.
   active staff; an adjustment's value at cost only with View costs.
 - **Money notes.** Danger: the loss note (D1). Warning: "Provisional: N
   lines have no cost entered…" (D14). On a past day, muted: "Counts jobs
-  completed on this day. If one is reopened, it moves to the day it is
-  completed again." (D32; words, not colour).
+  completed and sales recorded on this day. If a job is reopened, it moves
+  to the day it is completed again." (D32; words, not colour).
 - **Appointments** (Phase 2, D30, D41). `AppointmentsSection`: Scheduled
   ("Booked for this day"), Arrived ("Including checked in") and No-shows
   from `today_dashboard`, by scheduled day and current status, for every
@@ -503,9 +545,14 @@ job's consigned part links "Consigned · <consignor>" to its item.
   "10:30, Hafiz Rahman, Service drop-off, late"; "See all" opens
   `/appointments?date=<day>`; "N more expected later"; empty: "No more
   arrivals expected today" with Book. A past day shows only the counts.
-- **Placeholders are extension points.** Consignment sales and New
-  consignor liability say "Arrives with consignment" until Phase 6. The
-  `ExceptionList` is the list Phase 9 links from `/reports/exceptions`.
+- **Consignment tiles (Phase 6).** "Consignment sales" (the day's sales
+  with a consigned line, count and total; links to the Sales list) and,
+  for view_costs, "New consignor liability" (what the day's consigned
+  lines owe their consignors; links to Consignment) always show an amount.
+  Money also counts in-store sales: Gross sales is jobs completed and
+  sales recorded on the day.
+- **Placeholders are extension points.** The `ExceptionList` is the list
+  Phase 9 links from `/reports/exceptions`.
 - **Streaming.** The dashboard row loads first; each list (financial
   entries, adjustments, low stock, exceptions, activity, last 7 days) is a
   `SectionLoader` (async) in its own `<Suspense>` with a `SectionSkeleton`,

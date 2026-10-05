@@ -221,6 +221,63 @@ Settings → Your profile.
   keeps its link to its bike record; transfer the bike back to the
   consignor's customer record on the bike page ([R-020](RISKS.md#r-020--a-bike-record-consigned-once-cannot-be-consigned-again)).
 
+### Record an in-store sale
+
+- Before you start: anyone signed in can sell (D48). The item is in stock
+  (a unique item is Available; it is not on a job).
+- Steps: **More → Sales → New sale**, or **Sell** on a consignment item, a
+  unit or a counted product (it starts with that item). Search the name,
+  SKU or U-/P-/C- number under **Add item** and choose a result (each
+  shows where it is, how many and the price; consigned ones show
+  "Consigned · <consignor>"). The **Price** is the selling price; change
+  it if you agreed another. For several, set **Quantity** (up to what is
+  there). **Add item** adds more. Choose the **Customer** if they are on
+  file (empty is a walk-in). **Sold earlier?** lets you enter when it was
+  sold. Press **Record sale · $x**.
+- Success looks like: "S-000123 recorded" and the sale's page: the items,
+  the total and who recorded it; the stock is lower, a unique item reads
+  Sold ("Sold on S-…" on its page) and a consigned item is owed to its
+  consignor. With View costs the sheet previews cost, yield and Cult
+  Commons, and the sale page shows them.
+- If it fails: "Below the asking price" and "Below cost: this sale loses
+  money" are warnings, not blocks (D53). "That item has already been
+  sold." outlines the line that went meanwhile: remove it and record the
+  rest. "There isn't that much stock at that location." means the count
+  changed: lower the quantity. "This item has no selling price. Enter
+  one." needs a price. A sold bike is not transferred to the buyer: use
+  **Transfer** on the bike page (D51).
+
+### Refund a sale
+
+- Before you start: only an admin records a refund (D49).
+- Steps: open the sale (Sales, or search its S- number) → **Record
+  refund**. The **Amount** starts at what is left to refund; change it for
+  a partial refund. Press **Record refund of $x…**, answer "Why is it
+  being refunded?" and press **Refund $x**.
+- Success looks like: "Refund of $x recorded"; the sale reads Partly
+  refunded or Refunded and lists the refund with its reason. Nothing goes
+  back into stock: if the item came back, restock it (below) (D7).
+- If it fails: "That's more than is left to refund on this sale." The
+  financial reports still count the sale in full until Phase 9 decides
+  how refunds are reported ([R-021](RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)).
+
+### Restock an item that came back
+
+- Before you start: you need **Adjust stock**; for a consigned item also
+  **Manage consignments** (D46). Only a single item (U- number) sold on a
+  sale is restocked; an item sold through a job goes back by reopening the
+  job and voiding the line.
+- Steps: open the sale (or the unit's page, "Sold on S-…") → **Restock…**
+  on the item → choose where it goes back if asked (default: where it was
+  sold) → answer why → **Restock**.
+- Success looks like: "U-000123 is back in stock"; the line reads
+  Restocked and the unit Available again. A consigned item goes back on
+  sale for its consignor and is no longer owed to them; money already paid
+  for it stays paid (the balance may read Overpaid).
+- If it fails: a unit whose bike now belongs to a customer cannot go back
+  into stock (D29); a restock never refunds money: record a refund too if
+  the customer was paid back.
+
 ### Adjust stock or move it between locations
 
 - Before you start: Adjust stock needs the Adjust stock permission;
@@ -315,25 +372,28 @@ Settings → Your profile.
   costs (COGS), Yield, Cult Commons and BICII after Cult Commons also need
   View costs.
 - Success looks like: tiles that link to the jobs behind them.
+- Money counts jobs completed and in-store sales recorded on the day.
+  **Consignment sales** (sales with a consigned item) opens the Sales list;
+  **New consignor liability** (also View costs) opens Consignment.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
-  at 0. Consignment figures show as not tracked until Phase 6.
+  at 0. Refunds and restocks are not taken off yet (Phase 9).
 
 ## Roles and limits
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
-parts from stock, appointments and check-in, Scan, search, and read the
-schedule, appointment types, services and locations. Selling prices are
-visible to all; costs are not.
+parts from stock, appointments and check-in, in-store sales, Scan, search,
+and read the schedule, appointment types, services and locations. Selling
+prices and sale totals are visible to all; costs are not.
 
 | You have | What changes for you |
 |---|---|
-| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types and the Cult Commons rate |
-| View costs | Cost, yield and Cult Commons on jobs, lines, products, units and movements; Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
+| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate and **Record refund** on a sale (D49) |
+| View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
-| Adjust stock | **Adjust stock** on a product |
+| Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite, permissions and deactivation, only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
-| Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; sees consignment money |
+| Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
 | Manage purchasing | Nothing yet on this branch |
 
 Without a permission, its buttons are absent and the figures are not sent
@@ -343,8 +403,9 @@ that." Ask an admin.
 
 Everyone can open Consignment, its consignors and items, and the asking
 prices; who is owed what, payments and agreement photos need Manage
-consignments or View costs (D48). Selling a consigned or shop item in
-store arrives with the Sales screens (Phase 6 step 4).
+consignments or View costs (D48). Anyone may record an in-store sale and
+see its total; its cost, yield and Cult Commons need View costs, and only
+an admin records a refund (D48, D49).
 
 Not available yet: **Purchasing**, **Labels** and **Reports** show
 "Arrives in Phase 7 (Purchasing)", "Phase 8 (QR and labels)" and "Phase 9

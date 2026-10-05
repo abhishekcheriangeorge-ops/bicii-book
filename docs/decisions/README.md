@@ -30,6 +30,6 @@ path because code and migration comments cite it as "ADR-001".
 | [ADR-011](ADR-011-recognition-and-financial-reporting.md) | D3, D30–D34 | D32 owner-confirmed; others accepted | Phase 9 reporting |
 | [ADR-012](ADR-012-shop-time-zone-and-currency.md) | D35 | Accepted | A second shop, time zone or currency |
 | [ADR-013](ADR-013-appointments.md) | D2, D36–D41 | Accepted | Phase 11 customer booking; reschedule or messaging requested |
-| [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) | D4, D5, D7 | Accepted defaults; D4 implemented by Phase 6, D5 and D7 not implemented on this branch | Phases 7 and 10 start |
+| [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) | D4, D5, D7 | Accepted defaults; D4 implemented by Phase 6, D7 implemented for retail refunds by Phase 6 (D49), D5 and online D7 not implemented on this branch | Phases 7 and 10 start |
 | [ADR-015](ADR-015-documentation-stack.md) | D43 DOCS-STACK | Accepted | Toolkit version change; an issue tracker is adopted |
-| [ADR-016](ADR-016-consignment-and-sales.md) | D44–D53 (consignment and in-store sales), the implementation of the owner's D27 change, D4 | Accepted: build defaults, owner to confirm; D53 has an open question | Owner confirms a row; D53 answered; Phase 9 refund reporting (D49) |
+| [ADR-016](ADR-016-consignment-and-sales.md) | D44–D53 (consignment and in-store sales), the implementation of the owner's D27 change, D4 | Accepted: build defaults, owner to confirm; implemented by Phase 6; D53 has an open question | Owner confirms a row; D53 answered; Phase 9 refund reporting (D49) |

@@ -1,9 +1,9 @@
 # Current state
 
-Updated: 2026-10-05, Phase 6 step 3 checkpoint on `feat/p6-consignment`.
+Updated: 2026-10-05, end of Phase 6 (step 4) on `feat/p6-consignment`.
 Evidence checked: local refs and `git worktree list` on 2026-10-05; local
-gates on this branch at ecc90f1 plus the step 3 docs (below); step 2's at
-2c402b2, step 1's at 365bdd7. Earlier rows: GitHub REST pull list and check
+gates on this branch at the step 4 commits (below); step 3's at ecc90f1,
+step 2's at 2c402b2, step 1's at 365bdd7. Earlier rows: GitHub REST pull list and check
 runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
 
 ## Return in two minutes
@@ -11,20 +11,16 @@ runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
 - Current objective: [PLAN](docs/PLAN.md#2-phases) Phase 6, consignment and
-  sales, in four steps on `feat/p6-consignment`. Steps 1 and 2 (the whole
-  Phase 6 database: consignment core, consigned job parts, sales,
-  restocks, refunds, settlements, the ledgers, reporting, read RPCs,
-  search and the seed) and step 3 (the consignment domain module and
-  screens, consigned stock in the job part picker, the Phase 4 touch
-  points and `tests/e2e/consignment.spec.ts`) are built and committed
-  locally.
-- Next action: Phase 6 step 4, the sales screens over
-  [DATA-MODEL §16](docs/DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public)
-  (`saleable_stock`, `record_retail_sale` with a client sale id and D53's
-  warnings, `list_sales`, `sale_lines_detail`, `restock_unit`,
-  `record_sale_refund` for admins only), "Sell" on the consignment item
-  page, `S-` resolution and the `sale` search kind, Today, Sales
-  navigation, journey 4 and the closing Phase 6 docs.
+  sales, is complete on `feat/p6-consignment` (four steps): the whole
+  Phase 6 database (steps 1 and 2), the consignment screens (step 3) and
+  the sales screens, refunds, restocks, Today and navigation wiring,
+  journey 4 and the closing docs (step 4). Everything is committed locally
+  and not pushed.
+- Next action: the orchestrator pushes `feat/p6-consignment` and opens its
+  PR on top of `feat/docs-stack`; then the next phase in the build order
+  (labels, Phase 8). The owner answers D44–D53 (D53's price-floor
+  question) in
+  [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -47,7 +43,8 @@ a separate, label-triggered run. All listed results are success.
 | Consignment core and consigned job parts (Phase 6 step 1: D44, D45, D48, D50–D52) | Database only, `feat/p6-consignment` 13fe3f3, fe6ac53, 365bdd7; no screens yet | Locally on 365bdd7: `npm run db:reset` pass (34 migrations, `34\|20261004003400`), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 86 files / 1225 tests passed; `test:e2e` not run (no screen changed); docs link check 34 files / 506 links / 0 problems | Not deployed |
 | Sales, restocks, refunds, settlements, consignor ledgers, sale reporting, read RPCs, search, Phase 6 seed (Phase 6 step 2: D44, D46–D49) | Database only, `feat/p6-consignment` 2d2ba0c, 2c402b2; no screens yet | Locally at 2c402b2 + docs: `npm run db:reset` pass (37 migrations, latest `20261004003700`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 89 files / 1298 tests passed, `npm run build` pass, `npm run test:e2e` 106 passed (phone and tablet, 9.7 min), docs link check 34 files / 509 links / 0 problems | Not deployed |
 | Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
-| Phase 6 sales screens (step 4), labels, Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Sales screens, refunds, restocks, Today and nav wiring, journey 4 (Phase 6 step 4: D7, D46, D48, D49, D51, D53) | Yes, `feat/p6-consignment` 67b1607, b65484a, 543760f, eccd687 and the closing docs commit: `/sales`, `/sales/[id]`, `RecordSaleSheet` / `SaleablePicker`, `RefundSheet`, `RestockControl`; Sell on the consignment item, unit and product pages; "Sold on S-…" with Restock on the unit page; `S-` in `/q` and the `sale` search kind; Sales in More; Today's consignment tiles linked | Locally: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 92 files / 1364 tests passed, `npm run build` pass (inside `test:e2e`), `npm run test:e2e` 118 passed on phone and tablet (13.3 min; an earlier run had 2 failures, the Today past-day note's old wording in `today.spec.ts`, fixed in eccd687), docs link check 34 files / 528 links / 0 problems | Not deployed |
+| Labels, Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -57,10 +54,12 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   (#2) ← … ← `feat/p2-appointments` (#7) ← `feat/docs-stack`. #1–#7 are open
   drafts, pushed and equal to origin.
 - `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
-- `feat/p6-consignment`: stacked on `feat/docs-stack`; local only, not
-  pushed (34783d6 decisions D44–D53, step 1's commits, step 2's 2d2ba0c and
-  2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and its docs commit with
-  this checkpoint). The orchestrator pushes.
+- `feat/p6-consignment`: stacked on `feat/docs-stack`; committed locally,
+  not pushed (34783d6 decisions D44–D53, step 1's commits, step 2's
+  2d2ba0c and 2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and d8ba313,
+  step 4's 67b1607, b65484a, 543760f, eccd687 and the closing docs commit
+  with this update). The orchestrator pushes it and opens its PR on top of
+  `feat/docs-stack`.
 - Parallel track: a second worktree of this clone (`bicii-book-wt`, see
   `git worktree list`) with its own database builds purchasing and email
   OTP. `feat/p7-purchasing` is local
@@ -78,5 +77,11 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-003](docs/RISKS.md#r-003--the-devstack-differs-from-hosted-supabase).
   Next in play: the PR stack integration
   ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
-- Decisions needed: [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions).
+- Decisions needed: [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions);
+  Phase 6 adds rows 9 (confirm D44–D53), 10 (D53: should a price below the
+  agreed amount plus shop charges need manage_consignments?,
+  [R-024](docs/RISKS.md#r-024--a-consigned-item-can-be-sold-below-what-the-consignor-is-owed)),
+  11 (agreement photos, R-022) and 12 (refund netting and Cult Commons
+  claw-back, decided by Phase 9's refund-reporting row, D49,
+  [R-021](docs/RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)).
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).

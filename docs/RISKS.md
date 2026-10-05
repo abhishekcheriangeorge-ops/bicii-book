@@ -501,7 +501,11 @@ URLs, or customer data in this file.
   includes it (passed in `npm test` on 2026-10-05).
 - Workaround or containment: refunds and restocks show on the sale, in
   `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
-  ledger; refunds are admin-only and capped at the sale total (D49).
+  ledger; refunds are admin-only and capped at the sale total (D49). Since
+  Phase 6 step 4 the sale page's Yield card says "Refunds and restocks do
+  not change these figures yet", the Sales list marks Partly refunded /
+  Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
+  refund on the sale and in the list.
 - Next action: Phase 9 decides the refund-reporting row (DR5) for retail
   and online refunds together.
 - Revisit trigger: the first real refund, or Phase 9's reports.
@@ -555,9 +559,41 @@ URLs, or customer data in this file.
   that a shop charge raises the part's cost is proven by
   `tests/db/consignment-job-parts.test.ts` "a shop charge raises the
   part's cost (D4) …".
-- Workaround or containment: read the consignment item's Money card.
+- Workaround or containment: read the consignment item's Money card. The
+  sale sheet's "Below cost" warning and preview (Phase 6 step 4) also use
+  agreed amount plus shop-paid charges (`searchSaleable` reads
+  `consignor_statement`), so only the unit page's Phase 4 card is affected.
 - Next action: a later migration adds shop-paid charges to
   `inventory_unit_costs` for consigned units (same columns).
 - Revisit trigger: the next migration touching `inventory_unit_costs`, or
   Phase 9's reports.
+- Last checked: 2026-10-05.
+
+## R-024 — A consigned item can be sold below what the consignor is owed
+
+- Category: unverified assumption (owner question).
+- Status and owner: open; owner (D53's open question), build agent for
+  any change.
+- Trigger: any staff member lowers a consigned line's price in the sale
+  sheet (D53 lets any active staff member override a price, with no
+  database floor).
+- Impact: a consigned item sold under its agreed amount plus shop-paid
+  charges makes a loss for the shop: the consignor is still owed the
+  agreed amount (D46), the line's yield is negative and its Cult Commons
+  share is 0 (D1). Nothing is wrong in the ledger; the shop simply loses
+  money on the sale.
+- Evidence and confidence: high; `private.sell_line` in
+  `supabase/migrations/20261004003500_sales.sql` takes any price of 0 or
+  more; the sheet only warns ("Below the asking price" for everyone,
+  "Below cost: this sale loses money" for View costs), proven by
+  `tests/unit/sales.test.ts` (`priceWarnings`) and
+  `tests/e2e/sales.spec.ts` (both warnings on a unique unit priced under
+  its cost; only the first for a member without cost access).
+- Workaround or containment: the warnings; the sale page shows the loss to
+  View costs holders; a loss line contributes no Cult Commons.
+- Next action: the owner answers D53's question (should a price below the
+  agreed amount plus shop charges need `manage_consignments`?); if yes, a
+  migration adds the check to `private.sell_line` with a new P0001 code.
+- Revisit trigger: the owner's answer, or the first consigned sale at a
+  loss.
 - Last checked: 2026-10-05.

@@ -348,6 +348,21 @@ are described in one place:
   times in order, day order, reason 1–200), `deleteClosureSchema` and
   `appointmentTypeSchema` (5–480 minutes in steps of 5, units, names).
 
+- Phase 6 step 4 (sales screens): `sales.test.ts` (unit) runs `previewSale`
+  over the shared Cult Commons fixture table ("Cult Commons formula
+  reference implementation agrees with the fixture table") and the cases
+  1000/500 → 500/150, 140/70 → 21.00, 70/35 → 10.50, 1000/620 → 380/114
+  and a loss → 0.00 share, per-line summing and 0 as a known price and
+  cost (D1, D24); `priceWarnings` (D53: below asking for everyone, below
+  cost only with a cost, 0 read as a price); the status words; `saleRange`
+  around Singapore midnight and the 7- and 30-day spans; `readSaleRange`;
+  `refundableAmount` (D49); and the `saleSchema`, `restockSchema` and
+  `refundSchema` inputs. `ids.test.ts`, `search.test.ts` and
+  `reports.test.ts` cover `S-` → `/sales/[id]` and the sale search group;
+  `reports.test.ts` reads Today's consignment figures as numbers (a
+  missing value is 0); `auth-helpers.test.ts` lists Sales after
+  Consignment in More.
+
 - Phase 6 step 3 (consignment screens): `consignment.test.ts` mirrors D48
   and D49 (`canViewConsignmentMoney`, `canViewSaleCosts`, `canRecordRefund`
   for an admin, inactive staff, each single permission and a
@@ -798,6 +813,37 @@ the picker's "New consignor" row, sees "3 of 3 left", returns 1 with a
 reason → "2 of 3 left" and "1 returned to consignor" with the reason in
 the Timeline.
 
+Phase 6 step 4 (phone and tablet, every created record tagged, stock
+asserted relative to a reading taken first):
+`consignment-journey.spec.ts` is journey 4 below without the label step
+(labels are Phase 8): an admin creates "Consignor <tag>", receives
+"Colnago Master <tag>" (owed 500, asking 1000; `C-`, `U-` link, "For
+sale"), uploads a listing photo and makes it Public while the agreement
+photo offers no Public (D52), makes the product internal and publishes
+it, and "What the public sees" shows it Available at $1,000.00 with no
+"$500.00" (D45); Sell on the item page prefills 1000.00 and records
+"S-…"; the sale page shows $1,000.00, Direct cost (incl. consignor payout)
+$500.00, Yield $500.00, Cult Commons (30% of positive yield) $150.00 and
+BICII after Cult Commons $350.00 with "owed $500.00, paid separately"; the
+public preview then reads Sold (D26); the consignor shows Outstanding
+$500.00 with the item under Awaiting payment; mechanic2 sees $1,000.00 but
+no "Yield", "Cult Commons", "Direct cost" or "$500.00" on the sale, and no
+"Outstanding", "Owed", "$500.00", Record payment or Show payout details on
+the consignor (D48); $200.00 ("PayNow <tag>") leaves $300.00 and $300.00
+settles it ("Settled", D47); Today's "Consignment sales" tile is at least
+$1,000.00 and `/sales?range=today` lists the sale. `sales.spec.ts`: an
+admin sells one "Dry chain lube 120ml" through New sale and the picker
+(price 16.00, a Preview with the $9.00 yield) → the product has one less
+in stock; a $5.00 partial refund with a reason marks it Partly refunded
+on the sale and in the list and leaves the stock unchanged (D7, D49); a
+tagged unique "Frameset <tag>" made in New product is sold from its unit
+page (450 warns "Below the asking price" and "Below cost: this sale loses
+money", D53), the unit reads "Sold on S-…", and Restock… with a reason
+from the sale line → "Restocked" and the unit Available again (D46);
+mechanic2 sells one "DSP 3.2mm bar tape" (only "Below the asking price"
+warns; no Preview, cost, yield or Cult Commons in the sheet or on the
+sale, no "$26.00", no Record refund) and the stock drops by one.
+
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
 
@@ -814,7 +860,8 @@ database, signed in as the seeded admin and mechanic:
 4. Consignment: create consignor + unique bike → label → public page (hitting
    `public_items` through the app's preview route) → record sale → yield and
    CC shown to admin, hidden from mechanic → consignor outstanding → partial
-   settlement → full settlement → outstanding 0.
+   settlement → full settlement → outstanding 0 (`consignment-journey.spec.ts`
+   since Phase 6 step 4, without the label step until Phase 8).
 5. Shopify: publish product → simulate `orders/paid` POST to the webhook route
    with a valid HMAC → stock −1 once; POST the same payload again → unchanged.
 6. (Later, in the public-site repo) customer sign-in sees only own data.
