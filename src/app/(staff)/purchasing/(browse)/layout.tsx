@@ -1,4 +1,6 @@
 import { PurchasingNav } from "@/components/domain/purchasing/purchasing-nav";
+import { requireStaff } from "@/lib/auth/session";
+import { canManagePurchasing } from "@/lib/purchasing";
 
 /**
  * Purchasing's browsing screens (orders, suppliers) share the section nav
@@ -8,10 +10,11 @@ import { PurchasingNav } from "@/components/domain/purchasing/purchasing-nav";
  * real 403 (DESIGN.md "Loading": a loading boundary above forbidden()
  * commits a 200).
  */
-export default function PurchasingBrowseLayout({ children }: LayoutProps<"/purchasing">) {
+export default async function PurchasingBrowseLayout({ children }: LayoutProps<"/purchasing">) {
+  const staff = await requireStaff();
   return (
     <>
-      <PurchasingNav />
+      <PurchasingNav canReorder={canManagePurchasing(staff)} />
       {children}
     </>
   );

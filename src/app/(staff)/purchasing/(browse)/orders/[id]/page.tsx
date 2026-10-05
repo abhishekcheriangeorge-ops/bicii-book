@@ -16,6 +16,7 @@ import { PurchaseOrderStatusPill } from "@/components/domain/purchasing/purchase
 import { QuantityProgress } from "@/components/domain/purchasing/quantity-progress";
 import { ShortIdLink } from "@/components/domain/short-id";
 import { Badge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime } from "@/lib/dates";
@@ -101,11 +102,14 @@ export default async function PurchaseOrderPage({ params }: PageProps<"/purchasi
                 disabled={po.lines.length === 0}
               />
             ) : null}
-            {/*
-              STEP 4 (receiving): the "Receive" button goes here, shown when
-              po.flags.canReceive (manage_purchasing, submitted or partially
-              received), linking to the receive screen for this order.
-            */}
+            {po.flags.canReceive ? (
+              <ButtonLink href={`/purchasing/receive/${po.id}`}>Receive</ButtonLink>
+            ) : null}
+            {po.flags.canSubmit ? (
+              <p className="w-full text-sm text-dust-500 sm:order-last sm:text-right">
+                Submit the order before receiving
+              </p>
+            ) : null}
             {po.flags.canEdit ? (
               <EditPurchaseOrderButton
                 order={{

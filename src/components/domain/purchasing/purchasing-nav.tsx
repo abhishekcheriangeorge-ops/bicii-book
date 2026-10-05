@@ -7,9 +7,9 @@ import { cn } from "@/lib/cn";
 
 /**
  * The Purchasing section's own links (in (browse)/layout.tsx): Orders and
- * Suppliers, aria-current on the active one, 44px targets, scrolling
- * sideways on a narrow phone with the inset focus ring. Step 4 adds
- * Reorder here together with its page.
+ * Suppliers, plus Reorder (/purchasing/reorder, D66) for manage_purchasing
+ * holders (`canReorder`), aria-current on the active one, 44px targets,
+ * scrolling sideways on a narrow phone with the inset focus ring.
  */
 const LINKS = [
   {
@@ -22,14 +22,20 @@ const LINKS = [
     label: "Suppliers",
     active: (p: string) => p.startsWith("/purchasing/suppliers"),
   },
+  {
+    href: "/purchasing/reorder",
+    label: "Reorder",
+    active: (p: string) => p.startsWith("/purchasing/reorder"),
+    manageOnly: true,
+  },
 ] as const;
 
-export function PurchasingNav() {
+export function PurchasingNav({ canReorder = false }: { canReorder?: boolean }) {
   const pathname = usePathname() ?? "";
   return (
     <nav aria-label="Purchasing" className="max-w-full pt-4">
       <ul className="inline-flex max-w-full [scrollbar-width:none] gap-1 overflow-x-auto rounded-full border-2 border-ink bg-card p-1">
-        {LINKS.map((l) => {
+        {LINKS.filter((l) => !("manageOnly" in l) || canReorder).map((l) => {
           const current = l.active(pathname);
           return (
             <li key={l.href} className="shrink-0">
