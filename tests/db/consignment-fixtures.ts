@@ -15,8 +15,14 @@
  *   * staffWith creates a staff member holding exactly the given permissions
  *     (owner inserts), for tests of one permission at a time.
  *
- * Intake consumes the C, P and U short-ID sequences, so tests that use these
- * skip in existing-database mode (isolatedDatabase()).
+ *   * Step 2 (sales and settlements): recordSale, restock, refund, settle and
+ *     reverse call the public RPCs as whoever `tx` is; saleLines,
+ *     itemLedger and consignorLedger read as the owner (costs, payouts and
+ *     the ledger views have no API grant).
+ *
+ * Intake consumes the C, P and U short-ID sequences and a sale the S
+ * sequence, so tests that use these skip in existing-database mode
+ * (isolatedDatabase()).
  */
 import { randomUUID } from "node:crypto";
 
@@ -380,4 +386,261 @@ export async function staffWith(
     ]);
   }
   return { claims: staffClaims(authUserId), staffId: rows[0].id };
+}
+
+// ---------------------------------------------------------------------------
+// Sales, restocks and refunds (Phase 6 step 2)
+// ---------------------------------------------------------------------------
+
+/** A sale line as record_retail_sale takes it (D45: a quantity line may name its item). */
+export type SaleLineInput =
+  | { inventory_unit_id: string; unit_sale_price?: string | number | null }
+  | {
+      product_id: string;
+      location_id?: string;
+      quantity: number | string;
+      consignment_item_id?: string | null;
+      unit_sale_price?: string | number | null;
+    };
+
+export type SaleResult = {
+  sale_id: string;
+  sale_number: string;
+  status: string;
+  recognized_at: Date;
+  replayed: boolean;
+};
+
+/** public.record_retail_sale as whoever `tx` is (a fresh sale id unless given). */
+export async function recordSale(
+  tx: pg.Client,
+  a: {
+    saleId?: string;
+    lines: SaleLineInput[] | unknown;
+    customerId?: string | null;
+    recognizedAt?: string | Date | null;
+    notes?: string | null;
+  },
+): Promise<SaleResult> {
+  const lines = Array.isArray(a.lines)
+    ? a.lines.map((l) =>
+        "product_id" in (l as object) && !("location_id" in (l as object))
+          ? { ...(l as object), location_id: LOCATION.shopFloor }
+          : l,
+      )
+    : a.lines;
+  const { rows } = await tx.query<SaleResult>(
+    `select (r).sale_id, (r).sale_number, (r).status::text, (r).recognized_at, (r).replayed
+       from (select public.record_retail_sale($1, $2::jsonb, $3, $4, $5) r) s`,
+    [
+      a.saleId ?? randomUUID(),
+      lines === null ? null : JSON.stringify(lines),
+      a.customerId ?? null,
+      a.recognizedAt ?? null,
+      a.notes ?? null,
+    ],
+  );
+  return rows[0];
+}
+
+export type SaleLineRow = {
+  id: string;
+  sale_id: string;
+  line_number: number;
+  product_id: string;
+  inventory_unit_id: string | null;
+  consignment_item_id: string | null;
+  description_snapshot: string;
+  quantity: string;
+  unit_sale_price_snapshot: string;
+  unit_direct_cost_snapshot: string;
+  consignor_payout_snapshot: string | null;
+  cult_commons_rate_snapshot: string;
+  sale_total: string;
+  cost_total: string;
+  yield_total: string;
+  cult_commons_share: string;
+  shopify_line_item_id: string | null;
+  restocked_at: Date | null;
+  restocked_by: string | null;
+};
+
+/** A sale's lines in line order, every column (read as the owner). */
+export async function saleLines(tx: pg.Client, saleId: string): Promise<SaleLineRow[]> {
+  const { rows } = await readAsOwner(tx, () =>
+    tx.query<SaleLineRow>(
+      `select id, sale_id, line_number, product_id, inventory_unit_id, consignment_item_id,
+              description_snapshot, quantity::text, unit_sale_price_snapshot::text,
+              unit_direct_cost_snapshot::text, consignor_payout_snapshot::text,
+              cult_commons_rate_snapshot::text, sale_total::text, cost_total::text, yield_total::text,
+              cult_commons_share::text, shopify_line_item_id, restocked_at, restocked_by
+         from public.sale_lines where sale_id = $1 order by line_number`,
+      [saleId],
+    ),
+  );
+  return rows;
+}
+
+/** public.restock_unit as whoever `tx` is. */
+export async function restock(
+  tx: pg.Client,
+  a: { unitId: string; saleLineId: string; locationId?: string | null; reason?: string | null },
+): Promise<{ unit_id: string; status: string }> {
+  const { rows } = await tx.query<{ unit_id: string; status: string }>(
+    "select (r).unit_id, (r).status::text from (select public.restock_unit($1, $2, $3, $4) r) s",
+    [
+      a.unitId,
+      a.saleLineId,
+      a.locationId ?? null,
+      a.reason === undefined ? "Customer changed their mind" : a.reason,
+    ],
+  );
+  return rows[0];
+}
+
+export type RefundRow = {
+  id: string;
+  sale_id: string;
+  amount: string;
+  reason: string;
+  restocked: boolean;
+  recorded_by: string | null;
+};
+
+/** public.record_sale_refund as whoever `tx` is (a fresh refund id unless given). */
+export async function refund(
+  tx: pg.Client,
+  a: { refundId?: string; saleId: string; amount: string | number; reason?: string | null },
+): Promise<RefundRow> {
+  const { rows } = await tx.query<RefundRow>(
+    `select (r).id, (r).sale_id, (r).amount::text, (r).reason, (r).restocked, (r).recorded_by
+       from (select public.record_sale_refund($1, $2, $3, $4) r) s`,
+    [
+      a.refundId ?? randomUUID(),
+      a.saleId,
+      a.amount,
+      a.reason === undefined ? "Customer returned it" : a.reason,
+    ],
+  );
+  return rows[0];
+}
+
+// ---------------------------------------------------------------------------
+// Settlements and the ledgers (Phase 6 step 2)
+// ---------------------------------------------------------------------------
+
+export type Allocation = {
+  consignment_item_id: string;
+  amount: string | number;
+  override_reason?: string | null;
+};
+
+export type SettlementResult = {
+  settlement_id: string;
+  consignor_id: string;
+  amount: string;
+  paid_at: Date;
+  replayed: boolean;
+};
+
+/** public.record_settlement as whoever `tx` is (a fresh settlement id unless given). */
+export async function settle(
+  tx: pg.Client,
+  a: {
+    settlementId?: string;
+    consignorId: string;
+    amount: string | number;
+    allocations: Allocation[] | unknown;
+    paidAt?: string | Date | null;
+    reference?: string | null;
+    notes?: string | null;
+  },
+): Promise<SettlementResult> {
+  const { rows } = await tx.query<SettlementResult>(
+    `select (r).settlement_id, (r).consignor_id, (r).amount::text, (r).paid_at, (r).replayed
+       from (select public.record_settlement($1, $2, $3, $4::jsonb, $5, $6, $7) r) s`,
+    [
+      a.settlementId ?? randomUUID(),
+      a.consignorId,
+      a.amount,
+      a.allocations === null ? null : JSON.stringify(a.allocations),
+      a.paidAt ?? null,
+      a.reference ?? null,
+      a.notes ?? null,
+    ],
+  );
+  return rows[0];
+}
+
+/** public.reverse_settlement as whoever `tx` is (a fresh reversal id unless given). */
+export async function reverseSettlement(
+  tx: pg.Client,
+  a: { reversalId?: string; settlementId: string; reason?: string | null },
+): Promise<{ id: string; settlement_id: string; reason: string }> {
+  const { rows } = await tx.query<{ id: string; settlement_id: string; reason: string }>(
+    `select (r).id, (r).settlement_id, (r).reason
+       from (select public.reverse_settlement($1, $2, $3) r) s`,
+    [
+      a.reversalId ?? randomUUID(),
+      a.settlementId,
+      a.reason === undefined ? "Entered twice" : a.reason,
+    ],
+  );
+  return rows[0];
+}
+
+export type ItemLedger = Position & {
+  short_id: string;
+  status: string;
+  owed: string;
+  paid: string;
+  outstanding: string;
+  last_settlement_at: Date | null;
+};
+
+/** The item's row of reporting.consignor_item_ledger (read as the owner). */
+export async function itemLedger(tx: pg.Client, itemId: string): Promise<ItemLedger> {
+  const { rows } = await readAsOwner(tx, () =>
+    tx.query<ItemLedger>(
+      `select quantity, sold_qty, restocked_qty, job_held_qty, job_sold_qty, returned_qty, remaining_qty,
+              owed_qty, liability::text, consignor_charges::text, shop_charges::text, last_sale_at,
+              last_returned_at, short_id, status::text, owed::text, paid::text, outstanding::text,
+              last_settlement_at
+         from reporting.consignor_item_ledger where consignment_item_id = $1`,
+      [itemId],
+    ),
+  );
+  return rows[0];
+}
+
+export type ConsignorLedger = {
+  items_total: number;
+  active_items: number;
+  awaiting_settlement_items: number;
+  returned_items: number;
+  liability: string;
+  consignor_charges: string;
+  owed: string;
+  paid: string;
+  outstanding: string;
+};
+
+/** The consignor's row of reporting.consignor_ledger (read as the owner), money fixed-2. */
+export async function consignorLedger(
+  tx: pg.Client,
+  consignorId: string,
+): Promise<ConsignorLedger> {
+  const { rows } = await readAsOwner(tx, () =>
+    tx.query<ConsignorLedger>(
+      `select items_total, active_items, awaiting_settlement_items, returned_items,
+              to_char(liability, 'FM9999999990.00') as liability,
+              to_char(consignor_charges, 'FM9999999990.00') as consignor_charges,
+              to_char(owed, 'FM9999999990.00') as owed,
+              to_char(paid, 'FM9999999990.00') as paid,
+              to_char(outstanding, 'FM9999999990.00') as outstanding
+         from reporting.consignor_ledger where consignor_id = $1`,
+      [consignorId],
+    ),
+  );
+  return rows[0];
 }

@@ -18,6 +18,10 @@
  *     private.lock_stock(product) before reading the unit or the stock.
  *   * Two completions serialise on the job row (1); the liability is derived
  *     from the live lines, so it exists once.
+ *   * Step 2: a replayed sale or settlement waits on its own header insert
+ *     (0); sales take the stock lock (3) before units (5) and items (6), so
+ *     a sale, a part and a return of one unit serialise; a settlement locks
+ *     its items (6) and reads the outstanding after the lock.
  *
  * Commits, so the whole file runs only on a per-file clone (no cleanup).
  */
@@ -32,9 +36,12 @@ import {
   intakeQuantity,
   intakeUnique,
   itemEvents,
+  itemLedger,
   itemPosition,
   itemStatus,
+  recordSale,
   returnItem,
+  settle,
   type ItemResult,
 } from "./consignment-fixtures";
 import { actAs, connect, isolatedDatabase, openConnections, scalar, type Claims } from "./harness";
@@ -45,6 +52,7 @@ import {
   addStock,
   committed,
   makeProduct,
+  makeUniqueWithUnit,
   onHand,
   unit,
 } from "./inventory-fixtures";
@@ -297,5 +305,158 @@ describe.skipIf(!isolatedDatabase())("consignment under concurrency", () => {
     // The part saw the adjustment it waited for.
     expect(add.ok && add.value.on_hand_after).toBe(6);
     expect(await onHand(setup, productId)).toBe(6);
+  });
+
+  it("A unique inventory unit cannot be sold twice, concurrently: two sales of one unit, one wins (unit_already_sold), one movement", async () => {
+    const { productId, unitId } = await must(
+      committed(setup, (tx) => makeUniqueWithUnit(tx, { cost: "300.00" })),
+    );
+    const sell = (tx: pg.Client) => recordSale(tx, { lines: [{ inventory_unit_id: unitId }] });
+    const [first, second] = await race(sell, sell);
+    expect(first.ok).toBe(true);
+    failedWith(second, "unit_already_sold");
+    expect(await count("public.sale_lines where inventory_unit_id = $1", [unitId])).toBe(1);
+    expect(
+      await count(
+        "public.inventory_movements where product_id = $1 and movement_type = 'retail_sale'",
+        [productId],
+      ),
+    ).toBe(1);
+    expect((await unit(setup, unitId)).status).toBe("sold");
+  });
+
+  it("two sales of the last quantity unit: one insufficient_stock, on hand 0", async () => {
+    const productId = await makeProduct(setup);
+    await must(committed(setup, (tx) => addStock(tx, productId, 1)));
+    const sell = (tx: pg.Client) =>
+      recordSale(tx, { lines: [{ product_id: productId, quantity: 1 }] });
+    const [first, second] = await race(sell, sell);
+    expect(first.ok).toBe(true);
+    failedWith(second, "insufficient_stock");
+    expect(await onHand(setup, productId)).toBe(0);
+  });
+
+  it("a replayed sale on two connections: one sale, one line, one movement; the second answers replayed", async () => {
+    const productId = await makeProduct(setup);
+    await must(committed(setup, (tx) => addStock(tx, productId, 5)));
+    const saleId = randomUUID();
+    const sell = (tx: pg.Client) =>
+      recordSale(tx, {
+        saleId,
+        lines: [{ product_id: productId, quantity: 2, unit_sale_price: "15" }],
+      });
+    const [first, second] = await race(sell, sell);
+    expect(first.ok && second.ok).toBe(true);
+    expect(second.ok && second.value).toEqual(first.ok && { ...first.value, replayed: true });
+    expect(await count("public.sales where id = $1", [saleId])).toBe(1);
+    expect(await count("public.sale_lines where sale_id = $1", [saleId])).toBe(1);
+    expect(await onHand(setup, productId)).toBe(3);
+  });
+
+  it("a sale racing a return of the same consigned unit: exactly one succeeds, either way round", async () => {
+    {
+      const item = await consignedUnit();
+      const [sale, ret] = await race(
+        (tx) => recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+        (tx) => returnItem(tx, { itemId: item.item_id }),
+      );
+      expect(sale.ok).toBe(true);
+      // The return waited for the sale, then found the item sold.
+      failedWith(ret, "consignment_item_not_active");
+      expect(await itemStatus(setup, item.item_id)).toBe("sold");
+      expect((await itemLedger(setup, item.item_id)).liability).toBe("500.00");
+    }
+    {
+      const item = await consignedUnit();
+      const [ret, sale] = await race(
+        (tx) => returnItem(tx, { itemId: item.item_id }),
+        (tx) => recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      );
+      expect(ret.ok).toBe(true);
+      expect(sale.ok).toBe(false);
+      expect(!sale.ok && sale.error).toMatchObject({ code: "P0001" });
+      expect(await itemStatus(setup, item.item_id)).toBe("returned");
+      expect(await count("public.sale_lines where consignment_item_id = $1", [item.item_id])).toBe(
+        0,
+      );
+      expect(await onHand(setup, item.product_id)).toBe(0);
+    }
+  });
+
+  it("a sale racing add_inventory_line of the same consigned unit: exactly one succeeds", async () => {
+    const item = await consignedUnit();
+    const jobId = await job();
+    const [sale, add] = await race(
+      (tx) => recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      (tx) =>
+        addPart(tx, {
+          workOrderId: jobId,
+          productId: item.product_id,
+          unitId: item.inventory_unit_id,
+        }),
+    );
+    expect(sale.ok).toBe(true);
+    expect(add.ok).toBe(false);
+    expect(!add.ok && add.error).toMatchObject({ code: "P0001" });
+    expect(
+      await count("public.work_order_line_items where consignment_item_id = $1", [item.item_id]),
+    ).toBe(0);
+    expect(await count("public.sale_lines where consignment_item_id = $1", [item.item_id])).toBe(1);
+    expect(await onHand(setup, item.product_id)).toBe(0);
+  });
+
+  it("Settlement allocations cannot exceed the amount owed, concurrently: two 300.00 payments against 500.00, the second is settlement_exceeds_outstanding", async () => {
+    const item = await consignedUnit();
+    await must(
+      committed(setup, (tx) =>
+        recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      ),
+    );
+    const consignorId = await scalar<string>(
+      setup,
+      "select consignor_id from public.consignment_items where id = $1",
+      [item.item_id],
+    );
+    const pay = (tx: pg.Client) =>
+      settle(tx, {
+        consignorId,
+        amount: "300.00",
+        allocations: [{ consignment_item_id: item.item_id, amount: "300.00" }],
+      });
+    const [first, second] = await race(pay, pay);
+    expect(first.ok).toBe(true);
+    failedWith(second, "settlement_exceeds_outstanding");
+    expect(await itemLedger(setup, item.item_id)).toMatchObject({
+      paid: "300.00",
+      outstanding: "200.00",
+    });
+  });
+
+  it("a replayed settlement id on two connections: one settlement, one allocation", async () => {
+    const item = await consignedUnit();
+    await must(
+      committed(setup, (tx) =>
+        recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] }),
+      ),
+    );
+    const consignorId = await scalar<string>(
+      setup,
+      "select consignor_id from public.consignment_items where id = $1",
+      [item.item_id],
+    );
+    const settlementId = randomUUID();
+    const pay = (tx: pg.Client) =>
+      settle(tx, {
+        settlementId,
+        consignorId,
+        amount: "500.00",
+        allocations: [{ consignment_item_id: item.item_id, amount: "500.00" }],
+      });
+    const [first, second] = await race(pay, pay);
+    expect(first.ok && second.ok).toBe(true);
+    expect(second.ok && second.value).toEqual(first.ok && { ...first.value, replayed: true });
+    expect(await count("public.consignment_settlements where id = $1", [settlementId])).toBe(1);
+    expect(await count("public.settlement_lines where settlement_id = $1", [settlementId])).toBe(1);
+    expect((await itemLedger(setup, item.item_id)).outstanding).toBe("0.00");
   });
 });

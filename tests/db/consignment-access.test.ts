@@ -5,7 +5,9 @@
  * none of it; staff read consignors and items without payout details, agreed
  * amounts or fingerprints; charges and item history need consignment money
  * access (manage_consignments or view_costs); view_financial_reports alone
- * reveals neither money nor sale costs.
+ * reveals neither money nor sale costs. Step 2 adds sales (headers, lines
+ * and refunds to every staff member, the cost columns to nobody through the
+ * tables) and settlements (row-gated by consignment money access).
  *
  * Tests create items (short-ID sequences), so the file runs only on a
  * per-file clone.
@@ -21,6 +23,10 @@ import {
   createConsignor,
   intakeQuantity,
   intakeUnique,
+  recordSale,
+  refund,
+  reverseSettlement,
+  settle,
   staffWith,
 } from "./consignment-fixtures";
 import { customerClaims, linkCustomerLogin } from "./customer-fixtures";
@@ -217,6 +223,142 @@ describe.skipIf(!isolatedDatabase())("staff access to consignment money (D48, D3
       await failsWith(tx, () => tx.query("select payout_details from public.consignors"), {
         code: "42501",
       });
+      await actAs(tx, ADMIN);
+      await assertLedgerConsistent(tx);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sales and settlements (Phase 6 step 2, D48)
+// ---------------------------------------------------------------------------
+
+const SALE_TABLES = ["public.sales", "public.sale_lines", "public.sale_refunds"];
+const SETTLEMENT_TABLES = [
+  "public.consignment_settlements",
+  "public.settlement_lines",
+  "public.consignment_settlement_reversals",
+];
+
+/** Every Phase 6 step 2 write RPC, called with harmless arguments. */
+const SALE_RPC_CALLS: [string, unknown[]][] = [
+  ["select public.record_retail_sale($1, '[]'::jsonb)", [randomUUID()]],
+  ["select public.restock_unit($1, $2, null, 'x')", [randomUUID(), randomUUID()]],
+  ["select public.record_sale_refund($1, $2, 1, 'x')", [randomUUID(), randomUUID()]],
+  ["select public.record_settlement($1, $2, 1, '[]'::jsonb)", [randomUUID(), randomUUID()]],
+  ["select public.reverse_settlement($1, $2, 'x')", [randomUUID(), randomUUID()]],
+];
+
+/** A consigned unit sold to a walk-in, a refund, a reversed settlement and a live one. */
+async function salesScenario(tx: pg.Client) {
+  const consignorId = await createConsignor(tx);
+  const item = await intakeUnique(tx, { consignorId, agreed: "500.00", asking: "1000.00" });
+  const sale = await recordSale(tx, { lines: [{ inventory_unit_id: item.inventory_unit_id! }] });
+  await refund(tx, { saleId: sale.sale_id, amount: "50.00" });
+  const allocations = [{ consignment_item_id: item.item_id, amount: "100.00" }];
+  const first = await settle(tx, { consignorId, amount: "100.00", allocations });
+  await reverseSettlement(tx, { settlementId: first.settlement_id });
+  const second = await settle(tx, { consignorId, amount: "100.00", allocations });
+  return { consignorId, item, sale, settlementIds: [first.settlement_id, second.settlement_id] };
+}
+
+describe.skipIf(!isolatedDatabase())("who reads sales and settlements (D48)", () => {
+  it("a signed-in customer reads none of them and is refused every write RPC; anonymous visitors hold no privilege", async () => {
+    await inTx(async (tx) => {
+      await salesScenario(tx);
+      await ownerMode(tx);
+      const login = await linkCustomerLogin(tx, await makeCustomer(tx));
+      await actAs(tx, customerClaims(login));
+      for (const table of [...SALE_TABLES, ...SETTLEMENT_TABLES]) {
+        expect(await count(tx, table), table).toBe(0);
+      }
+      for (const [sql, params] of SALE_RPC_CALLS) {
+        await failsWith(tx, () => tx.query(sql, params), { code: "42501" });
+      }
+      await actAs(tx, { role: "anon" });
+      for (const table of [...SALE_TABLES, ...SETTLEMENT_TABLES]) {
+        await failsWith(tx, () => tx.query(`select 1 from ${table} limit 1`), { code: "42501" });
+      }
+      for (const [sql, params] of SALE_RPC_CALLS) {
+        await failsWith(tx, () => tx.query(sql, params), { code: "42501" });
+      }
+      await actAs(tx, ADMIN);
+      await assertLedgerConsistent(tx);
+    });
+  });
+
+  it("every staff member reads sale headers, lines and refunds; settlements need manage_consignments or view_costs; view_financial_reports alone reveals no settlement", async () => {
+    await inTx(async (tx) => {
+      const s = await salesScenario(tx);
+      await ownerMode(tx);
+      const manager = await staffWith(tx, ["manage_consignments"]);
+      const reports = await staffWith(tx, ["view_financial_reports"]);
+      const cases: [string, Claims, boolean][] = [
+        ["mechanic2 (no permissions)", MECHANIC2, false],
+        ["view_financial_reports only", reports.claims, false],
+        ["mechanic1 (view_costs)", MECHANIC1, true],
+        ["manage_consignments only", manager.claims, true],
+        ["admin", ADMIN, true],
+      ];
+      for (const [who, claims, money] of cases) {
+        await actAs(tx, claims);
+        const mine = (table: string, column: string, ids: string[]) =>
+          scalar<number>(
+            tx,
+            `select count(id)::int from ${table} where ${column} = any ($1::uuid[])`,
+            [ids],
+          );
+        expect(await mine("public.sales", "id", [s.sale.sale_id]), `${who}: sales`).toBe(1);
+        expect(await mine("public.sale_lines", "sale_id", [s.sale.sale_id]), `${who}: lines`).toBe(
+          1,
+        );
+        expect(
+          await mine("public.sale_refunds", "sale_id", [s.sale.sale_id]),
+          `${who}: refunds`,
+        ).toBe(1);
+        expect(
+          await scalar<string>(
+            tx,
+            "select unit_sale_price_snapshot::text from public.sale_lines where sale_id = $1",
+            [s.sale.sale_id],
+          ),
+          `${who}: price`,
+        ).toBe("1000.00");
+        expect(
+          await mine("public.consignment_settlements", "id", s.settlementIds),
+          `${who}: settlements`,
+        ).toBe(money ? 2 : 0);
+        expect(
+          await mine("public.settlement_lines", "settlement_id", s.settlementIds),
+          `${who}: settlement lines`,
+        ).toBe(money ? 2 : 0);
+        expect(
+          await mine("public.consignment_settlement_reversals", "settlement_id", s.settlementIds),
+          `${who}: reversals`,
+        ).toBe(money ? 1 : 0);
+        // The tables never hand out a cost, payout or fingerprint, whoever asks:
+        // view_costs reads them through the read RPCs.
+        for (const sql of [
+          "select unit_direct_cost_snapshot from public.sale_lines",
+          "select consignor_payout_snapshot from public.sale_lines",
+          "select cost_total from public.sale_lines",
+          "select yield_total from public.sale_lines",
+          "select cult_commons_rate_snapshot from public.sale_lines",
+          "select cult_commons_share from public.sale_lines",
+          "select * from public.sale_lines",
+          "select request_fingerprint from public.sales",
+          "select request_fingerprint from public.consignment_settlements",
+        ]) {
+          await failsWith(tx, () => tx.query(sql), { code: "42501" });
+        }
+        // No direct writes.
+        for (const sql of [
+          "update public.sales set notes = 'x' where id = $1",
+          "delete from public.sale_refunds where sale_id = $1",
+        ]) {
+          await failsWith(tx, () => tx.query(sql, [s.sale.sale_id]), { code: "42501" });
+        }
+      }
       await actAs(tx, ADMIN);
       await assertLedgerConsistent(tx);
     });
