@@ -1,8 +1,9 @@
 # Current state
 
-Updated: 2026-10-06, the staff email sign-in integration with main and
-purchasing on `feat/auth-email-otp`, in the second worktree
-`bicii-book-wt`. Evidence checked: `git fetch origin`, `git branch -a` and
+Updated: 2026-10-06, staff roles step 1 of 4 (the database) on
+`feat/staff-roles` (from `feat/auth-email-otp` at 85077c9), in the second
+worktree `bicii-book-wt`; before that, the staff email sign-in integration
+with main and purchasing on `feat/auth-email-otp`. Evidence checked: `git fetch origin`, `git branch -a` and
 `git worktree list` before the merge; the local gates on this branch
 after the integration (below). Earlier rows keep the evidence of their own
 phase.
@@ -30,9 +31,13 @@ phase.
   [RUNBOOK](docs/RUNBOOK.md#hosted-supabase-projects-staging-and-production)
   ([R-035](docs/RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset),
   [R-039](docs/RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)).
-- Owner decision recorded here: three staff roles (admin, manager,
-  mechanic; 2026-10-06) are decided but not built on this branch (D90–D99,
-  ADR-021); D60 still covers every non-admin holding `manage_purchasing`
+- Staff roles (admin, manager, mechanic; owner decision 2026-10-06):
+  step 1 of 4, the database, is built and committed locally on
+  `feat/staff-roles` (D90–D94,
+  [ADR-021](docs/decisions/ADR-021-staff-roles.md)); next is step 2, the
+  app's permission model, guards, refunds and profile. The screens still
+  show two roles until step 3. D60 now covers only a mechanic holding
+  `manage_purchasing` as an exception
   ([R-034](docs/RISKS.md#r-034--a-manage_purchasing-exception-shows-unit-costs-on-purchasing-screens)).
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
@@ -59,7 +64,8 @@ a separate, label-triggered run. All listed results are success.
 | Sales screens, refunds, restocks, Today and nav wiring, journey 4 (Phase 6 step 4: D7, D46, D48, D49, D51, D53) | Yes, `feat/p6-consignment` 67b1607, b65484a, 543760f, eccd687 and the closing docs commit: `/sales`, `/sales/[id]`, `RecordSaleSheet` / `SaleablePicker`, `RefundSheet`, `RestockControl`; Sell on the consignment item, unit and product pages; "Sold on S-…" with Restock on the unit page; `S-` in `/q` and the `sale` search kind; Sales in More; Today's consignment tiles linked | Locally: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 92 files / 1364 tests passed, `npm run build` pass (inside `test:e2e`), `npm run test:e2e` 118 passed on phone and tablet (13.3 min; an earlier run had 2 failures, the Today past-day note's old wording in `today.spec.ts`, fixed in eccd687), docs link check 34 files / 528 links / 0 problems | Not deployed |
 | Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment` 32f19e6 (the follow-up commit corrects DATA-MODEL's authority and applied state, PLAN's Phase 6 test list and this file's owner-question list) | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems; rerun at the documentation follow-up: `npm run db:reset` pass (`37\|20261004003700`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.6 min, build inside, no failures, flaky or skipped), docs link check 34 files / 545 links / 0 problems | Not deployed |
 | Labels (Phase 8) | On `feat/p8-labels` in the other worktree; not on this branch | Not verified here | Not deployed |
-| Phase 9 reporting, Shopify, public-site integration, staff roles, hardware adapter | No | Not built | Not deployed |
+| Staff roles, step 1: the database (D90–D94: three roles, `private.role_implies`, exceptions, role administration, refunds for managers, seed `manager@bicii.test`) | Database only, `feat/staff-roles` (local, not pushed); screens in steps 2–3 | Locally (database `bicii_dev_wt`): `npm run db:reset` pass (47 migrations, `47\|20261006000300`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 112 files / 1632 tests passed (unit 56 / 689, database 56 / 943), `npm run build` pass, `npm run test:e2e` 152 passed on phone and tablet (14.9 min, no failures, flaky or skipped), docs link check 37 files / 664 links / 0 problems | Not deployed |
+| Phase 9 reporting, Shopify, public-site integration, staff-role screens, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
