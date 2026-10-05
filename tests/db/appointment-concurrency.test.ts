@@ -54,7 +54,7 @@ const addedClosures: string[] = [];
 
 const STAFF_CLAIMS = staffClaims(AUTH_USER.mechanic2);
 
-const pause = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code?: string; message?: string } };
 
@@ -94,9 +94,32 @@ const bookMineSql = (tx: pg.Client, id: string, typeId: string, startsAt: string
     .then((r) => r.rows[0]);
 
 /**
+ * Waits until `c`'s backend is blocked on a lock (pg_stat_activity
+ * wait_event_type 'Lock': advisory and row locks both report it), as
+ * workshop-concurrency.test.ts does. Fails if `settled()` turns true first
+ * (the statement finished without waiting) or after `timeoutMs`.
+ */
+async function untilBlocked(c: pg.Client, settled: () => boolean, timeoutMs = 10_000) {
+  const pid = (c as unknown as { processID: number }).processID;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (settled()) throw new Error("the second transaction finished without waiting on a lock");
+    const waiting = await scalar<number>(
+      setup,
+      `select count(*)::int from pg_stat_activity where pid = $1 and wait_event_type = 'Lock'`,
+      [pid],
+    );
+    if (waiting === 1) return;
+    if (Date.now() > deadline) throw new Error("the second transaction never waited on a lock");
+    await pause(20);
+  }
+}
+
+/**
  * Starts `first` in an open transaction (it takes the day lock and holds
- * it), starts `second` (which waits), waits, commits `first`, and returns
- * both outcomes.
+ * it), starts `second`, proves it is waiting on that lock, commits
+ * `first`, and returns both outcomes. So each case proves the
+ * serialisation, not only an outcome that timing could also produce.
  */
 async function race<A, B>(
   first: { claims: Claims; run: (tx: pg.Client) => Promise<A> },
@@ -112,8 +135,17 @@ async function race<A, B>(
     await a.query("rollback");
     throw error;
   }
-  const secondResult = committed(b, second.claims, second.run);
-  await pause();
+  let settled = false;
+  const secondResult = committed(b, second.claims, second.run).finally(() => {
+    settled = true;
+  });
+  try {
+    await untilBlocked(b, () => settled);
+  } catch (error) {
+    await a.query("rollback");
+    await secondResult;
+    throw error;
+  }
   await a.query("commit");
   return [firstResult, await secondResult];
 }
