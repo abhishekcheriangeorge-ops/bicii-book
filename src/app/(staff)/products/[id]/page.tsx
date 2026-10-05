@@ -9,6 +9,7 @@ import { NoActiveLocation } from "@/components/domain/no-active-location";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { EditProductButton } from "@/components/domain/product-sheet";
 import { PublicationControls } from "@/components/domain/publication-card";
+import { ProductPurchasingCard } from "@/components/domain/purchasing/product-purchasing-card";
 import { ShortId } from "@/components/domain/short-id";
 import { SplitToUniqueButton } from "@/components/domain/split-to-unique-sheet";
 import { StockBadge } from "@/components/domain/stock-badge";
@@ -21,6 +22,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { getProduct, listLocations, listProductCategories } from "@/lib/domain/inventory";
+import { getProductPurchasing } from "@/lib/domain/purchasing";
 import {
   publicationLabel,
   publicationTone,
@@ -60,10 +62,12 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
   const manage = hasPermission(staff, "manage_inventory");
   const canAdjust = hasPermission(staff, "adjust_stock");
   const supabase = await createClient();
-  const [product, locations, categories] = await Promise.all([
+  const [product, locations, categories, purchasing] = await Promise.all([
     getProduct(supabase, id, { viewCosts }),
     listLocations(supabase),
     manage ? listProductCategories(supabase) : Promise.resolve([]),
+    // Purchasing (Phase 7): suppliers and orders for this product.
+    getProductPurchasing(supabase, id, staff),
   ]);
   if (!product) notFound();
   const qr = await qrUrl(product.shortId);
@@ -298,6 +302,15 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
             </ul>
           )}
         </Card>
+      ) : null}
+
+      {/* Purchasing (Phase 7): counted products are bought on purchase orders (D62). */}
+      {counted ? (
+        <ProductPurchasingCard
+          product={{ id: product.id, name: product.name, shortId: product.shortId }}
+          purchasing={purchasing}
+          canManage={hasPermission(staff, "manage_purchasing") && !archived}
+        />
       ) : null}
 
       <Card title="Publication">

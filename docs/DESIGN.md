@@ -512,3 +512,54 @@ upload itself, below).
   (`src/lib/recent-searches.ts`: every access in try/catch, at most eight,
   newest first) when a query is submitted or a result opened, and shown
   before anything is typed. They never reach the server.
+
+### Purchasing
+
+Phase 7 (SPEC §14, §21; PLAN D60–D66). Screens under `/purchasing`,
+components in `src/components/domain/purchasing/`, reads in
+`src/lib/domain/purchasing.ts` and `src/lib/domain/suppliers.ts`, labels,
+tones and sentences in `src/lib/purchasing.ts`, form schemas in
+`src/lib/purchasing-forms.ts`.
+
+- **Route group and the 403 rule.** The browsing screens live in the route
+  group `src/app/(staff)/purchasing/(browse)/` (no URL segment): `/purchasing`
+  (orders), `/purchasing/orders/[id]`, `/purchasing/suppliers` and
+  `/purchasing/suppliers/[id]`. The group's `layout.tsx` adds
+  `PurchasingNav`, its `loading.tsx` the list skeleton, and each record
+  route has its own `loading.tsx`. There is no `loading.tsx` at
+  `/purchasing` itself: a loading boundary there would sit above the
+  manage_purchasing pages beside the group (receiving and reorder, step 4)
+  and turn their `forbidden()` into a 200 (see "Loading"). Those pages go
+  outside `(browse)`. Unknown or malformed ids render not-found.
+- **Cost gating (D60).** Purchase costs (line unit costs and totals,
+  receipt costs, PO totals, supplier last costs, cost defaults, PO history)
+  are for `view_costs` or `manage_purchasing` (`canSeePurchaseCosts`,
+  mirroring `private.can_view_purchase_costs`). The domain reads them only
+  from the `*_staff` views and only for those staff; the DTO otherwise has
+  no `costs`, `totals` or `history` key. Every write needs
+  manage_purchasing; controls a staff member cannot use are not rendered.
+  Totals are `purchase_order_totals_staff`'s, never summed in TypeScript.
+- **Closed orders (D61, D65).** Received and cancelled orders have no
+  editing. A received order shows "Fully received … Extra or late units go
+  on a new order." and, for manage_purchasing, "New order for <supplier>"
+  (the preset sheet). Cancelling is final and keeps what arrived.
+- **Product page.** Counted products get a "Suppliers & orders" card
+  (`ProductPurchasingCard`): supplier links, "On order: N"
+  (`reporting.product_on_order`: submitted and partially received only),
+  the open orders holding the product, and Add supplier for
+  manage_purchasing.
+
+| Component | Notes |
+|---|---|
+| `PurchasingNav` (`purchasing-nav.tsx`) | Orders · Suppliers as links in a scrolling pill row, `aria-current` on the active one (Orders also on `/purchasing/orders/*`), 44px targets, inset focus ring. Step 4 adds Reorder with its page. |
+| `PurchaseOrderStatusPill` (server) | Draft (info), Submitted (waiting), Partially received (progress), Received (done), Cancelled (danger); always with its text. |
+| `QuantityProgress` (server) | `role="progressbar"` with `aria-valuenow` = received, `aria-valuemax` = ordered and `aria-valuetext`, plus the same words visibly: "18 of 20 received · 2 to come", "20 of 20 received", "18 of 20 received · 2 cancelled" (`progressText`). A cancelled remainder is hatched, never "to come". |
+| `PurchaseOrderSheet`, `NewPurchaseOrderButton`, `EditPurchaseOrderButton` | New order or Edit details; body mounted only while open. New: `newId()` made on open is the order's id and idempotency key; the supplier is picked (`SupplierPicker`) or PRESET with the `supplier` prop (a supplier's page, a received order's "New order for …", step 4's closed receive page), expected date (native date input), supplier reference, notes; Create opens the draft. Edit: the supplier is fixed once submitted, with why. The server sets the currency. |
+| `PurchaseOrderLines` | The order's lines: one DOM with explicit table roles ("Order lines"), stacked rows on a phone and an upright iPad, a dense table (`text-dense`, `tabular-nums`) once its card is 42rem wide (a container query, as `LineTable`: the card, not the screen). Product (P- link, SKU, on hand), `QuantityProgress`, expected date or a solid danger "Overdue" badge, and only for cost-visible staff unit cost and line total. On an open order a manage_purchasing row is a button ("Change line: …") opening the line sheet. |
+| `PurchaseOrderLineSheet`, `AddPurchaseOrderLineButton` | Add: `PurchaseProductPicker`, the unit cost prefilled from `purchase_cost_defaults` with a hint naming its source (supplier's last cost / product cost / none); a cost typed meanwhile wins. Both: quantity with steppers, never below what was received (`minimumQuantity`), unit cost 0–99,999.99 (0 is a known cost, D24 as amended), the line's expected date, notes, a live line total, and an optional reason once submitted. Edit: Remove line, two steps (a reason unless draft, `ReasonConfirm`), disabled with why once part of the line arrived. The line id is the idempotency key. |
+| `SubmitOrderButton`, `CancelOrderControl` (`purchase-order-actions.tsx`) | Submit: one explicit button with a pending state, no confirm, armed 400 ms after it appears. Cancel: `ReasonConfirm` (required reason, the confirm moved and re-keyed, 400 ms guard, "Keep order") saying that items already received stay in stock and that cancelling is final; it sits in its own "Cancel order" card at the bottom. |
+| `SupplierSheet`, `NewSupplierButton`, `EditSupplierButton` | Name, contact name, phone, email, website (https:// added when left out), account reference, notes; `newId()` key; values echoed back on failure; Create opens the supplier. |
+| `SupplierProductSheet`, `AddSupplierProductButton`, `EditSupplierProductButton` | A supplier–product link: the supplier fixed and the product picked (supplier page), or the product fixed and the supplier picked (product page); supplier SKU, lead days, a Preferred switch whose hint says it replaces another preferred supplier; edit adds Remove link (two steps, no reason: a link is a relationship). Never the last cost: receiving sets it (D63). |
+| `SupplierPicker` | `SearchPicker` over active suppliers (`staff_search` kind `supplier`) through `searchSuppliers`. |
+| `PurchaseProductPicker` | `SearchPicker` over orderable products (D62: quantity-tracked, shop-owned, active, unarchived) through `searchPurchasableProducts`; each option "On hand N · On order M · P-000123"; products already on the order are shown but not choosable. Not the job-only `searchParts`. |
+| `ProductPurchasingCard` (server) | The product page's "Suppliers & orders", above. |

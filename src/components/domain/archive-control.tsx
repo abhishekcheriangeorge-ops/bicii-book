@@ -6,6 +6,7 @@ import { setBikeArchived } from "@/app/(staff)/bikes/actions";
 import { archiveProduct } from "@/app/(staff)/inventory/actions";
 import { setCustomerArchived } from "@/app/(staff)/customers/actions";
 import { setServiceArchived } from "@/app/(staff)/settings/services/actions";
+import { setSupplierArchived } from "@/app/(staff)/purchasing/supplier-actions";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
@@ -41,6 +42,14 @@ const COPY = {
     active:
       "Archiving takes this service off the list jobs choose from. Nothing is deleted: jobs that used it keep their lines, and you can unarchive it later.",
   },
+  // Purchasing (Phase 7)
+  supplier: {
+    noun: "supplier",
+    archived:
+      "Archived: hidden from search and the supplier pickers, and takes no new orders. Its orders and history are kept.",
+    active:
+      "Archiving hides this supplier from search and the supplier pickers. Only a supplier with no open orders can be archived. Nothing is deleted: its orders stay, and you can unarchive it later.",
+  },
 } as const;
 
 /**
@@ -56,7 +65,7 @@ export function ArchiveControl({
   name,
   archived,
 }: {
-  kind: "customer" | "bike" | "service" | "product";
+  kind: "customer" | "bike" | "service" | "product" | "supplier";
   id: string;
   name: string;
   archived: boolean;
@@ -92,7 +101,9 @@ export function ArchiveControl({
             ? await setBikeArchived({ bikeId: id, archived: next })
             : kind === "product"
               ? await archiveProduct({ productId: id, archived: next })
-              : await setServiceArchived({ id, archived: next });
+              : kind === "supplier"
+                ? await setSupplierArchived({ supplierId: id, archived: next })
+                : await setServiceArchived({ id, archived: next });
       if (!result.ok) {
         toast({
           title: next ? `${name} not archived` : `${name} not unarchived`,
