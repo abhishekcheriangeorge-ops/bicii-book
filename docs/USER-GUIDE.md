@@ -4,16 +4,18 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: commit f32dc45 (application code identical to b34bbcd; not
-deployed; on a developer machine at http://localhost:3000).
+Applies to: `feat/p8-labels` at the end of Phase 8 (not deployed; on a
+developer machine at http://localhost:3000; this branch has no purchasing
+and signs staff in with a password).
 
 Last walkthrough: not walked through by a person. These flows are exercised
-by the E2E specs `tests/e2e/auth.spec.ts`, `workshop.spec.ts`,
-`workshop-board.spec.ts`, `inventory.spec.ts`, `inventory-publish.spec.ts`,
-`scan.spec.ts`, `appointments.spec.ts`, `appointment-settings.spec.ts`,
-`today.spec.ts`, `customers-bikes.spec.ts` and `staff.spec.ts`, on an
-iPhone 13 and an iPad viewport: 106 passed locally on 2026-10-05, and
-the latest green CI run is [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
+by the E2E specs in `tests/e2e/` (among them `auth`, `workshop`,
+`workshop-board`, `inventory`, `inventory-publish`, `scan`,
+`appointments`, `appointment-settings`, `today`, `customers-bikes`,
+`staff`, `consignment`, `consignment-journey`, `sales`, `print-view` and
+`labels`), on an iPhone 13 and an iPad viewport: 146 passed locally on
+2026-10-05 at the end of Phase 8; the latest green CI run is
+[PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
 Where a step below is not covered by a spec, it says so.
 
 ## Your first useful result
@@ -384,6 +386,12 @@ Settings → Your profile.
   the last printed label, the Labels card says "The price changed since the
   last printed label (… → …). Reprint the labels on the shelf." A price of
   0 prints as $0.00; a product with no price prints no price line.
+  Labels show the name, brand, price, condition (units), the bike's size
+  and colour or serial number, the SKU and the short ID: never a cost, a
+  consignor, an owner or a note. New stock from a purchase order is
+  labelled from its product or unit page (the receiving screen has no
+  label shortcut yet,
+  [R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
 - If it fails: a printed or failed job cannot be printed again as it was:
   its print view shows what happened and **Print again**, which opens the
   record's print sheet ("Print again · …", same count and printer) for a

@@ -641,27 +641,44 @@ cost update per decision D5; E2E journey 3 receiving step.
 Tests: QR payload equals public URL; N labels same payload; unique label
 distinct; E2E journey 3 labels step.
 
-Shipped so far (Phase 8 step 1 of 4, database, on `feat/p8-labels`):
-migration `20261004003800_labels` (`label_templates`, `printer_profiles`,
-`print_jobs`, `private.qr_payload`, `private.label_content`, RPCs
-`label_preview`, `create_print_job`, `set_print_job_status`,
+Shipped (Phase 8 as a whole, on `feat/p8-labels`, stacked on
+`feat/p6-consignment`): migration `20261004003800_labels`
+(`label_templates`, `printer_profiles`, `print_jobs` with three typed
+foreign keys and content, template and profile snapshots, written only by
+RPCs and never deleted; `private.qr_payload`, `private.label_content`;
+RPCs `label_preview`, `create_print_job`, `set_print_job_status`,
 `set_default_label_template`, `set_default_printer_profile`; the built-in
 58 × 40 mm template per kind and the browser and PDF profiles are inserted
-by the migration, not the seed); the seed's five print jobs; decisions D9
-(base), D56–D59 ([ADR-017](decisions/ADR-017-labels-and-qr-base.md));
-tests `tests/db/labels.test.ts`, `tests/db/labels-concurrency.test.ts`.
-Step 2 of 4 (printing library and print views, on `feat/p8-labels`):
-`src/lib/qr.ts` on the database base (displayed QR URLs from
-`shop_settings.public_site_url`, "QR address not set" when unusable; the
-environment's base kept in `scanBases()`), `src/lib/printing/` (schemas,
-`composeLabel`, `LabelSvg`, the browser and PDF adapters),
-`src/lib/domain/labels.ts`, the label and settings Server Actions, the print
-view `/print/labels/[jobId]`, the PDF route `/api/labels/[jobId]/pdf`, and
-the print history `/labels`, `/labels/[jobId]`; tests in
-`tests/unit/printing/`, `tests/db/labels-domain.stack.test.ts`,
-`tests/e2e/print-view.spec.ts`. Steps 3–4 (the record pages' Labels card,
-the Labels and printers settings screens, journeys) are not built. The purchase receive screen's "Print N labels" shortcut waits for
-the integration with Phase 7
+by the migration) and the seed's five print jobs. Modules: `src/lib/qr.ts`
+on the database base (`getQrBase()`, `qrUrl()`, `scanBases()`,
+`environmentScanBase()`), `src/lib/printing/` (schemas, `composeLabel`,
+`LabelSvg`, the browser and PDF adapters, the job status machine, links,
+`print-sheet.ts`), `src/lib/domain/labels.ts` (with `resolvePrintPreset`),
+the label and settings Server Actions, and the components
+`PrintLabelButton` / `PrintLabelSheet`, `LabelsCard`,
+`HeaderPrintLabel`, `PrintJobControls`, `PrintJobConfirm`,
+`PrintJobOutcome`, `QrLabelUrl` and the label settings forms. Routes:
+`/labels`, `/labels/[jobId]`, `/settings/labels` (admins), the print view
+`/print/labels/[jobId]` and `GET /api/labels/[jobId]/pdf`, plus Print
+label and the Labels card on the product, unit and bike pages
+(`?print=1&qty=N&reprint=…`). Decisions: D9 (the QR base:
+`shop_settings.public_site_url`, no fallback) and D56–D59
+([ADR-017](decisions/ADR-017-labels-and-qr-base.md)). Tests: the database
+files `labels.test.ts` and `labels-concurrency.test.ts`, the stack test
+`labels-domain.stack.test.ts`, the unit tests in `tests/unit/printing/`,
+`print-label.test.tsx`, `print-job-controls.test.tsx`, `qr-base.test.ts`
+and `qr-base-sources.test.ts`, and E2E `print-view.spec.ts`,
+`labels.spec.ts` and the label steps of journey 3 (ten identical labels
+through the PDF adapter, `inventory.spec.ts`) and journey 4 (one U- label
+for the consigned bike, `consignment-journey.spec.ts`). The anonymous half
+of SPEC §31 (a scan opens the public page) is proven at the database:
+`labels.test.ts` reads `reporting.public_items` as anon and as staff and
+gets identical rows for the same short ID. Staff see that row through the
+existing "What the public sees" panel until Phase 11 serves
+`/q/[shortId]` on the public site and creates `public.public_item`; this
+phase adds no anonymous RPC, client or route. Deferred: the purchase
+receive screen's "Print N labels" shortcut waits for the integration with
+Phase 7
 ([RISKS R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
 
 ### Phase 9 — Reporting and reconciliation

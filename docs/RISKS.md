@@ -321,17 +321,22 @@ URLs, or customer data in this file.
 - Status and owner: open; owner (printer models).
 - Trigger: Phase 8 (labels) and Phase 12 (hardware adapter).
 - Impact: [SPEC §16](SPEC.md#16-label-printing) forbids hard-coding a
-  printer protocol before inspecting BICII's printers. Phase 8 step 1
-  built the database with the `browser` and `pdf` adapters only
-  (`network_raw` and `bluetooth` exist but `printer_profiles_adapter_available`
-  refuses them) and 58 × 40 mm default templates, a size not checked
-  against BICII's label stock; Phase 12 waits for the printer models.
-  Until then printing will be browser print / PDF only.
-- Evidence and confidence: high; `/labels` is a placeholder page reading
-  "Arrives in Phase 8 (QR and labels)" (R-018).
-- Workaround or containment: browser print/PDF fallback, planned for Phase 8.
-- Next action: owner names the label printer models and label sizes.
-- Revisit trigger: Phase 8 starts.
+  printer protocol before inspecting BICII's printers. Phase 8 shipped the
+  `browser` and `pdf` adapters only (`network_raw` and `bluetooth` exist
+  in the enum but `printer_profiles_adapter_available` refuses them) and
+  58 × 40 mm built-in templates, a size not checked against BICII's label
+  stock; a hardware adapter is Phase 12 and waits for the printer models.
+- Evidence and confidence: high; `src/lib/printing/adapters/` (browser,
+  pdf), `supabase/migrations/20261004003800_labels.sql`; journey 3 prints
+  ten labels through the PDF adapter and journey 4 one through the browser
+  adapter (`tests/e2e/inventory.spec.ts`,
+  `tests/e2e/consignment-journey.spec.ts`, Phase 8 step 4).
+- Workaround or containment: browser print (AirPrint on iPad/iPhone) or
+  the PDF profile; admins add templates for other label sizes and offsets
+  per printer in Labels and printers ([RUNBOOK "Label printers"](RUNBOOK.md#label-printers)).
+- Next action: owner names the label printer models and label sizes;
+  Phase 12 then builds the hardware adapter.
+- Revisit trigger: the printer models are known, or Phase 12 starts.
 - Last checked: 2026-10-05.
 
 ## R-013 — Changing the QR base leaves printed labels on the old address
@@ -361,7 +366,10 @@ URLs, or customer data in this file.
   `tests/e2e/print-view.spec.ts`, whose environment base
   (`http://localhost:4001`) differs from the seeded database base
   (`http://localhost:4000`): the product page shows the database URL and
-  manual entry accepts both.
+  manual entry accepts both. Phase 8 step 4: journeys 3 and 4 assert every
+  printed payload (print view and PDF link) equals the database base
+  exactly (`tests/e2e/inventory.spec.ts`,
+  `tests/e2e/consignment-journey.spec.ts`).
 - Workaround or containment: keep the old public address redirecting
   `/q/*`, and keep the old address as the environment's
   `NEXT_PUBLIC_PUBLIC_SITE_URL` so the Admin scanner still accepts its
@@ -456,9 +464,10 @@ URLs, or customer data in this file.
 
 - Category: known limitation.
 - Status and owner: open; build agent (Phases 7 and 9). Consignment stopped
-  being a placeholder in Phase 6 step 3 and Labels in Phase 8 step 2 (the
-  print history, `feat/p8-labels`, local only); the heading is kept so
-  links stay valid.
+  being a placeholder in Phase 6 step 3 and Labels in Phase 8 (the print
+  history in step 2, printing from the record pages and Labels and
+  printers in step 3; `feat/p8-labels`, local only); two remain. The
+  heading is kept so links stay valid.
 - Trigger: staff open Purchasing or Reports.
 - Impact: those pages render the `ComingSoon` component
   (`src/components/shell/coming-soon.tsx`), which reads "Arrives in Phase
@@ -481,7 +490,7 @@ URLs, or customer data in this file.
   `@pdf-lib/standard-fonts` 1.0.0), so only the version names differ.
   ADR-001 is kept as the historical record.
 - Evidence and confidence: high; `package.json` on 2026-10-05 (Phase 8
-  step 2).
+  step 2; unchanged at the end of Phase 8, step 4).
 - Workaround or containment: `package.json` is authoritative for versions;
   [ARCHITECTURE.md](ARCHITECTURE.md#current-system) states the installed
   versions, and ADR-001's status lines point to it and to the later
@@ -740,7 +749,8 @@ URLs, or customer data in this file.
   on `feat/p7-purchasing`). Phase 8 took D56–D59, the last four numbers,
   so there is no free main-line number; a later phase that picks one on
   its own risks a collision at the integration step.
-- Evidence and confidence: high; PLAN §6 on `feat/p8-labels` ends at D59;
+- Evidence and confidence: high; PLAN §6 on `feat/p8-labels` ends at D59
+  (checked again at the end of Phase 8, step 4, which added no decision);
   the purchasing range is stated in PLAN §6 and
   [decisions/README.md](decisions/README.md).
 - Workaround or containment: none; a phase needing a decision row stops
@@ -765,6 +775,9 @@ URLs, or customer data in this file.
   already land on, or link to, the unit page.
 - Evidence and confidence: high; Phase 7 lives only on
   `feat/p7-purchasing` ([R-009](#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
+  Phase 8 closed without it (step 4): journey 3's label step prints from
+  the product page after an opening stock count, because this line has no
+  receiving (`tests/e2e/inventory.spec.ts`).
 - Workaround or containment: print from the product or unit page.
 - Next action: the integration step adds the shortcut to the receive
   screen, calling `create_print_job` per received line.
@@ -785,8 +798,10 @@ URLs, or customer data in this file.
   back to the exact payload with ZXing from a rasterised SVG; the PDF's
   page size and link; `tests/e2e/print-view.spec.ts`: one label per page
   under print media; `tests/e2e/labels.spec.ts`: 10 labels with the exact
-  payload, a 50 × 30 mm template's `@page` size, `window.print` stubbed),
-  never on a printer. Unknowns: whether iOS Safari
+  payload, a 50 × 30 mm template's `@page` size, `window.print` stubbed;
+  Phase 8 step 4's journey 3: ten labels through the PDF adapter, the PDF
+  fetched as `application/pdf` with ten pages and ten identical link URIs,
+  the PDF tab opened in Chromium and closed), never on a printer. Unknowns: whether iOS Safari
   honours `@page { size: 58mm 40mm; margin: 0 }` for a label printer or
   scales the page; whether the device draws "Helvetica, Arial" with the
   Helvetica metrics the layout was measured with (a wider substitute is
@@ -819,7 +834,9 @@ URLs, or customer data in this file.
   (`printed`) jobs, so an unconfirmed reprint does not clear it.
 - Evidence and confidence: high; `src/components/domain/print-job-controls.tsx`
   (Print then the confirmation), `listPrintJobs` filter `open`
-  (`src/lib/domain/labels.ts`), `lastPrintedPrice` (status `printed`).
+  (`src/lib/domain/labels.ts`), `lastPrintedPrice` (status `printed`);
+  journeys 3 and 4 (Phase 8 step 4) confirm their jobs by hand after Open
+  PDF and Print.
 - Workaround or containment: the confirmation appears on the print view
   right after Print and again on the job's page; To confirm lists every
   open job with who started it; nothing reprints automatically.

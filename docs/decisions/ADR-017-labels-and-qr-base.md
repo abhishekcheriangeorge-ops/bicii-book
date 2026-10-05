@@ -25,6 +25,20 @@ print view (`src/app/(print)/print/labels/[jobId]/page.tsx`), the PDF route
 confirmation (`src/components/domain/print-job-controls.tsx`). The record
 pages' Labels card and the settings screens come in step 3.
 
+Status update 2026-10-05 (Phase 8 steps 3 and 4; Phase 8 complete on
+`feat/p8-labels`, not pushed): every row is built end to end. Step 3: the
+print sheet and Labels card on the product, unit and bike pages
+(`src/components/domain/print-label.tsx`, `labels-card.tsx`; D56's cap
+and remaining count in `src/lib/printing/print-sheet.ts`; D57's per-unit
+list; D58's price-changed warning) and Settings → Labels and printers
+(`/settings/labels`, D9's address change), proven by
+`tests/e2e/labels.spec.ts`. Step 4: journey 3 prints ten identical labels
+through the PDF adapter and journey 4 one U- label for a consigned bike
+whose price equals the unit's "What the public sees" price
+(`tests/e2e/inventory.spec.ts`, `tests/e2e/consignment-journey.spec.ts`).
+The rows stay build defaults until the owner confirms them
+([PRODUCT owner question 15](../PRODUCT.md#open-assumptions-and-owner-questions)).
+
 ## Context
 
 SPEC §15 says a QR contains only the item's stable URL or ID, never
@@ -112,4 +126,16 @@ row.
 - [DATA-MODEL §11](../DATA-MODEL.md#11-qr-identity-and-publication),
   [§12](../DATA-MODEL.md#12-label-printing).
 - `supabase/migrations/20261004003800_labels.sql`, `tests/db/labels.test.ts`,
-  `tests/db/labels-concurrency.test.ts`.
+  `tests/db/labels-concurrency.test.ts`, `tests/db/labels-domain.stack.test.ts`.
+- `src/lib/qr.ts`, `src/lib/printing/`, `src/lib/domain/labels.ts`;
+  `tests/unit/printing/`, `tests/unit/qr-base.test.ts`,
+  `tests/unit/qr-base-sources.test.ts`.
+- E2E: `tests/e2e/print-view.spec.ts`, `tests/e2e/labels.spec.ts`, and the
+  label steps of journeys 3 and 4 (`tests/e2e/inventory.spec.ts`,
+  `tests/e2e/consignment-journey.spec.ts`).
+- [ARCHITECTURE "Printing workflow"](../ARCHITECTURE.md#printing-workflow-labels-from-a-record),
+  [RUNBOOK "Label printers"](../RUNBOOK.md#label-printers); risks
+  [R-012](../RISKS.md#r-012--label-printer-hardware-is-unknown),
+  [R-013](../RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address),
+  [R-028](../RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted)
+  to [R-031](../RISKS.md#r-031--print-success-is-confirmed-by-hand).

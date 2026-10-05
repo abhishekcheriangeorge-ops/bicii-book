@@ -12,6 +12,11 @@ exercised, per section (as of 2026-10-05):
   scanning on localhost with a stubbed camera and manual entry.
 - Appointments: schedule before go-live: not run as a go-live procedure;
   its screens are exercised by `tests/e2e/appointment-settings.spec.ts`.
+- Labels (the QR address, label printers): the address and printing are
+  exercised on localhost by `tests/e2e/labels.spec.ts`, `print-view.spec.ts`
+  and journeys 3 and 4 with `window.print` stubbed or the PDF fetched;
+  never on a real label printer
+  ([R-030](RISKS.md#r-030--label-output-is-unverified-on-a-real-label-printer-and-on-ios)).
 - CI: the `e2e` label exists, and PRs #2–#7 carry it, each with a
   successful `e2e` workflow run (e.g.
   [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521));
@@ -30,6 +35,8 @@ everyday local setup (the Docker-free devstack) see [ENGINEERING.md](ENGINEERING
 - [Rotating keys and passwords](#rotating-keys-and-passwords)
 - [Vercel environment setup](#vercel-environment-setup)
 - [Appointments: schedule before go-live](#appointments-schedule-before-go-live)
+- [Labels: the QR address before the first print](#labels-the-qr-address-before-the-first-print)
+- [Label printers](#label-printers)
 - [CI](#ci)
 
 The demo data is relative to the shop day (Singapore) the database was
@@ -364,20 +371,50 @@ migration ships the default 58 × 40 mm templates and the "This device
 once the address is set.
 
 The product, unit and bike pages show "QR address not set" or a disabled
-Print label with the reason while the address is unusable, and the Admin scanner accepts labels on the
-database address and on `NEXT_PUBLIC_PUBLIC_SITE_URL` (an extra scan-only
-base): after a move, put the OLD address there so its labels still open
-in the Admin. A print that came out wrong is marked failed with the reason
-on its print view (or its page under Labels) and printed again from the
-record as a new job (Print again opens the record's print sheet);
-unconfirmed jobs wait under Labels → To confirm
-([R-031](RISKS.md#r-031--print-success-is-confirmed-by-hand));
-labels printed off-centre are fixed with the printer's calibration offsets
-in Labels and printers; a finished job's PDF answers 409 by design. Printing
-from an iPhone or iPad: browser print with paper 58 × 40 mm, scale 100%,
-no margins; if Safari scales the page, use the PDF printer (Open PDF, then
-Share → Print). Neither has been tried on the shop's printer yet
+Print label with the reason while the address is unusable ("Labels are off
+until an admin sets the public website address in Labels and printers
+settings."). The QR address is that setting only: the environment's
+`NEXT_PUBLIC_PUBLIC_SITE_URL` never changes what is printed or shown; it
+only adds an address the Admin scanner accepts. After a move, put the OLD
+address there so its labels still open in the Admin, and keep the old
+public site redirecting `/q/*`.
+
+Hosted projects: the public side of a label (an anonymous scan) reads
+`reporting.public_items`, so `reporting` stays in the Data API's exposed
+schemas ([step 4 above](#hosted-supabase-projects-staging-and-production),
+required since Phase 4). Phase 8 adds no other anonymous surface.
+
+## Label printers
+
+Phase 8 prints through the browser or a PDF; there is no printer driver
+or hardware adapter until Phase 12
+([R-012](RISKS.md#r-012--label-printer-hardware-is-unknown)). Nothing below
+has been tried on the shop's printer yet
 ([R-030](RISKS.md#r-030--label-output-is-unverified-on-a-real-label-printer-and-on-ios)).
+
+1. Prerequisite: the public website address is set (previous section);
+   until then every Print label is disabled.
+2. Browser print ("This device (browser print)", the default printer):
+   add the label printer to the iPad or iPhone through AirPrint (or to a
+   desktop's printers). In the print dialog choose that printer, paper 58
+   × 40 mm (or the template's size), margins None, scale 100%, and no
+   headers or footers. Each label prints on its own page.
+3. PDF ("PDF download"): for a printer without AirPrint, or when Safari
+   scales the page. Open PDF opens the job's PDF (exact page size,
+   standard fonts) in a new tab; then Share → Print, or print from the
+   printer's own app, at 100%.
+4. Calibration: print one label and compare. If it is shifted, Settings →
+   Labels and printers → the printer → offsets (0.5 mm steps, −5 to 5 mm,
+   per printer); print again. Other label stock: add a template with its
+   size (the editor's preview refuses a layout that does not fit).
+5. Confirm every job: "Yes, all printed" or "Something went wrong…" with
+   the reason. Unconfirmed jobs wait under Labels → To confirm
+   ([R-031](RISKS.md#r-031--print-success-is-confirmed-by-hand)). A wrong
+   print is marked failed and printed again from the record (Print again
+   makes a new job); a finished job's PDF answers 409 by design.
+
+Record the first real test print of each built-in template, with both
+printers, here (date, device, printer model, result).
 
 ## CI
 

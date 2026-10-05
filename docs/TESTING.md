@@ -998,7 +998,8 @@ unit page's "What the public sees" shows the name, the same price and
 Available, and nothing matching /cost|consign|internal|\$500/i. The
 anonymous half (an anonymous scan reads the same row) is the database
 test in `labels.test.ts` ("reporting.public_items returns identical rows to
-anon and to staff").
+anon and to staff"). The suite's run counts are recorded with the
+command in [ENGINEERING.md](ENGINEERING.md#commands).
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:

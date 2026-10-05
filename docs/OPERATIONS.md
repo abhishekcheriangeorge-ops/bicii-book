@@ -79,6 +79,19 @@ permission. These tasks were exercised only on developer machines and in
 CI, by the E2E spec named in each task; where a step has no E2E spec, the
 task says so. Labels are as on screen.
 
+**First run** (the first admin, once per hosted project, before staff use
+the app; never exercised on a hosted project). After
+[creating the first admin](RUNBOOK.md#creating-the-first-admin-in-a-hosted-project):
+1. Settings → Labels and printers → set the shop's public website address
+   before printing any label; nothing prints until it is set, and changing
+   it later orphans printed labels
+   ([RUNBOOK](RUNBOOK.md#labels-the-qr-address-before-the-first-print)).
+2. Set up the appointment schedule
+   ([RUNBOOK](RUNBOOK.md#appointments-schedule-before-go-live)).
+3. Make a test print on the shop's label printer
+   ([RUNBOOK "Label printers"](RUNBOOK.md#label-printers)).
+4. Invite staff (below).
+
 **Invite staff** (admin, or `manage_staff` within the D11 ceiling:
 non-admins invite role Staff only;
 [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).
