@@ -90,6 +90,17 @@ describe("TotalsSummary (the job yield panel)", () => {
     expect(screen.getByText("Counted in reports once the job is completed")).toBeInTheDocument();
   });
 
+  it("says a cancelled job is never counted, not that it will be once completed", () => {
+    render(
+      <TotalsSummary
+        totals={withCosts}
+        report={report({ status: "cancelled", recognizedAt: null, recognizedDay: null })}
+      />,
+    );
+    expect(screen.getByText("Not counted in reports (cancelled)")).toBeInTheDocument();
+    expect(screen.queryByText(/once the job is completed/)).toBeNull();
+  });
+
   it("never shows report text to someone without costs, even if a report were passed", () => {
     render(<TotalsSummary totals={saleOnly} report={report()} />);
     expect(screen.queryByText(/Counted in reports|sold at a loss/)).toBeNull();

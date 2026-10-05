@@ -17,10 +17,20 @@ import { formatRateRange, lossNote, type WorkOrderYield } from "@/lib/reports";
  * Cult Commons rates the lines snapshotted ("30%", or "25–30%" when they
  * differ), a note when lines were sold at a loss (they never reduce
  * another line's Cult Commons, D1), and when the job counts in reports:
- * the shop day of its current completion (D32), or "once the job is
- * completed" while it is open or after a reopen. Without view_costs the
+ * the shop day of its current completion (D32), "once the job is
+ * completed" while it is open or after a reopen, or that it is never
+ * counted once cancelled (final, D15; D32). Without view_costs the
  * page passes neither `report` nor costs, so only the sale total shows.
  */
+/** When the job counts in reports (D32): its completion day, never once cancelled, or later. */
+function recognitionNote(report: WorkOrderYield): string {
+  if (report.recognizedDay) {
+    return `Counted in reports on ${formatShopDay(report.recognizedDay)} (completed)`;
+  }
+  if (report.status === "cancelled") return "Not counted in reports (cancelled)";
+  return "Counted in reports once the job is completed";
+}
+
 export function TotalsSummary({
   totals,
   ccRate,
@@ -50,12 +60,7 @@ export function TotalsSummary({
     totals.costs && report
       ? lossNote(report.lossLineCount, report.lossTotal, report.currency)
       : null;
-  const recognition =
-    totals.costs && report
-      ? report.recognizedDay
-        ? `Counted in reports on ${formatShopDay(report.recognizedDay)} (completed)`
-        : "Counted in reports once the job is completed"
-      : null;
+  const recognition = totals.costs && report ? recognitionNote(report) : null;
   return (
     <div className="flex flex-col border-t border-hairline bg-sunken px-4 py-3 sm:px-5">
       <dl aria-label="Totals" className="flex flex-col gap-1 text-dense tabular-nums">
