@@ -56,6 +56,16 @@
 -- appointments from 3 days ago to at most 14 days ahead, one in each
 -- interesting status; Tan's is linked to J-000014 (D40) and completed with
 -- it (D36). Today and the daily summary count them by D41.
+--
+-- Phase 6 contents (at the end): three consignors (Kelvin Yeo, Daniel Ong,
+-- Chloe Lim), four consignment items C-000001 .. C-000004 (two consigned
+-- bikes, six jerseys and a crankset, on new products P-000023 .. P-000026
+-- and units U-000004 .. U-000006), two charges with explicit bearers (D4),
+-- four in-store sales S-000001 .. S-000004 on the Phase 5 fixture days
+-- (one is SPEC §10's consignment example), one return to the consignor, a
+-- reversed settlement and its replacement, and a refund. Written through
+-- the RPCs; the ledgers reproduce tests/fixtures/ids.ts
+-- EXPECTED_CONSIGNOR_LEDGER and EXPECTED_SALE.
 
 -- ---------------------------------------------------------------------------
 -- Auth users (shape matches Supabase Auth v2.178). GoTrue scans the token

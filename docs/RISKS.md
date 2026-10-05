@@ -175,8 +175,10 @@ URLs, or customer data in this file.
   agreed amount of 0 and an asking price of 0 are known values, stored as
   0"; both pass in `npm test` (86 files, 1225 tests) on 2026-10-05.
 - Workaround or containment: none needed.
-- Next action: none; Phase 6 step 2 adds the same 0 tests for sale lines
-  (D24).
+- Next action: none. Phase 6 step 2 added the same 0 test for sale lines:
+  `tests/db/sales.test.ts` "D24 (amended): a price of 0 and a cost of 0
+  are known values, snapshotted as 0" (passed in `npm test` on
+  2026-10-05).
 - Revisit trigger: next change to `add_inventory_line` or a new part or
   sale path.
 - Last checked: 2026-10-05, the tests above.
@@ -472,3 +474,31 @@ URLs, or customer data in this file.
   that left stock may release its bike link.
 - Revisit trigger: the first bike consigned a second time.
 - Last checked: 2026-10-05, the migration and test above.
+
+## R-021 — Reports overstate net sales after a refund or restock
+
+- Category: deliberate shortcut.
+- Status and owner: accepted (D49, build default, owner to confirm);
+  owner, with Phase 9's refund-reporting row (working name DR5).
+- Trigger: an admin records a refund on a sale (`record_sale_refund`), or
+  staff restock a sold unit (`restock_unit`).
+- Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
+  Today and the financial reports) keep every sale line at its snapshot:
+  a refunded or restocked sale still counts in gross sales, yield and Cult
+  Commons on its recognition day. Net sales, yield and the Cult Commons
+  share are overstated by the refunded amount until Phase 9 decides
+  netting and Cult Commons claw-back. The consignor ledger is not affected
+  (a restock removes the liability; a refund alone does not change it,
+  D46).
+- Evidence and confidence: high; the sale branch of `financial_lines` in
+  `supabase/migrations/20261004003700_consignment_reporting.sql` subtracts
+  nothing; `tests/db/consignment-reporting.test.ts` asserts that S-000002
+  keeps its full 28.00 entry after its 14.00 refund, and `SEED_DAYS` day 4
+  includes it (passed in `npm test` on 2026-10-05).
+- Workaround or containment: refunds and restocks show on the sale, in
+  `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
+  ledger; refunds are admin-only and capped at the sale total (D49).
+- Next action: Phase 9 decides the refund-reporting row (DR5) for retail
+  and online refunds together.
+- Revisit trigger: the first real refund, or Phase 9's reports.
+- Last checked: 2026-10-05, the migration and tests above.

@@ -86,19 +86,19 @@ the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
 | §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2) |
 | §4 Workshop | Implemented | `001300_work_orders`, `001500_workshop_rpcs`, `001600_workshop_customer_access`, `001700_workshop_search` |
 | §5 Services and line items | Implemented | `001200_workshop_catalog`, `001400_work_order_lines`, `001500_workshop_rpcs`; consigned-part columns `003300_consignment`, their rules `003400_consignment_job_parts` (D44) |
-| §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; `003300_consignment` adds the units' consignment foreign key, ownership rules and the consignment branch of `private.selling_price`; the sale-line and Shopify reference columns exist without foreign keys until Phase 6 step 2 and Phase 10; `supplier_products` moved to Phase 7 |
-| §7 Inventory movement ledger | Implemented | `001800_inventory`, `001900_inventory_jobs`, `002000_inventory_reporting`; `003300_consignment` adds the consignment foreign key, D50's movement rules and `private.record_linked_movement`; sale and receipt references wait for Phase 6 step 2 and Phase 7 |
-| §8 Sales | Planned | Phase 6 (in-store sales) and Phase 10 (Shopify); no `sales` table yet |
-| §9 Consignment | Partly | Built (Phase 6 step 1): consignors, items, charges, item history, returns, `reporting.consignment_item_position`, consigned job parts (`003300_consignment`, `003400_consignment_job_parts`; D44–D52). Missing: settlements, reversals and the consignor ledgers (Phase 6 step 2) |
+| §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; `003300_consignment` adds the units' consignment foreign key, ownership rules and the consignment branch of `private.selling_price`; the sale-line columns have their foreign keys since `003500_sales`; Shopify reference columns wait for Phase 10; `supplier_products` moved to Phase 7 |
+| §7 Inventory movement ledger | Implemented | `001800_inventory`, `001900_inventory_jobs`, `002000_inventory_reporting`; `003300_consignment` adds the consignment foreign key, D50's movement rules and `private.record_linked_movement`; `003500_sales` adds the sale-line foreign keys and `inventory_movements_restock_once`; receipt references wait for Phase 7 |
+| §8 Sales | Partly | Built (Phase 6 step 2): `sales`, `sale_lines`, `sale_refunds`, `private.sell_line`, `record_retail_sale`, `restock_unit`, `record_sale_refund` (`003500_sales`). Missing: the screens (Phase 6 steps 3–4) and Shopify orders (Phase 10) |
+| §9 Consignment | Implemented (database) | Phase 6 step 1: consignors, items, charges, item history, returns, `reporting.consignment_item_position`, consigned job parts (`003300_consignment`, `003400_consignment_job_parts`; D44–D52); step 2: settlements, reversals, the ledgers and the balance rule (`003600_consignment_settlements`; D46, D47). Screens: steps 3–4 |
 | §10 Suppliers and purchasing | Planned | Phase 7; built only on the parallel branch `feat/p7-purchasing`, not on this line |
 | §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`). Missing: the QR base decision and labels (Phase 8), C-/S-/PO- resolution (Phases 6, 7), the public `/q` route (Phase 11) |
 | §12 Label printing | Planned | Phase 8 (browser/PDF), Phase 12 (hardware) |
 | §13 Shopify integration | Planned | Phase 10; only reserved columns exist (`customers.shopify_customer_id`, the product Shopify ids) |
-| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position` (Phase 6 step 1; no API grant). Missing: `stock_reconciliation` (Phase 9), consignor ledgers (Phase 6 step 2), `purchase_order_progress` (Phase 7), `shopify_sync_status` (Phase 10) |
-| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignors, consignment items, charges and item history (Phase 6 step 1, D48); rows for sales, settlements, purchasing, labels and integrations are design |
-| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1); `record_retail_sale`, `restock_unit`, the settlement RPCs, `receive_purchase` and the Shopify processors are design |
-| §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`); PO and S are reserved for Phases 7 and 6 step 2 |
-| §18 Seed data | Partly | Phase 1–5 and Phase 2 parts are in `supabase/seed.sql`; the consigned bikes, suppliers, purchase order and settlements of the opening list wait for Phase 6 step 2 and Phase 7 |
+| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. Missing: `stock_reconciliation` (Phase 9), `purchase_order_progress` (Phase 7), `shopify_sync_status` (Phase 10) |
+| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1) and sales and settlements (step 2, D48); rows for purchasing, labels and integrations are design |
+| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2); `receive_purchase` and the Shopify processors are design |
+| §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`), S from step 2 (`sales`); PO is reserved for Phase 7 |
+| §18 Seed data | Partly | Phase 1–5, Phase 2 and Phase 6 parts are in `supabase/seed.sql`; the suppliers and purchase order of the opening list wait for Phase 7 |
 
 **Access summary.** The matrix is [§15](#15-row-level-security-matrix) and
 the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
@@ -1112,6 +1112,11 @@ The partial unique indexes are the idempotency guarantees. Phases 6, 7 and
 | `inventory_movements_receipt_line_once` | unique (purchase_receipt_line_id) where movement_type = 'purchase_received' |
 | `inventory_movements_request_once` | unique (request_id, product_id, location_id) where request_id is not null |
 | `inventory_movements_reversal_of_id_key` | unique (reversal_of_id) |
+| `inventory_movements_restock_once` | unique (sale_line_id) where movement_type = 'return' and sale_line_id is not null (Phase 6 step 2: a sale line is restocked at most once) |
+
+Phase 6 step 2 (`20261004003500_sales.sql`) gave `inventory_movements.sale_line_id`
+and `inventory_units.sold_sale_line_id` their foreign keys to `sale_lines`
+(`on delete restrict`); `inventory_movements_sale_line_once` is unchanged.
 
 Plus btree indexes on (product_id, location_id, id), (inventory_unit_id,
 id), work_order_id, work_order_line_item_id, created_by and (id desc).
@@ -1175,6 +1180,19 @@ touches stock):
    `set_publication_status`, which takes `lock_stock(product)` first, and
    `return_consignment_item`'s archive).
 
+Phase 6 step 2 paths: `record_retail_sale` inserts its header (0), then
+3 (every product on the sale, units' products read unlocked, ascending) →
+5 (units, ascending) → 6 (the units' items, any named item and every
+active item of each consigned quantity product, ascending) → 7
+(`refresh_unique_publication` per unique product sold, ascending).
+`restock_unit` takes 3 → 4 (its bike) → 5 → 6 → 7. `record_settlement`
+inserts its header (0), then the consignor FOR SHARE (0b) and its items
+FOR UPDATE (6); `reverse_settlement` locks its settlement row, then the
+consignor FOR SHARE; `record_sale_refund` locks only its sale row.
+Archiving a consignor (a plain UPDATE of 0b) takes its items FOR SHARE
+(6) in its trigger, so an in-flight sale, restock or completion finishes
+first and the balance check sees it.
+
 Phase 6 adds, outside and before this order: step 0, the request's own
 idempotency lock (`create_consignment_item`'s
 `pg_advisory_xact_lock(hashtextextended('bicii.consignment_item:' || item_id, 0))`;
@@ -1197,62 +1215,100 @@ Private extension points (security definer, no grants):
 | `private.selling_price(product_id, unit_id)` | THE single selling-price source: unit.sale_price, else product.default_sale_price. Phase 6 step 1 replaced it (same signature, `language sql stable security definer`, grants re-stated) to return the consignment asking price (§6, D45); Phase 8 labels and Phase 10 Shopify use it unchanged. EXECUTE for authenticated and anon, because the cost views and `reporting.public_items` call it as the caller (`create or replace` keeps the grants) |
 | `private.lock_stock(product_id)` | the per-product stock lock |
 | `private.stock_on_hand(product_id, location_id)` | ledger on-hand |
-| `private.refresh_unique_publication(product_id)` | public → sold when no unit is in stock and one is sold; sold → public when a unit is available again (skips requirements). Every path that makes a unit available calls it after the unit change: `void_line`, `create_unique_unit` (a new unit on a sold product), and later restock paths |
+| `private.refresh_unique_publication(product_id)` | public → sold when no unit is in stock and one is sold; sold → public when a unit is available again (skips requirements). Every path that makes a unit available calls it after the unit change: `void_line`, `create_unique_unit` (a new unit on a sold product), and `restock_unit` (Phase 6) |
 | `private.publication_transition_allowed`, `private.unit_status_transition_allowed`, `private.publication_requirements_met` | the state machines and publication requirements |
 | `private.set_event_context(jsonb)`, `private.event_context()` | transaction-local extra keys for unit history |
 
 ## 8. Sales (non-workshop revenue)
 
-Workshop revenue is recorded on `work_order_line_items`. Everything else that
-sells stock (over-the-counter, Shopify, a consigned bike sold in store) is a
-`sale`:
+Built in Phase 6 step 2 (`20261004003500_sales.sql`; PLAN D1, D7, D9,
+D14, D24, D26, D29, D44–D46, D48, D49, D53). Workshop revenue is recorded
+on `work_order_line_items`. Everything else that sells stock
+(over-the-counter, Shopify in Phase 10, a consigned bike sold in store) is
+a `sale`:
 
 ```
-sales
-  id uuid PK
-  sale_number text not null unique         -- S-000123
-  source sale_source not null              -- enum: retail | online_shopify | work_order
-  customer_id uuid null
-  work_order_id uuid null                  -- when the shop records a job's parts
-                                           --   as a POS sale too (future)
-  shopify_order_id text null unique        -- idempotency for inbound orders
-  shopify_order_name text null             -- '#1042' for humans
-  recognized_at timestamptz not null       -- paid/recognition date
+sales                                      -- immutable except status; never deleted
+  id uuid PK                               -- client-supplied: the sale's idempotency key
+  sale_number text not null unique         -- S-######, by trigger, immutable (D9)
+  source sale_source not null default 'retail'
+     -- enum: retail | online_shopify | work_order (Phase 6 writes retail;
+     --   work_order reserved)
+  customer_id uuid null -> customers
+  work_order_id uuid null -> work_orders   -- reserved, no UI
+  shopify_order_id text null unique, shopify_order_name text null   -- Phase 10
+  recognized_at timestamptz not null       -- recognition (§14); past allowed,
+                                           --   never > now() + 5 min
   status sale_status not null default 'recorded'
-     -- enum: recorded | refunded | partially_refunded | voided
-  currency char(3), notes text
-  created_by uuid null, created_at, updated_at
+     -- enum: recorded | partially_refunded | refunded | voided
+     --   (voided reserved: never written, excluded by every view)
+  currency char(3) not null, notes text null (≤ 2000)
+  request_fingerprint text null            -- never granted
+  created_by, created_at, updated_at
+  -- sales_enforce_rules: number on insert; afterwards only status and
+  --   updated_at change (sale_immutable, sale_number_immutable); no DELETE
 
-sale_lines
-  id uuid PK
-  sale_id uuid -> sales
-  product_id uuid not null
-  inventory_unit_id uuid null unique       -- a unit sells once, full stop
-  consignment_item_id uuid null
-  description_snapshot text not null
-  quantity line_quantity not null check (quantity > 0)   -- numeric(10,2), NaN-free domain
-  unit_sale_price_snapshot, unit_direct_cost_snapshot money_amount not null
-  cult_commons_rate_snapshot rate_fraction not null
+sale_lines                                 -- written only by private.sell_line
+  id uuid PK default gen_random_uuid()
+  sale_id -> sales, line_number smallint (unique per sale, ≥ 1)
+  product_id -> products, inventory_unit_id null -> inventory_units,
+  consignment_item_id null -> consignment_items
+  description_snapshot text (1..300)
+  quantity line_quantity (> 0, integral)
+  unit_sale_price_snapshot, unit_direct_cost_snapshot money_amount (≥ 0;
+     0 is a known value, D14/D24)
+  consignor_payout_snapshot money_amount null (≥ 0, per unit; consigned only)
+  cult_commons_rate_snapshot rate_fraction (the rate at recognized_at)
   currency char(3)
-  sale_total, cost_total, yield_total, cult_commons_share  -- generated as in §5
-  shopify_line_item_id text null unique
+  sale_total, cost_total, yield_total, cult_commons_share   -- generated as in §5
+  shopify_line_item_id text null unique    -- written only at insert (Phase 10)
+  restocked_at timestamptz null, restocked_by null -> staff   -- once, by restock_unit
   created_at
+  checks: sale_lines_unit_quantity_one, sale_lines_consignment_payout
+    ((consignment_item_id is null) = (consignor_payout_snapshot is null)),
+    sale_lines_restock_unit_only, sale_lines_restock_shape
+  unique index sale_lines_unit_sells_once (inventory_unit_id)
+    where inventory_unit_id is not null and restocked_at is null
+  -- sale_lines_immutable: only restocked_at / restocked_by change, once,
+  --   from null; no DELETE
 
-sale_refunds
-  id, sale_id, shopify_refund_id text null unique, amount money_amount,
-  reason text, restocked boolean not null default false,
+sale_refunds                               -- append-only (sale_refund_immutable)
+  id uuid PK (client id), sale_id -> sales, shopify_refund_id text null unique,
+  amount money_amount (> 0), currency, reason text (1..500),
+  restocked boolean not null default false -- Phase 10 records Shopify's flag;
+                                           --   it never moves stock
   recorded_by, created_at
 ```
 
-A refund is a financial fact. It does not touch stock. Putting a unique item
-back on the floor is a separate staff action (`restock_unit`) that writes a
-`return` movement and flips the unit back to `available`, with a reason.
+Deviation from the original design (D46): `sale_lines.inventory_unit_id` is
+not a plain `unique`. The partial unique index `sale_lines_unit_sells_once`
+allows at most one live (not restocked) line per unit, so a unit is sold
+again only after `restock_unit` marked its previous line restocked.
+
+A unit line snapshots cost = `coalesce(unit.direct_cost,
+product.default_direct_cost)` for shop stock, or the item's agreed amount
+plus its live shop-borne charges for consigned stock (payout = the agreed
+amount, D4/D44). A quantity line snapshots `product.default_direct_cost`, or
+for consigned stock the agreed amount of the one item it draws from (the
+named one, else the FIFO head whose remaining quantity covers it, D45). The
+price defaults to `private.selling_price` (a consigned quantity line: its own
+item's asking price, else the product default) and any staff member may
+override it (D53). NULL price → `sale_price_required`; NULL cost →
+`sale_cost_missing`. A retail sale never takes stock below zero
+(`insufficient_stock`).
+
+A refund is a financial fact (D7, D49). It does not touch stock or units;
+reports do not net it in Phase 6. Putting a unique item back on the floor
+is a separate staff action (`restock_unit`) that writes a `return` movement
+linked to the sale line, marks the line restocked and flips the unit back to
+`available`, with a reason.
 
 ## 9. Consignment
 
 Built in Phase 6 step 1 (`20261004003300_consignment.sql`,
-`20261004003400_consignment_job_parts.sql`; PLAN D4, D44–D52, ADR-016),
-except settlements and the consignor ledgers (step 2, design below).
+`20261004003400_consignment_job_parts.sql`; PLAN D4, D44–D52, ADR-016) and
+step 2 (settlements, reversals and the ledgers:
+`20261004003600_consignment_settlements.sql`; D46, D47).
 
 ```
 consignors
@@ -1266,8 +1322,10 @@ consignors
   created_by null -> staff, created_at, updated_at, archived_at
   -- consignors_normalize trims and nulls blanks; consignors_enforce_rules:
   -- created_by, customer_archived on linking an archived customer,
-  -- consignor_has_open_items when archiving with an active item (step 2 adds
-  -- the balance rule, D47)
+  -- consignor_has_open_items when archiving with an active item, and
+  -- consignor_has_balance when its ledger outstanding is not exactly 0
+  -- (step 2, D47; the detail gives the amount and, when overpaid, D46's
+  -- remedies)
 
 consignment_items                          -- rows only from create_consignment_item
   id uuid PK                               -- client-supplied: the intake's idempotency key
@@ -1328,14 +1386,15 @@ liability, last_sale_at, last_returned_at, consignor_charges, shop_charges`.
   item whose job has no `completed_at` / has one (D44).
 - `returned_qty` = −Σ `quantity_delta` of the item's `consignment_returned`
   movements; `last_returned_at` their latest time.
-- `sold_qty` and `restocked_qty` are `0` placeholders until step 2 replaces
-  the view body (same columns, same order) with live sale lines.
+- `sold_qty` = Σ quantity of the item's sale lines on sales that are not
+  voided; `restocked_qty` = Σ of those with `restocked_at` (step 2 replaced
+  the view body, same columns, same order).
 - `remaining_qty = quantity − (sold_qty − restocked_qty) − job_held_qty −
   job_sold_qty − returned_qty`; `owed_qty = (sold_qty − restocked_qty) +
   job_sold_qty`.
-- `liability = round(Σ quantity × consignor_payout_snapshot, 2)` over the
-  job-sold lines (step 2 adds live, non-restocked sale lines);
-  `last_sale_at` = their latest `completed_at`.
+- `liability = round(Σ quantity × consignor_payout_snapshot, 2)` over live,
+  non-restocked sale lines and the job-sold lines; `last_sale_at` = the
+  latest of those sales' `recognized_at` and those jobs' `completed_at`.
 - `consignor_charges` / `shop_charges` = Σ non-voided charges by bearer.
 
 Item status (`private.refresh_consignment_item_status(item_id)`, the caller
@@ -1369,34 +1428,55 @@ internal only: trigger `attachments_consignment_item_internal_only` raises
 CHECK of the same name is the backstop. Listing photos go on the product or
 unit.
 
-Designed for Phase 6 step 2 (not built):
+Settlements (step 2, D47), all three append-only (`settlement_immutable`
+for every writer):
 
 ```
 consignment_settlements
-  id uuid PK
-  consignor_id uuid -> consignors
-  amount money_amount not null check (amount > 0)   -- = Σ allocations (D47)
-  currency char(3)
-  paid_at timestamptz not null
-  reference text, notes text
+  id uuid PK                               -- client-supplied: the idempotency key
+  consignor_id -> consignors
+  amount money_amount not null (> 0)       -- = Σ its allocations exactly
+  currency char(3), paid_at timestamptz not null (never > now() + 5 min)
+  reference text null (≤ 200), notes text null (≤ 2000)   -- trimmed
+  request_fingerprint text null            -- never granted
   created_by, created_at
 
 settlement_lines
-  id, settlement_id -> consignment_settlements,
-  consignment_item_id -> consignment_items,
-  amount_applied money_amount not null check (amount_applied > 0)
-  override_reason text null                -- required above max(outstanding, 0)
+  id uuid PK default gen_random_uuid(), settlement_id, consignment_item_id,
+  amount_applied money_amount (> 0)
+  override_reason text null (non-blank, ≤ 500)   -- required above max(outstanding, 0)
+  unique (settlement_id, consignment_item_id)
+
+consignment_settlement_reversals
+  id uuid PK (client id), settlement_id uuid not null unique,
+  reason text (1..500), created_by, created_at
 ```
 
-Per D46: liability = Σ quantity × `consignor_payout_snapshot` over live,
-non-restocked consigned sale lines plus live consigned job lines of
-completed jobs; owed = liability − non-voided consignor charges; paid = Σ
-allocations of settlements not reversed; outstanding = owed − paid (may be
-negative: "Overpaid", never "credit"). Nothing stores owed, paid or
-outstanding. Corrections reverse a whole settlement with a reason (D47).
-Selling an item writes the sale line with `unit_direct_cost_snapshot =
-agreed_amount_owed (+ shop-borne charges)` and its movement; it does not
-create a settlement. Those are separate facts.
+The ledgers (security_invoker views, granted to no API role, read by the
+definer RPCs; nothing below is stored):
+
+- `reporting.consignor_item_ledger`: every column of
+  `consignment_item_position`, the item's `short_id, status, received_at,
+  sold_at, returned_at, return_reason, agreed_amount_owed, asking_price,
+  currency`, and `owed = liability − consignor_charges`, `paid` = Σ
+  `amount_applied` of settlements that are not reversed, `outstanding =
+  owed − paid`, `last_settlement_at` (latest `paid_at` of those).
+- `reporting.consignor_ledger`: per consignor `consignor_id, display_name,
+  customer_id, archived_at, currency, items_total, active_items,
+  awaiting_settlement_items` (outstanding > 0), `returned_items`, Σ
+  `liability, consignor_charges, owed, paid, outstanding`, `last_sale_at,
+  last_settlement_at`; it equals the sum of its item rows.
+
+Per D46: liability counts live, non-restocked consigned sale lines and live
+consigned job lines of completed jobs; a restock removes a sale line's
+liability, a reopen a job line's. Outstanding may go negative (money paid
+stays paid): shown as "Overpaid $x (consignor owes the shop)", never
+"credit", and cleared only by a later sale, by voiding a consignor charge or
+by reversing a settlement. A refund alone does not change the liability
+(D7). Selling an item does not create a settlement: liability and
+settlement are separate facts. A settlement replay with the same
+fingerprint returns it even after the outstanding changed. A consignor is
+archived only with no active item and an outstanding of exactly 0.
 
 ## 10. Suppliers and purchasing
 
@@ -1622,8 +1702,8 @@ never exposed.
 
 | View | Purpose |
 |---|---|
-| `financial_lines` | Built (Phase 5, D32 RECOGNITION). One row per recognised ENTRY, columns in this order: `entry_key` text ('wol:' ‖ line id, unique), `source` text, `entry_kind` text ('line'), `source_line_id` uuid, `document_id` uuid, `document_number` text, `channel` text, `recognized_at` timestamptz, `recognized_day` date (`private.shop_day`), `line_type` text, `service_id`, `product_id`, `inventory_unit_id`, `category_id` (the service's or product's), `ownership_type` text (inventory lines: the unit's, else the product's; null otherwise), `consignment_item_id` (null until P6), `customer_id`, `bike_id`, `lead_mechanic_id`, `description` text, `quantity`, `unit_sale_price`, `unit_direct_cost`, `cult_commons_rate`, `sale_total`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc` (all plain numeric), `is_loss` boolean (yield < 0), `currency` text, `cost_pending` boolean. Pinned vocabulary: `source` ∈ ('work_order','sale'); `channel` ∈ ('workshop','retail','online'); `document_id` = work_orders.id or sales.id; `document_number` = the J- job number or the S- sale number; `entry_kind` = 'line'. Recognition (D3 as modified by D15, refined by D32): every non-voided line of a job with a current `completed_at` (completed, ready for collection or collected; never open or cancelled), on the shop day of that `completed_at`. Lines are frozen once completed, so the only correction is a reopen, which removes the whole job from its earlier day until it is completed again (past days can change; no reversal entries for workshop lines). Amounts come only from the line's snapshots and generated columns; each entry's Cult Commons is the line's own share (≥ 0, D1), so no negative Cult Commons payment arises; `cost_pending` lines (D14) are recognised at cost 0 and flagged. Phase 6 appends a `union all` branch from `sale_lines`/`sales` with every column in this order (source 'sale', channel from `sales.source`, `cost_pending` false); Phase 9 appends only genuinely new columns at the end, never synonyms. |
-| `daily_summary` | Built (Phase 5). One row per shop day from the earliest activity day (check-in, recognised entry or movement; today when none) to `private.shop_today()`, zero-filled; columns fixed in this order: 1 `day`; 2–7 `jobs_checked_in`, `jobs_started`, `jobs_completed`, `jobs_ready_for_collection`, `jobs_collected`, `jobs_cancelled` (flows: jobs whose CURRENT stamp falls that day, D31); 8 `currency` (`private.shop_currency()`); 9 `lines_recognised`; 10–14 `gross_sales`, `cogs`, `yield_total`, `cult_commons_share` (Σ entry shares, D1), `bicii_yield_after_cc` (shop-currency `financial_lines` by `recognized_day`); 15 `loss_lines`, 16 `loss_total` (≤ 0); 17 `parts_consumed_qty`, 18 `parts_consumed_lines`, 19 `parts_returned_qty` (reversals of job consumptions); 20 `stock_adjustments`, 21 `significant_stock_adjustments` (D33); 22 `appointments_scheduled`, 23 `appointments_arrived`, 24 `appointments_no_show` (Built, Phase 2 `…3200`, D41: `appointment_daily`'s `booked`, `arrived` and `no_shows` of that day, 0 when none; the series also starts at the earliest appointment's shop day and still ends at `private.shop_today()`); placeholders, NULL now: 25 `consignment_sales`, 26 `consignment_sales_total`, 27 `new_consignor_liability` (Phase 6 fills them under these names). Integer counts and numeric money with explicit casts; Phase 9 appends new measures only after column 27. |
+| `financial_lines` | Built (Phase 5, D32 RECOGNITION). One row per recognised ENTRY, columns in this order: `entry_key` text ('wol:' ‖ line id, unique), `source` text, `entry_kind` text ('line'), `source_line_id` uuid, `document_id` uuid, `document_number` text, `channel` text, `recognized_at` timestamptz, `recognized_day` date (`private.shop_day`), `line_type` text, `service_id`, `product_id`, `inventory_unit_id`, `category_id` (the service's or product's), `ownership_type` text (inventory lines: the unit's, else the product's; null otherwise), `consignment_item_id` (the line's consigned item; work-order lines carry it since Phase 6 step 2, D44), `customer_id`, `bike_id`, `lead_mechanic_id`, `description` text, `quantity`, `unit_sale_price`, `unit_direct_cost`, `cult_commons_rate`, `sale_total`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc` (all plain numeric), `is_loss` boolean (yield < 0), `currency` text, `cost_pending` boolean. Pinned vocabulary: `source` ∈ ('work_order','sale'); `channel` ∈ ('workshop','retail','online'); `document_id` = work_orders.id or sales.id; `document_number` = the J- job number or the S- sale number; `entry_kind` = 'line'. Recognition (D3 as modified by D15, refined by D32): every non-voided line of a job with a current `completed_at` (completed, ready for collection or collected; never open or cancelled), on the shop day of that `completed_at`. Lines are frozen once completed, so the only correction is a reopen, which removes the whole job from its earlier day until it is completed again (past days can change; no reversal entries for workshop lines). Amounts come only from the line's snapshots and generated columns; each entry's Cult Commons is the line's own share (≥ 0, D1), so no negative Cult Commons payment arises; `cost_pending` lines (D14) are recognised at cost 0 and flagged. Sale branch (Built, Phase 6 step 2, `…3700_consignment_reporting`): one entry per line of a sale whose status is not `voided`, `union all` with every column in this order: `entry_key` 'sl:' ‖ line id, `source` 'sale', `entry_kind` 'line', `source_line_id` the line, `document_id` / `document_number` the sale and its S- number, `channel` 'retail' (source retail) or 'online' (online_shopify), `recognized_at` the sale's `recognized_at` on `private.shop_day` of it, `line_type` 'inventory', `service_id` null, the line's `product_id` and `inventory_unit_id`, the product's `category_id`, `ownership_type` the unit's else the product's, the line's `consignment_item_id`, the sale's `customer_id`, `bike_id` and `lead_mechanic_id` null, the description, quantity, price, cost, rate and four totals from the line's snapshots, `bicii_yield_after_cc = yield_total − cult_commons_share`, `is_loss = yield_total < 0`, the currency, `cost_pending` false. Refunds are not subtracted and restocked lines stay (D49: netting and Cult Commons claw-back are Phase 9's refund-reporting row). A consigned entry's cost already includes the consignor payout (D44, D46). Phase 9 appends only genuinely new columns at the end, never synonyms. |
+| `daily_summary` | Built (Phase 5). One row per shop day from the earliest activity day (check-in, recognised entry or movement; today when none) to `private.shop_today()`, zero-filled; columns fixed in this order: 1 `day`; 2–7 `jobs_checked_in`, `jobs_started`, `jobs_completed`, `jobs_ready_for_collection`, `jobs_collected`, `jobs_cancelled` (flows: jobs whose CURRENT stamp falls that day, D31); 8 `currency` (`private.shop_currency()`); 9 `lines_recognised`; 10–14 `gross_sales`, `cogs`, `yield_total`, `cult_commons_share` (Σ entry shares, D1), `bicii_yield_after_cc` (shop-currency `financial_lines` by `recognized_day`); 15 `loss_lines`, 16 `loss_total` (≤ 0); 17 `parts_consumed_qty`, 18 `parts_consumed_lines`, 19 `parts_returned_qty` (reversals of job consumptions); 20 `stock_adjustments`, 21 `significant_stock_adjustments` (D33); 22 `appointments_scheduled`, 23 `appointments_arrived`, 24 `appointments_no_show` (Built, Phase 2 `…3200`, D41: `appointment_daily`'s `booked`, `arrived` and `no_shows` of that day, 0 when none; the series also starts at the earliest appointment's shop day and still ends at `private.shop_today()`); 25 `consignment_sales` integer, 26 `consignment_sales_total` numeric, 27 `new_consignor_liability` numeric (Built, Phase 6 step 2, zero-filled: over that day's shop-currency `financial_lines` entries with a `consignment_item_id`, i.e. sale lines and completed jobs' lines that sold consigned stock: the number of distinct documents, Σ their `sale_total`, and Σ round(quantity × the source line's `consignor_payout_snapshot`, 2)). Retail sales reach the money columns 9–16 through `financial_lines`; the reconcile invariants hold (the day's money columns are its entries' sums). Integer counts and numeric money with explicit casts; Phase 9 appends new measures only after column 27. |
 | `appointment_daily` | Built (Phase 2, D41 APPT-COUNTS). One row per shop day that has appointments, by SCHEDULED day (`private.shop_day(starts_at)`) and CURRENT status: `day`, `booked` (not cancelled), `expected` (booked or confirmed), `arrived` (arrived, checked_in or completed), `checked_in` (checked_in or completed), `no_shows`, `cancelled`, all integer. security_invoker, granted to no API role (it calls `private.shop_day`); read through `public.appointment_daily` (zero-filled) and daily_summary's columns 22–24. Phase 9's activity report reads it. |
 | `work_order_activity` | Built (Phase 5). One row per job: `work_order_id`, `job_number`, `status` (enum), `customer_id`, `bike_id`, `lead_mechanic_id`, `appointment_id`, `currency` text; the CURRENT stamps `checked_in_at`, `started_at`, `completed_at`, `ready_for_collection_at`, `collected_at`, `cancelled_at` and their shop days `checked_in_day`, `started_day`, `completed_day`, `ready_day`, `collected_day`, `cancelled_day`; `is_open`; `is_overdue` (D20: open and `now() - checked_in_at > interval '7 days'`); `age_days` (open: today − check-in day; else completion or cancellation day − check-in day); `days_to_start`, `days_to_complete`; `days_awaiting_collection` (completed/ready: today − completion day; collected: collection day − completion day); `time_to_complete` interval. Integer days and intervals only. A reopened job's completion stamps are its latest ones (D15). |
 | `operational_exceptions` | Built (Phase 5, D34). Columns in order: `kind`, `severity` ('danger' \| 'warning'), `entity_type` ('work_order', 'product', 'inventory_unit', 'work_order_line'), `entity_id`, `entity_label` (job number or P-/U- short ID), `subject_label` (customer · bike, or the product name, with the location for negative stock), `days`, `quantity`, `since`. Kinds: `overdue_job` (warning, which only orders it after danger rows: the UI shows Overdue in the danger tone, as everywhere else; exactly D20, 7 = `OVERDUE_AFTER_DAYS`, strictly more than 7 × 24 h), `uncollected_job` (warning; completed or ready, completed ≥ 7 shop days ago), `negative_stock` (danger; `stock_levels.on_hand < 0`, quantity = on-hand), `unit_hold_stale` (danger; a held_for_customer unit with no live inventory line on an open job; since = its last status change), `currency_mismatch` (danger; a would-be-recognised line not in the shop currency, excluded from totals). Kinds are text: Phase 6 (unit_state_mismatch, unsettled_consignment), Phase 9 (more kinds; columns `issue, short_id, title, detail, amount, currency` appended at the end) and Phase 10 (integration_failed) replace the view keeping these columns first. |
@@ -1632,7 +1712,7 @@ never exposed.
 | `product_stock` | Built (Phase 4): every product with on-hand across locations (0 when none), available and held units, `negative_locations` (locations below zero) and `below_reorder` (quantity product, reorder point set, on_hand <= reorder_point). security_invoker. |
 | `stock_reconciliation` | Ledger-derived vs cached balance when the cache exists. |
 | `low_stock` | Built (Phase 4): active, non-archived quantity products AT OR BELOW their reorder point (`on_hand <= reorder_point`), or below zero in total or at any location regardless of reorder point (D23); `shortfall = coalesce(reorder_point, 0) - on_hand`, largest first. security_invoker. |
-| `consignor_ledger` / `consignor_item_ledger` | Owed, paid, outstanding. |
+| `consignor_ledger` / `consignor_item_ledger` | Built (Phase 6 step 2, D46, D47): per consignor / per item liability, consignor charges, owed, paid (settlements not reversed), outstanding, counts and dates; derived, never stored; no API grant ([§9](#9-consignment)). |
 | `purchase_order_progress` | Ordered vs received per line. |
 | `shopify_sync_status` | Per published product. |
 | `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at`; price from `private.selling_price`; public photos only. Definer view, security_barrier, SELECT for anon and authenticated. Rules in §11. |
@@ -1713,13 +1793,13 @@ security-definer function. Blank = no access.
 | product_costs, inventory_unit_costs, inventory_movement_costs (definer views) | P(view_costs): costs, expected yield and Cult Commons | — | — | — |
 | selling_prices (definer view) | S: effective selling price per product and unit (`private.selling_price`) | — | — | — |
 | reporting.stock_levels, product_stock, low_stock | S (security_invoker over staff-only RLS) | — | — | — |
-| sales, sale_lines, sale_refunds | Design (Phase 6 step 2), revised by D48: rows to S (headers, lines, quantities, prices, totals); cost, yield, Cult Commons, rate and payout snapshots P(view_costs) (`private.can_view_sale_costs()`); P(view_financial_reports) alone reveals no cost | RPC (S sells; refunds A, D49) | RPC | — |
+| sales, sale_lines, sale_refunds | Built (Phase 6 step 2, D48): rows to S; `sales` every column except `request_fingerprint`; `sale_lines` every column except `unit_direct_cost_snapshot`, `consignor_payout_snapshot`, `cost_total`, `yield_total`, `cult_commons_rate_snapshot`, `cult_commons_share` (no column grant to anyone: P(view_costs) reads cost, yield, rate and Cult Commons, and P(manage_consignments) or P(view_costs) the payout, through `list_sales` / `sale_lines_detail`); `sale_refunds` every column. P(view_financial_reports) alone reveals no cost | RPC `record_retail_sale` (S); `record_sale_refund` (A, D49) | RPC `restock_unit` (`restocked_*` once; P(adjust_stock), a consigned unit also P(manage_consignments)); refunds change `sales.status` | never |
 | consignors | Built (Phase 6 step 1, D48): S every column except `payout_details` (P(manage_consignments) only, via step 3's RPCs; no column grant) | P(manage_consignments) (id, customer, name, email, phone, payout details, notes) | P(manage_consignments) (same plus `archived_at`; `consignor_has_open_items`) | — (archive) |
 | consignment_items | Built: S every column except `agreed_amount_owed` and `request_fingerprint` | RPC `create_consignment_item` (P(manage_consignments)) | P(manage_consignments) notes only; terms, status and returns by RPCs and triggers | — |
 | consignment_item_charges | Built: S with P(manage_consignments) or P(view_costs) (`private.can_view_consignment_money()`, rows) | RPC `add_consignment_charge` (P(manage_consignments)) | RPC `void_consignment_charge` (void columns once) | never |
 | consignment_item_events | Built: as charges (payloads carry amounts) | triggers only | never | never |
-| reporting.consignment_item_position | no grants; read by definer functions | — | — | — |
-| consignment_settlements, settlement_lines | Design (Phase 6 step 2), revised by D48: P(manage_consignments) or P(view_costs) | RPC (P(manage_consignments)) | — (whole-settlement reversal, D47) | — |
+| reporting.consignment_item_position, consignor_item_ledger, consignor_ledger | no grants; read by definer functions | — | — | — |
+| consignment_settlements, settlement_lines, consignment_settlement_reversals | Built (Phase 6 step 2, D48): rows with P(manage_consignments) or P(view_costs) (`private.can_view_consignment_money()`); settlements every column except `request_fingerprint` | RPC `record_settlement`, `reverse_settlement` (P(manage_consignments)) | never (`settlement_immutable`; corrected by whole-settlement reversal, D47) | never |
 | suppliers, purchase_orders, lines | S | P(manage_purchasing) | same | — |
 | purchase_receipts, receipt_lines | S | RPC | — | — |
 | label_templates, printer_profiles | S | A | A | A |
@@ -1771,6 +1851,11 @@ those columns from `authenticated` via column grants). Customers never read
 (see TESTING.md).
 
 ## 16. RPC catalogue (security definer, in `public`)
+
+Read RPCs that some callers may run but not see every column of return
+gated columns as NULL, never omitted and never an error (Phase 5's D30
+reports; Phase 6's sale costs, `private.can_view_sale_costs()`, and
+consignment money, `private.can_view_consignment_money()`, D48).
 
 Each RPC begins with `private.require_permission(...)` or `private.is_staff()`
 as appropriate, runs in a single transaction, locks the rows it mutates, and
@@ -1843,14 +1928,23 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `operational_exceptions(max_rows integer = 50)` → `kind, severity, entity_type, entity_id, entity_label, subject_label, days, quantity, since` | S | Built (Phase 5, D34). Danger first, then oldest `since`; max_rows clamped to 1..200. Phase 9 drops and recreates it with appended columns. |
 | `financial_lines(from_day date, to_day date)` → the 32 `reporting.financial_lines` columns in order | P(view_financial_reports) (42501 otherwise) | Built (Phase 5). Null bounds as daily_summary; at most 31 days inclusive (`report_range_invalid`); PostgREST returns ≤ 1000 rows, so callers page with `.range()`. Without view_costs `unit_direct_cost`, `cult_commons_rate`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc`, `is_loss` are NULL. By recognized_at, document_number, source_line_id. |
 | `work_order_yield(target_work_order_id uuid)` → `work_order_id, job_number, status, currency, line_count, sale_total, cost_total, yield_total, cult_commons_share, bicii_yield_after_cc, loss_line_count, loss_total, cult_commons_rates numeric[], recognized_at, recognized_day, cost_pending_count` | P(view_costs) (42501 otherwise) | Built (Phase 5). The job's live lines whether or not it is completed (running economics; equals `work_order_totals_staff`); rates = distinct snapshot rates ascending; recognized_at = `completed_at` (NULL while open, cancelled or reopened, D32). Unknown job P0002. |
-| `record_retail_sale(lines[], customer_id, recognized_at, idempotency_key)` | S | Sale + lines + movements; unit/consignment → sold. |
-| `restock_unit(unit_id, location_id, reason)` | P(adjust_stock) | `return` movement; unit → available; product status back from `sold`. |
+| `record_retail_sale(sale_id uuid, lines jsonb, customer_id uuid = null, recognized_at timestamptz = null, notes text = null)` → `sale_result (sale_id, sale_number, status, recognized_at, replayed)` | S (D48) | Built (Phase 6 step 2). Deviates from the original row `record_retail_sale(lines[], customer_id, recognized_at, idempotency_key)`: the client's `sale_id` is the idempotency key. (1) Shape: null `sale_id` 22004; `lines` a JSON array of 1–50 (`sale_lines_required`, `sale_too_many_lines`); a unit twice `sale_duplicate_unit`; unknown customer P0002; `recognized_at` > now() + 5 min `sale_recognized_in_future` (past allowed); the request fingerprint (`private.sale_request_fingerprint`: lines in order as {unit, product, location, quantity, price as money_amount text, item, shopify}, customer, recognized_at as given in UTC, trimmed notes; 22P02 / 23514 from its casts). (2) Header insert `on conflict (id) do nothing` (lock order 0; `recognized_at = coalesce(arg, now())`, shop currency): a replay with the same fingerprint returns the sale with `replayed` true (after the customer was archived or the unit sold by it, too), another payload `sale_conflict`. (3) `customer_archived`. (4) Locks: stock of every product (ascending), units, items. (5) `private.sell_line(sale, i, line, 'retail_sale')` per line in order. (6) `refresh_unique_publication` per unique product sold. Never returns a cost. |
+| `private.sell_line(p_sale sales, p_line_number integer, p_line jsonb, p_movement_type movement_type)` → `sale_lines` | no grants | Built (Phase 6 step 2): THE single sale-line writer; Phase 10 calls it with `'online_sale'` and may replace it with the same signature to read more keys. The caller holds every lock. `p_line` is `{inventory_unit_id, unit_sale_price?, shopify_line_item_id?}` or `{product_id, location_id, quantity, consignment_item_id?, unit_sale_price?, shopify_line_item_id?}`; anything else `sale_line_invalid`. Unit: P0002; `unit_already_sold` (sold), `unit_not_available` (any other status or archived), `ownership_not_saleable` (customer-owned), `currency_mismatch`; consigned: `consignment_item_not_active`, cost = agreed + live shop charges, payout = agreed. Quantity: P0002, `product_archived`, `product_inactive`, `sale_product_is_unique`, `ownership_not_saleable`, `currency_mismatch`, `sale_quantity_invalid` (integer 1..999), `location_id` 22004, location P0002 / `location_inactive`, `insufficient_stock` (never below zero); consigned: the named item (P0002, `sale_line_invalid` for another product's, `consignment_item_not_active`, `consignment_quantity_unavailable` when its remaining is short) or the FIFO head that covers it (`consignment_quantity_unavailable`), price `coalesce(arg, item asking, product default)`, cost = payout = agreed; shop: price `coalesce(arg, selling_price)`, cost the product default. NULL price `sale_price_required`, NULL cost `sale_cost_missing` (0 is valid, D24). Rate at `recognized_at`. Writes the line, one movement through `private.record_linked_movement` (−qty, the sale line, the item, cost snapshot), a unit → `sold` at `recognized_at` with `sold_sale_line_id`, and the item's status. |
+| `restock_unit(unit_id uuid, sale_line_id uuid, location_id uuid = null, reason text = null)` → `unit_status_result` | P(adjust_stock); a consigned unit also P(manage_consignments) (D46) | Built (Phase 6 step 2). Deviates from the original row `restock_unit(unit_id, location_id, reason)`: it names the sale line, which is also the replay key. Null ids 22004; `reason_required` / `reason_too_long`. Locks: `lock_stock` (the unit's product, read unlocked), its bike, the unit, its item. Line P0002; another unit's line `restock_line_mismatch`; an already restocked line returns the unit's status with no write (even if it was sold again since); the consigned-unit permission (42501); status ≠ sold `unit_not_sold`; `sold_sale_line_id` ≠ the line `restock_line_mismatch` (a unit sold through a job is never restocked, D44); a customer-owned bike `bike_with_customer` (D29); location P0002 / `location_inactive`. With the reason: the line `restocked_at/by`; a `return` +1 movement linked to the line (and item), cost = the line's cost snapshot; the unit `available` at that location with `sold_sale_line_id` null; the item's status (sold → active, event with the reason); `refresh_unique_publication` (sold → public). The sale and refunds are untouched (D7). |
+| `record_sale_refund(refund_id uuid, sale_id uuid, amount money_amount, reason text)` → `sale_refunds` | A (D49; 42501 otherwise) | Built (Phase 6 step 2). 22004 on nulls; replay by refund id (same sale, amount and trimmed reason → the row, else `sale_refund_conflict`); `reason_required` / `reason_too_long`; the sale FOR UPDATE (P0002); `sale_voided`; amount > sale total − earlier refunds `refund_exceeds_sale`; `restocked` false; status `refunded` when refunds reach the total, else `partially_refunded`. No movement, no unit change (D7). |
 | `create_consignment_item(item_id, consignor_id, location_id, agreed_amount_owed, asking_price = null, product_id = null, product_name = null, brand = null, description = null, category_id = null, tracking_type = 'unique', quantity integer = 1, serial_number = null, condition = null, received_at = null, agreement_notes = null, internal_notes = null, new_product_id = null, new_unit_id = null, bike_id = null)` → `consignment_item_result (item_id, short_id, status, product_id, inventory_unit_id)` | P(manage_consignments) | Built (Phase 6 step 1). (a) 22004 on null ids or agreed amount; `consignment_quantity_invalid`, `consignment_unique_quantity_one`, `consignment_received_in_future` (> 5 minutes ahead), `consignment_bike_requires_unique`. (b) The request's advisory lock, then replay by item id with a fingerprint of consignor, location, product, lower(trimmed name), tracking, quantity, agreed and asking (as text: "500" = "500.00") and bike: a match returns the item as it is now (even after the consignor was archived), else `consignment_item_conflict`. (c) The consignor FOR SHARE (P0002, `consignor_archived`); location P0002 / `location_inactive`; an existing product must be active, not archived, consignment-owned (`product_not_consignment`) and of that tracking (`consignment_tracking_mismatch`); none needs a name (`consignment_product_required`). (d) `lock_stock(product)`; a new draft consignment-owned product (price = asking, no default cost, shop currency); a bike FOR UPDATE with Phase 4's rules (D51); a unique item's unit through `private.register_unit` (consignment, sale price = asking, cost = agreed, the bike, the item); the item; one `consignment_received` movement (+quantity, cost snapshot = agreed, request_id = item id, the item); `refresh_unique_publication` for an existing unique product. |
 | `update_consignment_terms(item_id, agreed_amount_owed = null, asking_price = null, reason = null)` → `consignment_item_result` | P(manage_consignments) | Built. `reason_too_long`; `private.lock_consignment_item` (stock, unit, item); null keeps a value, identical values are a no-op; `consignment_item_not_active`; a new agreed amount needs a reason (`reason_required`); a unique item's unit follows (cost = agreed, sale price = asking); lines already on a job keep their snapshots; one `terms_changed` event. |
 | `add_consignment_charge(charge_id, item_id, description, amount, bearer charge_bearer, work_order_id = null)` → `consignment_item_charges` | P(manage_consignments) | Built (D4, D45). 22004 on nulls; `charge_bearer_required`; locks as above; replay by charge id (same item, trimmed description, amount, bearer, job → the row; else `consignment_charge_conflict`); unknown job P0002; `shop`: `consignment_item_not_active`, `shop_charge_unique_only`, `shop_charge_unit_not_available`; `consignor`: any status. 23514 by name (amount > 0, description ≤ 200). |
 | `void_consignment_charge(charge_id, reason)` → `consignment_item_charges` | P(manage_consignments) | Built. `reason_required` / `reason_too_long`; P0002; locks as above, then the charge; already voided → the row unchanged; a shop charge only while the item is active and its unit available (same codes). |
 | `return_consignment_item(return_id, item_id, reason, quantity integer = null, location_id = null)` → `consignment_item_result` | P(manage_consignments) | Built (D50, D51); DATA-MODEL's original row was `return_consignment_item(item_id, reason)`: `return_id` is the client's per-call key, stored as the movement's `request_id` (movement ids are an identity column). 22004 on null ids; `reason_required` / `reason_too_long`; locks (stock, unit, item); replay: a movement with that request_id that is this item's `consignment_returned` (and matches quantity / location when given) → the item unchanged; any other → `consignment_return_conflict`; `consignment_item_not_active`. Unique: the unit must be available (`unit_not_available`; void it from its job first), `unit_location_mismatch`; −1 `consignment_returned`, unit → `returned_to_consignor` (the bike link stays, D51), then (lock order 7) a unique product with no unit left in stock and publication draft, internal_only or public → `archived`. Quantity: qty = given or all remaining, 1..remaining (`consignment_return_quantity_invalid`), `location_id` required (22004), on-hand there ≥ qty (`insufficient_stock`); −qty. Then the item status (returned when nothing is left or owed). |
-| `record_settlement(consignor_id, amount, paid_at, allocations[], reference)` | P(manage_consignments) | Settlement + lines; overallocation check. |
+| `record_settlement(settlement_id uuid, consignor_id uuid, amount money_amount, allocations jsonb, paid_at timestamptz = null, reference text = null, notes text = null)` → `settlement_result (settlement_id, consignor_id, amount, paid_at, replayed)` | P(manage_consignments) (D47) | Built (Phase 6 step 2). (1) 22004 on null ids or amount; unknown consignor P0002; `settlement_paid_in_future` (> 5 min ahead); allocations a non-empty array of `{consignment_item_id, amount > 0, override_reason?}` (`settlement_allocations_required`); `settlement_duplicate_item`; unknown item P0002; `settlement_item_wrong_consignor`; Σ ≠ amount `settlement_allocation_mismatch`; the fingerprint (amount and allocation amounts as money_amount text, allocations sorted by item, paid_at as given, trimmed reference, notes and override reasons). (2) Header insert `on conflict (id) do nothing` (`paid_at = coalesce(arg, now())`): a matching replay returns it with `replayed` true even after the outstanding changed, else `settlement_conflict`. (3) Consignor FOR SHARE (`consignor_archived`); items FOR UPDATE ascending. (4) Per allocation the item's outstanding from `reporting.consignor_item_ledger`: above `max(outstanding, 0)` without an override reason `settlement_exceeds_outstanding` (detail: short ID and outstanding). |
+| `reverse_settlement(reversal_id uuid, settlement_id uuid, reason text)` → `consignment_settlement_reversals` | P(manage_consignments) (D47) | Built (Phase 6 step 2). 22004; `reason_required` / `reason_too_long`; replay by reversal id (same settlement → the row, else `settlement_reversal_conflict`); the settlement FOR UPDATE (P0002), then the consignor FOR SHARE; reversed under another id `settlement_already_reversed`; `consignor_archived`. The settlement and its lines stay; the ledger stops counting them. |
+| `list_consignors(q = null, include_archived = false, max_rows = 50)` → `id, display_name, customer_id, customer_label, email, phone, archived_at, active_items, awaiting_settlement_items, returned_items, owed, paid, outstanding, last_sale_at, last_settlement_at` | S | Built (Phase 6 step 2). From `reporting.consignor_ledger`; `q`: every word of name or email, or phone digits with or without +65; `include_archived` true lists archived consignors only; by name then id; clamp 1..200. Owed, paid, outstanding NULL without consignment money access (D48). |
+| `consignor_statement(target_consignor_id = null, target_item_id = null)` → `item_id, short_id, consignor_id, consignor_name, status, quantity, sold_qty, restocked_qty, job_held_qty, job_sold_qty, returned_qty, remaining_qty, received_at, sold_at, returned_at, return_reason, asking_price, last_sale_at, last_settlement_at, product_id, product_short_id, product_name, inventory_unit_id, unit_short_id, unit_status, bike_id, bike_short_id, agreed_amount_owed, liability, consignor_charges, shop_charges, owed, paid, outstanding` | S | Built (Phase 6 step 2). The arguments are `target_*` because PL/pgSQL refuses an argument named like a result column (the brief's `consignor_id` / `item_id`). Exactly one argument (22023); active first, then `last_sale_at` desc nulls last, then `received_at` desc. The last seven columns NULL without consignment money access (D48). |
+| `consignor_payout_details(consignor_id)` → text | P(manage_consignments) | Built (Phase 6 step 2). P0002 for an unknown consignor. |
+| `list_sales(from_at = null, to_at = null, q = null, max_rows = 50)` → `id, sale_number, source, status, recognized_at, customer_id, customer_label, line_count, first_description, has_consignment, restocked_lines, sale_total, refunded_total, cost_total, yield_total, cult_commons_share` | S | Built (Phase 6 step 2). `[from_at, to_at)`; `q`: sale number ignoring case and dash (exact or contained), customer name words, or line description words; voided excluded; newest first then id; clamp 1..200. The last three NULL without view_costs (D48). |
+| `sale_lines_detail(sale_id)` → `id, line_number, description_snapshot, quantity, unit_sale_price_snapshot, sale_total, restocked_at, restocked_by_name, product_id, product_short_id, inventory_unit_id, unit_short_id, unit_status, unit_sold_sale_line_id, unit_ownership_type, bike_id, bike_short_id, consignment_item_id, consignment_short_id, consignor_id, consignor_name, unit_direct_cost_snapshot, cost_total, yield_total, cult_commons_rate_snapshot, cult_commons_share, consignor_payout_snapshot` | S | Built (Phase 6 step 2). Line order; an unknown sale returns no rows. Cost, yield, rate and Cult Commons NULL without view_costs; the payout NULL without consignment money access (D48). |
+| `saleable_stock(q, max_results = 20)` → `kind, product_id, product_short_id, inventory_unit_id, unit_short_id, title, subtitle, location_id, location_name, on_hand, unit_price, ownership_type, consignment_item_id, consignment_short_id, consignor_name, rank` | S | Built (Phase 6 step 2). `unit`: available shop-owned and consigned units (item active), `unit_price = private.selling_price(product, unit)`; `product`: shop-owned active quantity products per location with on-hand > 0 (`selling_price(product)`), and consigned quantity products per (location with on-hand > 0, active item with remaining > 0), `on_hand = least(location on-hand, remaining)`, `unit_price = coalesce(item asking, product default)`. Rank: exact U-/P-/C- ID, SKU or serial 1.0; ID containing the key (≥ 3) 0.6; every word in name/brand/consignor 0.45 + 0.4 × word similarity. Blank q nothing; clamp 1..50. No cost. |
 | `receive_purchase(po_id, idempotency_key, lines[])` | P(manage_purchasing) | §10. |
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
@@ -1867,7 +1961,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `set_attachment_visibility(attachment_id, visibility, new_bucket, new_path)` | S | internal ↔ customer stays in `media-internal`; to/from `public` the object must already be at the new location (copied by the server). Never public for a customer record or an undecoded original (`attachment_original_never_public`). Locks the row; `visibility_changed` event; replay is a no-op. |
 | `delete_attachment(attachment_id, reason)` | S | Reason required. Deletes the row, `deleted` event with actor, reason and the row as payload. Returns a set: the deleted row (the server then removes the object), or no row on replay (PostgREST: `[]`). |
 | `attachment_stray_objects(entity_type, entity_id)` | S | Objects under `{entity_type}/{entity_id}/` in either photo bucket that no attachment points at and that are safe to remove now (older than 10 minutes; in `media-internal`, with history or older than a day), at most 100. The server removes them when it shows the record. |
-| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Later phases add a `private.search_<kind>` function and a branch. |
+| `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Phase 6 step 2 adds `consignor` (every word in name/email 0.5 + 0.4 × word similarity, phone digits contained 0.6, exact email or phone 0.95; title the name, subtitle email · phone; archived consignors only with `archived` true), `consignment_item` (exact C- ID 1.0, C- ID containing the key ≥ 3 0.6, every word in product name/brand and consignor name 0.45 + 0.4 × word similarity; title the product name, subtitle `consignor · status · U-…` or `Qty n`; never archived) and `sale` (exact S- number 1.0, number containing the key ≥ 3 0.6; title `S-… · $total`, subtitle the customer or `Walk-in` · the shop day; never archived; voided left out). Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |
@@ -1892,7 +1986,7 @@ Realistic and deterministic (fixed UUIDs so tests can reference them):
 3 staff (1 admin, 2 mechanics with differing permissions), 6 customers with
 10 bikes, shop hours Tue–Sun, 4 appointment types, 9 appointments, 1 customer login, 9 services, 2 locations,
 12 quantity products with stock, 3 unique shop-owned bikes, 2 consigned bikes
-(one sold, unsettled), 2 suppliers, 1 PO partially received, 9 work orders
+(one sold, unsettled) and consigned kit, 4 in-store sales, 2 suppliers, 1 PO partially received, 9 work orders
 spread across statuses and the last 9 days, settlements. (The Cult Commons
 base rate is not seed data: the workshop catalog migration ships it, D21.)
 The seed is applied to the local database and to a fresh preview
@@ -1976,7 +2070,7 @@ every request id used once.
 | P-000002 | Grand Prix 5000 700x25c tyre | 89.00 / 52.00 | 4 | 12 Shop floor |
 | P-000003 | Road inner tube 700x23-28c Presta 60mm | 9.00 / 3.80 | 20 | 40 Shop floor + 20 Workshop store |
 | P-000004 | Marathon Racer 16x1.35 tyre | 55.00 / 30.00 | 3 | 6 Shop floor (one consumed by J-000010, then reversed) |
-| P-000005 | Inner tube 16in Schrader | 14.00 / 6.00 | 6 | 14 Shop floor (15 opening, one on J-000010) |
+| P-000005 | Inner tube 16in Schrader | 14.00 / 6.00 | 6 | 12 Shop floor (15 opening, one on J-000010, two sold on Phase 6's S-000002) |
 | P-000006 | X11 11-speed chain | 45.00 / 24.00 | 5 | 8 Shop floor |
 | P-000007 | 105 CS-R7000 11-34 cassette (draft) | 109.00 / 68.00 | 2 | 3 Shop floor |
 | P-000008 | Pro brake cable kit | 35.00 / 16.00 | 4 | 2 Shop floor (low) |
@@ -2143,3 +2237,46 @@ J-000014's completion, Chloe for her own bookings). IDs in
 - D41 counts per seeded day (`SEED_DAYS`): d3 scheduled 1, arrived 1; d1
   scheduled 1, no-show 1; d0 scheduled 4, arrived 1; other days 0.
   `tests/db/appointment-seed.test.ts` proves the rest.
+
+Phase 6 part (done, step 2): **consignment and sales**, at the end of the
+seed. The three consignors are inserted directly as the owner (like
+customers); everything else goes through the RPCs as the admin
+(`request.jwt.claims` set, then reset to `''`), so every rule and trigger
+runs. Intake dates, sale `recognized_at` and settlement `paid_at` use
+`pg_temp.seed_at(days_ago, local_time)` so the history lands on the Phase 5
+fixture days; movements, charges, item events and the refund carry seed
+time. Fixed-UUID prefixes: `6a` consignors, `6b` items, `6c` intake
+products, `6d` intake units, `6e` charges, `6f` sales, `7a` refunds, `7b`
+settlements, `7c` reversals, `7e` returns (`CONSIGNOR`, `CONSIGNMENT_ITEM`,
+`CONSIGNMENT_PRODUCT`, `CONSIGNMENT_UNIT`, `CONSIGNMENT_CHARGE`, `SALE`,
+`SALE_REFUND`, `SETTLEMENT`, `SETTLEMENT_REVERSAL`, `CONSIGNMENT_RETURN` in
+`tests/fixtures/ids.ts`).
+
+- Consignors: Kelvin Yeo (no customer record, PayNow), Daniel Ong
+  (`CUSTOMER.daniel`), Chloe Lim (`CUSTOMER.chloe`, bank transfer,
+  internal notes).
+- Items (on a fresh build C-000001…C-000004, products P-000023…P-000026,
+  units U-000004…U-000006): C-000001 Kelvin's Colnago C64 Disc, unique,
+  agreed 2400.00, asking 4200.00, d20, a 120.00 shop-borne charge, unsold;
+  C-000002 Daniel's Cervélo R3, unique, 500.00 / 1000.00, d18, a 45.00
+  consignor-borne charge; C-000003 Chloe's six Rapha jerseys, quantity,
+  35.00 / 70.00, d15; C-000004 Kelvin's Dura-Ace crankset, unique, 300.00 /
+  520.00, d12, returned to him at seed time.
+- Sales (`record_retail_sale`): S-000001 d5 11:20 Priya, 2 jerseys naming
+  C-000003 (140.00 / cost 70.00 / yield 70.00 / Cult Commons 21.00);
+  S-000002 d4 15:05 walk-in, 2 × P-000005 Inner tube 16in Schrader
+  (shop-owned, 14.00 / 6.00: 28.00 / 12.00 / 16.00 / 4.80), with a 14.00
+  refund (one tube); S-000003 d3 16:40 Hafiz, the Cervélo at its selling
+  price (SPEC §10's consignment example: 1000.00 / 500.00 / 500.00 /
+  150.00); S-000004 today 10:30 walk-in, 1 jersey by FIFO from C-000003
+  (70.00 / 35.00 / 35.00 / 10.50).
+- Settlements: Chloe 30.00 paid d3 18:00 (PayNow 2991), reversed ("Wrong
+  amount; the transfer was $40."); Chloe 40.00 paid d2 12:00 (PayNow 3002).
+- Ledgers (`EXPECTED_CONSIGNOR_LEDGER`): Kelvin owed 0.00, outstanding
+  0.00, 1 active, 1 returned; Daniel liability 500.00, consignor charges
+  45.00, owed 455.00, paid 0.00, outstanding 455.00; Chloe liability
+  105.00 (3 sold, 3 left), paid 40.00 (the reversed 30.00 excluded),
+  outstanding 65.00. Lines: `EXPECTED_SALE`. Daily consignment columns
+  (`SEED_DAYS`): d5 1 / 140.00 / 70.00, d3 1 / 1000.00 / 500.00, d0 1 /
+  70.00 / 35.00, other days 0. `tests/db/consignment-reporting.test.ts`
+  proves them.

@@ -180,6 +180,18 @@ All records: [decisions/README.md](decisions/README.md).
   appointment ids) and replay instead of duplicating; rows are locked FOR
   UPDATE and stock, appointment days and the last-admin check use
   transaction advisory locks.
+- Sales and reporting (Phase 6 step 2, database only): every sale line,
+  in-store now and Shopify in Phase 10, is written by one function,
+  `private.sell_line` (the line with its snapshots, its linked
+  `retail_sale` / `online_sale` movement, the unit and the consignment
+  item), called by `record_retail_sale` after the request's own header
+  insert and the stock, unit and item locks. Revenue reaches the reports
+  through one view: `reporting.financial_lines` unions the sale lines
+  with the workshop lines, and `reporting.daily_summary` sums it (plus the
+  consigned entries for its consignment columns); the Phase 5 RPCs gate
+  it unchanged. The consignor ledgers are views over the item position
+  and the settlements, so owed, paid and outstanding are never stored
+  ([DATA-MODEL §8, §9, §14](DATA-MODEL.md#8-sales-non-workshop-revenue)).
 - Errors: `P0001` with a stable code, `42501` for authorization, `P0002` for
   missing rows; mapped in [src/lib/db-errors.ts](../src/lib/db-errors.ts)
   ([DATA-MODEL §16](DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public)).
@@ -188,7 +200,7 @@ All records: [decisions/README.md](decisions/README.md).
 
 | Concern | Measured fact | Assumption or unknown | Revisit trigger |
 |---|---|---|---|
-| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 step 1; each case proves the second call waits on a lock) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 on `feat/p6-consignment` (86 files, 1225 tests) | Behaviour under real shop load | First hosted use |
+| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2: intake, returns, parts, completions, sales and settlements; each case proves the second call waits on a lock) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 on `feat/p6-consignment` (89 files, 1298 tests) | Behaviour under real shop load | First hosted use |
 | Load and latency | Not measured | Single shop, a few staff | Slow screens reported, or Phase 9 reports |
 | Upload size | 20 MiB per object on both buckets (`file_size_limit` 20971520); photos are scaled to at most 2048 px and re-encoded as JPEG in the browser first (`prepare-photo.ts`) | Hosted Storage limits per plan | Hosted project created |
 | Hosted behaviour | None: everything runs on the devstack | Platform roles, Auth settings and versions may differ | [R-001](RISKS.md#r-001--nothing-is-deployed), [R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase) |
