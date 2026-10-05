@@ -79,6 +79,15 @@ export function databaseUrl() {
 }
 
 /**
+ * The devstack's own database (what db:reset builds and the services use):
+ * DATABASE_URL's server with PGDATABASE as the name, else bicii_dev. Lets a
+ * second checkout (a git worktree) run its own stack beside the first.
+ */
+export function devDatabaseUrl() {
+  return withDatabase(databaseUrl(), process.env.PGDATABASE ?? DEFAULT_DB_NAME);
+}
+
+/**
  * Same server and credentials, different database.
  * @param {string} url
  * @param {string} dbName

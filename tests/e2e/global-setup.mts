@@ -23,11 +23,10 @@ import pg from "pg";
 
 import {
   ANON_KEY,
-  DEFAULT_DB_NAME,
   GATEWAY_URL,
   ROOT,
-  databaseUrl,
-  withDatabase,
+  databaseName,
+  devDatabaseUrl,
 } from "../../scripts/devstack/config.mjs";
 import { REPORT_JOB, SEED_PASSWORD, STAFF_EMAIL } from "../fixtures/ids";
 
@@ -87,7 +86,7 @@ async function readSeedAnchor(url: string): Promise<string> {
 }
 
 export default async function globalSetup() {
-  const env = { DATABASE_URL: withDatabase(databaseUrl(), DEFAULT_DB_NAME) };
+  const env = { DATABASE_URL: devDatabaseUrl() };
 
   if (process.env.E2E_EXTERNAL_STACK === "1") {
     // `supabase start` (Docker) or another stack on the same URL and demo
@@ -95,7 +94,7 @@ export default async function globalSetup() {
     console.info(`[e2e] using the external stack at ${GATEWAY_URL} as it is`);
   } else {
     if (process.env.E2E_RESET !== "0") {
-      console.info("[e2e] resetting bicii_dev (set E2E_RESET=0 to skip)");
+      console.info(`[e2e] resetting ${databaseName(env.DATABASE_URL)} (set E2E_RESET=0 to skip)`);
       run("db.mjs", ["reset"], env);
     }
     run("start.mjs", [], env);

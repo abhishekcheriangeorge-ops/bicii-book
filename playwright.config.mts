@@ -4,11 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 import {
   ANON_KEY,
-  DEFAULT_DB_NAME,
   GATEWAY_URL,
   SERVICE_ROLE_KEY,
-  databaseUrl,
-  withDatabase,
+  devDatabaseUrl,
 } from "./scripts/devstack/config.mjs";
 import { E2E_PUBLIC_SITE_URL } from "./tests/fixtures/public-site";
 
@@ -68,7 +66,7 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
       NEXT_PUBLIC_PUBLIC_SITE_URL: E2E_PUBLIC_SITE_URL,
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
-      DATABASE_URL: withDatabase(databaseUrl(), DEFAULT_DB_NAME),
+      DATABASE_URL: devDatabaseUrl(),
       LOG_LEVEL: process.env.LOG_LEVEL ?? "warn",
     },
   },
