@@ -148,6 +148,12 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.list_sales(timestamp with time zone, timestamp with time zone, text, integer)",
   "public.sale_lines_detail(uuid)",
   "public.saleable_stock(text, integer)",
+  // Labels (Phase 8): active staff; templates and profiles written by admins only
+  "public.create_print_job(uuid, label_kind, uuid, integer, uuid, uuid, uuid)",
+  "public.label_preview(label_kind, uuid)",
+  "public.set_default_label_template(uuid)",
+  "public.set_default_printer_profile(uuid)",
+  "public.set_print_job_status(uuid, print_status, text)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -247,6 +253,14 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "public.sale_refunds": ["SELECT"],
   "public.sales": ["SELECT"],
   "public.settlement_lines": ["SELECT"],
+  // Labels (Phase 8, D56-D59): staff read; admins insert and update
+  // templates and printer profiles through column grants (never
+  // is_default, moved by set_default_*, or created_by); print jobs are
+  // read-only (create_print_job and set_print_job_status write them);
+  // nothing is deleted.
+  "public.label_templates": ["INSERT", "SELECT", "UPDATE"],
+  "public.print_jobs": ["SELECT"],
+  "public.printer_profiles": ["INSERT", "SELECT", "UPDATE"],
 };
 
 /**

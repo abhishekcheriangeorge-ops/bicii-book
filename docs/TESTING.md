@@ -138,7 +138,7 @@ automatically: RLS enabled on every `public` table, no function in
 `public`/`private` executable by PUBLIC, security-definer functions pin
 `search_path`, no money-like column is `real`/`double precision`, every
 numeric table column uses a domain and every numeric domain rejects `NaN`
-(`money_amount`, `rate_fraction`).
+(`money_amount`, `rate_fraction`, `line_quantity`, `label_mm`).
 
 **API surface** (the RLS-matrix fixture, PLAN §5): hosted Supabase grants
 ALL on every new `public` table, sequence and function to `anon`,
@@ -491,6 +491,17 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Seeded ledger consistent (Phase 5) | `reporting-seed.test.ts` "The seeded ledger is consistent": every seeded inventory line has exactly one `job_consumption` movement (−quantity, cost snapshot = the line's unit cost), at the line's own time for the Phase 5 lines (J-000010's, written by `add_inventory_line`, just after); no line created at or after its job's completion; no stock level below zero and the Phase 5 products' on-hand as documented; no seeded job, line, event, assignment or movement later than `now()`, and no Phase 5 row later than J-000007's seed-time check-in. |
 | Cost-pending lines flagged (D14) | `reporting.test.ts`: a `cost_pending` manual line on a completed job is recognised at cost 0 with `cost_pending` true; `today_dashboard(day).cost_pending_lines` and `work_order_yield.cost_pending_count` count it. |
 | No float money in function results (Phase 5) | `meta.test.ts`: no money-named OUT/TABLE argument of a function in `public` or `private` is `real` or `double precision`; every reporting RPC compiles and answers with exactly its documented columns (`reporting.test.ts`). |
+| QR payload equals the public URL (Phase 8; SPEC §15; D9) | `labels.test.ts` "QR payload (D9)": for a product, a unit and a bike the payload is exactly `` `${SHOP.publicSiteUrl}/q/${short_id}` `` (`label_preview` and the job); every valid base of `tests/fixtures/qr-bases.ts` gives one slash before `q` (a trailing slash, a path base `https://bicii.sg/shop`); every invalid one violates `shop_settings_public_site_url_check` (23514); with the check dropped in the transaction, each invalid base, null and a deleted settings row make `create_print_job` and `label_preview` raise `public_site_url_invalid` (no fallback). The same case list drives step 2's TypeScript validator (parity). |
+| N labels carry one payload; per-job caps (Phase 8; SPEC §16, §31; D56) | `labels.test.ts`: quantity 10 → one row, one `qr_payload`; product 0, 501, −1 → `label_quantity_out_of_range`, 500 ok; unit 11 and bike 11 out, unit 10 and bike 1 ok; owner inserts past the caps → `print_jobs_quantity_check` / `print_jobs_unique_quantity_check`. |
+| Unique labels are per unit (Phase 8; SPEC §16; D57) | `labels.test.ts`: two units of one unique product get distinct U- payloads, distinct from the product's P- address; kind `product` on a unique product → `label_unique_product_needs_unit` (job and preview). |
+| A printed label resolves publicly, as staff see it (Phase 8; SPEC §15, §23; D57) | `labels.test.ts`: the jobs of a published quantity product, a published shop unit and a published consigned unit each return exactly one `reporting.public_items` row as anon; a draft product's, an unknown ID and a bike tag return none; `public_items` returns identical rows to anon, mechanic2 and the admin for the same short IDs (so the staff "What the public sees" panel is the anonymous scan). |
+| The label price is the one selling price (Phase 8; D58, D24 amended) | `labels.test.ts`: for the three published fixtures the label price equals `private.selling_price` and the view's `sale_price` as anon (and the currency); a consigned unit sold without a price (rolled back) snapshots the label's price; after `update_consignment_terms` the preview follows the new asking price; unit price, else product default; product price 0 → "0.00"; NULL → JSON null (never "0.00"); 12.5 → "12.50"; a bike tag has no price. |
+| Labels never carry cost, consignor, ownership or notes (Phase 8; SPEC §15, §23) | `labels.test.ts`: content keys = the whitelist; content text contains no direct cost (20.00, 380.00, 400.00, 2400.00), not the consignor's name, not "consign", "internal" or "shop_owned"; an owner insert with an extra `cost` key → 23514 `print_jobs_content_keys`; the source of `private.label_content` mentions none of `consignment_items`, `direct_cost`, `ownership_type`, `internal_note`, `customer`. Label text is a subset of the public row plus identifiers: name = the view's name as anon; identity lines are the brand, the size/colour line or the condition's first line. Every seeded bike's tag name equals `bikeTitle()`. |
+| Print jobs are snapshots, history and RPC-only (Phase 8; SPEC §2, §23) | `labels.test.ts`: renaming and repricing the product leaves the job's content unchanged while `label_preview` shows the new values; template and printer snapshots; a replay with the same id → the same row and one row, another quantity, record or printer → `print_job_conflict`, a replay without a printer after the default moved → the original job; staff insert/update/delete → 42501; owner update of quantity or content and delete → `print_job_immutable`; archived product, unit (and a unit whose product is archived) and bike keep their jobs readable while new jobs, previews and reprints → `label_entity_archived`; a reprint of another record → `print_job_reprint_mismatch`. |
+| Print job status machine (Phase 8; D59) | `labels.test.ts`, table-driven from `tests/fixtures/print-transitions.ts`: `private.print_job_transition_allowed` for all 16 pairs; `set_print_job_status` from each status to each: allowed moves stamp `rendered_at` / `completed_at` and `status_changed_by` = the caller, same status is a no-op (a failed job keeps its first error), the rest `print_job_transition_invalid` (also for the owner, by the trigger); failed without, with a blank or with a 501-character error → `print_job_error_required` / `reason_too_long`. |
+| Templates and printers: staff read, admins write (Phase 8) | `labels.test.ts`: mechanic2 reads the three built-in templates and two profiles, insert → 42501, update affects 0 rows, `set_default_*` → 42501; the admin inserts and renames (trimmed, `created_by` set); `is_default` and delete → 42501; switching off a default → `*_default_required`; `set_default_*` leaves one default per kind / one printer and refuses an inactive target; inactive printer or template and a template of another kind refused by `create_print_job`; no default for a kind → `label_template_missing`; kind / adapter changes → `*_immutable`; `bluetooth` and `network_raw` → 23514 `printer_profiles_adapter_available`; config v1; width / height checks; `label_mm` rejects NaN. Layout v1 from `tests/fixtures/label-layouts.ts` (shared with step 2's zod schema): every case through `private.label_layout_problem`, and every invalid one through an admin insert → `label_layout_invalid` with the sentence as DETAIL. |
+| Customers and anonymous visitors read nothing about labels (Phase 8; SPEC §4.2) | `labels.test.ts`: a linked customer reads 0 rows from `label_templates`, `printer_profiles`, `print_jobs` and gets 42501 from the five label RPCs; anon has no privilege on the tables and cannot execute the functions (also `meta.test.ts`'s allow-lists). |
+| Labels under concurrency (Phase 8; SPEC §25) | `labels-concurrency.test.ts` (committed, real connections; each case proves the second call waits on a lock): the same print job from two devices → one job, the second returns the first's row; another quantity → `print_job_conflict`, one row; two admins making different templates (and printers) default → exactly one default, the second's target, no 23505; printed and failed at once → one wins, the other `print_job_transition_invalid`. |
 
 ### End-to-end (SPEC §27.3)
 
@@ -942,6 +953,20 @@ consigned Colnago now matches too (`staff-search`). Phase 6 helpers live in
 plus step 1's intake, charge, return and position helpers); `saleLines`,
 `itemLedger` and `consignorLedger` read as the owner because costs, payouts
 and the ledger views have no API grant.
+
+Since Phase 8 step 1 the seed ends with **five print jobs** (`PRINT_JOB`:
+printed, failed, its printed reprint, a rendered bike tag not yet
+confirmed, and a queued job E2E renders read-only) on the built-in
+templates and printers, which the labels migration inserts
+(`LABEL_TEMPLATE`, `PRINTER_PROFILE`). Their payloads use the seeded
+`shop_settings.public_site_url`, exported as `SHOP.publicSiteUrl`
+(`http://localhost:4000`), the database QR base payload assertions compare
+against exactly; `E2E_PUBLIC_SITE_URL` (`tests/fixtures/public-site.ts`) is
+the environment's scan-only base. No seeded product is published (other
+specs rely on the seed's publication states); label tests publish their
+own fixtures inside rolled-back transactions (`publishedFixtures` in
+`tests/db/label-fixtures.ts`). None of the earlier seed tests enumerates
+every table, so the new rows change none of their assertions.
 
 ## CI
 

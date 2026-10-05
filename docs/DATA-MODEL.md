@@ -45,11 +45,11 @@ This section was added by the documentation retrofit (2026-10-05, inspected
 at `c6bf6d0`). The numbered sections below are never renumbered; code and
 migration comments cite them as "DATA-MODEL §n".
 
-**Authority.** The schema source is the 37 files in
+**Authority.** The schema source is the 38 files in
 [supabase/migrations/](../supabase/migrations/), from
-`20261004000100_foundation.sql` to `20261004003700_consignment_reporting.sql`
-(on `feat/p6-consignment`; Phase 6 added the last five, `20261004003300` to
-`20261004003700`).
+`20261004000100_foundation.sql` to `20261004003800_labels.sql`
+(on `feat/p8-labels`; Phase 6 added `20261004003300` to `20261004003700`,
+Phase 8 step 1 added `20261004003800_labels.sql`).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
@@ -61,10 +61,10 @@ document is corrected.
 
 **Applied state.**
 
-- Local: on 2026-10-05, after `npm run db:reset` on `feat/p6-consignment`
-  (the Phase 6 review fixes; `npm run test:e2e` resets the same database),
+- Local: on 2026-10-05, after `npm run db:reset` on `feat/p8-labels`
+  (Phase 8 step 1; `npm run test:e2e` resets the same database),
   `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
-  printed `37|20261004003700` (every file applied).
+  printed `38|20261004003800` (every file applied).
 - CI: the `check` job diffs the generated types against a throwaway
   database built from the migrations, and the `test` and E2E jobs run
   `npm run db:reset` (migrations, then the seed) before testing
@@ -92,25 +92,25 @@ the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
 | §8 Sales | Implemented | `sales`, `sale_lines`, `sale_refunds`, `private.sell_line`, `record_retail_sale`, `restock_unit`, `record_sale_refund` (`003500_sales`; the partial unique index `sale_lines_unit_sells_once` replaces this section's plain `unique`, D46). Screens: Phase 6 step 4 (`src/app/(staff)/sales/`, `src/lib/domain/sales.ts`). Shopify orders reuse `private.sell_line` in Phase 10 |
 | §9 Consignment | Implemented | Phase 6 step 1: consignors, items, charges, item history, returns, `reporting.consignment_item_position`, consigned job parts (`003300_consignment`, `003400_consignment_job_parts`; D44–D52); step 2: settlements, reversals, the ledgers and the balance rule (`003600_consignment_settlements`; D46, D47). Screens: step 3 (`src/app/(staff)/consignment/`, `src/lib/domain/consignment.ts`); selling a consigned item in store: step 4 (Sell on the item page, `/sales`) |
 | §10 Suppliers and purchasing | Planned | Phase 7; built only on the parallel branch `feat/p7-purchasing`, not on this line |
-| §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`). Missing: the QR base decision and labels (Phase 8), PO- resolution (Phase 7; `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4), the public `/q` route (Phase 11) |
-| §12 Label printing | Planned | Phase 8 (browser/PDF), Phase 12 (hardware) |
+| §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`); the database QR base and payload (`private.qr_payload`, `003800_labels`, D9). Missing: the Admin's QR display and scan bases on the database base (`src/lib/qr.ts`, Phase 8 step 2), PO- resolution (Phase 7; `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4), the public `/q` route (Phase 11) |
+| §12 Label printing | Partly | Database built (`003800_labels`, Phase 8 step 1: templates, printer profiles, print jobs, label content, RPCs, built-in rows); `src/lib/printing/` and the screens are Phase 8 steps 2–4; hardware adapters Phase 12 |
 | §13 Shopify integration | Planned | Phase 10; only reserved columns exist (`customers.shopify_customer_id`, the product Shopify ids) |
 | §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. Missing: `stock_reconciliation` (Phase 9), `purchase_order_progress` (Phase 7), `shopify_sync_status` (Phase 10) |
-| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1) and sales and settlements (step 2, D48); rows for purchasing, labels and integrations are design |
-| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`); `receive_purchase` and the Shopify processors are design |
+| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48) and labels (Phase 8 step 1); rows for purchasing and integrations are design |
+| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`); the five label RPCs (Phase 8 step 1) are built; `receive_purchase` and the Shopify processors are design |
 | §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`), S from step 2 (`sales`); PO is reserved for Phase 7 |
-| §18 Seed data | Partly | Phase 1–5, Phase 2 and Phase 6 parts are in `supabase/seed.sql`; the suppliers and purchase order of the opening list wait for Phase 7 |
+| §18 Seed data | Partly | Phase 1–5, Phase 2, Phase 6 and Phase 8 parts are in `supabase/seed.sql`; the suppliers and purchase order of the opening list wait for Phase 7 |
 
 **Access summary.** The matrix is [§15](#15-row-level-security-matrix) and
 the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 
 | Actor | Reaches | Enforced by | Test evidence |
 |---|---|---|---|
-| anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`; objects in the public bucket `media-public` by URL, with no listing ([§2](#2-customers-bikes-attachments), [§15](#15-row-level-security-matrix)); nothing else | grants, RLS, definer projections, public bucket (`20261004000800_media_storage.sql`) | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access` |
+| anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`; objects in the public bucket `media-public` by URL, with no listing ([§2](#2-customers-bikes-attachments), [§15](#15-row-level-security-matrix)); nothing else (nothing about labels) | grants, RLS, definer projections, public bucket (`20261004000800_media_storage.sql`) | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access`, `labels` |
 | customer (signed in) | own rows only, through `my_*` RPCs; base tables return nothing | staff-only RLS, `private.current_customer_id()` | `customer-access`, `workshop-customer-access`, `appointment-customer-access` |
 | staff (active) | base tables through RLS; cost columns hidden | `private.is_staff()`, column grants, `*_staff` views | `staff-rls`, `work-order-lines`, `inventory-catalog` |
 | staff with a permission | costs, inventory writes, stock changes, financial reports, staff management | `private.require_permission` / `has_permission` in RPCs | `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger` |
-| admin | everything above plus settings, hours, rates and admin staff | `private.require_admin()`, `private.is_admin()` | `staff-management`, `staff-history`, `schedule-settings` |
+| admin | everything above plus settings, hours, rates, admin staff, label templates and printers | `private.require_admin()`, `private.is_admin()` | `staff-management`, `staff-history`, `schedule-settings`, `labels` |
 | service role | bypasses RLS; used only for the Auth admin API in `src/lib/admin/` | ESLint import restriction, `server-only` | no dedicated test |
 
 **Lifecycle.**
@@ -1554,7 +1554,34 @@ writes nothing.
 ## 11. QR identity and publication
 
 - Every product, inventory unit and bike has a `short_id`. The QR payload is
-  the URL `{shop_settings.public_site_url}/q/{short_id}` and nothing else.
+  the URL `{shop_settings.public_site_url}/q/{short_id}` and nothing else
+  (D9, decided in Phase 8: [ADR-017](decisions/ADR-017-labels-and-qr-base.md)).
+  - `private.qr_payload(short_id)` is the only payload source for
+    printing and `private.label_content` (§12) the only source of label
+    text. The payload is `rtrim(public_site_url, '/') || '/q/' ||
+    short_id` (one slash before `q`, also under a path base such as
+    `https://bicii.sg/shop`). There is NO fallback: a missing row, a null
+    or a malformed address raises P0001 `public_site_url_invalid` and
+    nothing prints until an admin sets it (Labels and printers settings,
+    Phase 8 step 3, through `update_shop_settings`). A short ID that is
+    not `(PO|B|J|P|U|C|S)-` + 6 digits is 22023.
+  - `shop_settings_public_site_url_check` was tightened by
+    `20261004003800_labels.sql` to exactly the rule `qr_payload` applies:
+    `public_site_url ~ '^https?://[^/?#[:space:]]+(/[^?#[:space:]]*)?$'`
+    and at most 200 characters (http or https, a host, an optional path,
+    no query, no fragment, no whitespace); the cases are
+    `tests/fixtures/qr-bases.ts`, shared with the TypeScript validator in
+    `src/lib/qr.ts` (Phase 8 step 2). The column has no default.
+  - Labels of published products and units resolve publicly: a unit's
+    label is its U- ID, and `reporting.public_items` has a row per
+    published unit (D57). A bike tag (B-) resolves to "not found"
+    publicly. The staff panel "What the public sees" (`PublicPreviewPanel`
+    in `src/components/domain/public-preview.tsx`, read by
+    `publicPreview()` in `src/lib/domain/inventory.ts`) reads the same
+    view, which returns identical rows to anon and to staff for the same
+    short ID (tested in `tests/db/labels.test.ts`), so it is exactly what
+    an anonymous scan gets. Phase 8 adds no anonymous function, no
+    `public.public_item` (Phase 11 creates it) and no anon client.
 - The public site route `/q/[shortId]` resolves the ID through
   `reporting.public_items` (built in Phase 4, `20261004002100_inventory_publication.sql`;
   below). Unknown or unpublished IDs are simply absent from it, so they
@@ -1641,26 +1668,164 @@ writes nothing.
 
 ## 12. Label printing
 
+Built by `20261004003800_labels.sql` (Phase 8 step 1; decisions D9, D56–D59
+in [ADR-017](decisions/ADR-017-labels-and-qr-base.md)). The TypeScript side
+(`src/lib/printing/`: the template renderer, the `PrinterAdapter`
+interface, the `browser` and `pdf` adapters) and the screens are Phase 8
+steps 2–4; a hardware adapter is Phase 12.
+
+Types: `label_kind` (`product`, `unit`, `bike`); `printer_adapter`
+(`browser`, `pdf`, `network_raw`, `bluetooth`; the last two exist for
+Phase 12 and `printer_profiles_adapter_available` keeps them unusable);
+`print_status` (`queued`, `rendered`, `printed`, `failed`); domain
+`label_mm` = `numeric(5,1)` without NaN (`label_mm_not_nan`).
+
 ```
 label_templates
-  id, name, kind label_kind (product | unit | bike), width_mm, height_mm,
-  layout jsonb      -- fields: name, price, short_id, qr, extra lines
-  active
+  id uuid PK, name text (btrim, 1..80, unique label_templates_name_key),
+  kind label_kind (never changes: label_template_kind_immutable),
+  width_mm label_mm (20..150), height_mm label_mm (15..150),
+  layout jsonb (layout v1), is_default boolean, active boolean,
+  created_by -> staff (set by the trigger), created_at, updated_at
+  label_templates_default_is_active: not is_default or active
+  label_templates_one_default_per_kind: unique (kind) where is_default
 
 printer_profiles
-  id, name, adapter printer_adapter (browser | pdf | network_raw | bluetooth),
-  config jsonb, label_template_id, active
+  id uuid PK, name text (btrim, 1..80, unique printer_profiles_name_key),
+  adapter printer_adapter (never changes: printer_profile_adapter_immutable;
+    browser | pdf only: printer_profiles_adapter_available),
+  config jsonb default '{}' (config v1), is_default, active,
+  sort_order integer, created_by -> staff, created_at, updated_at
+  printer_profiles_one_default: unique ((true)) where is_default
+  (a profile carries no template)
 
 print_jobs
-  id, printer_profile_id, label_template_id, entity_type, entity_id,
-  quantity integer, status print_status (queued | rendered | printed | failed),
-  requested_by, created_at, completed_at, error
+  id uuid PK (the client's id: create_print_job's idempotency key)
+  label_kind, product_id -> products, inventory_unit_id -> inventory_units,
+  bike_id -> bikes (exactly the one matching label_kind:
+    print_jobs_entity_matches_kind; on delete restrict)
+  short_id, qr_payload, content jsonb (private.label_content at creation)
+  quantity integer (1..500; at most 10 unless product: D56)
+  printer_profile_id -> printer_profiles, profile_snapshot {name, adapter,
+    config}, adapter
+  label_template_id -> label_templates, template_snapshot {name, kind,
+    width_mm, height_mm, layout}
+  status print_status default 'queued', rendered_at, completed_at,
+  error (exactly when failed; 1..500 characters), status_changed_by -> staff,
+  reprint_of_id -> print_jobs, requested_by -> staff, correlation_id,
+  created_at, updated_at
 ```
 
-MVP ships the `browser` and `pdf` adapters (render labels to a print-sized
-page/PDF). A hardware adapter is a later phase once the printer models are
-known; the abstraction (`LabelTemplate`, `PrintJob`, `PrinterProfile`,
-`PrinterAdapter` interface in `src/lib/printing/`) is in place from day one.
+Every foreign key has an index; `print_jobs` also has `(created_at desc)`,
+one `(entity, created_at desc)` index per typed key and a partial index of
+open jobs (`status in ('queued', 'rendered')`).
+
+**Layout v1** (`label_templates.layout`, snake_case jsonb), exactly these
+keys: `version` (1), `qr_mm` (number), `padding_mm` (0.5..6),
+`qr_position` (`left` | `right`), `fields` (1..6 distinct of `name`,
+`price`, `short_id`, `sku`, `identity`, `serial_number`; must include
+`short_id`: every label shows its human-readable short ID), `name_lines`
+(integer 1..3), `text_mm` (1.8..6). Geometry: 10 ≤ `qr_mm` ≤
+least(width, height) − 2 × `padding_mm`, and width − `qr_mm` − 3 ×
+`padding_mm` ≥ 15 (the text column). `private.label_layout_problem(layout,
+width_mm, height_mm)` returns null or one sentence about the first problem
+(for example "The QR code does not fit: at most 36.0 mm on this label.");
+it never raises on a malformed shape. The trigger raises P0001
+`label_layout_invalid` with that sentence as DETAIL, for every writer. Field
+order is free in the database; the template editor (step 3) uses the fixed
+canonical order `name`, `identity`, `price`, `serial_number`, `short_id`,
+`sku`. Cases: `tests/fixtures/label-layouts.ts` (shared with step 2's zod
+schema).
+
+**Config v1** (`printer_profiles.config`, browser and pdf): an object whose
+only keys are `offset_x_mm` and `offset_y_mm`, each optional, a number in
+[−5, 5]; `private.printer_config_problem(adapter, config)`; P0001
+`printer_config_invalid`.
+
+**Defaults.** One default template per kind and one default printer
+profile, moved only by `set_default_label_template` /
+`set_default_printer_profile` (admin; authenticated has no column grant on
+`is_default`); the default cannot be switched off
+(`label_template_default_required`, `printer_profile_default_required`).
+Built-in rows, inserted by the migration because production needs them
+(`on conflict (id) do nothing`), all 58 × 40 mm with layout
+`{"version": 1, "qr_mm": 28, "padding_mm": 2, "qr_position": "left",
+"name_lines": 2, "text_mm": 3, "fields": [...]}`:
+
+| id | name | kind / adapter | fields / config | default |
+|---|---|---|---|---|
+| `1ab00000-0000-4000-8000-000000000001` | Product 58 × 40 | product | name, price, short_id, sku | yes |
+| `1ab00000-0000-4000-8000-000000000002` | Unit 58 × 40 | unit | name, identity, price, short_id | yes |
+| `1ab00000-0000-4000-8000-000000000003` | Bike tag 58 × 40 | bike | name, identity, serial_number, short_id | yes |
+| `a8000000-0000-4000-8000-000000000001` | This device (browser print) | browser | `{}`, sort 0 | yes |
+| `a8000000-0000-4000-8000-000000000002` | PDF download | pdf | `{}`, sort 1 | no |
+
+**Label text** (`private.label_content(kind, entity_id)`, the only source;
+stable, security definer). Returns exactly `kind`, `short_id`,
+`qr_payload` (`private.qr_payload`), `name`, `price`, `currency`, `sku`,
+`identity` (a JSON array of lines, possibly empty) and `serial_number`;
+strings trimmed, `name` at most 120 characters, each identity line at most
+80, blank values dropped (null). P0002 for an unknown record; P0001
+`label_entity_archived` for an archived product, an archived unit or a unit
+whose product is archived, or an archived bike; P0001
+`label_unique_product_needs_unit` for kind `product` on a unique product
+(D57).
+
+- product: `name` = `products.name` (the public view's expression);
+  `price` = `selling_price(id, null)`; `currency` = `products.currency`;
+  `sku`; `identity` = [brand] when the brand is set and not already in the
+  name (case-insensitive), else []; `serial_number` null.
+- unit: its product's `name`, `currency` and `sku`; `price` =
+  `selling_price(product_id, unit_id)`; `serial_number` = the unit's, else
+  its bike's; `identity` = the bike's "Size {frame_size} · {colour}" line
+  when the unit is linked to a bike and either is set, then the first line
+  of the unit's `condition` (which `public_items` exposes) when not blank.
+- bike: `name` = brand, model, variant joined by single spaces, skipping
+  blank parts (equal to `bikeTitle()` in `src/lib/bikes.ts` for every
+  seeded bike, tested; a name over 120 characters is cut on a label but not
+  by `bikeTitle`); `price` null; `currency` = `private.shop_currency()`;
+  `sku` null; `identity` = the size/colour line; `serial_number` =
+  `bikes.serial_number`.
+
+**The label-text rule.** Label text is a subset of `reporting.public_items`'
+fields (name, brand, price, currency, a unit's condition) plus identifiers
+(short ID, SKU, a bike's size/colour line, serial number). Never a cost,
+direct cost, yield, Cult Commons, consignor, ownership type, owner or
+customer name, or internal note: `private.label_content` never reads those
+columns (its source mentions none of `consignment_items`, `direct_cost`,
+`ownership_type`, `internal_note`, tested), and `print_jobs_content_keys`
+is the database whitelist of content keys (an extra key is 23514 for every
+writer).
+
+**The price (D58).** Exactly `private.selling_price(product_id,
+inventory_unit_id)`, the function `reporting.public_items`, the in-store
+sale default (`private.sell_line`), `add_inventory_line` and Shopify use;
+never reproduced. Rendered with two decimals (`to_char(p,
+'FM9999999999990.00')`); NULL → JSON null (no price line, never "0.00");
+0 → "0.00" (D24 as amended: 0 is a known price). A consigned price reaches
+the label only through that function.
+
+**Snapshots.** `content`, `template_snapshot`, `profile_snapshot`,
+`short_id` and `qr_payload` are written once by `create_print_job`; catalog,
+template and printer edits never change a job (tested). Record pages warn
+when the current price differs from the last printed label's (step 3).
+
+**Status machine (D59).** `private.print_job_transition_allowed`: queued →
+rendered, printed, failed; rendered → printed, failed; printed and failed
+are final; nothing returns to queued (cases:
+`tests/fixtures/print-transitions.ts`). `rendered` is set when the labels
+were rendered for printing (the print view or PDF route, step 2), `printed`
+or `failed` (with what went wrong) when staff confirm. Checks keep the
+stamps consistent: `print_jobs_error_check` (error exactly when failed),
+`print_jobs_completed_check` (completed_at exactly when printed or failed),
+`print_jobs_rendered_check` (no rendered_at while queued). The trigger
+`print_jobs_enforce_rules` lets only `status`, `rendered_at`,
+`completed_at`, `error`, `status_changed_by` and `updated_at` change
+(`print_job_immutable`) and only along the machine
+(`print_job_transition_invalid`), for every writer; deleting a job is
+`print_job_immutable` for every role. "Print again" is a new job with
+`reprint_of_id` (same kind and record: `print_job_reprint_mismatch`).
+Archived records keep their jobs readable (SPEC §23).
 
 ## 13. Shopify integration
 
@@ -1830,8 +1995,8 @@ security-definer function. Blank = no access.
 | consignment_settlements, settlement_lines, consignment_settlement_reversals | Built (Phase 6 step 2, D48): rows with P(manage_consignments) or P(view_costs) (`private.can_view_consignment_money()`); settlements every column except `request_fingerprint` | RPC `record_settlement`, `reverse_settlement` (P(manage_consignments)) | never (`settlement_immutable`; corrected by whole-settlement reversal, D47) | never |
 | suppliers, purchase_orders, lines | S | P(manage_purchasing) | same | — |
 | purchase_receipts, receipt_lines | S | RPC | — | — |
-| label_templates, printer_profiles | S | A | A | A |
-| print_jobs | S | S | S | — |
+| label_templates, printer_profiles | Built (Phase 8 step 1): S; C and anon none | A (RLS `*_insert_admin`; column grants: templates id, name, kind, width_mm, height_mm, layout, active; profiles id, name, adapter, config, active, sort_order; never `is_default` or `created_by`) | A (column grants: templates name, width_mm, height_mm, layout, active; profiles name, config, active, sort_order); `is_default` only via RPC `set_default_label_template` / `set_default_printer_profile` (A) | never (switch off) |
+| print_jobs | Built (Phase 8 step 1): S; C and anon none | RPC `create_print_job` (S) | RPC `set_print_job_status` (S; status columns only, D59) | never (`print_job_immutable`) |
 | integration_events, retry queue, sync | A | service role only | service role / RPC | — |
 | reporting.* financial views (financial_lines, daily_summary, work_order_activity, operational_exceptions) | no grants (not even SELECT to authenticated); via RPCs: S for counts; P(view_financial_reports) for money rows; cost columns P(view_costs) (FIN-ACCESS D30) | — | — | — |
 | reporting.public_items | everyone: anon and authenticated (definer view, published rows and public columns only; the only anonymous inventory surface; anon has USAGE on `reporting` for it and EXECUTE on `private.selling_price`, which it calls) | — | — | — |
@@ -1973,6 +2138,11 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `list_sales(from_at = null, to_at = null, q = null, max_rows = 50)` → `id, sale_number, source, status, recognized_at, customer_id, customer_label, line_count, first_description, has_consignment, restocked_lines, sale_total, refunded_total, cost_total, yield_total, cult_commons_share` | S | Built (Phase 6 step 2). `[from_at, to_at)`; `q`: sale number ignoring case and dash (exact or contained), customer name words, or line description words; voided excluded; newest first then id; clamp 1..200. The last three NULL without view_costs (D48). |
 | `sale_lines_detail(sale_id)` → `id, line_number, description_snapshot, quantity, unit_sale_price_snapshot, sale_total, restocked_at, restocked_by_name, product_id, product_short_id, inventory_unit_id, unit_short_id, unit_status, unit_sold_sale_line_id, unit_ownership_type, bike_id, bike_short_id, consignment_item_id, consignment_short_id, consignor_id, consignor_name, unit_direct_cost_snapshot, cost_total, yield_total, cult_commons_rate_snapshot, cult_commons_share, consignor_payout_snapshot` | S | Built (Phase 6 step 2). Line order; an unknown sale returns no rows. Cost, yield, rate and Cult Commons NULL without view_costs; the payout NULL without consignment money access (D48). |
 | `saleable_stock(q, max_results = 20)` → `kind, product_id, product_short_id, inventory_unit_id, unit_short_id, title, subtitle, location_id, location_name, on_hand, unit_price, ownership_type, consignment_item_id, consignment_short_id, consignor_name, rank` | S | Built (Phase 6 step 2). `unit`: available shop-owned and consigned units (item active), `unit_price = private.selling_price(product, unit)`; `product`: shop-owned active quantity products per location with on-hand > 0 (`selling_price(product)`), and consigned quantity products per active item with remaining > 0 and each location where that item has stock (D54), `on_hand = least(item on-hand there, location on-hand, remaining)`, `unit_price = coalesce(item asking, product default)`. Rank: exact U-/P-/C- ID, SKU or serial 1.0; ID containing the key (≥ 3) 0.6; every word in name/brand/consignor 0.45 + 0.4 × word similarity. Blank q nothing; clamp 1..50. No cost. |
+| `label_preview(kind label_kind, entity_id uuid)` → `jsonb` | S | Built (Phase 8 step 1). Stable; `private.require_staff()`, then `private.label_content(kind, entity_id)` (§12): 22004 on nulls, P0002 unknown record, `label_entity_archived`, `label_unique_product_needs_unit`, `public_site_url_invalid`. Writes nothing. |
+| `create_print_job(job_id uuid, kind label_kind, entity_id uuid, quantity integer, printer_profile_id uuid = null, label_template_id uuid = null, reprint_of_id uuid = null)` → `print_jobs` | S | Built (Phase 8 step 1, D56–D59). 22004 when job_id, kind, entity_id or quantity is null. Replay first: an existing `job_id` with the same kind, record and quantity, and the same printer / template / reprint for each one the caller passes non-null, returns the job; anything else `print_job_conflict`. Quantity 1..500 for a product, 1..10 for a unit or bike (`label_quantity_out_of_range`, D56). Content from `private.label_content` (its codes above). Printer: the one named, else the default, FOR SHARE (P0002; `printer_profile_inactive`); template: the one named, else the kind's default, FOR SHARE (`label_template_missing`, `label_template_inactive`, `label_template_kind_mismatch`); a default moved by a concurrent `set_default_*` is re-read in a new statement. `reprint_of_id` must exist (P0002) and be for the same kind and record (`print_job_reprint_mismatch`). Inserts status `queued` with the snapshots, `requested_by` = caller, `correlation_id` = `private.current_correlation_id()`, `on conflict (id) do nothing`; when a concurrent call with the same id committed first, re-reads the row in a new statement and applies the replay comparison (tested with forced overlap). |
+| `set_print_job_status(job_id uuid, status print_status, error text = null)` → `print_jobs` | S | Built (Phase 8 step 1, D59). 22004; the job FOR UPDATE (P0002); the current status again → the row unchanged (a failed job keeps its first error); `queued` or a move the machine refuses → `print_job_transition_invalid`; `failed` needs a non-blank error (`print_job_error_required`; over 500 characters `reason_too_long`), other statuses ignore it. rendered: `rendered_at` = now; printed: `rendered_at` = coalesce(rendered_at, now), `completed_at` = now; failed: `completed_at` = now, `error` trimmed; `status_changed_by` = caller. Printed and failed at once: one wins, the other is refused (tested). |
+| `set_default_label_template(template_id uuid)` → `label_templates` | A | Built (Phase 8 step 1). 22004; P0002; every template of the target's kind FOR UPDATE in id order, then the target re-read; `label_template_inactive`; already default → the row; else clears `is_default` on the others of that kind first, then sets it on the target (the partial unique index is not deferrable). Two admins at once: one default, the second call's target (tested). |
+| `set_default_printer_profile(profile_id uuid)` → `printer_profiles` | A | Built (Phase 8 step 1). The same pattern over every profile (`printer_profile_inactive`). |
 | `receive_purchase(po_id, idempotency_key, lines[])` | P(manage_purchasing) | §10. |
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
@@ -2308,3 +2478,30 @@ settlements, `7c` reversals, `7e` returns (`CONSIGNOR`, `CONSIGNMENT_ITEM`,
   (`SEED_DAYS`): d5 1 / 140.00 / 70.00, d3 1 / 1000.00 / 500.00, d0 1 /
   70.00 / 35.00, other days 0. `tests/db/consignment-reporting.test.ts`
   proves them.
+
+Phase 8 part (done, step 1): **print jobs**, at the end of the seed. The
+built-in templates (`1ab00000-…`, `LABEL_TEMPLATE`) and printer profiles
+(`a8000000-…`, `PRINTER_PROFILE`) come from the labels migration, not the
+seed. Five jobs (`a9000000-…`, `PRINT_JOB` in `tests/fixtures/ids.ts`) are
+inserted as the owner by `pg_temp.seed_print_job`, which builds the
+content with `private.label_content` and the snapshots from the built-in
+rows exactly as `create_print_job` does, so their QR payloads use the
+seeded `public_site_url` `http://localhost:4000` (`SHOP.publicSiteUrl`, the
+database QR base; E2E's `E2E_PUBLIC_SITE_URL` in
+`tests/fixtures/public-site.ts` is the environment's scan-only base).
+Times use `pg_temp.seed_at`. No product is published by the seed
+(publishing needs a public photo, and other specs rely on the seed's
+publication states); tests build published fixtures in their own
+transactions.
+
+- `productPrinted`: P-000011 bar tape × 10, browser, printed; requested
+  and confirmed by Marcus (mechanic1); created d2 11:00, rendered 11:01,
+  completed 11:02.
+- `unitFailed`: U-000001 (the Colnago, bike B-000011) × 1, PDF, failed
+  "Label roll ran out halfway through"; Asha (admin); d1 15:00.
+- `unitReprint`: the same unit × 1, PDF, `reprint_of_id` = unitFailed,
+  printed; Asha; d1 15:10.
+- `bikeUnconfirmed`: B-000001 (Tan's Tarmac) tag × 1, browser, rendered and
+  not confirmed; Nur (mechanic2); today 09:30.
+- `productQueued`: P-000011 × 10, PDF, queued; Marcus; today 10:00 (E2E
+  renders and downloads it read-only; nothing changes its status).

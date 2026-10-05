@@ -293,12 +293,16 @@ To try scanning on an iPad or phone on the LAN:
 - Android Chrome only: `chrome://flags` → "Insecure origins treated as
   secure" with the LAN URL lets the camera work over http for testing.
 
-Labels encode `{NEXT_PUBLIC_PUBLIC_SITE_URL}/q/{short_id}` (PLAN D9); the
-scanner accepts that base, the Admin's own `/q/…` URLs and bare short IDs,
-and shows anything else as "Not a BICII label" without opening it. A label
-printed for another environment's public site URL is therefore foreign on
-this one (Phase 8 adds the database QR base to the accepted list,
-`src/lib/qr.ts`).
+Printed labels encode `{shop_settings.public_site_url}/q/{short_id}` (PLAN
+D9, decided in Phase 8: [ADR-017](decisions/ADR-017-labels-and-qr-base.md));
+the database computes it (`private.qr_payload`) and refuses to print
+(`public_site_url_invalid`, "Labels are off until an admin sets a valid
+public website address") while the address is unset or invalid. The
+scanner accepts `NEXT_PUBLIC_PUBLIC_SITE_URL`, the Admin's own `/q/…` URLs
+and bare short IDs, and shows anything else as "Not a BICII label" without
+opening it; Phase 8 step 2 adds the database QR base to the accepted list
+(`src/lib/qr.ts`), keeping the environment's base so earlier labels still
+scan.
 
 ## Appointments: schedule before go-live
 
@@ -340,9 +344,24 @@ red over capacity. Call those customers and cancel and rebook (there is no
 reschedule and no automatic customer message in the MVP).
 
 **Fixed settings.** The shop's time zone is Singapore and its currency SGD
-(D35): no screen or RPC changes them. `shop_settings.public_site_url` is
-stored but not used yet: the QR base stays `NEXT_PUBLIC_PUBLIC_SITE_URL`
-until Phase 8 decides (D9).
+(D35): no screen or RPC changes them.
+
+## Labels: the QR address before the first print
+
+`shop_settings.public_site_url` is the QR base (D9): every label encodes
+`{public_site_url}/q/{short_id}`, and nothing prints while it is unset or
+invalid. Before the first real label, an admin sets it to the public
+site's address (http or https, a host and an optional path, no `?` or `#`,
+at most 200 characters; for example `https://bicii.sg`). Until the Labels
+and printers settings screen exists (Phase 8 step 3) that is
+`update_shop_settings(public_site_url => '…')` as an admin ('' clears it).
+The seed sets `http://localhost:4000`. Do not change it casually: labels
+already printed keep the old address
+([R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address));
+after a move, keep the old site redirecting `/q/*` or reprint. The
+migration ships the default 58 × 40 mm templates and the "This device
+(browser print)" and "PDF download" printers, so a new database can print
+once the address is set.
 
 ## CI
 

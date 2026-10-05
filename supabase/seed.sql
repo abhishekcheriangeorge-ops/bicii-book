@@ -2085,3 +2085,85 @@ select public.record_sale_refund(
   'One tube had the wrong valve; refunded, customer kept it.');
 
 select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 8: print jobs (DATA-MODEL.md §18 "Phase 8 part"). Five jobs on the
+-- migration's built-in templates (1ab00000-…) and printer profiles
+-- (a8000000-…), inserted as the owner with the content, template and
+-- printer snapshots built exactly as create_print_job builds them
+-- (private.label_content, so the QR payload is this seed's
+-- public_site_url, http://localhost:4000). No product is published here:
+-- a print job never needs one.
+--   productPrinted   P-000011 bar tape x 10, browser, printed (Marcus),
+--                    2 days ago, rendered +1 min, confirmed +2 min.
+--   unitFailed       U-000001 Colnago (bike B-000011) x 1, PDF, failed
+--                    "Label roll ran out halfway through" (Asha), yesterday.
+--   unitReprint      the same unit x 1, PDF, reprint of unitFailed, printed
+--                    (Asha), yesterday + 10 min.
+--   bikeUnconfirmed  B-000001 Tan's Tarmac tag x 1, browser, rendered and
+--                    not confirmed (Nur), today.
+--   productQueued    P-000011 bar tape x 10, PDF, queued (Marcus), today;
+--                    E2E renders and downloads it read-only, nothing changes
+--                    its status.
+-- ===========================================================================
+create function pg_temp.seed_print_job(
+  job_id uuid, kind public.label_kind, entity_id uuid, quantity integer, profile_id uuid,
+  status public.print_status, requested_by uuid, status_changed_by uuid, created_at timestamptz,
+  rendered_at timestamptz, completed_at timestamptz, error text default null, reprint_of_id uuid default null
+)
+returns void
+language plpgsql
+as $$
+declare
+  c jsonb := private.label_content(kind, entity_id);
+  p public.printer_profiles;
+  t public.label_templates;
+begin
+  select * into strict p from public.printer_profiles where id = profile_id;
+  select * into strict t from public.label_templates where is_default and label_templates.kind = seed_print_job.kind;
+  insert into public.print_jobs (
+    id, label_kind, product_id, inventory_unit_id, bike_id, short_id, qr_payload, content, quantity,
+    printer_profile_id, profile_snapshot, adapter, label_template_id, template_snapshot, status,
+    rendered_at, completed_at, error, status_changed_by, reprint_of_id, requested_by, created_at, updated_at
+  ) values (
+    job_id, kind,
+    case when kind = 'product' then entity_id end,
+    case when kind = 'unit' then entity_id end,
+    case when kind = 'bike' then entity_id end,
+    c ->> 'short_id', c ->> 'qr_payload', c, quantity,
+    p.id, jsonb_build_object('name', p.name, 'adapter', p.adapter, 'config', p.config), p.adapter,
+    t.id, jsonb_build_object('name', t.name, 'kind', t.kind, 'width_mm', t.width_mm,
+                             'height_mm', t.height_mm, 'layout', t.layout),
+    status, rendered_at, completed_at, error, status_changed_by, reprint_of_id, requested_by,
+    created_at, coalesce(completed_at, rendered_at, created_at)
+  );
+end;
+$$;
+
+select pg_temp.seed_print_job(
+  'a9000000-0000-4000-8000-000000000001', 'product', '9a000000-0000-4000-8000-000000000011', 10,
+  'a8000000-0000-4000-8000-000000000001', 'printed',
+  '5a000000-0000-4000-8000-000000000002', '5a000000-0000-4000-8000-000000000002',
+  pg_temp.seed_at(2, '11:00'), pg_temp.seed_at(2, '11:01'), pg_temp.seed_at(2, '11:02'));
+select pg_temp.seed_print_job(
+  'a9000000-0000-4000-8000-000000000002', 'unit', '9b000000-0000-4000-8000-000000000001', 1,
+  'a8000000-0000-4000-8000-000000000002', 'failed',
+  '5a000000-0000-4000-8000-000000000001', '5a000000-0000-4000-8000-000000000001',
+  pg_temp.seed_at(1, '15:00'), pg_temp.seed_at(1, '15:01'), pg_temp.seed_at(1, '15:03'),
+  'Label roll ran out halfway through');
+select pg_temp.seed_print_job(
+  'a9000000-0000-4000-8000-000000000003', 'unit', '9b000000-0000-4000-8000-000000000001', 1,
+  'a8000000-0000-4000-8000-000000000002', 'printed',
+  '5a000000-0000-4000-8000-000000000001', '5a000000-0000-4000-8000-000000000001',
+  pg_temp.seed_at(1, '15:10'), pg_temp.seed_at(1, '15:11'), pg_temp.seed_at(1, '15:12'),
+  null, 'a9000000-0000-4000-8000-000000000002');
+select pg_temp.seed_print_job(
+  'a9000000-0000-4000-8000-000000000004', 'bike', 'b1000000-0000-4000-8000-000000000001', 1,
+  'a8000000-0000-4000-8000-000000000001', 'rendered',
+  '5a000000-0000-4000-8000-000000000003', '5a000000-0000-4000-8000-000000000003',
+  pg_temp.seed_at(0, '09:30'), least(pg_temp.seed_at(0, '09:30') + interval '1 minute', now()), null);
+select pg_temp.seed_print_job(
+  'a9000000-0000-4000-8000-000000000005', 'product', '9a000000-0000-4000-8000-000000000011', 10,
+  'a8000000-0000-4000-8000-000000000002', 'queued',
+  '5a000000-0000-4000-8000-000000000002', null,
+  pg_temp.seed_at(0, '10:00'), null, null);

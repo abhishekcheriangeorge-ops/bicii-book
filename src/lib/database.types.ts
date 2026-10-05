@@ -1396,6 +1396,56 @@ export type Database = {
           },
         ];
       };
+      label_templates: {
+        Row: {
+          active: boolean;
+          created_at: string;
+          created_by: string | null;
+          height_mm: number;
+          id: string;
+          is_default: boolean;
+          kind: Database["public"]["Enums"]["label_kind"];
+          layout: NonNullable<Json>;
+          name: string;
+          updated_at: string;
+          width_mm: number;
+        };
+        Insert: {
+          active?: boolean;
+          created_at?: string;
+          created_by?: string | null;
+          height_mm: number;
+          id?: string;
+          is_default?: boolean;
+          kind: Database["public"]["Enums"]["label_kind"];
+          layout: NonNullable<Json>;
+          name: string;
+          updated_at?: string;
+          width_mm: number;
+        };
+        Update: {
+          active?: boolean;
+          created_at?: string;
+          created_by?: string | null;
+          height_mm?: number;
+          id?: string;
+          is_default?: boolean;
+          kind?: Database["public"]["Enums"]["label_kind"];
+          layout?: NonNullable<Json>;
+          name?: string;
+          updated_at?: string;
+          width_mm?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "label_templates_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       locations: {
         Row: {
           active: boolean;
@@ -1425,6 +1475,205 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [];
+      };
+      print_jobs: {
+        Row: {
+          adapter: Database["public"]["Enums"]["printer_adapter"];
+          bike_id: string | null;
+          completed_at: string | null;
+          content: NonNullable<Json>;
+          correlation_id: string | null;
+          created_at: string;
+          error: string | null;
+          id: string;
+          inventory_unit_id: string | null;
+          label_kind: Database["public"]["Enums"]["label_kind"];
+          label_template_id: string;
+          printer_profile_id: string;
+          product_id: string | null;
+          profile_snapshot: NonNullable<Json>;
+          qr_payload: string;
+          quantity: number;
+          rendered_at: string | null;
+          reprint_of_id: string | null;
+          requested_by: string;
+          short_id: string;
+          status: Database["public"]["Enums"]["print_status"];
+          status_changed_by: string | null;
+          template_snapshot: NonNullable<Json>;
+          updated_at: string;
+        };
+        Insert: {
+          adapter: Database["public"]["Enums"]["printer_adapter"];
+          bike_id?: string | null;
+          completed_at?: string | null;
+          content: NonNullable<Json>;
+          correlation_id?: string | null;
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          inventory_unit_id?: string | null;
+          label_kind: Database["public"]["Enums"]["label_kind"];
+          label_template_id: string;
+          printer_profile_id: string;
+          product_id?: string | null;
+          profile_snapshot: NonNullable<Json>;
+          qr_payload: string;
+          quantity: number;
+          rendered_at?: string | null;
+          reprint_of_id?: string | null;
+          requested_by: string;
+          short_id: string;
+          status?: Database["public"]["Enums"]["print_status"];
+          status_changed_by?: string | null;
+          template_snapshot: NonNullable<Json>;
+          updated_at?: string;
+        };
+        Update: {
+          adapter?: Database["public"]["Enums"]["printer_adapter"];
+          bike_id?: string | null;
+          completed_at?: string | null;
+          content?: NonNullable<Json>;
+          correlation_id?: string | null;
+          created_at?: string;
+          error?: string | null;
+          id?: string;
+          inventory_unit_id?: string | null;
+          label_kind?: Database["public"]["Enums"]["label_kind"];
+          label_template_id?: string;
+          printer_profile_id?: string;
+          product_id?: string | null;
+          profile_snapshot?: NonNullable<Json>;
+          qr_payload?: string;
+          quantity?: number;
+          rendered_at?: string | null;
+          reprint_of_id?: string | null;
+          requested_by?: string;
+          short_id?: string;
+          status?: Database["public"]["Enums"]["print_status"];
+          status_changed_by?: string | null;
+          template_snapshot?: NonNullable<Json>;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "print_jobs_bike_id_fkey";
+            columns: ["bike_id"];
+            isOneToOne: false;
+            referencedRelation: "bikes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "print_jobs_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: false;
+            referencedRelation: "inventory_unit_costs";
+            referencedColumns: ["unit_id"];
+          },
+          {
+            foreignKeyName: "print_jobs_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: false;
+            referencedRelation: "inventory_units";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "print_jobs_label_template_id_fkey";
+            columns: ["label_template_id"];
+            isOneToOne: false;
+            referencedRelation: "label_templates";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "print_jobs_printer_profile_id_fkey";
+            columns: ["printer_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "printer_profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "print_jobs_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "print_jobs_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "print_jobs_reprint_of_id_fkey";
+            columns: ["reprint_of_id"];
+            isOneToOne: false;
+            referencedRelation: "print_jobs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "print_jobs_requested_by_fkey";
+            columns: ["requested_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "print_jobs_status_changed_by_fkey";
+            columns: ["status_changed_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      printer_profiles: {
+        Row: {
+          active: boolean;
+          adapter: Database["public"]["Enums"]["printer_adapter"];
+          config: NonNullable<Json>;
+          created_at: string;
+          created_by: string | null;
+          id: string;
+          is_default: boolean;
+          name: string;
+          sort_order: number;
+          updated_at: string;
+        };
+        Insert: {
+          active?: boolean;
+          adapter: Database["public"]["Enums"]["printer_adapter"];
+          config?: NonNullable<Json>;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          is_default?: boolean;
+          name: string;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Update: {
+          active?: boolean;
+          adapter?: Database["public"]["Enums"]["printer_adapter"];
+          config?: NonNullable<Json>;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          is_default?: boolean;
+          name?: string;
+          sort_order?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "printer_profiles_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       product_events: {
         Row: {
@@ -3279,6 +3528,49 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      create_print_job: {
+        Args: {
+          entity_id: string;
+          job_id: string;
+          kind: Database["public"]["Enums"]["label_kind"];
+          label_template_id?: string;
+          printer_profile_id?: string;
+          quantity: number;
+          reprint_of_id?: string;
+        };
+        Returns: {
+          adapter: Database["public"]["Enums"]["printer_adapter"];
+          bike_id: string | null;
+          completed_at: string | null;
+          content: NonNullable<Json>;
+          correlation_id: string | null;
+          created_at: string;
+          error: string | null;
+          id: string;
+          inventory_unit_id: string | null;
+          label_kind: Database["public"]["Enums"]["label_kind"];
+          label_template_id: string;
+          printer_profile_id: string;
+          product_id: string | null;
+          profile_snapshot: NonNullable<Json>;
+          qr_payload: string;
+          quantity: number;
+          rendered_at: string | null;
+          reprint_of_id: string | null;
+          requested_by: string;
+          short_id: string;
+          status: Database["public"]["Enums"]["print_status"];
+          status_changed_by: string | null;
+          template_snapshot: NonNullable<Json>;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "print_jobs";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_service: {
         Args: {
           category_id?: string;
@@ -3513,6 +3805,10 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      label_preview: {
+        Args: { entity_id: string; kind: Database["public"]["Enums"]["label_kind"] };
+        Returns: Json;
       };
       list_consignors: {
         Args: { include_archived?: boolean; max_rows?: number; q?: string };
@@ -4083,6 +4379,88 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "attachments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_default_label_template: {
+        Args: { template_id: string };
+        Returns: {
+          active: boolean;
+          created_at: string;
+          created_by: string | null;
+          height_mm: number;
+          id: string;
+          is_default: boolean;
+          kind: Database["public"]["Enums"]["label_kind"];
+          layout: NonNullable<Json>;
+          name: string;
+          updated_at: string;
+          width_mm: number;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "label_templates";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_default_printer_profile: {
+        Args: { profile_id: string };
+        Returns: {
+          active: boolean;
+          adapter: Database["public"]["Enums"]["printer_adapter"];
+          config: NonNullable<Json>;
+          created_at: string;
+          created_by: string | null;
+          id: string;
+          is_default: boolean;
+          name: string;
+          sort_order: number;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "printer_profiles";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_print_job_status: {
+        Args: {
+          error?: string;
+          job_id: string;
+          status: Database["public"]["Enums"]["print_status"];
+        };
+        Returns: {
+          adapter: Database["public"]["Enums"]["printer_adapter"];
+          bike_id: string | null;
+          completed_at: string | null;
+          content: NonNullable<Json>;
+          correlation_id: string | null;
+          created_at: string;
+          error: string | null;
+          id: string;
+          inventory_unit_id: string | null;
+          label_kind: Database["public"]["Enums"]["label_kind"];
+          label_template_id: string;
+          printer_profile_id: string;
+          product_id: string | null;
+          profile_snapshot: NonNullable<Json>;
+          qr_payload: string;
+          quantity: number;
+          rendered_at: string | null;
+          reprint_of_id: string | null;
+          requested_by: string;
+          short_id: string;
+          status: Database["public"]["Enums"]["print_status"];
+          status_changed_by: string | null;
+          template_snapshot: NonNullable<Json>;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "print_jobs";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -4697,6 +5075,7 @@ export type Database = {
         | "cost_changed"
         | "archived"
         | "unarchived";
+      label_kind: "product" | "unit" | "bike";
       line_type: "service" | "inventory" | "manual";
       location_kind: "shop_floor" | "workshop" | "storage" | "offsite";
       movement_type:
@@ -4720,6 +5099,8 @@ export type Database = {
         | "manage_purchasing"
         | "manage_staff"
         | "view_financial_reports";
+      print_status: "queued" | "rendered" | "printed" | "failed";
+      printer_adapter: "browser" | "pdf" | "network_raw" | "bluetooth";
       product_event_type:
         | "created"
         | "details_changed"
@@ -5375,6 +5756,7 @@ export const Constants = {
         "archived",
         "unarchived",
       ],
+      label_kind: ["product", "unit", "bike"],
       line_type: ["service", "inventory", "manual"],
       location_kind: ["shop_floor", "workshop", "storage", "offsite"],
       movement_type: [
@@ -5400,6 +5782,8 @@ export const Constants = {
         "manage_staff",
         "view_financial_reports",
       ],
+      print_status: ["queued", "rendered", "printed", "failed"],
+      printer_adapter: ["browser", "pdf", "network_raw", "bluetooth"],
       product_event_type: [
         "created",
         "details_changed",

@@ -35,7 +35,7 @@ commands in [ENGINEERING.md](ENGINEERING.md).
 | Domain, DNS | Admin and public site addresses | None known for the Admin | Unknown | n/a |
 | Email delivery (SMTP) | Auth email, needed by the planned email OTP sign-in | None | n/a | OTP cannot work ([R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp)) |
 | Shopify store | Phase 10 integration | None connected | Unknown | n/a ([R-011](RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only)) |
-| Label printer | Phase 8 and 12 | Models unknown | Unknown | n/a ([R-012](RISKS.md#r-012--label-printer-hardware-is-unknown)) |
+| Label printer | Phase 8 and 12 | Models unknown; Phase 8 prints through the browser or a PDF. Printing needs `shop_settings.public_site_url` set ([RUNBOOK](RUNBOOK.md#labels-the-qr-address-before-the-first-print)) | Unknown | Nothing prints while the address is unset ([R-012](RISKS.md#r-012--label-printer-hardware-is-unknown), [R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address)) |
 
 Not established: account custody (organisation or personal ownership), a
 second owner or emergency access route, MFA recovery custody, billing

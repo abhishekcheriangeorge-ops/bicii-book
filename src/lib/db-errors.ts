@@ -238,6 +238,33 @@ export const BUSINESS_ERRORS: Record<string, string> = {
     "A settlement can't be changed or deleted. Reverse it with a reason instead.",
   settlement_reversal_conflict: "That reversal clashes with another one. Start again.",
   settlement_already_reversed: "That settlement has already been reversed.",
+  // Labels (Phase 8: D9, D56-D59)
+  label_entity_archived: "That record is archived. Unarchive it before printing labels.",
+  label_unique_product_needs_unit:
+    "Unique items get one label per unit. Open the unit and print its label.",
+  label_quantity_out_of_range:
+    "Print 1 to 500 labels per job for a product, or up to 10 for a unit or bike. Start another job for more.",
+  label_template_missing:
+    "There is no label template for this kind of record. Ask an admin to set one up.",
+  label_template_inactive: "That label template is switched off. Choose another.",
+  label_template_kind_mismatch: "That template is for a different kind of label.",
+  label_template_kind_immutable: "A template keeps its label kind. Create a new template instead.",
+  label_template_default_required:
+    "Make another template the default before switching this one off.",
+  label_layout_invalid: "That layout does not fit the label. Check the sizes and fields.",
+  printer_profile_inactive: "That printer is switched off. Choose another.",
+  printer_profile_adapter_immutable: "A printer keeps its type. Add a new printer instead.",
+  printer_profile_default_required:
+    "Make another printer the default before switching this one off.",
+  printer_config_invalid: "Those printer settings are not valid.",
+  print_job_conflict: "This print was already started with different settings.",
+  print_job_reprint_mismatch: "A reprint must be for the same record.",
+  print_job_transition_invalid:
+    "That print job has already been marked. Refresh to see its status.",
+  print_job_error_required: "Say what went wrong with the print.",
+  print_job_immutable: "A print job's record cannot be changed.",
+  public_site_url_invalid:
+    "Labels are off until an admin sets a valid public website address in Labels and printers settings.",
   // Reporting (Phase 5; Phase 9 reuses it)
   report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
   // Appointments and schedule (Phase 2)
@@ -347,6 +374,16 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   settlement_lines_settlement_item_key: "Each item takes one allocation per settlement.",
   consignment_settlement_reversals_pkey: "That reversal has already been recorded.",
   consignment_settlement_reversals_settlement_id_key: "That settlement has already been reversed.",
+  // Labels (Phase 8)
+  label_templates_pkey: "That label template has already been saved.",
+  label_templates_name_key: "A label template with that name already exists.",
+  label_templates_one_default_per_kind:
+    "Someone else changed the default template at the same time. Try again.",
+  printer_profiles_pkey: "That printer has already been saved.",
+  printer_profiles_name_key: "A printer with that name already exists.",
+  printer_profiles_one_default:
+    "Someone else changed the default printer at the same time. Try again.",
+  print_jobs_pkey: "That print job was already started.",
   // Appointments and schedule (Phase 2)
   appointments_pkey: "That appointment has already been booked.",
   work_orders_appointment_id_key: "That appointment already has a job.",
@@ -537,6 +574,24 @@ export const CHECK_ERRORS: Record<string, string> = {
   work_order_line_items_consignor_payout_check: "The amount owed can't be negative.",
   attachments_consignment_item_internal_only:
     "Photos on a consignment item stay internal. Put listing photos on the product or unit.",
+  // Labels (Phase 8)
+  label_mm_not_nan: "Enter a size in millimetres.",
+  label_templates_name_check: "Enter a template name under 80 characters.",
+  label_templates_width_mm_check: "Labels are 20 to 150 mm wide.",
+  label_templates_height_mm_check: "Labels are 15 to 150 mm high.",
+  label_templates_default_is_active: "The default template must be switched on.",
+  printer_profiles_name_check: "Enter a printer name under 80 characters.",
+  printer_profiles_default_is_active: "The default printer must be switched on.",
+  printer_profiles_adapter_available:
+    "That printer type needs a hardware adapter that is not installed yet.",
+  print_jobs_quantity_check: "Print 1 to 500 labels per job.",
+  print_jobs_unique_quantity_check: "Print up to 10 labels per job for a unit or bike.",
+  print_jobs_entity_matches_kind: "That print job is not consistent. Start a new one.",
+  print_jobs_qr_payload_shape: "That print job is not consistent. Start a new one.",
+  print_jobs_content_keys: "A label can only carry its public details and identifiers.",
+  print_jobs_error_check: "Say what went wrong with the print, under 500 characters.",
+  print_jobs_completed_check: "That print job is not consistent. Refresh and try again.",
+  print_jobs_rendered_check: "That print job is not consistent. Refresh and try again.",
   // Appointments and schedule (Phase 2)
   shop_settings_singleton: "There is only one settings row.",
   shop_settings_currency_check: "Use a three-letter currency code.",

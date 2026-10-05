@@ -641,6 +641,20 @@ cost update per decision D5; E2E journey 3 receiving step.
 Tests: QR payload equals public URL; N labels same payload; unique label
 distinct; E2E journey 3 labels step.
 
+Shipped so far (Phase 8 step 1 of 4, database, on `feat/p8-labels`):
+migration `20261004003800_labels` (`label_templates`, `printer_profiles`,
+`print_jobs`, `private.qr_payload`, `private.label_content`, RPCs
+`label_preview`, `create_print_job`, `set_print_job_status`,
+`set_default_label_template`, `set_default_printer_profile`; the built-in
+58 × 40 mm template per kind and the browser and PDF profiles are inserted
+by the migration, not the seed); the seed's five print jobs; decisions D9
+(base), D56–D59 ([ADR-017](decisions/ADR-017-labels-and-qr-base.md));
+tests `tests/db/labels.test.ts`, `tests/db/labels-concurrency.test.ts`.
+Steps 2–4 (`src/lib/qr.ts`, `src/lib/printing/`, screens, E2E) are not
+built. The purchase receive screen's "Print N labels" shortcut waits for
+the integration with Phase 7
+([RISKS R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
+
 ### Phase 9 — Reporting and reconciliation
 
 - Views finalised; optional `inventory_balances` cache + `stock_reconciliation`
