@@ -27,7 +27,7 @@ function postgrestConfig(url) {
   const file = path.join(STATE_DIR, "postgrest.conf");
   const lines = [
     `db-uri = "${withLogin(url, "authenticator")}"`,
-    'db-schemas = "public"',
+    'db-schemas = "public, reporting"',
     'db-anon-role = "anon"',
     'db-extra-search-path = "public, extensions"',
     "db-max-rows = 1000",

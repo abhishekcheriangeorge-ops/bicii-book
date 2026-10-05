@@ -23,6 +23,15 @@
 -- nine days so every job's timeline reads true (see the Phase 3 block).
 -- Still no attachments. The Cult Commons base rate (0.3000) is not seed
 -- data: the workshop catalog migration ships it.
+--
+-- Phase 4 contents: a second location (the inventory migration ships the
+-- bootstrap 'Shop floor'), seven product categories, sixteen products
+-- P-000001 .. P-000016 (twelve counted parts with opening stock, three
+-- unique shop bikes, one archived), three shop bikes B-000011 .. B-000013
+-- in stock as units U-000001 .. U-000003, and an open job J-000010 for
+-- Hafiz's Brompton with one live part and one voided part (so the ledger
+-- shows a consumption and a reversal). Three parts sit at or below their
+-- reorder point. Stock, units and the job go through the real RPCs.
 
 -- ---------------------------------------------------------------------------
 -- Auth users (shape matches Supabase Auth v2.178). GoTrue scans the token
@@ -619,5 +628,220 @@ set voided_at = now() - interval '1 day' + interval '3 hours',
     voided_by = '5a000000-0000-4000-8000-000000000003',
     void_reason = 'Wrong part quoted; the frame takes a press-fit bracket.'
 where id = 'f2000000-0000-4000-8000-000000000010';
+
+select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 4: inventory (DATA-MODEL.md §18 "Phase 4 part"). Locations,
+-- product categories and products are written directly as the owner with
+-- request.jwt.claims naming the admin (so created_by and every history
+-- event name an actor); stock, units and the inventory job go through the
+-- real RPCs as the admin, so every movement is what the app would write.
+-- Every request id is used for exactly one call. Products get P-000001 ..
+-- P-000016, units U-000001 .. U-000003, the shop bikes B-000011 ..
+-- B-000013 and the job J-000010, in insert order on a fresh build.
+-- ===========================================================================
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Locations. 'Shop floor' is the inventory migration's one-shop bootstrap.
+insert into public.locations (id, name, kind, sort_order) values
+  ('1c000000-0000-4000-8000-000000000001', 'Shop floor', 'shop_floor', 10)
+on conflict (id) do nothing;
+insert into public.locations (id, name, kind, sort_order) values
+  ('1c000000-0000-4000-8000-000000000002', 'Workshop store', 'workshop', 20);
+
+-- Product categories (kind 'product'; names are unique per kind, so
+-- "Brakes" repeats the service category's name).
+insert into public.categories (id, kind, name, sort_order) values
+  ('ca000000-0000-4000-8000-000000000006', 'product', 'Brakes', 1),
+  ('ca000000-0000-4000-8000-000000000007', 'product', 'Tyres & tubes', 2),
+  ('ca000000-0000-4000-8000-000000000008', 'product', 'Drivetrain', 3),
+  ('ca000000-0000-4000-8000-000000000009', 'product', 'Cables & hoses', 4),
+  ('ca000000-0000-4000-8000-000000000010', 'product', 'Care', 5),
+  ('ca000000-0000-4000-8000-000000000011', 'product', 'Cockpit', 6),
+  ('ca000000-0000-4000-8000-000000000012', 'product', 'Bikes', 7);
+
+-- Products, one INSERT each so the short IDs follow this order. SGD price /
+-- default direct cost; publication internal_only except the cassette
+-- (draft).
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000001', 'SHI-L05A-RF', 'Road disc brake pads, resin (pair)',
+  'Shimano', 'ca000000-0000-4000-8000-000000000006', 'quantity', 'internal_only', 28.00, 13.50, 10,
+  'L05A resin pads for Shimano road disc callipers. Quiet, good modulation.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000002', 'CON-GP5K-25', 'Grand Prix 5000 700x25c tyre',
+  'Continental', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 89.00, 52.00, 4,
+  'Folding clincher road tyre, BlackChili compound.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000003', 'SCH-SV20-60', 'Road inner tube 700x23-28c Presta 60mm',
+  'Schwalbe', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 9.00, 3.80, 20,
+  'SV20 tube with a 60 mm Presta valve for deep rims.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000004', 'SCH-MR-16', 'Marathon Racer 16x1.35 tyre',
+  'Schwalbe', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 55.00, 30.00, 3,
+  'Puncture-resistant 16-inch tyre for folding bikes.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000005', 'BRO-QTUBE16', 'Inner tube 16in Schrader',
+  'Brompton', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 14.00, 6.00, 6,
+  'Genuine Brompton 16-inch tube, Schrader valve.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000006', 'KMC-X11-GY', 'X11 11-speed chain',
+  'KMC', 'ca000000-0000-4000-8000-000000000008', 'quantity', 'internal_only', 45.00, 24.00, 5,
+  '118 links with a MissingLink connector.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000007', 'SHI-CSR7000-1134', '105 CS-R7000 11-34 cassette',
+  'Shimano', 'ca000000-0000-4000-8000-000000000008', 'quantity', 'draft', 109.00, 68.00, 2,
+  null);
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000008', 'JAG-PRO-BRK', 'Pro brake cable kit',
+  'Jagwire', 'ca000000-0000-4000-8000-000000000009', 'quantity', 'internal_only', 35.00, 16.00, 4,
+  'Slick-polished cables with compressionless housing, road and MTB.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000009', 'SHI-BH90-1000', 'SM-BH90 hydraulic hose 1000mm',
+  'Shimano', 'ca000000-0000-4000-8000-000000000009', 'quantity', 'internal_only', 28.00, 12.00, 5,
+  null);
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000010', 'FL-DRY-120', 'Dry chain lube 120ml',
+  'Finish Line', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 16.00, 7.00, 6,
+  'Teflon-fortified dry lube for dusty, dry rides.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000011', 'LS-DSP32', 'DSP 3.2mm bar tape',
+  'Lizard Skins', 'ca000000-0000-4000-8000-000000000011', 'quantity', 'internal_only', 49.00, 26.00, 4,
+  null);
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000012', 'OS-REG-237', 'Tubeless sealant 237ml',
+  'Orange Seal', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 32.00, 17.00, 3,
+  null);
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000013', null, 'Colnago C64 Disc 52s (pre-owned)',
+  'Colnago', 'ca000000-0000-4000-8000-000000000012', 'unique', 'internal_only', 6800.00, 4200.00, null,
+  'Lugged carbon road frame, Dura-Ace Di2 R9170, Fulcrum Racing Zero wheels.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000014', null, 'Brompton C Line Explore (ex-demo)',
+  'Brompton', 'ca000000-0000-4000-8000-000000000012', 'unique', 'internal_only', 1950.00, 1400.00, null,
+  'Six-speed folding bike from the demo fleet, serviced and with new tyres.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000015', null, 'Surly Bridge Club 27.5 M (new old stock)',
+  'Surly', 'ca000000-0000-4000-8000-000000000012', 'unique', 'internal_only', 1650.00, 1100.00, null,
+  'Steel all-road tourer, 27.5 x 2.4 tyres, unridden from 2022 stock.');
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description)
+values ('9a000000-0000-4000-8000-000000000016', 'KMC-X10-OLD', 'X10 10-speed chain (discontinued)',
+  'KMC', 'ca000000-0000-4000-8000-000000000008', 'quantity', 'internal_only', 35.00, 18.00, null,
+  'No longer stocked; kept for the jobs that used it.');
+-- Archived after it sold out (no stock): an `archived` event.
+update public.products set archived_at = now() where id = '9a000000-0000-4000-8000-000000000016';
+
+-- Three shop bikes (no owner), in stock as the unique units below.
+insert into public.bikes
+  (id, customer_id, brand, model, variant, frame_size, colour, serial_number, description, internal_notes)
+values
+  ('b1000000-0000-4000-8000-000000000011', null,
+   'Colnago', 'C64 Disc', null, '52s', 'PJBK Black', 'COL-C64-11873',
+   'Pre-owned; one careful owner.', 'Bought in from a trade-in in August.'),
+  ('b1000000-0000-4000-8000-000000000012', null,
+   'Brompton', 'C Line', 'Explore 6-speed', 'One size', 'Matcha Green', '2209183344',
+   'Ex-demo folding bike.', null),
+  ('b1000000-0000-4000-8000-000000000013', null,
+   'Surly', 'Bridge Club', '27.5', 'M', 'Metallic Blue', 'SRY-BC-55102',
+   'New old stock.', null);
+
+-- Opening stock through adjust_stock (request ids 9c…0NN per product at its
+-- first location; 9c…1NN for the Workshop store rows of 03 and 12).
+select public.adjust_stock(r.request_id, r.product_id, r.location_id, r.qty, 'stock_adjustment', 'Opening stock count')
+from (values
+  ('9c000000-0000-4000-8000-000000000001'::uuid, '9a000000-0000-4000-8000-000000000001'::uuid,
+   '1c000000-0000-4000-8000-000000000001'::uuid, 34, 1),
+  ('9c000000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000002',
+   '1c000000-0000-4000-8000-000000000001', 12, 2),
+  ('9c000000-0000-4000-8000-000000000003', '9a000000-0000-4000-8000-000000000003',
+   '1c000000-0000-4000-8000-000000000001', 40, 3),
+  ('9c000000-0000-4000-8000-000000000103', '9a000000-0000-4000-8000-000000000003',
+   '1c000000-0000-4000-8000-000000000002', 20, 4),
+  ('9c000000-0000-4000-8000-000000000004', '9a000000-0000-4000-8000-000000000004',
+   '1c000000-0000-4000-8000-000000000001', 6, 5),
+  ('9c000000-0000-4000-8000-000000000005', '9a000000-0000-4000-8000-000000000005',
+   '1c000000-0000-4000-8000-000000000001', 15, 6),
+  ('9c000000-0000-4000-8000-000000000006', '9a000000-0000-4000-8000-000000000006',
+   '1c000000-0000-4000-8000-000000000001', 8, 7),
+  ('9c000000-0000-4000-8000-000000000007', '9a000000-0000-4000-8000-000000000007',
+   '1c000000-0000-4000-8000-000000000001', 3, 8),
+  ('9c000000-0000-4000-8000-000000000008', '9a000000-0000-4000-8000-000000000008',
+   '1c000000-0000-4000-8000-000000000001', 2, 9),
+  ('9c000000-0000-4000-8000-000000000009', '9a000000-0000-4000-8000-000000000009',
+   '1c000000-0000-4000-8000-000000000001', 1, 10),
+  ('9c000000-0000-4000-8000-000000000010', '9a000000-0000-4000-8000-000000000010',
+   '1c000000-0000-4000-8000-000000000001', 18, 11),
+  ('9c000000-0000-4000-8000-000000000011', '9a000000-0000-4000-8000-000000000011',
+   '1c000000-0000-4000-8000-000000000001', 7, 12),
+  ('9c000000-0000-4000-8000-000000000012', '9a000000-0000-4000-8000-000000000012',
+   '1c000000-0000-4000-8000-000000000001', 1, 13),
+  ('9c000000-0000-4000-8000-000000000112', '9a000000-0000-4000-8000-000000000012',
+   '1c000000-0000-4000-8000-000000000002', 1, 14)
+) as r (request_id, product_id, location_id, qty, ord)
+order by r.ord;
+
+-- The unique units, each linked to its shop bike (U-000001 .. U-000003).
+select public.create_unique_unit(
+  '9b000000-0000-4000-8000-000000000001', '9a000000-0000-4000-8000-000000000013',
+  '1c000000-0000-4000-8000-000000000001', 'COL-C64-11873',
+  'Excellent: light wear on the bar tape, new chain and cassette at 3,000 km.',
+  null, 4200.00, 'b1000000-0000-4000-8000-000000000011');
+select public.create_unique_unit(
+  '9b000000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000014',
+  '1c000000-0000-4000-8000-000000000001', '2209183344',
+  'Very good: demo fleet, serviced, new Marathon Racer tyres.',
+  null, 1400.00, 'b1000000-0000-4000-8000-000000000012');
+select public.create_unique_unit(
+  '9b000000-0000-4000-8000-000000000003', '9a000000-0000-4000-8000-000000000015',
+  '1c000000-0000-4000-8000-000000000001', 'SRY-BC-55102',
+  'New: unridden, small storage mark on the left chainstay.',
+  null, 1100.00, 'b1000000-0000-4000-8000-000000000013');
+
+-- The inventory job (J-000010): Hafiz's own Brompton (D18; his other job,
+-- J-000003, is completed), left open with a tube used and a tyre returned.
+select public.create_work_order(
+  '9e000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000003',
+  'b1000000-0000-4000-8000-000000000005', 'Puncture on the rear; replace the tube.',
+  null, '5a000000-0000-4000-8000-000000000001');
+select public.add_inventory_line(
+  '9d000000-0000-4000-8000-000000000001', '9e000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000005', 1, '1c000000-0000-4000-8000-000000000001');
+select public.add_inventory_line(
+  '9d000000-0000-4000-8000-000000000002', '9e000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000004', 1, '1c000000-0000-4000-8000-000000000001');
+select public.void_line('9d000000-0000-4000-8000-000000000002', 'Customer brought their own tyre');
 
 select set_config('request.jwt.claims', '', false);

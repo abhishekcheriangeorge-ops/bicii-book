@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { cn } from "@/lib/cn";
 
 /**
@@ -26,5 +28,21 @@ export function ShortId({
     >
       {value}
     </span>
+  );
+}
+
+/**
+ * A short ID chip that links to its record. The chip is 24px tall, so a
+ * transparent ::before overlay gives it the 44px (`--spacing-tap`) hit area
+ * DESIGN.md sets as the floor without changing the row's layout.
+ */
+export function ShortIdLink({ href, value }: { href: string; value: string }) {
+  return (
+    <Link
+      href={href}
+      className="relative inline-flex shrink-0 rounded-md underline-offset-2 before:absolute before:inset-x-0 before:top-1/2 before:h-tap before:min-w-tap before:-translate-y-1/2 before:content-[''] hover:underline"
+    >
+      <ShortId value={value} />
+    </Link>
   );
 }

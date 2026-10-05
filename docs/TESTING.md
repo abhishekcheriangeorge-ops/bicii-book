@@ -124,10 +124,14 @@ explicit revoke is exposed locally exactly as it would be in production.
 The meta tests then compare, for `anon` and for `authenticated`, every
 function they can EXECUTE and every privilege they hold on a table, view,
 materialized view or sequence in `public`/`reporting` with the allow-lists
-in `tests/fixtures/api-surface.ts` (anon: empty in Phase 0), and require
-every view an API role can read to be `security_invoker` unless it is
-listed as a definer view. A new RPC or table means a new line in that
-fixture, in the same PR.
+in `tests/fixtures/api-surface.ts` (anon: empty in Phase 0; from Phase 4
+SELECT on `reporting.public_items` only), and require every view an API
+role can read to be `security_invoker` unless it is listed as a definer
+view. anon may execute exactly `ANON_PRIVATE_FUNCTIONS` in `private`
+(`private.selling_price`, which `public_items` calls as the caller) and
+holds USAGE on `reporting` but never on `private`; PUBLIC holds nothing on
+either schema. A new RPC or table means a new line in that fixture, in the
+same PR.
 
 ### Devstack commands
 
@@ -206,6 +210,43 @@ fixture, in the same PR.
   past / cancelled as `private.cult_commons_rate_at` reads them);
   `shopDayStart`, `fromShopLocal`, `toShopLocal` (`dates.test.ts`); jobs in
   search (`search.test.ts`: an exact J- number puts Jobs first, `/jobs/{id}`).
+- Phase 4 (M1.4) app: the stock display helpers (`inventory.test.ts`:
+  `stockTone` danger at 0 or with a location below zero, waiting at the
+  reorder point; `stockLabel` and `signedQuantity` with a real minus sign;
+  unit status and publication labels and tones; `movementLabel` incl.
+  transfer in/out and "Returned from job"; the movement filters;
+  `defaultLocation` = active, sort order, then name, like
+  `add_inventory_line`; `adjustmentPreview`; the D23 `overdrawWarning`);
+  the action schemas and history wording (`inventory-forms.test.ts`:
+  part quantities 1..999, adjustments never 0 and within ±100,000,
+  Damaged only removing, a cost only on stock added, money parsed to
+  fixed-point strings, required and capped reasons, transfers between two
+  locations, blank optional fields to null; product and unit events read
+  without ever a cost, "Sold when J-… was completed" / "Back on hold: J-…
+  was reopened"; the D25 reopen note); products and units in search
+  (`search.test.ts`: `/products/{id}`, `/units/{id}`, an exact SKU puts
+  Products first); stock photos offer Internal and Public only
+  (`attachments.test.ts`); the Inventory tab active on `/products` and
+  `/units` (`auth-helpers.test.ts`); stock events in the timeline
+  (`workshop-timeline.test.ts`: "Used 2 × Road inner tube (P-000003) from
+  Shop floor", "Returned … to Shop floor", no cost). No product or unit
+  subtitle is rebuilt in TypeScript, so `display-parity.test.ts` is
+  unchanged.
+- Phase 4 Step 4: `hrefForRecord` (`ids.test.ts`: B/J/P/U to their pages,
+  C, PO and S null until Phases 6 and 7, every kind covered);
+  `interpretScan` (`scan.test.ts`: bare IDs in any case, the public QR URL
+  of each accepted base, the Admin's own /q URL, other hosts and paths,
+  `http` against an `https` base, javascript:, data:, file: and Wi-Fi
+  codes, empty input, all foreign; `truncateScan`); the publication card's
+  buttons (`inventory.test.ts`: `publicationActions` names every manual
+  move, a sold product offers only Archive listing and nothing offers
+  Sold, a unique product without an available unit has no Publish;
+  `publicationChecklist`, `missingRequirements`,
+  `publicAvailabilityLabel`); the header jump (`search.test.ts`:
+  `shortIdJump` opens an exact short ID in any case through /q, anything
+  else goes to the results); the camera states (`camera.test.ts`:
+  getUserMedia errors to denied / insecure / unsupported / failed, Phase
+  0's messages kept).
 
 ### Database (SPEC §27.2 and §23)
 
@@ -225,7 +266,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Booking cannot exceed capacity | fill a slot to capacity → next `book_appointment` raises; two concurrent bookings for the last unit → exactly one succeeds. Also: outside hours, inside closure → raise. |
 | Duplicate receipt cannot double stock | `receive_purchase` same idempotency key twice → one receipt, stock +18 once; partial then remainder → PO `received`; over-receipt → raises. |
 | Manual adjustment records actor/time/reason | `adjust_stock` without reason → raises; with reason → row has `created_by`, `reason`. |
-| Public QR exposes only published | `public_items` as anon: draft/internal rows absent; public row shows no cost; sold unique shows `sold`. |
+| Public QR exposes only published | `public_items` as anon: draft/internal rows absent; public row shows no cost; sold unique shows `sold`. Built in Phase 4: `inventory-publication.test.ts` (row below). |
 | Archived entities stay referenceable | archive a service used on a historical job → job line still joins. Phase 3: the service, the job's bike and its customer archived → the line still joins the service and the job its bike and customer; the archived service is refused for new lines. |
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
@@ -248,12 +289,23 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Check-in is atomic and replay-safe (SPEC §2, §7.1) | `create_work_order` writes the job (J-######, increasing), `checked_in`, assignment and `line_added` events in that order with actor, auth user and the request's correlation ID; a bad service line rolls everything back and the burned number is never reused; replay by id returns the same row with no new event, line or assignment, even after the bike changed hands, the customer was archived and the job completed (and burns no number); another bike under the same id → `work_order_conflict`; archived customer/bike, D18 `bike_owner_mismatch` (shop bikes accepted), blank requested work, customers and inactive staff refused; no direct writes. |
 | Timeline events carry no costs (SPEC §7.3, §4.2) | one event per action with its documented payload; no-ops write nothing; `add_work_order_note` replays on its note id (same event back, `note_conflict` on another job); `set_approval_flag` with a null note keeps the stored note, '' clears it; after a full scenario with a manual line costing 62.00 (sold at 95.00), a recursive walk of every payload finds no key matching /cost\|yield\|cult\|commons\|rate/i and no value equal to 62, while 95 appears; `work_order_events` refuses UPDATE/DELETE for the owner (`work_order_history_append_only`); `work_order_timeline` names actors and assignment subjects, newest first, clamps max_rows to 1..2000. |
 | Assignments (D22) | one active lead per job; a new lead closes the previous lead's row (not demoted); additional → lead switch; replay no-op; unassign returns null on replay; `staff_inactive`; `work_order_closed` on collected/cancelled jobs; `lead_mechanic_id` equals the active lead after every operation; rows are immutable except closing once (`assignment_immutable`). |
-| Job photos are never public (D19) | `record_attachment` on a job writes `photo_added`; `delete_attachment` writes `photo_removed` with the reason; unknown job P0002; `product` still unsupported; public via `record_attachment` or `set_attachment_visibility` → `attachment_work_order_never_public`; CHECK `attachments_work_order_never_public` exists. |
-| Lines (D14, D15) | `work-order-lines.test.ts`: sale-price overrides by anyone, cost overrides only with view_costs (42501); a manual line with no cost (mechanic2's always, an admin's left empty) is `cost_pending` with cost 0 while one with cost 0 entered is not, `work_order_totals_staff.cost_pending_count` counts the live ones and drops a voided one once it is re-added with its cost, the flag is immutable for the owner and the CHECK keeps it to costless manual lines; mechanic2's bad quantity or price on `add_service_line` / `add_manual_line` / `create_work_order` services gets 23514 with the constraint and no DETAIL (the service's cost never appears); inactive/archived service `service_unavailable`; quantity 0/10000/negative price 23514, NaN quantity refused, overflowing totals 22003; lines locked once completed (`work_order_locked` for a new add and for void) and unlocked after reopen; replays of add_* after completion return the original id with no new event; void needs a reason, keeps the row, replays without a second event and leaves the totals; owner edits, un-voids and deletes → `line_immutable`; inventory lines cannot be voided until Phase 4 (`line_type_unsupported`); same line id on another job or type → `line_conflict`; line and service RPCs return ids only. |
+| Job photos are never public (D19) | `record_attachment` on a job writes `photo_added`; `delete_attachment` writes `photo_removed` with the reason; unknown job P0002; `product` and `inventory_unit` accepted from Phase 4 (unknown → P0002), `consignment_item` still unsupported; public via `record_attachment` or `set_attachment_visibility` → `attachment_work_order_never_public`; CHECK `attachments_work_order_never_public` exists. |
+| Lines (D14, D15) | `work-order-lines.test.ts`: sale-price overrides by anyone, cost overrides only with view_costs (42501); a manual line with no cost (mechanic2's always, an admin's left empty) is `cost_pending` with cost 0 while one with cost 0 entered is not, `work_order_totals_staff.cost_pending_count` counts the live ones and drops a voided one once it is re-added with its cost, the flag is immutable for the owner and the CHECK keeps it to costless manual lines; mechanic2's bad quantity or price on `add_service_line` / `add_manual_line` / `create_work_order` services gets 23514 with the constraint and no DETAIL (the service's cost never appears); inactive/archived service `service_unavailable`; quantity 0/10000/negative price 23514, NaN quantity refused, overflowing totals 22003; lines locked once completed (`work_order_locked` for a new add and for void) and unlocked after reopen; replays of add_* after completion return the original id with no new event; void needs a reason, keeps the row, replays without a second event and leaves the totals; owner edits, un-voids and deletes → `line_immutable`; Phase 4: voiding an inventory line writes its linked reversal and restores stock (`line_type_unsupported` is gone); same line id on another job or type → `line_conflict`; line and service RPCs return ids only. |
 | Workshop concurrency (SPEC §25, D18, D22) | `workshop-concurrency.test.ts` (committed, real connections): same-id check-ins → one job, one `checked_in`; a check-in waiting on a bike being transferred fails with `bike_owner_mismatch`; a transfer is still pending (and waiting on a lock in `pg_stat_activity`) while a check-in holds the bike, and succeeds once it commits; two leads at once → one active lead mirrored on the job; a line racing completion is either before `completed_at` or refused with `work_order_locked` (both orders and a free race); same line id twice → one line, one event; two collections → one `collected`; two voids → one `line_voided`. |
 | Customer job projection (SPEC §4.2, §23; D8, D17, D19) | `workshop-customer-access.test.ts`, on the seeded jobs: a signed-in customer reads 0 rows from `work_orders`, `work_order_assignments`, `work_order_events`, `work_order_line_items`, `services`, `categories`, `cult_commons_rates`, `work_order_totals` and the three `_staff` views; `my_work_orders` returns exactly their non-cancelled jobs newest first (Tan: J-000001, not the cancelled J-000008) with exactly the documented keys and the coarse status (Priya's diagnosing J-000009 reads `received`, its voided line out of the total); `private.customer_job_status` maps all 11 statuses; `my_work_order_lines` has exactly description, quantity, unit price, total, currency and id, live lines only; `my_work_order_timeline` is check-in plus customer-status changes only (received → diagnosing, notes, approvals, assignments, lines and in_progress ↔ paused add nothing; completing and reopening do) plus customer photos still on the job (internal, re-hidden and deleted ones absent); `my_work_order_attachments` never internal; cancelled jobs and another customer's job return nothing; D17: after a transfer the previous owner keeps the job and the new owner does not see it (also on the seeded Bianchi sale), a job on a bike archived afterwards is still listed; staff without a customers row and archived customers get nothing; anon is refused (42501). |
-| Jobs in staff search (SPEC §7.2, §20) | `staff-search.test.ts`: "J-000004", "j000004", "J000004" rank 1.0 with Chloe's Giant as title, "customer · requested work" as subtitle and the job number as short_id; "000004" contains-match at 0.6; at least three characters; cancelled and collected jobs found; the kinds filter keeps jobs in or out; `archived = true` returns no jobs; an unknown kind (`product`) is 22023. |
+| Jobs in staff search (SPEC §7.2, §20) | `staff-search.test.ts`: "J-000004", "j000004", "J000004" rank 1.0 with Chloe's Giant as title, "customer · requested work" as subtitle and the job number as short_id; "000004" contains-match at 0.6; at least three characters; cancelled and collected jobs found; the kinds filter keeps jobs in or out; `archived = true` returns no jobs; an unknown kind is 22023 (`supplier` since Phase 4 made `product` known). |
 | The seed's timelines read true (TESTING "Seed data") | `workshop-seed.test.ts`: J-000001…J-000009 with their customer, bike, status, lead (= the active lead assignment) and stamps at their exact offsets from check-in; J-000001/J-000002 totals exactly as documented through `work_order_totals_staff`; J-000009's voided line out of its total; exactly one D20-overdue job at seed time (J-000006, through `isOverdue` with `now` pinned to J-000007's check-in, so an existing seeded database that has aged still passes); for every job: events in id order strictly increasing in time, exactly the expected events by type, nothing but J-000007 stamped within 30 minutes of the seed, every trigger-written actor equal to the row's `created_by` / `assigned_by` / `voided_by` and every status change by the job's lead, costed lines added by a view_costs holder, no line event after completion; J-000007 checked in after the Bianchi's `transferred` event. |
+| Stock-consuming line consumes once (Phase 4) | `inventory-ledger.test.ts` "a stock-consuming work-order line cannot consume inventory twice": a replay of `add_inventory_line` → one line, one `job_consumption`, stock decremented once, `replayed = true`, also after completion; the same line id with other arguments or on another job → `line_conflict`; concurrent (committed) for a quantity part and a unique unit → one line and one movement, the second call `replayed = true`. |
+| Void creates reversal, never deletes (Phase 4) | `inventory-ledger.test.ts`: original intact, one `reversal` with `reversal_of_id`, stock restored, `stock_reversed` and `line_voided` once each, second void a no-op, two concurrent voids one reversal; "voiding is never blocked by publication rules" (photo removed and price cleared after the sale, then reopen and void → unit available, product public). `work-order-lines.test.ts` proves the same through Phase 3's void path. |
+| Unique unit cannot be consumed or sold twice (Phase 4) | `inventory-ledger.test.ts`: a unit on a line, written off or held → `unit_not_available`; one unit on two jobs at once → exactly one succeeds; ledger sum per unit in {0, 1}; owner forgeries (a second +1, a location change without a movement, +1/−1 across locations for a sold unit, a linked bike that does not point back, an in-stock unit whose bike a customer owns) → `unit_ledger_inconsistent` at `set constraints all immediate`. Every ledger test ends with `assertLedgerConsistent`. |
+| Parts on jobs (D23-D25, D27, D15, D16) | `inventory-ledger.test.ts`: consumption may go negative and shows in `low_stock` with `negative_locations` (also when the total stays positive), manual changes never go below zero; `part_price_missing`, `part_cost_missing`, the default price is `private.selling_price` (unit over product), an override wins, `cost_pending` false; customer-owned and consigned stock → `ownership_not_saleable`; held on add, available after a void, sold at completion with `sold_at = completed_at` (cause `job_completed`); adds and voids on completed or ready jobs → `work_order_locked`; complete → reopen → void (held, no movement, product stays sold, then reversal and public); complete → reopen → re-complete (sold again, one consumption); complete → `transfer_bike_ownership` to the buyer → reopen refused with `bike_with_customer` (unit stays sold, `sold_at` kept, product sold), after the bike returns to the shop reopen → void works (D29); `void_line` on a unit whose bike has a customer (forged) → `bike_with_customer`; cancel with a live part → `work_order_has_lines`, after the void it succeeds; committed races: add vs complete, add vs cancel, two jobs selling a product's last two units at once → `sold`. |
+| Manual adjustment records actor/time/reason (Phase 4) | `inventory-ledger.test.ts` "every manual stock adjustment records actor, timestamp and reason": null/blank reason → `reason_required`; `created_by`, trimmed reason, `created_at`; damaged positive → `quantity_invalid`; other types → `movement_type_not_manual`; `insufficient_stock`; request-id replay and `request_conflict`, concurrent same request → one movement; mechanics 42501, admin succeeds; a unit cost needs view_costs. Write-off replays by request id, no-op when already written off, again after a restore; transfers pair rows by request id, `insufficient_stock`, `transfer_same_location`, concurrent draining → one succeeds, unit transfers move the unit (`moved`), held units refused. |
+| Current stock is derivable from the ledger (Phase 4) | `inventory-ledger.test.ts`: `reporting.stock_levels` equals the per-product/location movement sums after transfers, parts, voids and damage; seeded `low_stock` is P-000009, P-000008, P-000012 by shortfall; `product_stock` totals. Snapshots do not change when product and unit prices and costs change; the ledger and both histories are append-only for the owner too; an archived product keeps its movements and lines. |
+| Catalog, cost gating and boundaries (Phase 4) | `inventory-catalog.test.ts`: P-/U- IDs server-assigned, increasing, immutable; `tracking_type` immutable; SKU unique ignoring case and punctuation; manage_inventory needed for products and locations; mechanic2 cannot select any cost column (42501), the cost views return nothing to them and rows to mechanic1/admin (product 02: yield 37.00, Cult Commons 11.10); the invoker cost-write guards refuse direct cost writes without view_costs, including a write of the stored value or null (no equality oracle), and let mechanic1 and the owner through; publication requirements, slug and `item` fallback; archive rules (`product_published`, `product_has_stock`, `unit_in_stock`, `location_has_stock`); `bike_in_stock` for transfer and archive until the unit is written off, `bike_has_owner`, `bike_already_linked`; anon denied and customers read zero rows on every stock table and view; event payloads exact, with actor, never a cost key or value (product, unit and work-order events); the publication and unit-status matrices equal `src/lib/inventory.ts` for all 25 and 36 pairs. `attachments.test.ts`: product and unit photos internal/public, never customer (`attachment_stock_never_customer`, CHECK backstop). |
+| Public QR pages expose only explicitly published records (Phase 4, SPEC §23) | `inventory-publication.test.ts` "public QR pages expose only explicitly published records": as anon, `reporting.public_items` has no draft, internal_only or archived product and no unit of an unpublished product (unknown and unpublished short IDs equally absent); its columns equal the documented list exactly (no cost, serial, SKU, internal note or location; a unit's cost and serial never appear in the rows); `sale_price` equals `private.selling_price` for product and unit rows and follows a price change; a product row shows only its public photos, oldest first, as `{bucket, path, width, height, caption}`; a unit row shows the unit's, then the product's, then the bike's; held units and their product read `unavailable`, a sold unit and its product `sold`, a quantity product without stock `sold_out`; a written-off unit and every unit of a sold-then-archived product are absent; a linked bike's photos created before `sold_at` appear and those at or after it never do; a bike photo taken after the first handover to a buyer stays hidden after the bike returns to the shop and the job is reopened and completed again (D29); signed-in customers and staff see the same rows; anon calling `private.selling_price` directly gets 42501. |
+| Publication by hand (Phase 4, D26) | `inventory-publication.test.ts` "set_publication_status": for quantity products and unique products with and without an available unit, from every state, the targets the RPC accepts equal `manualPublicationTargets` and every refusal has its code (`publication_transition_invalid`, `publication_sold_by_sale`, `publication_requires_available_unit`); a manual `sold` and sold → public/internal_only refused, sold → archived allowed; a unit registered on a sold product restores it to public (`publication_changed` {sold → public}, both rows `available` to anon), so 'sold' with an available unit is unreachable and skipped in the matrix; same status is a no-op without an event; `publication_requires_photo` (none, or internal only) and `publication_requires_price` (a unique product with no price on product or unit); the slug is assigned once and survives unpublish, rename, archive and republish, `item-p-…` for a name without letters or digits; `publication_changed` events carry `{from, to}`, the actor and the trimmed reason; `reason_too_long`; mechanic1, mechanic2 and anon 42501; unknown product P0002. |
+| Split to a unique item (Phase 4, D28) | `inventory-split.test.ts`: the source loses one at the location and a draft unique product (name, description, brand, category and currency from the source; price from the source unless given) gets an available shop-owned unit there, both costs equal the source's default cost (read through the cost views as the admin), one `stock_adjustment` each side with "Split to U-…: reason", cost snapshot and request_id = unit id, `created` event with actor and reason; replay with the same ids returns the same result with one pair of movements, a reused unit or product id is `unit_conflict`; `insufficient_stock` (empty or other location), `location_inactive`, `product_not_quantity`, `product_archived`, `ownership_not_saleable`, `reason_required`, `reason_too_long` (> 480), a blank name 23514 without DETAIL; needs both adjust_stock and manage_inventory (42501 otherwise, anon too); mechanic2 with both but no view_costs splits and the carried costs equal the source's while their direct cost UPDATEs on the new product and unit are 42501; committed concurrency: the same unit id twice → one result, one pair of movements; two splits racing for the last item → one succeeds, the other `insufficient_stock`. |
+| Products and units in staff search (Phase 4) | `staff-search.test.ts`: the SKU typed as "shi l05a rf", "shil05arf" or in mixed case finds P-000001 at rank 1.0 with subtitle "SHI-L05A-RF · Shimano · 34 in stock"; SKU contains (≥ 3 characters) 0.7; exact P- and U- IDs rank 1.0 with or without the dash; name and brand words 0.45-0.85; on-hand from the ledger across locations (road tube 60), "Unique item" for unique products, "Inactive" appended for an inactive product; units by exact serial (1.0), part of it (0.7) and product-name words, subtitle "Available · Shop floor · S/N …"; the shop Brompton's serial finds both the bike and its unit at 1.0; the archived chain and an archived unit are left out and are the only hits with `archived = true`; "brompton" across all kinds adds products P-000005, P-000014 and unit U-000002 (the bike assertion is scoped to `['bike']`); 'product' and 'inventory_unit' are known kinds. |
 
 ### End-to-end (SPEC §27.3)
 
@@ -323,24 +375,85 @@ the wizard walked to Create job, intake photos skipped; signs nobody in).
 `workshop-board.spec.ts` creates its job with it.
 
 Phase 3 spec (`workshop.spec.ts`, `tagFor` from `helpers.ts`): SPEC §27.3
-journey 1 without the part line, as the admin: /jobs → New job → a new
+journey 1 (its part line came with Phase 4, below), as the admin: /jobs → New job → a new
 customer and a new bike from the intake's sheets → requested work and
 condition → Marcus Tan lead, Nur Aisyah additional → Full Service →
 Review → Create job; the job opens on its J- number with the Intake photos
 card, the fixture photo uploads and shows, Done drops `?intake`; People
 lists both; Wheel True × 2 gives $270.00, cost $0.00, yield $270.00, Cult
 Commons $81.00, after Cult Commons $189.00; a manual "Valve core" 1 × $5.00
-costing $2.00 gives $275.00 and $81.90; voiding it with "Not needed" (two
-steps, 400 ms guard) brings $270.00 back and the voided line shows its
+costing $2.00 (after Phase 4's part line) gives $284.00 and $83.46; voiding
+it with "Not needed" (two steps, 400 ms guard) brings $279.00 back and the voided line shows its
 reason; Start work → Complete (Add service now disabled with the lock
 explanation) → Ready for collection → Collected, with Completed and
 Collected as separate dated rows; the timeline lists check-in, both
-assignments, the photo, the three lines, the void and its reason, work
+assignments, the photo, the four lines, the part's stock use, the void and its reason, work
 started, completed, ready for collection and collected. Collected is the
 second step of "Collected…" (the job named, focus on Back). A reload mid-intake
 offers the draft back (Continue restores step and customer; Discard starts
 afresh). mechanic2 (no view_costs) opens J-000002 and sees its $300.00 total
 but no cost, yield or Cult Commons, and the page's data holds no cost key.
+
+Phase 4 (`inventory.spec.ts`, phone and iPad, every record tagged and
+stock asserted on the test's own product): journey 3 without labels and
+receiving: the admin creates a counted product (tag in name and SKU,
+$12.00, cost $5.00, reorder point 3), records 10 opening stock at the Shop
+floor with the "Opening stock count" chip (preview "Shop floor: 0 → 10"),
+finds it by SKU on /inventory with "10 in stock", adds 1 to a walk-in job
+from Add part (the option reads "10 at Shop floor · 10 total"; toast
+"Added 1 × …. 9 left at Shop floor."), the line shows the P- number and
+"9 left at Shop floor", the product 9, the movements list "Used on job"
+with the J- link; voiding the line (the confirmation says it returns 1 to
+the Shop floor) toasts "Returned to stock", the timeline shows "Used 1 × …
+(P-…) from Shop floor" and "Returned 1 × … to Shop floor", stock is 10
+again and "Returned from job" links "Reverses #n" to the original's
+"Reversed by #m"; adding it again gives 9. A tagged unique item with its
+first unit goes on job A ("It is on hold for this job"), the unit page
+says "On job J-…" and job B's picker offers nothing. mechanic2 sees the
+road tube's stock with no Adjust stock, Transfer, Edit details, Add unit,
+Archive, cost, yield or Cult Commons (and no "3.80" in the page), and still
+adds 1 to a job. Journey 1 (`workshop.spec.ts`) now adds 1 × the seeded
+road tube (P-000003) after Wheel True: the toast's count is the picker's
+Shop floor count minus 1 (relative, the database is shared), totals
+$279.00 / cost $3.80 / yield $275.20 / Cult Commons $82.56 / after $192.64,
+and the timeline shows the line and its `stock_consumed` entry.
+
+Phase 4 Step 4 (`inventory-publish.spec.ts` and `scan.spec.ts`, phone and
+iPad). Publication: the admin creates a tagged counted product with stock
+and a price and makes it internal; Publish is disabled with "Still needed:
+A public photo." and the checklist marks the photo missing and the price
+done, the preview reads "Not public. Anonymous scans show nothing." and
+the QR URL ends in `/q/P-…`; a photo through "Choose photos" made Public in
+the viewer (which offers no Customer level on stock) enables Publish; once
+published the pill reads Public and the preview shows the name, $25.00,
+Available and "1 public photo"; Unpublish brings "Not public" back.
+Locations: a tagged location with sort order 900 is added from
+/settings/locations (Shop floor keeps the "Default" pill), is offered in
+the Adjust stock sheet, and once its switch is off it reads Inactive and is
+no longer offered. Split: one of a tagged product's 5 is split off with a
+reason; the new unit page shows its U- number and Available, and the
+source reads 4. Bike link: B-000011's page reads "In stock as U-000001 ·
+Available", archiving it toasts the `bike_in_stock` message, and the link
+opens the unit. Scanning: typing P-000001 opens the product, `b-000001`
+the bike, "hello" gives "Enter a code like P-000123", P-999999 shows "No
+record with P-999999" whose "Scan again" returns to /scan, and
+`/q/U-000001` (also lower case) redirects to the unit. The camera is
+stubbed in an init script with the permission granted:
+`navigator.mediaDevices.getUserMedia` returns `canvas.captureStream(10)` of
+a canvas repainted every 100 ms in alternating colours (so the video
+really plays and `requestVideoFrameCallback` fires), and
+`window.BarcodeDetector` is a fake class whose `getSupportedFormats`
+resolves `['qr_code']` and whose `detect` resolves the chosen
+`rawValue`; `navigator.permissions.query` reports camera granted. With
+`${E2E_PUBLIC_SITE_URL}/q/U-000001` (`tests/fixtures/public-site.ts`, the
+same value `playwright.config.mts` gives the web server) scanning lands on
+the unit; with `https://example.com/phish` the page shows "Not a BICII
+label" with the text, keeps detecting, stays on /scan and links nothing on
+example.com, and typing a code still works. The header search finds
+"shi-l05a-rf" as P-000001 with "N in stock", and `p-000001` + Enter opens
+the product directly (`customers-bikes.spec.ts` and
+`workshop-board.spec.ts` now expect the same jump for a B- or J- number,
+and still check the results page for an exact J- number).
 
 Phase 3 step 4 (`workshop-board.spec.ts`, read-only on the seeded jobs so
 the phone and iPad runs share one database): as mechanic2 (Nur Aisyah, no
@@ -355,7 +468,8 @@ number box finds J-000004. On J-000002 she sees Total $300.00 and no
 but no cost, no New service, no Edit and no Cult Commons card. mechanic1
 sees Cult Commons $52.80 and BICII yield after Cult Commons $123.20 on
 J-000002 and the 30% rate (without Schedule). The admin's header search
-for "j-000004" lists Jobs first and opens J-000004, which Chloe's Giant's
+for "j-000004" opens J-000004 directly (Phase 4's short-ID jump), /search
+for it lists Jobs first and opens J-000004, which Chloe's Giant's
 Service history also lists. On a tagged service and job: the service
 created in settings is offered in the job's Add service; the lead is
 reassigned from Marcus Tan to Nur Aisyah in the Assign sheet (which says

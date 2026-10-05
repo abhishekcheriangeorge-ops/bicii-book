@@ -134,4 +134,8 @@ code, and see [AGENTS.md](AGENTS.md) for the rules that are not negotiable.
 Next.js 16 (App Router, Turbopack), React 19, TypeScript 5, Tailwind 4,
 Supabase (Postgres, Auth, Storage, RLS), zod, decimal.js, pino, Vitest,
 Playwright, GitHub Actions, Vercel. This Next.js differs from older ones
-(`proxy.ts`, async request APIs); see `AGENTS.md`.
+(`proxy.ts`, async request APIs); see `AGENTS.md`. `@zxing/browser` (with
+its `@zxing/library` peer) decodes QR codes on the Scan screen where the
+browser has no `BarcodeDetector`; it is imported dynamically, only then.
+The camera needs HTTPS or localhost (RUNBOOK, "The camera scanner on
+phones and iPads").

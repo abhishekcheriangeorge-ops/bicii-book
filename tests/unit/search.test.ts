@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { bikeDetails, bikeSubtitle, bikeTitle } from "@/lib/bikes";
-import { groupHits, hrefForHit, isSearchKind, type SearchHit } from "@/lib/search";
+import { groupHits, hrefForHit, isSearchKind, shortIdJump, type SearchHit } from "@/lib/search";
 
 const hit = (kind: SearchHit["kind"], id: string, rank: number): SearchHit => ({
   kind,
@@ -37,6 +37,16 @@ describe("groupHits", () => {
     expect(groups.map((g) => g.label)).toEqual(["Jobs", "Customers", "Bikes"]);
   });
 
+  it("puts Products first for an exact P- number or SKU", () => {
+    const groups = groupHits([
+      hit("customer", "c1", 0.6),
+      hit("bike", "b1", 0.7),
+      hit("inventory_unit", "u1", 0.5),
+      hit("product", "p1", 1),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["Products", "Bikes", "Customers", "Units"]);
+  });
+
   it("leaves out empty groups", () => {
     expect(groupHits([])).toEqual([]);
     expect(groupHits([hit("bike", "b1", 1)]).map((g) => g.kind)).toEqual(["bike"]);
@@ -48,8 +58,12 @@ describe("hrefForHit", () => {
     expect(hrefForHit({ kind: "customer", id: "x" })).toBe("/customers/x");
     expect(hrefForHit({ kind: "bike", id: "y" })).toBe("/bikes/y");
     expect(hrefForHit({ kind: "work_order", id: "z" })).toBe("/jobs/z");
+    expect(hrefForHit({ kind: "product", id: "p" })).toBe("/products/p");
+    expect(hrefForHit({ kind: "inventory_unit", id: "u" })).toBe("/units/u");
     expect(isSearchKind("work_order")).toBe(true);
-    expect(isSearchKind("product")).toBe(false);
+    expect(isSearchKind("product")).toBe(true);
+    expect(isSearchKind("inventory_unit")).toBe(true);
+    expect(isSearchKind("supplier")).toBe(false);
   });
 });
 
@@ -69,5 +83,19 @@ describe("bike naming (mirrors private.search_bikes)", () => {
     ).toBe("Tan Wei Ming · Gloss Red Tint · S/N WSB1");
     expect(bikeSubtitle({ ownerLabel: null, colour: null, serialNumber: null })).toBe("Shop bike");
     expect(bikeDetails({ colour: " ", serialNumber: null })).toBeNull();
+  });
+});
+
+describe("shortIdJump", () => {
+  it("opens an exact short ID through /q, in any case", () => {
+    expect(shortIdJump("P-000001")).toBe("/q/P-000001");
+    expect(shortIdJump(" b-000011 ")).toBe("/q/B-000011");
+    expect(shortIdJump("j-000004")).toBe("/q/J-000004");
+  });
+
+  it("leaves everything else to the results page", () => {
+    for (const q of ["", "brompton", "P-0001", "J000004", "TT-123", "P-000001 tube"]) {
+      expect(shortIdJump(q), q).toBeNull();
+    }
   });
 });

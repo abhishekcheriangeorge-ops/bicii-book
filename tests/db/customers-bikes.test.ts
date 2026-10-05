@@ -100,7 +100,11 @@ describe("staff access", () => {
   it("any active staff member, without permissions, sees every customer, bike and event", async () => {
     await asStaff(conn, STAFF.mechanic2, async (tx) => {
       expect(await scalar(tx, "select count(*)::int from public.customers")).toBe(6);
-      expect(await scalar(tx, "select count(*)::int from public.bikes")).toBe(10);
+      // Every seeded bike (Phase 4 adds three shop bikes, which have no owner
+      // and so no ownership event).
+      expect(await scalar(tx, "select count(*)::int from public.bikes")).toBe(
+        Object.keys(BIKE).length,
+      );
       expect(await scalar(tx, "select count(*)::int from public.bike_ownership_events")).toBe(10);
       expect(
         await scalar(tx, "select internal_notes from public.customers where id = $1", [
@@ -125,7 +129,9 @@ describe("staff access", () => {
 
   it("the service role reads but cannot write", async () => {
     await asServiceRole(conn, async (tx) => {
-      expect(await scalar(tx, "select count(*)::int from public.bikes")).toBe(10);
+      expect(await scalar(tx, "select count(*)::int from public.bikes")).toBe(
+        Object.keys(BIKE).length,
+      );
     });
     await expect(
       asServiceRole(conn, (tx) => tx.query("update public.customers set phone = '1'")),

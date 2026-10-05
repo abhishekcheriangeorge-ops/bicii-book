@@ -1184,19 +1184,24 @@ describe.skipIf(!isolatedDatabase())("photos on a job (D19)", () => {
     });
   });
 
-  it("refuses unknown jobs; products are still unsupported", async () => {
+  it("refuses unknown jobs; consignment items are still unsupported (products arrive in Phase 4)", async () => {
     await scenario(MECHANIC2, async (tx) => {
       const id = randomUUID();
       const nowhere = randomUUID();
       await ownerMode(tx);
       await putStorageObject(tx, "media-internal", attachmentPath("work_order", nowhere, id));
       await putStorageObject(tx, "media-internal", attachmentPath("product", nowhere, id));
+      await putStorageObject(tx, "media-internal", attachmentPath("consignment_item", nowhere, id));
       await actAs(tx, MECHANIC2);
       await failsWith(tx, () => record(tx, { id, entityId: nowhere }), { code: "P0002" });
       await failsWith(tx, () => record(tx, { id, entityType: "product", entityId: nowhere }), {
-        code: "P0001",
-        message: "attachment_entity_unsupported",
+        code: "P0002",
       });
+      await failsWith(
+        tx,
+        () => record(tx, { id, entityType: "consignment_item", entityId: nowhere }),
+        { code: "P0001", message: "attachment_entity_unsupported" },
+      );
     });
   });
 

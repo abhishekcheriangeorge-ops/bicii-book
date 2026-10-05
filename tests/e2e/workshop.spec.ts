@@ -2,15 +2,16 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { WORK_ORDER } from "../fixtures/ids";
+import { PRODUCT_SHORT_ID, WORK_ORDER } from "../fixtures/ids";
 import { nextIntakeStep, section, signIn, tagFor, toast } from "./helpers";
 
 /**
  * M1.3 workshop, on a phone and an iPad: SPEC §27.3 journey 1 (walk-in bike
- * -> intake photos -> job -> services -> complete -> ready -> collected),
- * without the part line (inventory is Phase 4), and the intake draft
- * surviving a reload. Every record carries tagFor(testInfo); nothing
- * counts rows across the shared database.
+ * -> intake photos -> job -> services and a part from stock -> complete ->
+ * ready -> collected), and the intake draft surviving a reload. Every
+ * record carries tagFor(testInfo); nothing counts rows across the shared
+ * database, and the seeded part's stock is asserted relative to what the
+ * picker showed before (other runs use it too).
  */
 
 const PHOTO = path.join(__dirname, "fixtures", "bike-photo.jpg");
@@ -120,6 +121,34 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
   await expect(totals).toContainText(/Cult Commons \(30%\)\s*\$81\.00/);
   await expect(totals).toContainText(/after Cult Commons\s*\$189\.00/);
 
+  // A part from stock: 1 × the seeded Road inner tube ($9.00, cost $3.80).
+  const tubeName = "Road inner tube 700x23-28c Presta 60mm";
+  await page.getByRole("button", { name: "Add part" }).click();
+  const addPart = page.getByRole("dialog", { name: "Add part" });
+  await addPart.getByRole("combobox").fill(PRODUCT_SHORT_ID.roadTube);
+  const tube = addPart.getByRole("option", { name: new RegExp(tubeName) });
+  await expect(tube).toContainText(/\d+ at Shop floor · \d+ total/);
+  const badge = (await tube.getByText(/ at Shop floor · /).textContent()) ?? "";
+  // "40 at Shop floor · 60 total" (a count below zero has a real minus sign).
+  const before = Number(
+    /^(\S+) at Shop floor/.exec(badge)![1].replace("\u2212", "-").replaceAll(",", ""),
+  );
+  await tube.click();
+  await expect(addPart.locator("output")).toHaveText("$9.00");
+  await addPart.getByRole("button", { name: "Add part" }).click();
+  await expect(
+    toast(page, `Added 1 × ${tubeName}. ${before - 1} left at Shop floor.`),
+  ).toBeVisible();
+  await expect(addPart).toBeHidden();
+  await expect(page.getByRole("row", { name: new RegExp(tubeName) })).toContainText(
+    PRODUCT_SHORT_ID.roadTube,
+  );
+  await expect(totals).toContainText(/Total\s*\$279\.00/);
+  await expect(totals).toContainText(/Cost\s*\$3\.80/);
+  await expect(totals).toContainText(/Yield\s*\$275\.20/);
+  await expect(totals).toContainText(/Cult Commons \(30%\)\s*\$82\.56/);
+  await expect(totals).toContainText(/after Cult Commons\s*\$192\.64/);
+
   // A manual line with a cost.
   await page.getByRole("button", { name: "Add manual line" }).click();
   const manual = page.getByRole("dialog", { name: "Add manual line" });
@@ -129,8 +158,8 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
   await expect(manual.locator("output")).toHaveText("$5.00");
   await manual.getByRole("button", { name: "Add line" }).click();
   await expect(manual).toBeHidden();
-  await expect(totals).toContainText(/Total\s*\$275\.00/);
-  await expect(totals).toContainText(/Cult Commons \(30%\)\s*\$81\.90/);
+  await expect(totals).toContainText(/Total\s*\$284\.00/);
+  await expect(totals).toContainText(/Cult Commons \(30%\)\s*\$83\.46/);
 
   // Void it, with a reason.
   const valveRow = page.getByRole("row", { name: /Valve core/ });
@@ -139,7 +168,7 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
   await page.waitForTimeout(500);
   await valveRow.getByRole("button", { name: "Void line" }).click();
   await expect(toast(page, "Valve core voided")).toBeVisible();
-  await expect(totals).toContainText(/Total\s*\$270\.00/);
+  await expect(totals).toContainText(/Total\s*\$279\.00/);
   await expect(page.getByRole("row", { name: /Valve core/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Show voided (1)" }).click();
   await expect(page.getByRole("row", { name: /Valve core/ })).toContainText("Not needed");
@@ -176,6 +205,8 @@ test("journey 1: a walk-in bike is checked in with photos, priced, completed and
     "Photo added",
     "Added Full Service · $200.00",
     "Added Wheel True × 2 · $70.00",
+    `Added ${tubeName} · $9.00`,
+    `Used 1 × ${tubeName} (${PRODUCT_SHORT_ID.roadTube}) from Shop floor`,
     "Added Valve core · $5.00",
     "Voided Valve core · $5.00",
     "“Not needed”",

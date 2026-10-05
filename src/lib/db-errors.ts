@@ -54,7 +54,7 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   staff_permission_immutable: "Remove the permission and grant the new one instead.",
   // Customers and bikes (Phase 1)
   customer_archived: "That customer is archived. Unarchive them first.",
-  bike_archived: "That bike is archived. Unarchive it before changing its owner.",
+  bike_archived: "That bike is archived. Unarchive it before changing its owner or stocking it.",
   bike_short_id_immutable: "A bike keeps its ID for life.",
   bike_history_append_only: "Bike ownership history cannot be changed.",
   // Attachments (Phase 1)
@@ -75,7 +75,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   work_order_transition_invalid: "A job can't move to that status from where it is now.",
   work_order_locked: "This job is completed or closed. Reopen it to change its lines.",
   work_order_closed: "This job is collected or cancelled and can no longer change.",
-  work_order_has_lines: "Void the job's lines before cancelling it.",
+  work_order_has_lines:
+    "Void the job's lines before cancelling it. Voiding a part returns it to stock.",
   work_order_conflict: "That job clashes with another one. Start the check-in again.",
   work_order_immutable: "A job keeps its number, customer, bike and timestamps.",
   work_order_history_append_only: "A job's timeline cannot be changed.",
@@ -90,10 +91,10 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   assignment_immutable: "Assignments are closed, never edited. Assign again instead.",
   line_conflict: "That line clashes with another one. Add it again.",
   line_immutable: "Lines can't be edited or deleted. Void the line and add a new one.",
-  line_type_unsupported: "Parts lines can't be voided until inventory is set up.",
   service_unavailable: "That service is inactive or archived.",
   service_conflict: "That service clashes with another one. Save it again.",
-  category_kind_mismatch: "Choose a service category for a service.",
+  category_kind_mismatch:
+    "Choose a category of the right kind: service categories for services, product categories for products.",
   cult_commons_rate_missing: "No Cult Commons rate is set. Ask an admin to set one.",
   cult_commons_rates_append_only:
     "Cult Commons rates can't be changed. Schedule a new rate instead.",
@@ -102,6 +103,60 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   rate_conflict: "That rate clashes with another one. Schedule it again.",
   note_conflict: "That note clashes with another one. Add it again.",
   attachment_work_order_never_public: "Photos on a job can't be made public.",
+  // Inventory (Phase 4)
+  product_inactive: "That product is inactive.",
+  product_archived: "That product is archived. Unarchive it first.",
+  product_not_unique: "Only a unique item has individual units.",
+  product_not_quantity: "Only stock counted by quantity can be split into a unique item.",
+  product_unit_tracked: "This item is counted unit by unit. Change its units instead.",
+  product_tracking_type_immutable:
+    "A product stays counted or unique. Create a new product instead.",
+  product_short_id_immutable: "A product keeps its ID for life.",
+  product_slug_immutable: "A published product keeps its public address.",
+  product_published: "Unpublish the product before archiving it.",
+  product_has_stock: "The product still has stock. Adjust it to zero or write off its units first.",
+  unit_required: "Choose which unit to use.",
+  unit_product_mismatch: "That unit belongs to another product.",
+  unit_not_available: "That unit is not available.",
+  unit_status_transition_invalid: "A unit can't move to that status from where it is now.",
+  unit_in_stock: "Only a sold, written-off or returned unit can be archived.",
+  unit_location_mismatch: "That unit is somewhere else. Refresh and try again.",
+  unit_ledger_inconsistent:
+    "That unit's stock record doesn't add up. Tell an admin before changing it.",
+  unit_conflict: "That unit clashes with another one. Save it again.",
+  unit_short_id_immutable: "A unit keeps its ID for life.",
+  location_inactive: "That location is inactive. Choose another or reactivate it.",
+  location_has_stock: "That location still holds stock. Move or adjust it to zero first.",
+  location_required: "There is no active stock location. Add one in Settings → Locations.",
+  transfer_same_location: "Choose two different locations.",
+  insufficient_stock: "There isn't that much stock at that location.",
+  quantity_invalid: "Enter a quantity that's allowed here.",
+  movement_type_not_manual: "Only a stock adjustment or damaged stock can be recorded by hand.",
+  movement_append_only: "The stock record can't be changed. Record a correction instead.",
+  movement_invalid: "That stock change is not consistent. Refresh and try again.",
+  request_conflict: "That stock change clashes with another one. Start again.",
+  part_price_missing: "This part has no sale price. Enter a price or ask someone to set one.",
+  part_cost_missing:
+    "This part has no cost yet, so its yield cannot be worked out. Ask someone with cost access to set it.",
+  ownership_not_saleable:
+    "This item is not shop stock, so it can't be used on a job or split into a unique item.",
+  currency_mismatch: "That item is priced in another currency than the job.",
+  publication_transition_invalid:
+    "The item can't move to that publication status from where it is now.",
+  publication_requires_photo: "Add a public photo before publishing.",
+  publication_requires_price: "Set a selling price before publishing.",
+  publication_requires_available_unit: "There is no available unit to publish.",
+  publication_sold_by_sale:
+    "A sold item changes status only through a sale or its reversal. By hand it can only be archived.",
+  publication_initial_invalid: "A new product starts as a draft or internal only.",
+  bike_has_owner: "That bike belongs to a customer. Only a shop bike can be stock.",
+  bike_already_linked: "That bike is already in stock as another unit.",
+  bike_in_stock: "This bike is in stock as a unit; sell or write off the unit first.",
+  bike_with_customer:
+    "That bike now belongs to a customer. Transfer it back to the shop before putting its unit back in stock.",
+  product_events_append_only: "Product history can't be changed.",
+  inventory_unit_events_append_only: "Unit history can't be changed.",
+  attachment_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -129,6 +184,26 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   work_order_assignments_one_lead_key:
     "Someone else changed the assignments at the same time. Try again.",
   work_order_events_note_id_key: "That note has already been added.",
+  // Inventory (Phase 4)
+  products_pkey: "That product has already been saved.",
+  products_short_id_key: "That product ID is already taken. Try again.",
+  products_sku_key_unique: "Another product already uses that SKU.",
+  products_public_slug_key: "Another product already uses that public address.",
+  products_shopify_product_id_key: "That Shopify product is already linked to another product.",
+  products_shopify_variant_id_key: "That Shopify variant is already linked to another product.",
+  inventory_units_pkey: "That unit has already been saved.",
+  inventory_units_short_id_key: "That unit ID is already taken. Try again.",
+  inventory_units_bike_id_key: "That bike is already in stock as another unit.",
+  inventory_units_sold_sale_line_id_key: "That sale is already recorded against another unit.",
+  bikes_inventory_unit_id_key: "That unit is already linked to another bike.",
+  locations_pkey: "That location has already been saved.",
+  locations_name_key: "A location with that name already exists.",
+  work_order_line_items_unit_once: "That unit is already on a job.",
+  inventory_movements_request_once: "That stock change has already been recorded.",
+  inventory_movements_job_consumption_once: "That part has already taken its stock.",
+  inventory_movements_sale_line_once: "That sale has already taken its stock.",
+  inventory_movements_receipt_line_once: "That delivery has already been received.",
+  inventory_movements_reversal_of_id_key: "That stock change has already been reversed.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -217,6 +292,40 @@ export const CHECK_ERRORS: Record<string, string> = {
   money_amount_not_nan: "Enter an amount.",
   rate_fraction_not_nan: "Enter a rate.",
   line_quantity_not_nan: "Enter a quantity.",
+  // Inventory (Phase 4)
+  locations_name_check: "Enter a location name under 80 characters.",
+  products_short_id_format: "A product ID looks like P-000123.",
+  products_sku_check: "Keep the SKU under 64 characters.",
+  products_name_check: "Enter a product name under 200 characters.",
+  products_description_check: "Keep the description under 5,000 characters.",
+  products_brand_check: "Keep the brand under 100 characters.",
+  products_public_slug_format: "That public address is not valid.",
+  products_default_sale_price_check: "Prices can't be negative.",
+  products_default_direct_cost_check: "Costs can't be negative.",
+  products_currency_check: "Use a three-letter currency code.",
+  products_reorder_point_check: "The reorder point can't be negative.",
+  inventory_units_short_id_format: "A unit ID looks like U-000123.",
+  inventory_units_serial_number_check: "Keep the serial number under 100 characters.",
+  inventory_units_condition_check: "Keep the condition under 500 characters.",
+  inventory_units_internal_notes_check: "Keep the notes under 10,000 characters.",
+  inventory_units_sale_price_check: "Prices can't be negative.",
+  inventory_units_direct_cost_check: "Costs can't be negative.",
+  inventory_units_consignment_shape: "A consigned unit needs its consignment record.",
+  inventory_units_sold_shape:
+    "The unit's sale date doesn't match its status. Refresh and try again.",
+  inventory_movements_quantity_delta_check: "Enter a quantity other than zero, up to 100,000.",
+  inventory_movements_unit_delta: "A unique item moves one at a time.",
+  inventory_movements_reason_required: "Give a reason for this stock change.",
+  inventory_movements_reason_check: "Keep the reason under 500 characters.",
+  inventory_movements_reversal_shape: "That stock correction is not consistent.",
+  inventory_movements_job_consumption_shape: "A part taken by a job needs its job and line.",
+  inventory_movements_damaged_negative: "Damaged stock is removed: use a negative quantity.",
+  inventory_movements_transfer_request: "A transfer needs its request.",
+  inventory_movements_unit_cost_snapshot_check: "Costs can't be negative.",
+  inventory_movements_currency_check: "Use a three-letter currency code.",
+  product_events_payload_object: "That product history entry is not consistent.",
+  inventory_unit_events_payload_object: "That unit history entry is not consistent.",
+  attachments_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */

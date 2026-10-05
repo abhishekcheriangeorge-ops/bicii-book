@@ -120,8 +120,15 @@ export function usePhotoUploads(target: PhotoTarget) {
   return { items, ...actions };
 }
 
-const hrefFor = (t: PhotoTarget) =>
-  t.entityType === "bike" ? `/bikes/${t.entityId}` : `/customers/${t.entityId}`;
+const RECORD_PATH: Record<PhotoTarget["entityType"], string> = {
+  bike: "/bikes",
+  customer: "/customers",
+  work_order: "/jobs",
+  product: "/products",
+  inventory_unit: "/units",
+};
+
+const hrefFor = (t: PhotoTarget) => `${RECORD_PATH[t.entityType]}/${t.entityId}`;
 
 /**
  * "2 photos not saved" in the header, on every screen, while any photo

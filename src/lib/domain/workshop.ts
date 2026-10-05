@@ -162,6 +162,14 @@ export async function getWorkOrder(
     }))
     .sort((a, b) => (a.role === b.role ? 0 : a.role === "lead" ? -1 : 1));
   const events = unwrap(timelineResult) ?? [];
+  const lineDescriptions = new Map(lines.map((l) => [l.id, l.description]));
+  const lineOf = (payload: unknown): string | null => {
+    const id =
+      typeof payload === "object" && payload !== null && "line_id" in payload
+        ? (payload as { line_id: unknown }).line_id
+        : null;
+    return typeof id === "string" ? (lineDescriptions.get(id) ?? null) : null;
+  };
   const timelineTruncated = events.length > timelineRows;
   const timeline = events.slice(0, timelineRows).map((e) => ({
     id: e.id,
@@ -169,7 +177,12 @@ export async function getWorkOrder(
     at: e.created_at,
     actorName: e.actor_staff_id ? (e.actor_display_name ?? "A former colleague") : null,
     ...describeEvent(
-      { type: e.event_type, payload: e.payload, subjectName: e.subject_display_name },
+      {
+        type: e.event_type,
+        payload: e.payload,
+        subjectName: e.subject_display_name,
+        lineDescription: lineOf(e.payload),
+      },
       { currency: row.currency },
     ),
   }));

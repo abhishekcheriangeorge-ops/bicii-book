@@ -10,6 +10,7 @@ import {
   databaseUrl,
   withDatabase,
 } from "./scripts/devstack/config.mjs";
+import { E2E_PUBLIC_SITE_URL } from "./tests/fixtures/public-site";
 
 /**
  * End-to-end tests (TESTING.md): Chromium only, an iPhone 13 and an iPad
@@ -65,8 +66,7 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_SUPABASE_URL: GATEWAY_URL,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
-      NEXT_PUBLIC_PUBLIC_SITE_URL:
-        process.env.NEXT_PUBLIC_PUBLIC_SITE_URL ?? "http://localhost:4000",
+      NEXT_PUBLIC_PUBLIC_SITE_URL: E2E_PUBLIC_SITE_URL,
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
       DATABASE_URL: withDatabase(databaseUrl(), DEFAULT_DB_NAME),
       LOG_LEVEL: process.env.LOG_LEVEL ?? "warn",

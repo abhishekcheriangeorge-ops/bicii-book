@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useArmed, useArmedAfter } from "@/components/ui/use-armed";
 import { cn } from "@/lib/cn";
+import { reopenUnitNote } from "@/lib/inventory";
 import { REASON_MAX_LENGTH } from "@/lib/reasons";
 import {
   STATUS_LABELS,
@@ -38,11 +39,17 @@ export function JobStatusActions({
   jobNumber,
   customerLabel,
   status,
+  heldUnits = [],
 }: {
   workOrderId: string;
   jobNumber: string;
   customerLabel: string;
   status: WorkOrderStatus;
+  /**
+   * U- numbers of the unique units on the job's live part lines: a reopen
+   * puts them back on hold for the job (D25), which the reopen says.
+   */
+  heldUnits?: readonly string[];
 }) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -105,6 +112,7 @@ export function JobStatusActions({
           workOrderId={workOrderId}
           jobNumber={jobNumber}
           status={status}
+          heldUnits={heldUnits}
           onClose={() => setSheetOpen(false)}
         />
       ) : null}
@@ -170,11 +178,13 @@ function ChangeStatusSheet({
   workOrderId,
   jobNumber,
   status,
+  heldUnits,
   onClose,
 }: {
   workOrderId: string;
   jobNumber: string;
   status: WorkOrderStatus;
+  heldUnits: readonly string[];
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -314,7 +324,9 @@ function ChangeStatusSheet({
               onConfirm={withReason(reopen.to)}
               onConfirmingChange={setReopening}
               onDone={onClose}
-            />
+            >
+              {heldUnits.length > 0 ? reopenUnitNote(heldUnits) : undefined}
+            </ReasonConfirm>
           </section>
         ) : null}
         {cancel ? (

@@ -17,11 +17,16 @@ import { requireStaff } from "@/lib/auth/session";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
 import { getBike, type OwnershipEvent } from "@/lib/domain/bikes";
+import { getBikeStockUnit } from "@/lib/domain/inventory";
+import { unitStatusLabel, type UnitStatus } from "@/lib/inventory";
 import { listWorkOrdersForBike } from "@/lib/domain/workshop";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
 export const metadata: Metadata = { title: "Bike" };
+
+/** The unit statuses that keep a bike in stock (bike_in_stock). */
+const IN_STOCK: readonly UnitStatus[] = ["available", "reserved", "held_for_customer"];
 
 function describe(event: OwnershipEvent): string {
   const to = event.to?.label ?? "the shop";
@@ -33,17 +38,21 @@ function describe(event: OwnershipEvent): string {
  * One bike (SPEC §5, §21): its permanent B- number first, photos with the
  * camera, the current owner with transfer, the ownership history (never
  * rewritten), service history (its jobs, newest first, with "New job"),
- * details and archiving.
+ * details and archiving. A bike that is (or was) a unique stock unit links
+ * to it ("In stock as U-… · Available"); while it is in stock it cannot be
+ * transferred to a customer or archived (bike_in_stock), and those
+ * controls show that message.
  */
 export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
   await requireStaff();
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const supabase = await createClient();
-  const [bike, photos, jobs] = await Promise.all([
+  const [bike, photos, jobs, stockUnit] = await Promise.all([
     getBike(supabase, id),
     listPhotos(supabase, { entityType: "bike", entityId: id }),
     listWorkOrdersForBike(supabase, id),
+    getBikeStockUnit(supabase, id),
   ]);
   if (!bike) notFound();
   const archived = bike.archivedAt !== null;
@@ -93,6 +102,29 @@ export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
           />
         </div>
       </header>
+
+      {stockUnit ? (
+        <Card title="Stock">
+          <Link
+            href={`/units/${stockUnit.id}`}
+            className="-mx-2 flex min-h-tap flex-wrap items-center gap-3 rounded-xl px-2 py-1 hover:bg-dust-100"
+          >
+            <span className="font-medium">
+              {IN_STOCK.includes(stockUnit.status) ? "In stock as" : "Stock unit"}{" "}
+              <span className="font-mono">{stockUnit.shortId}</span>
+              {" · "}
+              {unitStatusLabel(stockUnit.status)}
+            </span>
+            <ChevronRightIcon className="ml-auto size-5 shrink-0 text-dust-500" />
+          </Link>
+          {IN_STOCK.includes(stockUnit.status) ? (
+            <p className="mt-2 text-sm text-dust-500">
+              While it is in stock it can&apos;t go to a customer or be archived; sell or write off
+              the unit first.
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Card title="Photos">
         <PhotoGrid

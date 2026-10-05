@@ -22,6 +22,8 @@ export type NavItem = {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   /** One line for the More list. */
   description?: string;
+  /** Other sections this item is active for (Inventory: products and units). */
+  also?: readonly string[];
 };
 
 /** Bottom tab bar on phones; Scan sits in the middle, raised. */
@@ -29,7 +31,7 @@ export const TABS: readonly NavItem[] = [
   { href: "/", label: "Today", icon: HomeIcon },
   { href: "/jobs", label: "Jobs", icon: WrenchIcon },
   { href: "/scan", label: "Scan", icon: ScanIcon },
-  { href: "/inventory", label: "Inventory", icon: BoxIcon },
+  { href: "/inventory", label: "Inventory", icon: BoxIcon, also: ["/products", "/units"] },
   { href: "/more", label: "More", icon: MoreIcon },
 ];
 
@@ -76,7 +78,14 @@ export function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/** True when `pathname` is in the item's section or one of its `also` sections. */
+export function isItemActive(pathname: string, item: Pick<NavItem, "href" | "also">): boolean {
+  return (
+    isActive(pathname, item.href) || (item.also ?? []).some((href) => isActive(pathname, href))
+  );
+}
+
 /** The More tab is active for every destination it lists. */
 export function isMoreActive(pathname: string): boolean {
-  return isActive(pathname, "/more") || MORE_ITEMS.some((item) => isActive(pathname, item.href));
+  return isActive(pathname, "/more") || MORE_ITEMS.some((item) => isItemActive(pathname, item));
 }

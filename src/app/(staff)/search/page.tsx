@@ -20,8 +20,10 @@ export const metadata: Metadata = { title: "Search" };
  * Global search (SPEC §20) over staff_search: customers by name, phone or
  * email; bikes by B- number, serial number (ignoring case, spaces and
  * dashes), brand, model, colour or owner; jobs by J- number (an exact one
- * puts Jobs first). Exact short IDs and serial numbers come first.
- * Products and the rest join as their phases land.
+ * puts Jobs first); products by P- number, SKU, name or brand with their
+ * stock ("N in stock", from the RPC's subtitle) and units by U- number,
+ * serial or product name with their status. Exact short IDs, SKUs and
+ * serial numbers come first. Later kinds join as their phases land.
  */
 export default async function SearchPage({ searchParams }: PageProps<"/search">) {
   await requireStaff();
@@ -35,8 +37,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
     <>
       <PageHeader title="Search" />
       <SearchField
-        label="Search customers, bikes and jobs"
-        hint="Name, phone, email, serial number, B- number or J- number"
+        label="Search customers, bikes, jobs and stock"
+        hint="Name, phone, email, serial number, SKU, or a B-, J-, P- or U- number"
         placeholder="Search"
         autoFocus={!q}
         remember
@@ -46,8 +48,8 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
           empty={
             <EmptyState
               icon={<SearchIcon />}
-              title="Find a customer, bike or job"
-              description="Type part of a name, the last digits of a phone number, a serial number, a B- number or a J- number. Products become searchable in a later phase."
+              title="Find a customer, bike, job or stock"
+              description="Type part of a name, the last digits of a phone number, a serial number, a SKU, or a B-, J-, P- or U- number."
             />
           }
         />
@@ -55,7 +57,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
         <EmptyState
           icon={<SearchIcon />}
           title={`Nothing matches “${q}”`}
-          description="Check the spelling, try fewer words, or search by phone digits, serial number, B- or J- number. Archived customers and bikes are not searched; find them under Customers or Bikes."
+          description="Check the spelling, try fewer words, or search by phone digits, serial number, SKU, or a B-, J-, P- or U- number. Archived records are not searched; find them under Customers, Bikes or Inventory."
         />
       ) : (
         <RememberOnOpen q={q}>

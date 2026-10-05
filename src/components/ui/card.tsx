@@ -32,13 +32,17 @@ export function Card({
       {hasHeader ? (
         // Wraps rather than squeezing: a long action (e.g. "Transfer
         // ownership" in a half-width card) moves under the title instead of
-        // shrinking it into the button.
+        // shrinking it into the button, and several actions (a job's Add
+        // service, Add part, Add manual line on a phone) wrap among
+        // themselves rather than pushing the page sideways.
         <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 pt-4 pb-2 sm:px-5">
           <div className="flex max-w-full min-w-0 flex-col gap-1">
             {eyebrow ? <p className="eyebrow text-dust-500">{eyebrow}</p> : null}
             {title ? <h2 className="text-xl leading-tight">{title}</h2> : null}
           </div>
-          {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+          {actions ? (
+            <div className="flex max-w-full flex-wrap items-center gap-1">{actions}</div>
+          ) : null}
         </header>
       ) : null}
       <div className={cn(!flush && "px-4 pb-4 sm:px-5", !flush && !hasHeader && "pt-4")}>

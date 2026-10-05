@@ -1,22 +1,28 @@
 import type { Metadata } from "next";
 
+import { Scanner } from "@/components/domain/scanner";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireStaff } from "@/lib/auth/session";
-
-import { CameraPermission } from "./camera-permission";
+import { scanBases } from "@/lib/qr";
 
 export const metadata: Metadata = { title: "Scan" };
 
-/** QR scanning (SPEC §20). Phase 0: camera permission only; decoding arrives with inventory. */
+/**
+ * QR scanning (SPEC §20, PLAN D9): the camera reads a BICII label and
+ * opens its record through /q/{shortId}; the code printed under the QR can
+ * be typed instead. The accepted label bases come from src/lib/qr.ts, the
+ * one place Phase 8 changes.
+ */
 export default async function ScanPage() {
   await requireStaff();
+  const bases = await scanBases();
   return (
     <>
       <PageHeader
         title="Scan"
         description="Point the camera at a BICII QR label to open the bike, job, product or unit."
       />
-      <CameraPermission />
+      <Scanner publicBases={bases} />
     </>
   );
 }

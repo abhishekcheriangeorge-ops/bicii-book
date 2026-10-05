@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { cn } from "@/lib/cn";
 import { useFieldControlProps } from "./field";
 import { IconButton } from "./icon-button";
 import { CloseIcon, SearchIcon } from "./icons";
 import { controlClasses } from "./input";
+import { InSheetBodyContext } from "./sheet-context";
 import { Spinner } from "./spinner";
 
 export type PickerOption = {
@@ -157,6 +166,13 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
 
   const items = state.kind === "results" ? state.items : [];
   const expanded = open && state.kind !== "idle";
+  // In a sheet the results take space in the flow (see InSheetBodyContext)
+  // and are scrolled into the body's view when they change.
+  const inSheet = useContext(InSheetBodyContext);
+  const popupRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (inSheet && expanded) popupRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [inSheet, expanded, state]);
   const optionId = (i: number) => `${listId}-opt-${i}`;
   // The action row is the option after the last result.
   const showAction = Boolean(action) && (state.kind === "results" || state.kind === "error");
@@ -323,8 +339,12 @@ export function SearchPicker<T extends PickerOption = PickerOption>({
       {name ? <input type="hidden" name={name} value={selected?.id ?? ""} /> : null}
 
       <div
+        ref={popupRef}
         hidden={!expanded}
-        className="absolute inset-x-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border-2 border-ink bg-card shadow-[0_12px_32px_rgb(5_7_7/0.14)]"
+        className={cn(
+          "mt-2 overflow-hidden rounded-2xl border-2 border-ink bg-card shadow-[0_12px_32px_rgb(5_7_7/0.14)]",
+          inSheet ? "relative" : "absolute inset-x-0 top-full z-40",
+        )}
         // Keep focus in the input when tapping inside the popup (blur closes it)
         onMouseDown={(e) => e.preventDefault()}
       >

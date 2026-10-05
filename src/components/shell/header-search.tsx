@@ -1,21 +1,26 @@
 "use client";
 
 import Form from "next/form";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { SearchIcon } from "@/components/ui/icons";
 import { rememberSearch } from "@/lib/recent-searches";
+import { shortIdJump } from "@/lib/search";
 
 /**
  * The global search field in the header (SPEC §20): customers and bikes by
- * name, phone, email, serial number or B- number, and jobs by J- number. Enter opens /search with
- * the results (a GET form, so it works before hydration too). "/" focuses
- * it from anywhere on a keyboard (iPad, desktop). On /search itself the
- * page has its own, larger field, so this one steps aside.
+ * name, phone, email, serial number or B- number, jobs by J- number, and
+ * stock by P-/U- number, SKU, name, brand or serial. Enter opens /search
+ * with the results (a GET form, so it works before hydration too); a query
+ * that is exactly a short ID ("p-000123") opens the record straight away
+ * through /q (shortIdJump), still remembered in recent searches. "/"
+ * focuses it from anywhere on a keyboard (iPad, desktop). On /search
+ * itself the page has its own, larger field, so this one steps aside.
  */
 export function HeaderSearch() {
   const pathname = usePathname();
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const onSearchPage = pathname === "/search";
 
@@ -43,13 +48,20 @@ export function HeaderSearch() {
       action="/search"
       role="search"
       className="relative min-w-0 flex-1 md:max-w-md"
-      onSubmit={() => {
+      onSubmit={(e) => {
         const q = inputRef.current?.value ?? "";
         rememberSearch(q);
+        const jump = shortIdJump(q);
+        if (jump) {
+          e.preventDefault();
+          if (inputRef.current) inputRef.current.value = "";
+          inputRef.current?.blur();
+          router.push(jump);
+        }
       }}
     >
       <label htmlFor="header-search" className="sr-only">
-        Search customers, bikes and jobs
+        Search customers, bikes, jobs and stock
       </label>
       <SearchIcon
         aria-hidden="true"

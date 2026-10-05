@@ -13,9 +13,16 @@ export type Visibility = Database["public"]["Enums"]["attachment_visibility"];
 
 /**
  * Entity types that can hold photos so far (private.attachment_entity_exists):
- * bikes and customers (Phase 1), jobs (Phase 3).
+ * bikes and customers (Phase 1), jobs (Phase 3), products and unique units
+ * (Phase 4).
  */
-export const PHOTO_ENTITIES = ["bike", "customer", "work_order"] as const;
+export const PHOTO_ENTITIES = [
+  "bike",
+  "customer",
+  "work_order",
+  "product",
+  "inventory_unit",
+] as const;
 export type PhotoEntity = (typeof PHOTO_ENTITIES)[number];
 
 export function isPhotoEntity(value: unknown): value is PhotoEntity {
@@ -74,6 +81,13 @@ export function isUndecodedOriginal(photo: { width: number | null; height: numbe
   return photo.width === null || photo.height === null;
 }
 
+/** Stock (a product or a unit) has no customer: its photos are internal or public (D13, like D19). */
+export function isStockEntity(entityType: AttachmentEntity): boolean {
+  return entityType === "product" || entityType === "inventory_unit";
+}
+
+export const STOCK_NEVER_CUSTOMER = "Stock photos have no customer.";
+
 export const ORIGINAL_NEVER_PUBLIC =
   "This photo was stored as its original file, which may carry where it was taken, so it can't be public. Add it again as a JPEG to share it publicly.";
 
@@ -81,12 +95,32 @@ export const ORIGINAL_NEVER_PUBLIC =
  * The visibility levels for a photo on `entityType`, with who sees each.
  * PLAN D13: a photo on a customer record is never public; D19: nor is a
  * photo on a job; nor is an undecoded original (`original`), which may
- * carry its GPS position.
+ * carry its GPS position. Stock (products and units) has no customer, so
+ * its photos are offered Internal and Public only (the database's
+ * attachment_stock_never_customer, D13 extended); a public stock photo
+ * shows on the item's QR page once it is published (D26).
  */
 export function visibilityOptions(
   entityType: AttachmentEntity,
   { original = false }: { original?: boolean } = {},
 ): VisibilityOption[] {
+  const internal: VisibilityOption = {
+    value: "internal",
+    label: "Internal",
+    description: "Staff only.",
+    blocked: null,
+  };
+  if (isStockEntity(entityType)) {
+    return [
+      internal,
+      {
+        value: "public",
+        label: "Public",
+        description: "Public photos appear on the QR page once the item is published.",
+        blocked: original ? ORIGINAL_NEVER_PUBLIC : null,
+      },
+    ];
+  }
   const owner =
     entityType === "customer"
       ? "this customer"
@@ -94,12 +128,7 @@ export function visibilityOptions(
         ? "the job's customer"
         : "the bike's current owner";
   return [
-    {
-      value: "internal",
-      label: "Internal",
-      description: "Staff only.",
-      blocked: null,
-    },
+    internal,
     {
       value: "customer",
       label: "Customer",

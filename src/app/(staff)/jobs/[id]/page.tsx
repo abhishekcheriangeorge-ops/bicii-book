@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AddPartButton } from "@/components/domain/add-part-sheet";
 import { AddServiceButton } from "@/components/domain/add-service-sheet";
 import { AssignmentsCard } from "@/components/domain/assignments-card";
 import { ApprovalSwitch, EditDetailsButton, NoteButtons } from "@/components/domain/job-notes";
@@ -21,6 +22,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime, shopDaysBetween } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
+import { listLocations } from "@/lib/domain/inventory";
 import {
   TIMELINE_ALL_ROWS,
   getWorkOrder,
@@ -65,9 +67,9 @@ function sharedRate(job: WorkOrderDetail): string | null {
 /**
  * One job (SPEC §7, §21, §22): its number, status and the next steps
  * first; then what the customer asked for, the lines with running totals
- * (costs, yield and Cult Commons only with view_costs: the DTO has none
- * otherwise), photos, the people on it, notes and the timeline. Straight
- * after intake (`?intake=photos`) the intake photos come first: the job
+ * (services, parts from stock and manual lines; costs, yield and Cult
+ * Commons only with view_costs: the DTO has none otherwise), photos, the
+ * people on it, notes and the timeline. Straight after intake (`?intake=photos`) the intake photos come first: the job
  * has to exist before a photo can be recorded against it. The timeline
  * shows its newest events; `?events=all` shows up to TIMELINE_ALL_ROWS.
  */
@@ -80,15 +82,20 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   const allEvents = query.events === "all";
   const viewCosts = hasPermission(staff, "view_costs");
   const supabase = await createClient();
-  const [job, photos, activeStaff] = await Promise.all([
+  const [job, photos, activeStaff, locations] = await Promise.all([
     getWorkOrder(supabase, id, {
       viewCosts,
       ...(allEvents ? { timelineRows: TIMELINE_ALL_ROWS } : {}),
     }),
     listPhotos(supabase, { entityType: "work_order", entityId: id }),
     listActiveStaff(supabase),
+    listLocations(supabase),
   ]);
   if (!job) notFound();
+  // Units on live part lines: a reopen puts them back on hold (D25).
+  const heldUnits = job.lines
+    .filter((l) => !l.voided && l.part?.unitId)
+    .map((l) => l.part!.shortId);
 
   const now = new Date();
   const open = isOpenStatus(job.status);
@@ -150,6 +157,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
         jobNumber={job.jobNumber}
         customerLabel={job.customer.label}
         status={job.status}
+        heldUnits={heldUnits}
       />
 
       {intake ? (
@@ -212,6 +220,12 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
                   viewCosts={viewCosts}
                   currency={job.currency}
                   disabled={!open}
+                />
+                <AddPartButton
+                  workOrderId={job.id}
+                  viewCosts={viewCosts}
+                  disabled={!open}
+                  hasActiveLocation={locations.defaultLocationId !== null}
                 />
                 <ManualLineButton
                   workOrderId={job.id}

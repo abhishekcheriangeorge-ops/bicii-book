@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import {
+  BoxIcon,
   ChevronRightIcon,
   ShareIcon,
   UserIcon,
@@ -40,6 +41,12 @@ export default async function SettingsPage() {
         ? "Services, prices, categories and the Cult Commons rate"
         : "Services, prices and categories",
       icon: WrenchIcon,
+    },
+    {
+      href: "/settings/locations",
+      label: "Locations",
+      description: "Where stock is kept, and the default location",
+      icon: BoxIcon,
     },
     {
       href: "/settings/install",

@@ -55,7 +55,7 @@ Differences from the devstack:
   (short IDs are never reused) skip themselves:
   `BICII_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run test:db`.
 - **Types:** `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npm run db:types`
-  (or `npx supabase@2.119.0 gen types typescript --local --schema public`,
+  (or `npx supabase@2.119.0 gen types typescript --local --schema public,reporting`,
   then `npx prettier --write src/lib/database.types.ts`). `-- --fresh`
   needs the devstack.
 - **E2E:** `npx supabase@2.119.0 db reset && E2E_EXTERNAL_STACK=1 npm run test:e2e`.
@@ -89,8 +89,18 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
 3. Authentication → URL Configuration: Site URL is the Admin's URL on that
    environment (production domain, or the staging alias). Add redirect URLs
    for Vercel previews on staging, e.g. `https://*-<vercel-team>.vercel.app/**`.
-4. Data API: exposed schemas `public` only (plus the default
-   `graphql_public`). Do not expose `private` or `reporting`. Hosted Supabase
+4. Data API: exposed schemas `public` and `reporting` (plus the default
+   `graphql_public`); never `private`. `reporting` is exposed from Phase 4
+   because `reporting.public_items` is the anonymous surface of the public
+   site's QR pages (DATA-MODEL §14, §15), and staff read the stock views
+   (`stock_levels`, `product_stock`, `low_stock`) there; the migrations
+   grant `authenticated` USAGE and `anon` USAGE (anon can select
+   `public_items` only); the stock views are security_invoker over the
+   staff-only tables and `public_items` is a definer view that shows
+   published rows and public columns only, so nothing else in the schema
+   is reachable. This is
+   the same list as `supabase/config.toml` `[api] schemas` and the
+   devstack's PostgREST `db-schemas`. Hosted Supabase
    grants ALL on every new `public` table, sequence and function to
    `anon`/`authenticated`/`service_role`; our migrations revoke and grant
    explicitly on every object so those defaults never reach the API. The
@@ -101,6 +111,10 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    reaching production.
 5. Do **not** run `supabase/seed.sql` on a hosted project: its logins have a
    published password. Create the first admin as below.
+   The inventory migration (`…1800_inventory`) inserts one stock location,
+   'Shop floor' (SPEC §11: the MVP starts with one shop), so stock can be
+   counted and parts used without the seed; add more in Settings →
+   Locations.
 6. Storage: do not create buckets by hand. The `…0800_media_storage`
    migration creates `media-internal` (private) and `media-public` (public),
    photo types only, 20 MiB, plus their `storage.objects` policies; it
@@ -226,6 +240,37 @@ One Vercel project for the Admin, connected to this repository.
 5. Deploy order for a change with a migration: `supabase db push` to
    staging → preview check → `db push` to production → promote or merge to
    `main`.
+
+## The camera scanner on phones and iPads
+
+The Scan screen (`/scan`) uses the camera, which browsers allow only in a
+secure context: HTTPS, or `localhost` on the same machine. Over plain
+`http://192.168.x.x:3000` the scanner says "The camera only works over a
+secure connection" and only manual entry ("Or type the code on the label")
+works; that is expected, not a bug. Production and Vercel previews are
+HTTPS, so scanning works there once camera access is allowed (iPhone:
+Settings → Safari → Camera → Allow).
+
+To try scanning on an iPad or phone on the LAN:
+
+- Easiest: a Vercel preview on staging (HTTPS end to end).
+- Locally: `npx next dev --experimental-https -H 0.0.0.0` serves the app over
+  HTTPS with a self-signed certificate (accept it on the device, or pass a
+  trusted one with `--experimental-https-key` / `--experimental-https-cert`,
+  e.g. made with mkcert and its CA installed on the device). The browser
+  also refuses plain-http requests from an HTTPS page, so
+  `NEXT_PUBLIC_SUPABASE_URL` must point at the devstack gateway through an
+  HTTPS address the device can reach (a TLS proxy in front of
+  `:54321`), not `http://127.0.0.1:54321`.
+- Android Chrome only: `chrome://flags` → "Insecure origins treated as
+  secure" with the LAN URL lets the camera work over http for testing.
+
+Labels encode `{NEXT_PUBLIC_PUBLIC_SITE_URL}/q/{short_id}` (PLAN D9); the
+scanner accepts that base, the Admin's own `/q/…` URLs and bare short IDs,
+and shows anything else as "Not a BICII label" without opening it. A label
+printed for another environment's public site URL is therefore foreign on
+this one (Phase 8 adds the database QR base to the accepted list,
+`src/lib/qr.ts`).
 
 ## CI
 

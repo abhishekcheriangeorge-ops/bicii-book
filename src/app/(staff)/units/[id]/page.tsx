@@ -1,0 +1,274 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+import { HistoryList, MovementList } from "@/components/domain/movement-list";
+import { CopyText } from "@/components/domain/copy-text";
+import { PhotoGrid } from "@/components/domain/photo-grid";
+import { PublicPreviewPanel } from "@/components/domain/public-preview";
+import { ShortId } from "@/components/domain/short-id";
+import { StockTransferButton } from "@/components/domain/stock-transfer-sheet";
+import { EditUnitButton, WriteOffUnitControl } from "@/components/domain/unit-sheet";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { StatusPill } from "@/components/ui/status-pill";
+import { hasPermission } from "@/lib/auth/permissions";
+import { requireStaff } from "@/lib/auth/session";
+import { formatDateTime } from "@/lib/dates";
+import { getUnit, listLocations } from "@/lib/domain/inventory";
+import { publicationLabel, unitStatusLabel, unitStatusTone } from "@/lib/inventory";
+import { describeUnitEvent } from "@/lib/inventory-history";
+import { formatMoney } from "@/lib/money";
+import { qrUrl } from "@/lib/qr";
+import { createClient } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/uuid";
+
+export const metadata: Metadata = { title: "Unit" };
+
+const OWNERSHIP_LABELS: Record<string, string> = {
+  shop_owned: "Shop owned",
+  consignment: "Consigned",
+  customer_owned: "Customer owned",
+};
+
+/**
+ * One unique unit (SPEC §11, §21): its U- number large, the product, its
+ * status, location, condition (public once published), serial and
+ * ownership; the bike it is (B- link) and the job it is on (J- link: "On
+ * job J-…" while held, "Sold on job J-…" once the job is completed, D25);
+ * the selling price and, only for view_costs holders, cost, yield and Cult
+ * Commons; photos (internal or public), movements and history. Edit
+ * details and Transfer need manage_inventory (Transfer only while in
+ * stock: available or reserved); Write off needs adjust_stock. Its QR URL
+ * and what the public sees (read-only: publication is the product's).
+ */
+export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
+  const staff = await requireStaff();
+  const { id } = await params;
+  if (!isUuid(id)) notFound();
+  const viewCosts = hasPermission(staff, "view_costs");
+  const manage = hasPermission(staff, "manage_inventory");
+  const canAdjust = hasPermission(staff, "adjust_stock");
+  const supabase = await createClient();
+  const [unit, locations] = await Promise.all([
+    getUnit(supabase, id, { viewCosts }),
+    listLocations(supabase),
+  ]);
+  if (!unit) notFound();
+  const qr = await qrUrl(unit.shortId);
+
+  const inStock = unit.status === "available" || unit.status === "reserved";
+  const archived = unit.archivedAt !== null;
+  const locationName = (lid: string) => locations.locations.find((l) => l.id === lid)?.name ?? null;
+  const money = (v: string | null | undefined) =>
+    v === null || v === undefined ? "Not set" : formatMoney(v, unit.product.currency);
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 pt-6 pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <ShortId value={unit.shortId} large />
+            <StatusPill status={unitStatusTone(unit.status)}>
+              {unitStatusLabel(unit.status)}
+            </StatusPill>
+            {archived ? <Badge tone="waiting">Archived</Badge> : null}
+          </div>
+          <h1 className="text-3xl break-words sm:text-4xl">
+            <Link
+              href={`/products/${unit.product.id}`}
+              className="underline-offset-4 hover:underline"
+            >
+              {unit.product.name}
+            </Link>
+          </h1>
+          <p className="flex flex-wrap items-center gap-2 text-dust-700">
+            <Link
+              href={`/products/${unit.product.id}`}
+              className="underline-offset-2 hover:underline"
+            >
+              <ShortId value={unit.product.shortId} />
+            </Link>
+            {unit.product.sku ? <span className="font-mono">{unit.product.sku}</span> : null}
+          </p>
+          {unit.job ? (
+            <p className="font-medium">
+              <Link href={`/jobs/${unit.job.id}`} className="underline">
+                {unit.status === "sold" ? "Sold on job" : "On job"} {unit.job.jobNumber}
+              </Link>
+            </p>
+          ) : null}
+        </div>
+        {manage || canAdjust ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {manage ? (
+              <EditUnitButton
+                unit={{
+                  id: unit.id,
+                  serialNumber: unit.serialNumber,
+                  condition: unit.condition,
+                  ownSalePrice: unit.ownSalePrice,
+                  ...(viewCosts ? { cost: unit.cost ?? null } : {}),
+                  internalNotes: unit.internalNotes,
+                }}
+                viewCosts={viewCosts}
+              />
+            ) : null}
+            {manage && inStock ? (
+              <StockTransferButton
+                subject={{
+                  kind: "unit",
+                  productId: unit.product.id,
+                  unitId: unit.id,
+                  name: `${unit.shortId} ${unit.product.name}`,
+                  fromLocationId: unit.location.id,
+                  locations: locations.locations.map((l) => ({
+                    locationId: l.id,
+                    name: l.name,
+                    active: l.active,
+                    onHand: l.id === unit.location.id ? 1 : 0,
+                  })),
+                }}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </header>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card title="Details">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+            <dt className="text-sm text-dust-500">Location</dt>
+            <dd>{unit.location.name}</dd>
+            <dt className="text-sm text-dust-500">Serial number</dt>
+            <dd className={unit.serialNumber ? "font-mono break-all" : "text-dust-500"}>
+              {unit.serialNumber ?? "—"}
+            </dd>
+            <dt className="text-sm text-dust-500">Condition</dt>
+            <dd className={unit.condition ? "whitespace-pre-line" : "text-dust-500"}>
+              {unit.condition ?? "—"}
+            </dd>
+            <dt className="text-sm text-dust-500">Ownership</dt>
+            <dd>{OWNERSHIP_LABELS[unit.ownershipType] ?? unit.ownershipType}</dd>
+            <dt className="text-sm text-dust-500">Bike</dt>
+            <dd>
+              {unit.bike ? (
+                <Link
+                  href={`/bikes/${unit.bike.id}`}
+                  className="inline-flex flex-wrap items-center gap-2 underline"
+                >
+                  <ShortId value={unit.bike.shortId} />
+                  {unit.bike.title}
+                </Link>
+              ) : (
+                <span className="text-dust-500">—</span>
+              )}
+            </dd>
+            {unit.soldAt ? (
+              <>
+                <dt className="text-sm text-dust-500">Sold</dt>
+                <dd>
+                  <time dateTime={unit.soldAt}>{formatDateTime(unit.soldAt)}</time>
+                </dd>
+              </>
+            ) : null}
+          </dl>
+          {unit.internalNotes ? (
+            <>
+              <h3 className="mt-4 font-display text-xs font-bold tracking-wide uppercase">
+                Internal notes
+              </h3>
+              <p className="mt-1 whitespace-pre-line text-dust-700">{unit.internalNotes}</p>
+            </>
+          ) : null}
+        </Card>
+
+        <Card title="Prices">
+          <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
+            <dt>Selling price</dt>
+            <dd className="text-right font-semibold tabular-nums">{money(unit.salePrice)}</dd>
+          </dl>
+          {unit.ownSalePrice === null ? (
+            <p className="mt-1 text-sm text-dust-500">The product&apos;s price.</p>
+          ) : null}
+          {viewCosts ? (
+            <section aria-labelledby="unit-cost-and-yield" className="mt-4 flex flex-col gap-2">
+              <h3
+                id="unit-cost-and-yield"
+                className="font-display text-xs font-bold tracking-wide uppercase"
+              >
+                Cost and yield (staff with cost access only)
+              </h3>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm tabular-nums">
+                <dt>Cost</dt>
+                <dd className="text-right">
+                  {money(unit.effectiveCost)}
+                  {unit.cost === null && unit.effectiveCost !== null ? " (product's)" : ""}
+                </dd>
+                <dt>Expected yield</dt>
+                <dd className="text-right">{money(unit.expectedYield)}</dd>
+                <dt>Cult Commons share</dt>
+                <dd className="text-right">{money(unit.expectedCultCommons)}</dd>
+              </dl>
+            </section>
+          ) : null}
+        </Card>
+      </div>
+
+      <Card title="Public listing">
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-dust-700">
+            {`Listing follows ${unit.product.shortId} (${publicationLabel(unit.product.publicationStatus)}).`}{" "}
+            <Link href={`/products/${unit.product.id}`} className="font-medium underline">
+              Change it there
+            </Link>
+            .
+          </p>
+          <div className="flex flex-col gap-1">
+            <h3 className="font-display text-xs font-bold tracking-wide uppercase">QR label URL</h3>
+            <CopyText value={qr} label="QR label URL" />
+          </div>
+          <PublicPreviewPanel preview={unit.publicPreview} />
+        </div>
+      </Card>
+
+      <Card title="Photos">
+        <PhotoGrid
+          target={{ entityType: "inventory_unit", entityId: unit.id }}
+          photos={unit.photos}
+          canAdd={!archived}
+        />
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card title="Movements">
+          {unit.movements.length === 0 ? (
+            <p className="text-dust-700">No stock has moved yet.</p>
+          ) : (
+            <MovementList movements={unit.movements} showProduct={false} />
+          )}
+        </Card>
+        <Card title="History">
+          <HistoryList
+            entries={unit.history}
+            describe={(e) =>
+              describeUnitEvent(e.type, e.payload, {
+                currency: unit.product.currency,
+                locationName,
+              })
+            }
+          />
+        </Card>
+      </div>
+
+      {canAdjust && inStock ? (
+        <Card title="Write off">
+          <p className="mb-3 text-dust-700">
+            For a unit that is damaged beyond sale or lost. It leaves stock with the reason.
+          </p>
+          <WriteOffUnitControl unitId={unit.id} shortId={unit.shortId} />
+        </Card>
+      ) : null}
+    </>
+  );
+}
