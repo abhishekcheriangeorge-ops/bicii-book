@@ -45,6 +45,7 @@ import {
   weekStrip,
   type TodayDashboard,
 } from "@/lib/reports";
+import { canManagePurchasing } from "@/lib/purchasing";
 import { createClient, type ServerSupabase } from "@/lib/supabase/server";
 import { OVERDUE_AFTER_DAYS } from "@/lib/workshop";
 
@@ -295,12 +296,23 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                     {dash.now.lowStock}
                   </dd>
                 </dl>
-                <Link
-                  href="/inventory?filter=low"
-                  className="inline-flex min-h-tap items-center text-sm font-semibold underline"
-                >
-                  See all<span className="sr-only"> low stock</span>
-                </Link>
+                <div className="flex flex-wrap items-center justify-end gap-x-4">
+                  {/* Purchasing (Phase 7): a draft order from what is low (D66). */}
+                  {dash.now.lowStock > 0 && canManagePurchasing(staff) ? (
+                    <Link
+                      href="/purchasing/reorder"
+                      className="inline-flex min-h-tap items-center text-sm font-semibold underline"
+                    >
+                      Reorder
+                    </Link>
+                  ) : null}
+                  <Link
+                    href="/inventory?filter=low"
+                    className="inline-flex min-h-tap items-center text-sm font-semibold underline"
+                  >
+                    See all<span className="sr-only"> low stock</span>
+                  </Link>
+                </div>
               </div>
               {dash.now.lowStock > 0 ? (
                 <Suspense fallback={<SectionSkeleton rows={3} />}>
