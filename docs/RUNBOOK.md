@@ -352,9 +352,9 @@ reschedule and no automatic customer message in the MVP).
 `{public_site_url}/q/{short_id}`, and nothing prints while it is unset or
 invalid. Before the first real label, an admin sets it to the public
 site's address (http or https, a host and an optional path, no `?` or `#`,
-at most 200 characters; for example `https://bicii.sg`). Until the Labels
-and printers settings screen exists (Phase 8 step 3) that is
-`update_shop_settings(public_site_url => '…')` as an admin ('' clears it).
+at most 200 characters; for example `https://bicii.sg`) in Settings →
+Labels and printers → Change address (it calls `update_shop_settings`,
+which checks the same rule).
 The seed sets `http://localhost:4000`. Do not change it casually: labels
 already printed keep the old address
 ([R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address));
@@ -363,13 +363,17 @@ migration ships the default 58 × 40 mm templates and the "This device
 (browser print)" and "PDF download" printers, so a new database can print
 once the address is set.
 
-Since Phase 8 step 2 the product and unit pages show "QR address not set"
-while the address is unusable, and the Admin scanner accepts labels on the
+The product, unit and bike pages show "QR address not set" or a disabled
+Print label with the reason while the address is unusable, and the Admin scanner accepts labels on the
 database address and on `NEXT_PUBLIC_PUBLIC_SITE_URL` (an extra scan-only
 base): after a move, put the OLD address there so its labels still open
 in the Admin. A print that came out wrong is marked failed with the reason
 on its print view (or its page under Labels) and printed again from the
-record as a new job; a finished job's PDF answers 409 by design. Printing
+record as a new job (Print again opens the record's print sheet);
+unconfirmed jobs wait under Labels → To confirm
+([R-031](RISKS.md#r-031--print-success-is-confirmed-by-hand));
+labels printed off-centre are fixed with the printer's calibration offsets
+in Labels and printers; a finished job's PDF answers 409 by design. Printing
 from an iPhone or iPad: browser print with paper 58 × 40 mm, scale 100%,
 no margins; if Safari scales the page, use the PDF printer (Open PDF, then
 Share → Print). Neither has been tried on the shop's printer yet

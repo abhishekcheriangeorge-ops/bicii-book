@@ -353,27 +353,72 @@ Settings → Your profile.
 
 ### Print labels and confirm them
 
-- Before you start: any staff member. A print job (a number of identical
-  labels of one product, unit or bike) is started from the record (its
-  Labels card arrives with the next build step); each job opens its print
-  view.
-- Steps: in the print view the bar says "10 labels · <printer> · 58 × 40
-  mm". With the browser printer press **Print**, pick the label printer,
-  paper 58 × 40 mm, scale 100%, no margins. With the PDF printer press
-  **Open PDF**, then Share → Print with the same paper and scale. Then
-  answer "Did all 10 labels print correctly?": **Yes, all printed**, or
-  **Something went wrong…**, say what went wrong and **Mark as failed**.
+- Before you start: any staff member. Open the product (counted by
+  quantity), the unit or the bike: **Print label** is in the header and in
+  its **Labels** card. A unique product's labels are its units': its Labels
+  card links each U- number. A bike tag (B-) is for the workshop; a
+  customer who scans it sees "not found".
+- Steps: **Print label**. The sheet shows the label exactly as it will
+  print. **How many**: type a number, use − and +, or for a product tap 1,
+  5, 10, 20 or 50 (one print job is up to 500 labels of a product, or up
+  to 10 of a unit or bike; ask for more and the sheet says "Prints 500 now;
+  print again for the remaining 120."). **Printer**: this device's last
+  printer is already chosen. **Label size** appears when an admin has added
+  more than one. Press **Print 10 labels**. In the print view with the
+  browser printer press **Print**, pick the label printer, paper at the
+  label size (58 × 40 mm), scale 100%, no margins. With the PDF printer
+  (iPhone and iPad) press **Open PDF**, then Share → Print with the same
+  paper and scale. Then answer "Did all 10 labels print correctly?": **Yes,
+  all printed**, or **Something went wrong…**, say what went wrong and
+  **Mark as failed**.
 - Success looks like: "Marked as printed" (or "Marked as failed") and
-  links **Back to P-…** and **Print history**. **Labels** (More) lists every
-  print newest first; **To confirm** shows jobs sent but not confirmed,
-  **Failed** the failed ones with their reason; search by short ID or name.
-  A job's page shows the label exactly as it printed and its details.
+  links **Back to P-…** and **Print history**. The record's Labels card
+  lists its last three prints and **All label jobs**; **Labels** (More)
+  lists every print newest first; **To confirm** shows jobs sent but not
+  confirmed, **Failed** the failed ones with their reason; search by short
+  ID or name. A job's page shows the label exactly as it printed.
+- Worth knowing: "Not public yet: anyone who scans this label sees 'not
+  found' until it is published." means the label works in the shop but not
+  for customers until the product is published (**What the public sees**
+  in the Labels card jumps to the preview). When the price changed since
+  the last printed label, the Labels card says "The price changed since the
+  last printed label (… → …). Reprint the labels on the shelf." A price of
+  0 prints as $0.00; a product with no price prints no price line.
 - If it fails: a printed or failed job cannot be printed again as it was:
-  its print view shows what happened and **Print again**, which goes back to
-  the record to start a new job with today's label (disabled with "That
-  record is archived. Unarchive it before printing labels." for an archived
-  record). Its PDF link answers "This print job is finished. Print again
+  its print view shows what happened and **Print again**, which opens the
+  record's print sheet ("Print again · …", same count and printer) for a
+  new job with today's label, linked to the old one ("Reprint of"). Print
+  label is disabled with the reason when the record is archived ("That
+  record is archived. Unarchive it before printing labels."), when the
+  shop's public website address is not set (ask an admin), or when there is
+  no label template. "This print was already started" means the job exists:
+  open the link to its print jobs, or press Print again for a new one. A
+  finished job's PDF link answers "This print job is finished. Print again
   from the record to make a new job."
+
+### Set up label printing (admins)
+
+- Before you start: admin. **Settings → Labels and printers**.
+- Steps: **QR codes point to** shows the shop's public website address
+  every label encodes (a label for P-000123 opens `{address}/q/P-000123`).
+  **Change address**, type it (like https://bicii.sg), **Review the
+  change**, read what changes and **Change the address**. **Printers**:
+  tap a printer to rename it, nudge its **Calibration offset X / Y** in
+  0.5 mm steps when labels come out off-centre, switch it off, or **Make
+  default**; **Add printer** for another browser-print or PDF printer
+  (network and Bluetooth printers need Phase 12). **Label templates**: tap
+  one, or **Add template**, to set the size, QR size and margin, QR side,
+  which fields print, name lines and text size, watching the preview.
+- Success looks like: toasts "QR address saved", "… saved", "… is the
+  default printer".
+- If it fails: a malformed address shows "Use http:// or https://, a host
+  and an optional path, with no ? or # part, under 200 characters." A
+  template that does not fit says why under the preview (for example "The
+  QR code does not fit: at most 26.0 mm on this label.") and cannot be
+  saved. The default printer and default templates cannot be switched off:
+  make another the default first. Changing the address does not change
+  labels already printed: they keep opening the old address, so keep it
+  working (a redirect) ([OPERATIONS.md](OPERATIONS.md#product-administration)).
 
 ### Book and run an appointment
 
@@ -428,12 +473,13 @@ Settings → Your profile.
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
 parts from stock, appointments and check-in, in-store sales, Scan, search,
-and read the schedule, appointment types, services and locations. Selling
-prices and sale totals are visible to all; costs are not.
+printing labels (and confirming or failing print jobs), and read the
+schedule, appointment types, services and locations. Selling prices and
+sale totals are visible to all; costs are not.
 
 | You have | What changes for you |
 |---|---|
-| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate and **Record refund** on a sale (D49) |
+| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate, **Record refund** on a sale (D49) and Settings → **Labels and printers** (the QR address, printers, label templates) |
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |

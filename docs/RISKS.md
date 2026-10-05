@@ -774,15 +774,19 @@ URLs, or customer data in this file.
 ## R-030 — Label output is unverified on a real label printer and on iOS
 
 - Category: verification gap.
-- Status and owner: open; build agent (Phase 8 steps 3–4), owner (a test
-  print on the shop's printer).
+- Status and owner: open; owner (a test print on the shop's printer).
+  Phase 8 step 3 added the record pages' print sheet and the printers'
+  calibration offsets (editable in Labels and printers); still nothing has
+  been printed on a printer.
 - Trigger: the first real print on the shop's label printer, from an
   iPhone or iPad (browser print) or through the PDF (Share → Print).
 - Impact: the label sheet and the PDF are tested in Chromium and in code
   (`tests/unit/printing/`: every element inside the label, the QR decoded
   back to the exact payload with ZXing from a rasterised SVG; the PDF's
   page size and link; `tests/e2e/print-view.spec.ts`: one label per page
-  under print media), never on a printer. Unknowns: whether iOS Safari
+  under print media; `tests/e2e/labels.spec.ts`: 10 labels with the exact
+  payload, a 50 × 30 mm template's `@page` size, `window.print` stubbed),
+  never on a printer. Unknowns: whether iOS Safari
   honours `@page { size: 58mm 40mm; margin: 0 }` for a label printer or
   scales the page; whether the device draws "Helvetica, Arial" with the
   Helvetica metrics the layout was measured with (a wider substitute is
@@ -798,4 +802,30 @@ URLs, or customer data in this file.
   printer from an iPad, both profiles, before go-live; note the result in
   the RUNBOOK's labels section.
 - Revisit trigger: the first real print, or Phase 12's hardware adapter.
+- Last checked: 2026-10-05.
+
+## R-031 — Print success is confirmed by hand
+
+- Category: operational shortcut (D59, by design).
+- Status and owner: open; owner (whether staff keep up with confirming),
+  build agent (Phase 12's hardware adapter).
+- Trigger: staff press Print (or Open PDF) and walk away without answering
+  "Did all N labels print correctly?".
+- Impact: a browser cannot report whether the printer succeeded
+  (`window.print()` returns nothing; a PDF tab tells the app nothing), so a
+  job stays `rendered` until someone marks it printed or failed. Unconfirmed
+  jobs accumulate under Labels → To confirm; the record's "price changed
+  since the last printed label" warning (D58) counts only confirmed
+  (`printed`) jobs, so an unconfirmed reprint does not clear it.
+- Evidence and confidence: high; `src/components/domain/print-job-controls.tsx`
+  (Print then the confirmation), `listPrintJobs` filter `open`
+  (`src/lib/domain/labels.ts`), `lastPrintedPrice` (status `printed`).
+- Workaround or containment: the confirmation appears on the print view
+  right after Print and again on the job's page; To confirm lists every
+  open job with who started it; nothing reprints automatically.
+- Next action: owner decides whether To confirm needs a count on Today or
+  a periodic clean-up; Phase 12's network adapter can report success
+  itself.
+- Revisit trigger: To confirm regularly holds more than a day's prints, or
+  Phase 12.
 - Last checked: 2026-10-05.

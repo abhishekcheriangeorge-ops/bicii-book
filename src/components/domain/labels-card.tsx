@@ -122,7 +122,7 @@ export function LabelsCard({
                 {units.length === 0 ? (
                   <p className="text-sm text-dust-500">No units yet.</p>
                 ) : (
-                  <ul aria-label="Units to label" className="flex flex-wrap gap-2">
+                  <ul aria-label="Unit labels" className="flex flex-wrap gap-2">
                     {units.map((u) => (
                       <li key={u.id}>
                         <Link

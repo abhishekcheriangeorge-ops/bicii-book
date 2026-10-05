@@ -1562,8 +1562,8 @@ writes nothing.
     short_id` (one slash before `q`, also under a path base such as
     `https://bicii.sg/shop`). There is NO fallback: a missing row, a null
     or a malformed address raises P0001 `public_site_url_invalid` and
-    nothing prints until an admin sets it (Labels and printers settings,
-    Phase 8 step 3, through `update_shop_settings`). A short ID that is
+    nothing prints until an admin sets it (Settings → Labels and printers,
+    `/settings/labels`, through `update_shop_settings`). A short ID that is
     not `(PO|B|J|P|U|C|S)-` + 6 digits is 22023.
   - `shop_settings_public_site_url_check` was tightened by
     `20261004003800_labels.sql` to exactly the rule `qr_payload` applies:
@@ -1745,7 +1745,7 @@ width_mm, height_mm)` returns null or one sentence about the first problem
 (for example "The QR code does not fit: at most 36.0 mm on this label.");
 it never raises on a malformed shape. The trigger raises P0001
 `label_layout_invalid` with that sentence as DETAIL, for every writer. Field
-order is free in the database; the template editor (step 3) uses the fixed
+order is free in the database; the template editor (`TemplateSheet`, step 3) uses the fixed
 canonical order `name`, `identity`, `price`, `serial_number`, `short_id`,
 `sku`. Cases: `tests/fixtures/label-layouts.ts` (shared with step 2's zod
 schema).
@@ -1821,7 +1821,8 @@ the label only through that function.
 **Snapshots.** `content`, `template_snapshot`, `profile_snapshot`,
 `short_id` and `qr_payload` are written once by `create_print_job`; catalog,
 template and printer edits never change a job (tested). Record pages warn
-when the current price differs from the last printed label's (step 3).
+when the current price differs from the last printed label's (the Labels
+card, step 3; only `printed` jobs count).
 
 **Status machine (D59).** `private.print_job_transition_allowed`: queued →
 rendered, printed, failed; rendered → printed, failed; printed and failed

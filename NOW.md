@@ -1,7 +1,8 @@
 # Current state
 
-Updated: 2026-10-05, Phase 8 (QR identity and labels) step 2 of 4, the
-printing library and print views, on `feat/p8-labels` (stacked on
+Updated: 2026-10-05, Phase 8 (QR identity and labels) step 3 of 4, the
+print flow on the record pages and the Labels and printers settings, on
+`feat/p8-labels` (stacked on
 `feat/p6-consignment` at c791d4b). Evidence checked: `git status`, `git
 log`, `git worktree list` and `git for-each-ref refs/heads refs/remotes` at
 the start of the step; local gates at the step's code commits (below).
@@ -18,16 +19,16 @@ Earlier rows: their own gates as recorded.
   and step 2 (`src/lib/qr.ts` on the database base, `src/lib/printing/`,
   `src/lib/domain/labels.ts`, the label and settings actions, the print view
   `/print/labels/[id]`, the PDF route `/api/labels/[id]/pdf`, the print
-  history `/labels`) are committed locally. Steps 3–4 (the record pages'
-  Labels card that starts a job and handles `?print=1&reprint=…`, the Labels
-  and printers settings screens, journeys) are not built. Phase 6
-  (`feat/p6-consignment`, c791d4b) is complete and not pushed.
-- Next action: Phase 8 step 3: the Labels card on the product, unit and
-  bike pages over `getLabelContext` / `getReprintPreset` and
-  `createPrintJobAction` (then open `printViewPath`), the D58 price-changed
-  warning (`lastPrintedPrice`), and `/settings/labels` over the step 2
-  settings actions (point `QrLabelUrl`'s admin link there). The orchestrator
-  pushes `feat/p6-consignment` and `feat/p8-labels` and opens their PRs. The
+  history `/labels`) and step 3 (Print label and the Labels card on the
+  product, unit and bike pages with the `?print=1&qty=N&reprint=…` deep
+  link; Settings → Labels and printers for admins; `tests/e2e/labels.spec.ts`)
+  are committed locally. Step 4 (journeys, the phase's closing docs) is not
+  built. Phase 6 (`feat/p6-consignment`, c791d4b) is complete and not
+  pushed.
+- Next action: Phase 8 step 4: the journeys that cross labels (journey 3's
+  "print 10 labels" without the Phase 7 receive shortcut, journey 4's label
+  step), closing Phase 8 in PLAN and NOW. The orchestrator pushes
+  `feat/p6-consignment` and `feat/p8-labels` and opens their PRs. The
   owner answers D44–D59 (rows 9 and 15) in
   [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions); the
   orchestrator or owner opens a new main-line decision range (D59 was the
@@ -44,7 +45,9 @@ Earlier rows: their own gates as recorded.
   shortcut, until Phase 7 is integrated
   ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet));
   untested on a real printer
-  ([R-030](docs/RISKS.md#r-030--label-output-is-unverified-on-a-real-label-printer-and-on-ios)).
+  ([R-030](docs/RISKS.md#r-030--label-output-is-unverified-on-a-real-label-printer-and-on-ios));
+  print success is confirmed by hand
+  ([R-031](docs/RISKS.md#r-031--print-success-is-confirmed-by-hand)).
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -71,7 +74,8 @@ a separate, label-triggered run. All listed results are success.
 | Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment` 32f19e6 (the follow-up commit corrects DATA-MODEL's authority and applied state, PLAN's Phase 6 test list and this file's owner-question list) | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems; rerun at the documentation follow-up: `npm run db:reset` pass (`37\|20261004003700`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.6 min, build inside, no failures, flaky or skipped), docs link check 34 files / 545 links / 0 problems | Not deployed |
 | Labels database (Phase 8 step 1: D9 base, D56–D59) | Database only, `feat/p8-labels` 1294e36 (decisions), 2c4f6a3 (migration `20261004003800_labels`, seed, types, tests, docs); no screens yet | Locally at 2c4f6a3: `npm run db:reset` pass (`38\|20261004003800`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 95 files / 1414 tests passed (incl. `labels.test.ts` 25 tests, `labels-concurrency.test.ts` 5 tests, `meta.test.ts`); `test:e2e` not run (no screen changed); docs link check 35 files / 581 links / 0 problems (after this update) | Not deployed |
 | Printing library, QR base in the app, print view, PDF route, print history (Phase 8 step 2: D9, D56, D58, D59) | Yes, `feat/p8-labels` 967b99b (QR addresses from shop settings), cd4bbb6 (printing, domain, actions, views, route, history, docs) and the commit with this update | Locally at cd4bbb6: `npm run check` pass, `npm test` 106 files / 1559 tests passed (incl. `tests/unit/printing/` with ZXing decoding the rasterised QR, `qr-base`, `qr-base-sources`, `print-job-controls`, `tests/db/labels-domain.stack.test.ts`), `npm run build` pass, `npm run test:e2e` 130 passed on phone and tablet (14.4 min; build inside; `print-view.spec.ts` 6 × 2), docs link check 35 files / 589 links / 0 problems (after this update); `check:types` not run (no migration) | Not deployed |
-| Label screens on the records and settings (Phase 8 steps 3–4), Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Print flow on the record pages, Labels and printers settings, labels E2E (Phase 8 step 3: D9, D56–D59) | Yes, `feat/p8-labels` 41c1a5c (code and unit tests) and the commit with this update (E2E, docs): `PrintLabelButton` / `PrintLabelSheet`, the Labels card on product, unit and bike pages, `?print=1&qty=N&reprint=…`, `/settings/labels` (QR address, printers, templates), the decimal `NumberInput` stepper | Locally on the final tree: `npm run check` pass, `npm test` 108 files / 1587 tests passed (after `npm run db:reset` and a devstack restart; `print-label.test.tsx`, `printing/print-sheet.test.ts`, the decimal stepper, `publicSiteUrlInputSchema`, `resolvePrintPreset`), `npm run test:e2e` 146 passed on phone and tablet (14.5 min; build inside, pass; `labels.spec.ts` 8 × 2; a first run had 4 failures, a "Units" list-name clash in `inventory.spec.ts` and `sales.spec.ts`, fixed by naming the Labels card's list "Unit labels"), docs link check 35 files / 597 links / 0 problems; `check:types` not run (no migration) | Not deployed |
+| Phase 8 step 4 (journeys, closing docs), Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -82,9 +86,9 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   drafts, pushed and equal to origin.
 - `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
 - `feat/p8-labels`: stacked on `feat/p6-consignment` (c791d4b); Phase 8
-  steps 1 and 2 committed locally, not pushed (step 1: 1294e36 decisions,
-  2c4f6a3 the database layer, c5de022; step 2: 967b99b, cd4bbb6 and the
-  commit with this update). No origin branch of that name; origin holds an
+  steps 1 to 3 committed locally, not pushed (step 1: 1294e36 decisions,
+  2c4f6a3 the database layer, c5de022; step 2: 967b99b, cd4bbb6, 9608931;
+  step 3: 41c1a5c and the commit with this update). No origin branch of that name; origin holds an
   older orchestrator auto-save, `wip/feat/p8-labels` (ce8bab9, not
   reviewed).
 - `feat/p6-consignment`: stacked on `feat/docs-stack`; committed locally,

@@ -175,6 +175,27 @@ E2E spec; the rules are covered by `tests/db/settlements.test.ts`,
 `tests/db/consignment.test.ts`, `tests/db/sales.test.ts` and
 `tests/db/consignment-job-parts.test.ts`.
 
+**The QR address, printers and label templates** (admin only; D9,
+D56–D59, [ADR-017](decisions/ADR-017-labels-and-qr-base.md)). Settings →
+Labels and printers. **QR codes point to** shows the shop's public website
+address (`shop_settings.public_site_url`) that every label encodes as
+`{address}/q/{short id}`; while it is unset or malformed it says "Not set —
+labels cannot be printed" and every Print label is disabled. Change
+address → type it → Review the change → Change the address. Expected: "QR
+address saved". Changing it orphans labels already printed: they keep
+opening the old address, so keep a redirect there
+([R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address));
+scans of the environment's address (`NEXT_PUBLIC_PUBLIC_SITE_URL`) stay
+accepted by the app's scanner. Printers: rename, calibration offsets (0.5
+mm steps, −5 to 5), switch off, Make default, Add printer (browser print or
+PDF; the type is fixed once created). Label templates per kind: size, QR,
+fields and text with a preview; Make default; a default cannot be switched
+off. (`tests/e2e/labels.spec.ts` covers adding a template, printing with it
+and switching it off, the address shown, and the 403 for a mechanic; the
+address change itself is not driven by E2E because every spec shares one
+database: `tests/unit/printing/schemas.test.ts` and `tests/db/labels.test.ts`
+cover its rule.)
+
 Escalation for any of these: the owner (George). A refusal message comes
 from the database's rules; quote it exactly.
 
