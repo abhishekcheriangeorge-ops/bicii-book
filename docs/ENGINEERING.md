@@ -40,7 +40,20 @@ the Next.js 16 differences (`proxy.ts`, async request APIs, Turbopack):
   from `.env.local`. Every name is listed in [`.env.example`](../.env.example).
   Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
   `PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
-  shell before any command.
+  shell before any command. `PGDATABASE` also names the database that
+  `db:reset`, the devstack services and `test:e2e` use (and drop).
+- A second checkout (a `git worktree`) on the same machine runs its own
+  stack beside the first by setting, in its shell before every command:
+  `PGDATABASE` (its own database name), `BICII_AUTH_PORT`,
+  `BICII_REST_PORT`, `BICII_STORAGE_PORT` and `BICII_GATEWAY_PORT`, other
+  than the first checkout's, and `E2E_PORT`
+  (the E2E app port). Then `npm run db:reset` and `npm run devstack:start`
+  in it, `npm run devstack:env` if its dev server should talk to its own
+  stack, and `next dev -p <another port>`. Its devstack state lives in its
+  own `.devstack/`; `check:types` and the DB tests build per-process
+  throwaway databases, so the two never share one. The build agent keeps
+  these exports in an untracked `.wt-env` in the second worktree (excluded
+  through `.git/info/exclude`).
 - No hosted service, account or credential is needed for development: all
   work runs against the local devstack with its public local demo keys.
   Never commit `.env.local`.
@@ -54,7 +67,7 @@ with the components already cached and `bicii_dev` already present.
 |---|---|---|---|
 | Install | `npm ci` | `node_modules` from `package-lock.json` | Not run locally in the retrofit; CI runs it in every job through [`.github/actions/prepare`](../.github/actions/prepare/action.yml), e.g. [PR #7 `check`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574607) |
 | Devstack components (once per machine) | `npm run devstack:setup` | Each component "cached" (first run downloads and builds, a few minutes); ends "devstack components ready" | Local: all four "cached", 0.5 s |
-| Database | `npm run db:reset` | Drops and rebuilds `bicii_dev`: roles, Auth, Storage, 32 migrations, seed; "database ready in …s" and the seeded logins line | Local: "database ready in 2.8s" |
+| Database | `npm run db:reset` | Drops and rebuilds `bicii_dev`: roles, Auth, Storage, the migrations (42 since the Phase 7 integration), seed; "database ready in …s" and the seeded logins line | Local: "database ready in 2.8s" |
 | Services | `npm run devstack:start` | Auth :9999, PostgREST :3001, Storage :5000 and the gateway "ready: http://127.0.0.1:54321". Builds `bicii_dev` itself if it does not exist yet | Local: four services started, 3.3 s |
 | Health | `npm run devstack:status` | A table with each service "running" and "ok (200)" | Local: all four ok (200) |
 | Configure | `npm run devstack:env` | Writes the gateway URL, the local anon and service-role keys and a placeholder public site URL into `.env.local`, keeping other lines | Local: exit 0 (contents not printed) |
@@ -84,12 +97,12 @@ Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
 |---|---|---|
 | `npm run dev` | Next dev server (Turbopack) on :3000. | Local: `/login` 200 |
 | `npm run build` / `npm start` | Production build / serve it. | Local: both ran inside `npm run test:e2e` (its web server is `npm run build && next start -p 3100`); CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766) |
-| `npm run check` | `next typegen` + `tsc --noEmit`, ESLint, `prettier --check`. | Local: pass (30 s); `feat/p6-consignment` Phase 6 steps 1 and 2: pass; the Phase 6 review fixes: pass |
-| `npm run check:types` | Regenerate the database types from a throwaway database built from the migrations and fail if `src/lib/database.types.ts` differs. | Local: pass (5 s); `feat/p6-consignment` Phase 6 step 1 (at 365bdd7) and step 2 (at 2c402b2): pass; the Phase 6 review fixes: pass |
-| `npm test` | Every Vitest project (unit + db). | Local: 82 files, 1186 tests passed (58 s); `feat/p6-consignment` Phase 6 step 1: 86 files, 1225 tests passed (78 s); step 2: 89 files, 1298 tests passed (65 s); step 4: 92 files, 1364 tests passed (81 s); the Phase 6 review fixes: 93 files, 1384 tests passed (70 s) |
-| `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. | Local: 45 files, 512 tests passed (37 s); `feat/p6-consignment` Phase 6 step 4 (`npx vitest run --project unit`): 48 files, 579 tests passed (22 s) |
+| `npm run check` | `next typegen` + `tsc --noEmit`, ESLint, `prettier --check`. | Local: pass (30 s); `feat/p6-consignment` Phase 6 steps 1 and 2: pass; the Phase 6 review fixes: pass; `feat/p7-purchasing` at the Phase 7 integration: pass |
+| `npm run check:types` | Regenerate the database types from a throwaway database built from the migrations and fail if `src/lib/database.types.ts` differs. | Local: pass (5 s); `feat/p6-consignment` Phase 6 step 1 (at 365bdd7) and step 2 (at 2c402b2): pass; the Phase 6 review fixes: pass; the Phase 7 integration: pass |
+| `npm test` | Every Vitest project (unit + db). | Local: 82 files, 1186 tests passed (58 s); `feat/p6-consignment` Phase 6 step 1: 86 files, 1225 tests passed (78 s); step 2: 89 files, 1298 tests passed (65 s); step 4: 92 files, 1364 tests passed (81 s); the Phase 6 review fixes: 93 files, 1384 tests passed (70 s); `feat/p7-purchasing` at the Phase 7 integration: 102 files, 1517 tests passed (105 s) |
+| `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. | Local: 45 files, 512 tests passed (37 s); `feat/p6-consignment` Phase 6 step 4 (`npx vitest run --project unit`): 48 files, 579 tests passed (22 s); the Phase 7 integration: 52 files, 643 tests passed |
 | `npm run test:db` | DB project: invariants, RLS and RPCs on per-file clones of a template database. Includes a live-stack smoke test when the devstack is running. | Local: 37 files, 674 tests passed (48 s) |
-| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on :3100, resets `bicii_dev`, starts the devstack if needed. | Local: 106 passed (11.1 min); `feat/p6-consignment` Phase 6 step 2: 106 passed (9.7 min); step 3: 110 passed (12.4 min); step 4: 118 passed (13.3 min); the Phase 6 review fixes: 118 passed (11.8 min) |
+| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on :3100, resets `bicii_dev`, starts the devstack if needed. | Local: 106 passed (11.1 min); `feat/p6-consignment` Phase 6 step 2: 106 passed (9.7 min); step 3: 110 passed (12.4 min); step 4: 118 passed (13.3 min); the Phase 6 review fixes: 118 passed (11.8 min); the Phase 7 integration (`E2E_PORT=3200`, database `bicii_dev_wt`): 138 passed (16.8 min) |
 | `npm run format` / `npm run lint` | Prettier write / ESLint. | `lint` runs inside `check`; `format` not exercised |
 | `npm run tokens:contrast` | Recompute WCAG ratios for the colour tokens; fails on a miss. | Local: 29 pairs ok |
 | `npm run icons` | Regenerate the PWA icons from `brand/logo-source.png`. | Not exercised |
@@ -107,7 +120,7 @@ Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
 | Static | `npm run check` | Types (with Next's generated route types), lint rules (including the service-role import boundary), formatting | `next build` does not lint; Markdown is not formatted (prettier ignores `*.md`) | Local pass, 2026-10-05 |
 | Generated types | `npm run check:types` | `database.types.ts` matches the migrations | Needs Postgres and the devstack cache | Local pass, 2026-10-05 |
 | Unit | `npm run test:unit` | Pure rules: money, permissions, status transitions, labels, form parsing, components | No database | Local: 45 files, 512 tests |
-| Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests; `feat/p6-consignment` Phase 6 step 4 `npm test`: 92 files, 1364 tests (unit 48 / 579, so database 44 / 785); the review fixes: 93 files, 1384 tests (unit 48 / 581, database 45 / 803) |
+| Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests; `feat/p6-consignment` Phase 6 step 4 `npm test`: 92 files, 1364 tests (unit 48 / 579, so database 44 / 785); the review fixes: 93 files, 1384 tests (unit 48 / 581, database 45 / 803); the Phase 7 integration: 102 files, 1517 tests (unit 52 / 643, database 50 / 874) |
 | End to end | `npm run test:e2e` | The staff journeys on an iPhone 13 and an iPad viewport against a production build and the devstack | Chromium only (installed once, see [Prerequisites](#prerequisites-and-access)); resets `bicii_dev`; not a required check in CI ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) | Local: 106 passed in 11.1 min (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, no dev server running); CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521) |
 | Contrast | `npm run tokens:contrast` | WCAG ratios of the colour token pairs | Tokens only, not rendered pages | Local: 29 pairs ok |
 | Build | `npm run build` | The app compiles for production with placeholder public env | Does not contact Supabase; writes under `.next`, as `npm run dev` does; it was exercised only with no dev server running in the checkout | Local inside `test:e2e`; CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766) |
@@ -136,11 +149,16 @@ Read [AGENTS.md](../AGENTS.md) first. Conventions that are not obvious
 from the code:
 
 - **Migrations.** One concern per file in
-  [`supabase/migrations`](../supabase/migrations), named
-  `20261004NNNN00_<concern>.sql` continuing after the latest `20261004`
-  file (`20261004003200_appointment_reporting.sql` today). The parallel
-  purchasing track uses `20261005…`; never use that prefix on the main
-  line. Never edit an applied migration; add a new one.
+  [`supabase/migrations`](../supabase/migrations). They run in filename
+  order, so each track has its own allocated prefix range (2026-10-06):
+  `20261004…` main line (through labels and Shopify), `20261005…`
+  purchasing and staff email sign-in, `20261006000100`–`20261006000900`
+  staff roles, `20261006001000` and up reporting, `20261007…` public site.
+  The latest file today is `20261005000500_purchasing_reorder.sql`. A
+  migration that replaces a function another track also replaces (as
+  `staff_search`) must carry both tracks' behaviour. Never edit an applied
+  migration; add a new one (nothing is hosted yet, so a track's own
+  unapplied migration may be edited in place at an integration).
 - **Access.** Every object gets an explicit `revoke` and `grant`; every table
   ships with RLS and its policies in the same migration. Base tables are
   staff-only; customers reach data only through security definer `my_*`
@@ -174,9 +192,9 @@ from the code:
 - **Tests.** DB tests run on per-file clones; E2E specs run on both the
   phone and iPad projects and give every record a unique tag
   (`tagFor(testInfo)`), never counting rows in the shared database.
-- **Decisions and docs.** A new business decision takes the next free
-  number in D43–D59 (D60 and up belong to the purchasing track), with a
-  row in [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) and a record in
+- **Decisions and docs.** A new business decision takes a number from
+  its track's allocated range ([AGENTS.md](../AGENTS.md) item 2; D60–D66
+  are purchasing's), with a row in [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) and a record in
   [decisions/](decisions/README.md). Update the canonical doc that owns
   each changed fact ([README.md](../README.md#where-each-fact-lives) lists
   them), record new shortcuts in [RISKS.md](RISKS.md), and answer the

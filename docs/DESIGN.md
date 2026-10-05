@@ -791,7 +791,8 @@ tones and sentences in `src/lib/purchasing.ts`, form schemas in
   on a new order." and, for manage_purchasing, "New order for <supplier>"
   (the preset sheet; full width and wrapping on a phone, so a long name
   never widens the page). Cancelling is final and keeps what arrived.
-- **Product page.** Counted products get a "Suppliers & orders" card
+- **Product page.** Shop-owned counted products get a "Suppliers & orders"
+  card (consigned products show their Consignments card instead, D62)
   (`ProductPurchasingCard`): supplier links, "On order: N"
   (`reporting.product_on_order`: submitted and partially received only),
   the open orders holding the product, and Add supplier for

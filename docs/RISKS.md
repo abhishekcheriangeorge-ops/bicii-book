@@ -241,30 +241,27 @@ URLs, or customer data in this file.
 ## R-009 — The seven-PR stack is unmerged and the purchasing track forks from PR #6
 
 - Category: operational gap.
-- Status and owner: open; owner (merges), build agent (integration).
-- Trigger: merging the stack and integrating the parallel tracks.
-- Impact: PRs #1–#7 are open drafts stacked on each other; `main` holds only
-  the initial commit 1594c78. `feat/p7-purchasing` (a0fc1d2, local and on
-  origin, equal: pushed) forks from PR #6's head d3e2101, so it has no
-  appointments (Phase 2). Expected conflict points: PLAN §6 (it adds
-  D60–D66 after D35), migration order (its `20261005…` files after this
-  line's `20261004…` files), `tests/fixtures/api-surface.ts`,
-  `src/lib/database.types.ts` and `src/lib/db-errors.ts`. The email OTP
-  work is on `feat/auth-email-otp` (4b3eadd, local and on origin, equal),
-  checked out in the second worktree; neither track was verified here.
-  `feat/p6-consignment` has no origin branch; origin holds an
-  orchestrator auto-save of it, `wip/feat/p6-consignment`.
-- Evidence and confidence: high; GitHub REST pull list, `git branch -vv`,
-  `git merge-base feat/p7-purchasing feat/p2-appointments` = d3e2101 and
-  `git show feat/p7-purchasing:docs/PLAN.md` on 2026-10-05; the heads and
-  pushed state re-read with `git for-each-ref refs/heads refs/remotes`
-  and `git worktree list` at the Phase 6 review fixes (the remote refs
-  are as last fetched; their reflogs record the pushes).
-- Workaround or containment: each PR head is green in CI (R-010).
-- Next action: owner reviews and merges the stack bottom-up; the build agent
-  integrates purchasing and OTP afterwards, regenerating types and the
-  API-surface fixture and re-running all gates.
-- Revisit trigger: PR #1 merges.
+- Status and owner: partly resolved; owner (merges), build agent
+  (integration). The heading is kept so links stay valid.
+- Trigger: integrating the parallel tracks into `main`.
+- Impact: the stack (PRs #1–#7), the docs stack (#8) and Phase 6 (#11)
+  are merged into `main` (6042e6e). `feat/p7-purchasing` forked from PR
+  #6's head d3e2101; `main` is now merged into it (a merge commit, no
+  rebase) with every conflict resolved keeping both sides, `staff_search`
+  carrying both tracks' kinds, and the seed's Phase 7 part after Phase 6's.
+  That integration is local only until pushed, and its PR (#9) still has
+  to be reviewed and merged. The email OTP work (`feat/auth-email-otp`)
+  and labels (`feat/p8-labels`, on the other worktree) are not on `main`
+  yet.
+- Evidence and confidence: high; `git log --oneline origin/main`,
+  `git merge-base` before the merge (d3e2101) and the merge commit's two
+  parents (a0fc1d2, 6042e6e); the gates on the merged branch are in
+  [NOW.md](../NOW.md).
+- Workaround or containment: each integration reruns every gate on the
+  merged tree.
+- Next action: push `feat/p7-purchasing`, let CI and the `e2e` label run on
+  PR #9, merge it; then integrate OTP and labels the same way.
+- Revisit trigger: PR #9 merges.
 - Last checked: 2026-10-05.
 
 ## R-010 — E2E is not a required check, and branch protection is unverified
@@ -430,17 +427,17 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phases 7–9). Consignment stopped
-  being a placeholder in Phase 6 step 3 (`feat/p6-consignment`, local
-  only); the heading is kept so links stay valid.
-- Trigger: staff open Purchasing, Labels or Reports.
+- Status and owner: open; build agent (Phases 8–9). Consignment stopped
+  being a placeholder in Phase 6 step 3 and Purchasing in Phase 7 (on the
+  main line since the integration on `feat/p7-purchasing`); the heading is
+  kept so links stay valid.
+- Trigger: staff open Labels or Reports.
 - Impact: those pages render the `ComingSoon` component
-  (`src/components/shell/coming-soon.tsx`), which reads "Arrives in Phase
-  N (…)"; none of their features exist on
-  this branch.
-- Evidence and confidence: high; `src/app/(staff)/{purchasing,labels,reports}/page.tsx`.
+  (`src/components/shell/coming-soon.tsx`), which names the phase they
+  arrive in; none of their features exist on this branch.
+- Evidence and confidence: high; `src/app/(staff)/{labels,reports}/page.tsx`.
 - Workaround or containment: none.
-- Next action: Phases 7 (parallel track), 8 and 9.
+- Next action: Phases 8 (other worktree) and 9.
 - Revisit trigger: each phase ends.
 - Last checked: 2026-10-05.
 
@@ -698,4 +695,124 @@ URLs, or customer data in this file.
   sheet hides "Sold earlier?" beyond it.
 - Revisit trigger: the owner's answer, Phase 9 reporting, or the first
   closed-period request.
+- Last checked: 2026-10-05.
+
+## R-030 — A wrong delivery cannot be reversed, only adjusted
+
+- Category: known limitation (D65; owner question 16).
+- Status and owner: open; owner (whether a reverse-receipt is wanted),
+  build agent for any change.
+- Trigger: staff record a delivery with the wrong count, the wrong product
+  line or the wrong actual cost.
+- Impact: receipts and their lines are immutable
+  (`purchase_receipt_immutable`). A wrong count is corrected with a
+  reasoned Phase 4 stock adjustment, and the PO line raised or lowered if
+  the supplier will send more; the order's received figures keep the wrong
+  count. A wrong actual cost has already become the product's cost and the
+  supplier's last cost (D5, D63) and stays so until a `view_costs` holder
+  edits the product cost or a later delivery sets it; nothing restores the
+  earlier cost.
+- Evidence and confidence: high; `supabase/migrations/20261005000300_purchase_receiving.sql`
+  (header and `private.purchase_receipts_immutable`);
+  `tests/db/purchasing.test.ts` (receipts refuse UPDATE and DELETE).
+- Workaround or containment: the Receive screen shows what is still to
+  come and the "Differs" flag before the commit; every receipt names who
+  recorded it and when; the product's `cost_changed` event says which
+  delivery set the cost.
+- Next action: the owner answers question 16; if yes, a reverse-receipt
+  RPC writing linked ledger reversals and restoring the earlier last cost.
+- Revisit trigger: the first wrong delivery in use, or the owner's answer.
+- Last checked: 2026-10-05.
+
+## R-031 — Two staff can record the same delivery twice
+
+- Category: known limitation (D65).
+- Status and owner: open; build agent.
+- Trigger: two people receive the same paper delivery note on two
+  devices, each with its own submission.
+- Impact: the idempotency key makes one submission's retries safe, not two
+  submissions of one delivery. The second is refused only when it exceeds
+  what is still to come (`purchase_over_receipt`); otherwise it adds stock
+  again. The guard is soft: the Receive screen lists recent receipts and
+  makes staff tick "This is a different delivery" when the delivery-note
+  reference matches one already recorded on that order (any case); there
+  is no database uniqueness on the reference, because suppliers reuse it
+  for split deliveries.
+- Evidence and confidence: high; `src/components/domain/purchasing/receive-form.tsx`
+  (`duplicateReference`), `tests/e2e/purchasing.spec.ts` (the duplicate
+  warning), PLAN D65.
+- Workaround or containment: over-receipt is refused, so a duplicate can
+  only use up what was still to come; a stock adjustment with a reason
+  corrects it.
+- Next action: none planned; revisit if it happens.
+- Revisit trigger: the first duplicate delivery in use.
+- Last checked: 2026-10-05.
+
+## R-032 — Purchase movements carry the recording time, not the delivery time
+
+- Category: known limitation (D64).
+- Status and owner: open; build agent (Phase 9 reporting).
+- Trigger: a delivery is back-dated (up to 30 days) when it is received.
+- Impact: Phase 4's ledger has no effective-date column and is
+  append-only, so a `purchase_received` movement's `created_at` is when it
+  was recorded; its reason names the delivery time in shop time ("PO-000002
+  received 2 Oct 2026 11:30"), and the receipt holds `received_at`. Stock
+  reports by movement date place the stock on the recording day. The seed
+  shows it: its receipts are back-dated, their movements carry seed time.
+- Evidence and confidence: high; `private.record_receipt_movement` and
+  `receive_purchase` in `20261005000300_purchase_receiving.sql`;
+  `tests/db/purchasing-seed.test.ts`.
+- Workaround or containment: purchasing reports and the last-cost order
+  use `purchase_receipts.received_at`; Phase 5's daily summary and Today
+  count no `purchase_received` movement.
+- Next action: Phase 9 decides whether stock reports need the delivery
+  date (join the receipt) or an effective-date column on the ledger.
+- Revisit trigger: Phase 9 stock or valuation reports.
+- Last checked: 2026-10-05.
+
+## R-033 — Unique items bought from a supplier have no purchase order
+
+- Category: known limitation (D62; owner question 17).
+- Status and owner: open; owner (whether it is wanted), build agent.
+- Trigger: the shop buys a frame, a bike or another unique item from a
+  supplier.
+- Impact: a PO holds counted products only
+  (`purchase_line_unique_product`). A unique item is registered in Stock
+  with `create_unique_unit` and its cost, so no supplier, order, delivery
+  note or last cost is recorded for it, and "on order" never counts it.
+- Evidence and confidence: high; `set_purchase_order_line` in
+  `20261005000300_purchase_receiving.sql`; `tests/db/purchasing.test.ts`
+  ("submit needs a line; lines order shop-owned quantity products once
+  each").
+- Workaround or containment: the unit's internal notes can name the
+  supplier and invoice.
+- Next action: the owner answers question 17; if yes, a unique-unit
+  purchase flow (a PO line that registers units on receipt).
+- Revisit trigger: the owner's answer.
+- Last checked: 2026-10-05.
+
+## R-034 — A manage_purchasing exception shows unit costs on purchasing screens
+
+- Category: unverified assumption (D60; the owner was informed on
+  2026-10-06 and has not objected).
+- Status and owner: open; owner.
+- Trigger: an admin grants `manage_purchasing` to a mechanic as a
+  single-permission exception (managers hold `view_costs` through their
+  role once the staff roles are built, so this is the exception case).
+- Impact: that mechanic sees purchase costs on purchasing screens: PO line
+  costs and totals, actual receipt costs, supplier last costs, the cost
+  prefill (the product's cost for products a PO can hold) and PO history.
+  Because by D5 a receipt's cost becomes the product's cost, they in
+  effect learn the unit cost of every orderable product. They still see no
+  yield, margin, Cult Commons or report figure and no Phase 3/4/5 cost
+  surface.
+- Evidence and confidence: high; `private.can_view_purchase_costs()` in
+  `20261005000100_suppliers.sql`; `tests/db/purchasing-access.test.ts`
+  ("manage_purchasing alone runs purchasing and sees purchase costs, but no
+  Phase 3/4/5 cost surface" and the prefill test).
+- Workaround or containment: grant the exception only to people trusted
+  with unit costs; Settings → Staff lists each person's permissions.
+- Next action: revisit with the staff roles (D90–D99) if the owner wants
+  the exception to hide costs (a buyer would then order blind).
+- Revisit trigger: the staff roles land, or the owner objects.
 - Last checked: 2026-10-05.

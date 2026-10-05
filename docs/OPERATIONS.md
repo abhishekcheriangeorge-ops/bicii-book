@@ -163,6 +163,38 @@ listed as reversed and the balance goes back up. A payment is never edited
 or deleted: reverse it and record the right one. Not covered by an E2E
 spec; `reverse_settlement` is covered by `tests/db/settlements.test.ts`.
 
+**Purchasing access** (grant as for any permission above; D60,
+[ADR-018](decisions/ADR-018-purchasing.md)). Settings → Staff → the person
+→ the Manage purchasing switch. It lets them add, edit and archive
+suppliers and their product links, create, submit and cancel purchase
+orders, receive deliveries and create reorder drafts, and it shows them
+purchase costs on purchasing screens (line, receipt and last costs, order
+totals and history) but no job, sale, product-page or report cost. Under
+the owner's staff roles (2026-10-06, not built on this branch) managers
+hold it through their role; granting it alone to a mechanic is the
+exception D60 describes
+([R-034](RISKS.md#r-034--a-manage_purchasing-exception-shows-unit-costs-on-purchasing-screens)).
+Verify: Purchasing shows New order, Receive and Reorder. (Mechanic view and
+the 403s: `tests/e2e/purchasing.spec.ts`; the grants:
+`tests/db/purchasing-access.test.ts`.)
+
+**Correct a delivery** (`manage_purchasing`, plus `adjust_stock`; D65). A
+recorded delivery is never edited. A wrong count: Inventory → the product
+→ Adjust stock with a reason naming the PO; if the supplier will still
+send the rest, change the line's ordered quantity on the order. A wrong
+actual cost has become the product's cost: someone with View costs and
+Manage inventory edits the product's cost
+([R-030](RISKS.md#r-030--a-wrong-delivery-cannot-be-reversed-only-adjusted)).
+Not covered by an E2E spec; the immutability and adjustments are covered
+by `tests/db/purchasing.test.ts` and `tests/db/inventory-ledger.test.ts`.
+
+**Archive a supplier** (`manage_purchasing`). Purchasing → Suppliers →
+the supplier → Archive. Refused while the supplier has a draft, submitted
+or partially received order ("This supplier still has open orders. Receive
+or cancel them first."). Archived suppliers are hidden from pickers and
+searched only in the archived list. Not covered by an E2E spec;
+`tests/db/purchasing-access.test.ts` covers the rule.
+
 **Archive a consignor** (`manage_consignments`; D47). Consignment → the
 consignor → Archive → "Archive consignor…" → "Archive consignor". Only a
 consignor with no item still with the shop and a balance of exactly 0 can
@@ -187,7 +219,9 @@ no customer data deletion
 no deletion of consignor data and no history of changes to a consignor's
 payout details
 ([R-026](RISKS.md#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history)),
-and Purchasing, Labels and Reports are placeholders
+no reverse-receipt for a wrong delivery
+([R-030](RISKS.md#r-030--a-wrong-delivery-cannot-be-reversed-only-adjusted)),
+and Labels and Reports are placeholders
 ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 
 ## Technical operation
@@ -280,7 +314,8 @@ cleanup.
   machine; it has no effect anywhere else.
 - **Paused state:** nothing hosted runs, so nothing costs money for the
   Admin itself; GitHub plan and Actions billing were not checked (unknown).
-  Open pull requests #1 to #7 are drafts awaiting the owner
+  The stack and Phase 6 are merged into `main`; purchasing (PR #9),
+  email OTP and labels are on their own branches
   ([R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 
 ## Responsibility boundaries

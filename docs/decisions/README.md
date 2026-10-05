@@ -10,9 +10,14 @@ A record is never rewritten to change its history: a later decision gets a
 new record (or a dated status change) that links the one it supersedes.
 [PLAN §6](../PLAN.md#6-open-decisions-for-the-owner) stays the one-line
 index of the D-numbered rows, with each row's status and record; this
-directory holds the reasoning. New main-line rows take D43–D59; D60 and up
-are already used by the purchasing track (`feat/p7-purchasing`, D60–D66) and
-are reconciled when that branch is integrated. ADR-001 stays at its original
+directory holds the reasoning. Numbers are allocated by track (2026-10-06),
+never "the next free": D43–D59 main line (labels D56–D59), D60–D69
+purchasing (D60–D66 used), D70–D79 staff email sign-in, D80–D89 Shopify,
+D90–D99 staff roles, D100–D119 reporting, D120–D139 public site; records
+ADR-017 labels, ADR-018 purchasing, ADR-019 email sign-in, ADR-020
+Shopify, ADR-021 staff roles, ADR-022 reporting, ADR-023 public site (a
+record lands with its track, so a gap in the numbers here is expected).
+ADR-001 stays at its original
 path because code and migration comments cite it as "ADR-001".
 
 | Record | Decisions covered | Status (2026-10-05) | Revisit trigger |
@@ -30,6 +35,7 @@ path because code and migration comments cite it as "ADR-001".
 | [ADR-011](ADR-011-recognition-and-financial-reporting.md) | D3, D30–D34 | D32 owner-confirmed; others accepted | Phase 9 reporting |
 | [ADR-012](ADR-012-shop-time-zone-and-currency.md) | D35 | Accepted | A second shop, time zone or currency |
 | [ADR-013](ADR-013-appointments.md) | D2, D36–D41 | Accepted | Phase 11 customer booking; reschedule or messaging requested |
-| [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) | D4, D5, D7 | Accepted defaults; D4 implemented by Phase 6, D7 implemented for retail refunds by Phase 6 (D49), D5 and online D7 not implemented on this branch | Phases 7 and 10 start |
+| [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) | D4, D5, D7 | Accepted defaults; D4 implemented by Phase 6, D5 by Phase 7 (refined by D63), D7 implemented for retail refunds by Phase 6 (D49); online D7 not implemented | Phase 10 starts |
 | [ADR-015](ADR-015-documentation-stack.md) | D43 DOCS-STACK | Accepted | Toolkit version change; an issue tracker is adopted |
 | [ADR-016](ADR-016-consignment-and-sales.md) | D44–D55 (consignment and in-store sales; D54 and D55 from the Phase 6 review), the implementation of the owner's D27 change, D4 | Accepted: build defaults, owner to confirm; implemented by Phase 6; D53 and D55 have open questions | Owner confirms a row; D53 or D55 answered; Phase 9 refund reporting (D49) |
+| [ADR-018](ADR-018-purchasing.md) | D60–D66 (purchasing), the implementation of D5 | D60 accepted, owner informed, amended in effect by the staff roles of 2026-10-06 (it now covers a mechanic granted `manage_purchasing` as an exception); D61–D66 accepted: build defaults, owner to confirm; implemented by Phase 7 | Owner confirms a row; the staff roles land (D90–D99); purchase reports (Phase 9) |
