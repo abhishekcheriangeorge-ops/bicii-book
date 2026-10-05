@@ -271,9 +271,10 @@ the server calls `record_attachment`.
 
 Phase 2 migrations: `…2700_appointment_enum_values` (work_order_event_type
 `appointment_linked`), `…2800_schedule`, `…2900_appointments`,
-`…3000_appointment_customer_access` (step 1); step 2 adds check-in, the
-`work_orders.appointment_id` foreign key, the completion trigger (D36) and
-the appointment counts (D41). Decisions: PLAN D2, D35, D37–D42.
+`…3000_appointment_customer_access` (step 1), `…3100_appointment_check_in`
+(check-in, the `work_orders.appointment_id` foreign key and link triggers,
+the completion trigger, D36, D40; §4) and `…3200_appointment_reporting`
+(the appointment counts, D41; §14). Decisions: PLAN D2, D35, D36–D42.
 
 ```
 shop_settings (single row: id smallint = 1, check shop_settings_singleton;
@@ -409,7 +410,13 @@ self-booking only; Phase 11 reuses it); (c) the per-day advisory lock
 (`private.appointment_lock_day`) and/or the appointment row FOR UPDATE —
 `mark_appointment_status` takes the row, then the day lock; booking never
 locks an appointment row; (d) step 2's check-in then takes the work order,
-customer and bike row locks through Phase 3's path. Bookings of one day
+customer and bike row locks through Phase 3's path: `check_in_appointment`
+holds the appointment row FOR UPDATE, then the existing work order FOR
+UPDATE (when linking one), then the customer and the bike FOR SHARE (the
+order `private.create_work_order` uses). The D36 completion trigger runs
+under the job's row lock and then updates its appointment, but only an
+appointment that is already checked in, for which check-in never locks a
+work order (it returns the existing link), so no cycle forms. Bookings of one day
 therefore serialise, so two bookings for the last unit cannot both succeed.
 Every booking is idempotent on its client-made id (same customer, type and
 start → the original row, even after the type was deactivated; otherwise
@@ -434,8 +441,10 @@ work_orders                              -- written only through RPCs (§16)
                                          --   whatever the caller sent (D9); immutable
   customer_id uuid not null -> customers
   bike_id uuid not null -> bikes
-  appointment_id uuid null               -- no FK yet: Phase 2 adds it with check_in_appointment;
-                                         --   set once (insert, or null -> value), never changed or cleared
+  appointment_id uuid null -> appointments (on delete restrict)
+                                         -- unique where not null (work_orders_appointment_id_key);
+                                         --   set once (insert, or null -> value), never changed or cleared;
+                                         --   only to a checked_in appointment of the same customer and bike (D40)
   lead_mechanic_id uuid null -> staff    -- = the active lead assignment's staff_id (trigger-kept)
   status work_order_status not null default 'received'
      -- enum: received | diagnosing | awaiting_customer | awaiting_parts |
@@ -547,10 +556,27 @@ may only become the active lead (so only the assignments trigger moves it).
 `appointment_id` is linked at most once: it is set on insert
 (`private.create_work_order`) or may go from null to a value exactly once on
 update, and once set it never changes and is never cleared
-(`work_order_immutable`); the link writes no timeline event. This is the
-Phase 2 extension point: `check_in_appointment` links an existing open,
-unlinked job this way (Phase 2 checks that the job is open and the
-appointment valid, and adds the foreign key). An insert must be `received`
+(`work_order_immutable`, P3's rule in `work_orders_enforce_rules`, which
+Phase 2 relies on and does not replace). Phase 2 (`…3100`, D40) adds the
+foreign key, the partial unique index and three triggers: BEFORE INSERT OR
+UPDATE OF appointment_id `work_orders_appointment_rules` (only when a value
+is SET: the appointment must exist (P0002) and be `checked_in`
+(`appointment_not_checked_in`) with the job's customer and bike
+(`appointment_work_order_mismatch`), for every writer); AFTER INSERT OR
+UPDATE OF appointment_id `work_orders_sync_appointment_link` (named to fire
+after `work_orders_record_history`, so the job's `checked_in` comes first:
+the appointment's `work_order_linked` event `{work_order_id, job_number,
+created}` and the job's `appointment_linked` event `{appointment_id,
+starts_at, appointment_type_name, created}`, both dated
+`greatest(job.checked_in_at, appointment.checked_in_at)`, the check-in
+instant; customers never see it, `my_work_order_timeline` whitelists event
+types); and AFTER UPDATE OF status `work_orders_sync_appointment_completion`
+(D36: when a linked job first reaches completed, ready_for_collection or
+collected, a `checked_in` appointment becomes `completed` at the job's
+`completed_at`, with the current staff member as actor; a reopen does not
+reopen it, a cancelled job leaves it checked_in). `check_in_appointment`
+(§16) creates the job through `private.create_work_order` or links an open,
+unlinked job this way. An insert must be `received`
 with no lead and no stamps; the customer and the bike must exist and not be
 archived (`work_order_customer_archived`, `work_order_bike_archived`), and
 the customer must own the bike or the bike must have no owner (D18,
@@ -1330,7 +1356,8 @@ never exposed.
 | View | Purpose |
 |---|---|
 | `financial_lines` | Built (Phase 5, D32 RECOGNITION). One row per recognised ENTRY, columns in this order: `entry_key` text ('wol:' ‖ line id, unique), `source` text, `entry_kind` text ('line'), `source_line_id` uuid, `document_id` uuid, `document_number` text, `channel` text, `recognized_at` timestamptz, `recognized_day` date (`private.shop_day`), `line_type` text, `service_id`, `product_id`, `inventory_unit_id`, `category_id` (the service's or product's), `ownership_type` text (inventory lines: the unit's, else the product's; null otherwise), `consignment_item_id` (null until P6), `customer_id`, `bike_id`, `lead_mechanic_id`, `description` text, `quantity`, `unit_sale_price`, `unit_direct_cost`, `cult_commons_rate`, `sale_total`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc` (all plain numeric), `is_loss` boolean (yield < 0), `currency` text, `cost_pending` boolean. Pinned vocabulary: `source` ∈ ('work_order','sale'); `channel` ∈ ('workshop','retail','online'); `document_id` = work_orders.id or sales.id; `document_number` = the J- job number or the S- sale number; `entry_kind` = 'line'. Recognition (D3 as modified by D15, refined by D32): every non-voided line of a job with a current `completed_at` (completed, ready for collection or collected; never open or cancelled), on the shop day of that `completed_at`. Lines are frozen once completed, so the only correction is a reopen, which removes the whole job from its earlier day until it is completed again (past days can change; no reversal entries for workshop lines). Amounts come only from the line's snapshots and generated columns; each entry's Cult Commons is the line's own share (≥ 0, D1), so no negative Cult Commons payment arises; `cost_pending` lines (D14) are recognised at cost 0 and flagged. Phase 6 appends a `union all` branch from `sale_lines`/`sales` with every column in this order (source 'sale', channel from `sales.source`, `cost_pending` false); Phase 9 appends only genuinely new columns at the end, never synonyms. |
-| `daily_summary` | Built (Phase 5). One row per shop day from the earliest activity day (check-in, recognised entry or movement; today when none) to `private.shop_today()`, zero-filled; columns fixed in this order: 1 `day`; 2–7 `jobs_checked_in`, `jobs_started`, `jobs_completed`, `jobs_ready_for_collection`, `jobs_collected`, `jobs_cancelled` (flows: jobs whose CURRENT stamp falls that day, D31); 8 `currency` (`private.shop_currency()`); 9 `lines_recognised`; 10–14 `gross_sales`, `cogs`, `yield_total`, `cult_commons_share` (Σ entry shares, D1), `bicii_yield_after_cc` (shop-currency `financial_lines` by `recognized_day`); 15 `loss_lines`, 16 `loss_total` (≤ 0); 17 `parts_consumed_qty`, 18 `parts_consumed_lines`, 19 `parts_returned_qty` (reversals of job consumptions); 20 `stock_adjustments`, 21 `significant_stock_adjustments` (D33); placeholders, NULL now: 22 `appointments_scheduled`, 23 `appointments_arrived`, 24 `appointments_no_show` (Phase 2 fills exactly these by create or replace, from `reporting.appointment_daily`: non-cancelled appointments whose `starts_at` falls that shop day; of those, CURRENT status arrived, checked_in or completed; CURRENT status no_show; it may extend the series end so future days with appointments appear), 25 `consignment_sales`, 26 `consignment_sales_total`, 27 `new_consignor_liability` (Phase 6 fills them under these names). Integer counts and numeric money with explicit casts; Phase 9 appends new measures only after column 27. |
+| `daily_summary` | Built (Phase 5). One row per shop day from the earliest activity day (check-in, recognised entry or movement; today when none) to `private.shop_today()`, zero-filled; columns fixed in this order: 1 `day`; 2–7 `jobs_checked_in`, `jobs_started`, `jobs_completed`, `jobs_ready_for_collection`, `jobs_collected`, `jobs_cancelled` (flows: jobs whose CURRENT stamp falls that day, D31); 8 `currency` (`private.shop_currency()`); 9 `lines_recognised`; 10–14 `gross_sales`, `cogs`, `yield_total`, `cult_commons_share` (Σ entry shares, D1), `bicii_yield_after_cc` (shop-currency `financial_lines` by `recognized_day`); 15 `loss_lines`, 16 `loss_total` (≤ 0); 17 `parts_consumed_qty`, 18 `parts_consumed_lines`, 19 `parts_returned_qty` (reversals of job consumptions); 20 `stock_adjustments`, 21 `significant_stock_adjustments` (D33); 22 `appointments_scheduled`, 23 `appointments_arrived`, 24 `appointments_no_show` (Built, Phase 2 `…3200`, D41: `appointment_daily`'s `booked`, `arrived` and `no_shows` of that day, 0 when none; the series also starts at the earliest appointment's shop day and still ends at `private.shop_today()`); placeholders, NULL now: 25 `consignment_sales`, 26 `consignment_sales_total`, 27 `new_consignor_liability` (Phase 6 fills them under these names). Integer counts and numeric money with explicit casts; Phase 9 appends new measures only after column 27. |
+| `appointment_daily` | Built (Phase 2, D41 APPT-COUNTS). One row per shop day that has appointments, by SCHEDULED day (`private.shop_day(starts_at)`) and CURRENT status: `day`, `booked` (not cancelled), `expected` (booked or confirmed), `arrived` (arrived, checked_in or completed), `checked_in` (checked_in or completed), `no_shows`, `cancelled`, all integer. security_invoker, granted to no API role (it calls `private.shop_day`); read through `public.appointment_daily` (zero-filled) and daily_summary's columns 22–24. Phase 9's activity report reads it. |
 | `work_order_activity` | Built (Phase 5). One row per job: `work_order_id`, `job_number`, `status` (enum), `customer_id`, `bike_id`, `lead_mechanic_id`, `appointment_id`, `currency` text; the CURRENT stamps `checked_in_at`, `started_at`, `completed_at`, `ready_for_collection_at`, `collected_at`, `cancelled_at` and their shop days `checked_in_day`, `started_day`, `completed_day`, `ready_day`, `collected_day`, `cancelled_day`; `is_open`; `is_overdue` (D20: open and `now() - checked_in_at > interval '7 days'`); `age_days` (open: today − check-in day; else completion or cancellation day − check-in day); `days_to_start`, `days_to_complete`; `days_awaiting_collection` (completed/ready: today − completion day; collected: collection day − completion day); `time_to_complete` interval. Integer days and intervals only. A reopened job's completion stamps are its latest ones (D15). |
 | `operational_exceptions` | Built (Phase 5, D34). Columns in order: `kind`, `severity` ('danger' \| 'warning'), `entity_type` ('work_order', 'product', 'inventory_unit', 'work_order_line'), `entity_id`, `entity_label` (job number or P-/U- short ID), `subject_label` (customer · bike, or the product name, with the location for negative stock), `days`, `quantity`, `since`. Kinds: `overdue_job` (warning, which only orders it after danger rows: the UI shows Overdue in the danger tone, as everywhere else; exactly D20, 7 = `OVERDUE_AFTER_DAYS`, strictly more than 7 × 24 h), `uncollected_job` (warning; completed or ready, completed ≥ 7 shop days ago), `negative_stock` (danger; `stock_levels.on_hand < 0`, quantity = on-hand), `unit_hold_stale` (danger; a held_for_customer unit with no live inventory line on an open job; since = its last status change), `currency_mismatch` (danger; a would-be-recognised line not in the shop currency, excluded from totals). Kinds are text: Phase 6 (unit_state_mismatch, unsettled_consignment), Phase 9 (more kinds; columns `issue, short_id, title, detail, amount, currency` appended at the end) and Phase 10 (integration_failed) replace the view keeping these columns first. |
 | `work_order_totals` / `work_order_totals_staff` | Running totals per job; the staff variant includes cost and yield. |
@@ -1401,7 +1428,7 @@ security-definer function. Blank = no access.
 | closure_overrides | S (anon/C: never listed; `available_slots` leaves closures out) | RPC `save_closure_override` (A) | RPC `save_closure_override` (A) | RPC `delete_closure_override` (A, reason) |
 | appointment_types | S; anon/C active + public types (no capacity units) via `public_appointment_types()` | RPC `save_appointment_type` (A) | RPC `save_appointment_type` (A) | — (deactivate) |
 | schedule_events | S | triggers only | never | never |
-| appointments | S; C own via `my_appointments()` (D42 projection); anon/C bookable times via `available_slots()` (D37) | RPC `book_appointment` (S), `book_my_appointment` (C, D37) | RPC `mark_appointment_status`, `cancel_appointment`, `update_appointment` (S); `cancel_my_appointment` (C, D37); step 2: `check_in_appointment` (S) | — |
+| appointments | S; C own via `my_appointments()` (D42 projection); anon/C bookable times via `available_slots()` (D37) | RPC `book_appointment` (S), `book_my_appointment` (C, D37) | RPC `mark_appointment_status`, `cancel_appointment`, `update_appointment`, `check_in_appointment` (S, D40); `cancel_my_appointment` (C, D37); completed only by the D36 work-order trigger | — |
 | appointment_events | S | triggers only | never | never |
 | work_orders | S; C own, not cancelled, via `my_work_orders()` (D17) | RPC `create_work_order` | RPC (`set_work_order_status`, `update_work_order`, `set_approval_flag`; `lead_mechanic_id` by the assignments trigger) | — |
 | work_order_assignments | S | RPC `assign_staff` (S, D22) | RPC `unassign_staff` (closes the row) | — |
@@ -1512,7 +1539,8 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `my_appointments(include_past = false)` → `setof my_appointment` | authenticated (C) | Built (Phase 2, D42; consumed by Phase 11). The caller's appointments not yet over, soonest first; `include_past` adds the past ones after them, latest first. Bike fields only while the bike is still theirs and not archived (D12). |
 | `book_my_appointment(appointment_id, appointment_type_id, starts_at, bike_id = null, customer_note = null)` → `my_appointment` | C (42501 otherwise) | Built (Phase 2, D37). The booking core with the caller's customer id and source customer: active public types, `appointment_too_soon`, `appointment_too_far_ahead`, `appointment_customer_limit` (per-customer lock), then hours, closures, capacity; a bike that is not theirs (or unknown) → `appointment_bike_not_owned` with nothing about the bike. |
 | `cancel_my_appointment(appointment_id, reason = null)` → `my_appointment` | C (42501 otherwise) | Built (Phase 2, D37). `reason_too_long`; `shop_settings` FOR SHARE; the caller's row FOR UPDATE, else NULL (no error); already cancelled → it (no event); booked/confirmed before `customer_cancel_cutoff_minutes` ahead of the start, else `appointment_not_cancellable`; reason defaults to 'Cancelled by the customer'; `cancelled_via` = customer. |
-| `check_in_appointment(appointment_id, bike_id)` | S | Phase 2, built on `private.create_work_order` (with the appointment id) for a new job, or linking an existing open, unlinked job by setting `work_orders.appointment_id` once (null → value; never changed or cleared afterwards, `work_order_immutable`, §4). Status → checked_in; creates or links the work order. |
+| `check_in_appointment(appointment_id uuid, bike_id uuid, work_order_id uuid, link_existing boolean = false, requested_work text = null, intake_notes text = null, lead_mechanic_id uuid = null)` → `appointment_check_in (appointment_id uuid, appointment_status appointment_status, work_order_id uuid, job_number text, created boolean)` | S | Built (Phase 2, D40). In order: 22004 on null ids; the appointment FOR UPDATE (P0002); checked_in or completed → its existing link with `created` false, whatever `work_order_id` was passed (replay, second device); not booked/confirmed/arrived → `appointment_transition_invalid`; `link_existing`: that job FOR UPDATE (P0002), same customer and bike, open (`private.work_order_status_is_open`) and unlinked, else `appointment_work_order_mismatch`; customer then bike FOR SHARE; bike P0002 / `appointment_bike_archived` / `appointment_bike_not_owned` (shop bikes too); the appointment → bike set, `checked_in` (stamps checked_in_at, arrived_at). New job: `private.create_work_order(actor, work_order_id, customer, bike, coalesce(nullif(btrim(requested_work), ''), customer_note), intake_notes, lead_mechanic_id, '{}', '[]', appointment_id)` (job number, `checked_in` event, D18, lead as for a walk-in; blank work and no note → `requested_work_required`), then `work_order_conflict` unless the returned job carries this appointment (an older job under that id). Existing job: `appointment_id` null → this appointment. Both link events from the triggers (§4). One transaction; `created` = not `link_existing`. |
+| `appointment_daily(from_day date = null, to_day date = null)` → `day, booked, expected, arrived, checked_in, no_shows, cancelled` | S | Built (Phase 2, D41). Operational counts, no permission needed (D30). `reporting.appointment_daily` zero-filled one row per day; daily_summary's range rules (null bound = the other, both null = today, ≤ 366 days, else `report_range_invalid`); future days allowed (upcoming appointments). |
 | `create_work_order(work_order_id, customer_id, bike_id, requested_work, intake_notes = null, lead_mechanic_id = null, additional_staff_ids uuid[] = '{}', services jsonb = '[]')` → `work_orders` | S | Calls `private.create_work_order(actor, …, appointment_id)`. Replay first: an existing id returns the row as it is now when customer and bike match (no check, assignment or line re-run, no number burned), else `work_order_conflict`. Then FOR SHARE on customer and bike (D18 against a concurrent transfer), insert (trigger: J- number, `work_order_customer_archived`, `work_order_bike_archived`, `bike_owner_mismatch`), lead, ≤ 10 distinct additional staff, ≤ 20 services `{line_id, service_id, quantity}` (malformed 22023) through `private.insert_service_line`. One transaction. `requested_work_required`; 22004 for missing ids. |
 | `set_work_order_status(work_order_id, status, note = null)` → `work_orders` | S | Locks the job; same status → row unchanged (no event); `work_order_transition_invalid`; `reason_required` for cancel/reopen; `work_order_has_lines` when cancelling with live lines. Triggers stamp the time and write one event. |
 | `update_work_order(work_order_id, requested_work = null, intake_notes = null, internal_notes = null, completion_notes = null)` → `work_orders` | S | Null keeps, '' clears (requested work cannot be cleared: `requested_work_required`); no-op when unchanged; one `details_changed` event. Any status. |
@@ -1588,7 +1616,7 @@ humans and QR codes.
 
 Realistic and deterministic (fixed UUIDs so tests can reference them):
 3 staff (1 admin, 2 mechanics with differing permissions), 6 customers with
-10 bikes, shop hours Tue–Sun, 4 appointment types, 9 services, 2 locations,
+10 bikes, shop hours Tue–Sun, 4 appointment types, 9 appointments, 1 customer login, 9 services, 2 locations,
 12 quantity products with stock, 3 unique shop-owned bikes, 2 consigned bikes
 (one sold, unsettled), 2 suppliers, 1 PO partially received, 9 work orders
 spread across statuses and the last 9 days, settlements. (The Cult Commons
@@ -1597,7 +1625,8 @@ The seed is applied to the local database and to a fresh preview
 project; never to production.
 
 Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
-`tests/fixtures/ids.ts`; none has a login yet) and bikes
+`tests/fixtures/ids.ts`; only Chloe Lim has a login, added in the Phase 2
+part) and bikes
 `b1000000-…-0000000000NN` (`BIKE`, short IDs `B-000001`…`B-000010` in insert
 order, `BIKE_SHORT_ID`; Phase 4 adds B-000011…B-000013 and Phase 5
 B-000014…B-000017), one shop bike without an owner and one bike
@@ -1793,3 +1822,50 @@ by `tests/e2e/global-setup.mts`, with `seedAnchor()` / `anchorDay(n)` in
 `tests/e2e/helpers.ts`), count days back from it, and skip with a message
 the assertions that need the anchor to be today. Reset (`npm run
 db:reset`) to move the demo's "today".
+
+Phase 2 part (done): **the schedule and appointments**, written as the
+owner after every job exists (the owner bypasses the booking rules; the
+triggers still enforce the status machine, stamps, bike ownership,
+history and the work-order link), acting as Asha Admin (Marcus for
+J-000014's completion, Chloe for her own bookings). IDs in
+`tests/fixtures/ids.ts` (`SHOP_HOURS`, `APPOINTMENT_TYPE`, `CLOSURE`,
+`APPOINTMENT`, `CUSTOMER_LOGIN`).
+
+- Settings: slot 30, capacity 2, notice 120, horizon 60, limit 3, cancel
+  cutoff 120 (D37's defaults), `public_site_url` `http://localhost:4000`
+  (the local public site; D9 note).
+- Weekly hours `e3000000-…-00000000000N`: Tue–Fri 10:00–19:00; Sat
+  09:00–12:30 and 13:30–18:00; Sun 09:00–13:00; Monday one INACTIVE
+  10:00–19:00 row (closed, hours remembered).
+- Types `e1000000-…-00000000000N`: Service drop-off (30 min, 1 unit,
+  public), Repair assessment (30, 1, public), Custom build consultation
+  (60, 2, public), Warranty inspection (30, 1, staff-only).
+- Closures `e4000000-…-00000000000N`: closed all day on the first
+  Wednesday ≥ 7 days ahead ("Team at the Taipei Cycle show"); custom hours
+  12:00–16:00 on the first Thursday ≥ 8 days ahead ("Short day for
+  stocktake"); both within 14 days, whole shop-local days as
+  `save_closure_override` stores them.
+- Chloe Lim's customer login: Auth user
+  `a0000000-…-000000000101` (chloe.lim@example.com, the local password),
+  identity `a1000000-…-000000000101`, linked to `CUSTOMER.chloe`.
+- Appointments `e2000000-…-00000000000N`, each inserted `booked` a day or
+  more before its start and walked one update at a time with explicit
+  stamps: (1) d3 10:00 Repair assessment, Tan's Tarmac, checked in at
+  J-000014's check-in, linked to J-000014 (both link events dated then, so
+  its timeline reads checked_in, appointment_linked, …) and completed at
+  J-000014's completed_at (D36, D40); (2) d1 11:00 Daniel's Cannondale,
+  no-show (11:20); (3) today 10:00 Priya's Domane, arrived; (4) today 10:30
+  Hafiz's Brompton, confirmed (J-000010 is open on it); (5) today 15:00
+  Chloe's Giant, booked online with a note; (6) today 16:00 Nurul's
+  Bianchi, booked; (7) first Tue–Fri ≥ tomorrow 11:00 Tan's Brompton,
+  confirmed; (8) first Tue–Fri ≥ 3 days ahead 10:00 Priya's Tern,
+  cancelled by staff ("Customer travelling"); (9) first Tue–Fri ≥ 5 days
+  ahead 14:00 Chloe's Surly, Custom build consultation booked online.
+  Today's and yesterday's rows ignore the weekly hours on a Monday or
+  Sunday; future rows avoid Mondays and the closures; nothing is more than
+  14 days ahead (tests book on clear days ≥ 21 days ahead). Daniel has no
+  upcoming booked/confirmed appointment; Chloe at most two upcoming online
+  bookings; today at most three expected arrivals.
+- D41 counts per seeded day (`SEED_DAYS`): d3 scheduled 1, arrived 1; d1
+  scheduled 1, no-show 1; d0 scheduled 4, arrived 1; other days 0.
+  `tests/db/appointment-seed.test.ts` proves the rest.

@@ -180,8 +180,22 @@ in `src/lib/db-errors.ts`; the shared fixtures
 `tests/fixtures/appointment-transitions.ts`; database tests
 `appointments`, `appointment-slots`, `schedule-settings`,
 `appointment-customer-access` and `appointment-concurrency` (helpers in
-`tests/db/appointment-fixtures.ts`). Step 2 adds check-in, the work order
-triggers, the reporting view and the seed.
+`tests/db/appointment-fixtures.ts`).
+
+Shipped (database, step 2): `…3100_appointment_check_in` (the
+`work_orders.appointment_id` foreign key and partial unique index; the
+`work_orders_appointment_rules`, `work_orders_sync_appointment_link` and
+`work_orders_sync_appointment_completion` triggers; `check_in_appointment`
+returning `appointment_check_in`, D36, D40; P3's null -> value-once rule is
+relied on, not replaced) and `…3200_appointment_reporting`
+(`reporting.appointment_daily`, `public.appointment_daily`, and
+`daily_summary`'s three appointment columns filled by D41 with no RPC
+change); the Phase 2 seed (settings, hours, four types, two closures,
+Chloe Lim's customer login, nine appointments, Tan's appointment linked to
+J-000014); database tests `appointment-check-in`, `appointment-reporting`,
+`appointment-seed` and the check-in race. So the Phase 2 database is
+complete: migrations `…2700`–`…3200`, every RPC above, D36–D42. Steps 3–4
+build the app.
 
 ### Phase 3 — Workshop
 

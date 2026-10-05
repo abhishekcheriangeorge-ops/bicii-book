@@ -39,11 +39,14 @@ adjustments, operational exceptions; money only with View financial
 reports, costs only with View costs), a seed spanning a week of shop days,
 the Today dashboard (`/`: today's or an earlier day's jobs, money, stock,
 low stock, what needs attention and the last 7 days) and the job yield
-panel on the job page. Phase 2 (appointments) is in progress: step 1 adds
-its database core (shop settings, weekly hours, closures, appointment
-types and their history; appointments with capacity, the slot grid,
-booking, status and cancellation; the customer booking RPCs the public site
-will call) and its tests; check-in, the seed and the screens follow.
+panel on the job page. Phase 2 (appointments) is in progress: its
+database is built (shop settings, weekly hours, closures, appointment types
+and their history; appointments with capacity, the slot grid, booking,
+status and cancellation; check-in, which opens or links the appointment's
+one work order and completes the appointment with it; appointment counts
+for Today and the reports; the customer booking RPCs the public site will
+call; a seeded schedule, a week of appointments and one customer login)
+with its tests; the screens follow.
 
 ## Quickstart
 
@@ -71,6 +74,10 @@ them is `bicii-dev-password`:
 | `admin@bicii.test` | admin | all |
 | `mechanic1@bicii.test` | staff | `view_costs` |
 | `mechanic2@bicii.test` | staff | none |
+
+The seed also has one customer login, `chloe.lim@example.com` (Chloe Lim,
+same password), for the public site's customer pages; the Admin does not
+let customers in.
 
 Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
 `PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
