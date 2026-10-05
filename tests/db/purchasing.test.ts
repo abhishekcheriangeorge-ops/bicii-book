@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { LOCATION, STAFF } from "../fixtures/ids";
+import { CONSIGNMENT_PRODUCT, LOCATION, STAFF } from "../fixtures/ids";
 import { actAs, connect, inTransaction, isolatedDatabase, scalar } from "./harness";
 import {
   ADMIN,
@@ -831,6 +831,69 @@ describe("Purchase order state machine (D61 D-PO-CANCEL, D62 D-PO-SCOPE, D65 D-O
       expect((await submitPO(tx, po.id)).status).toBe("submitted");
     });
   });
+
+  it7(
+    "Phase 6's consigned stock is never purchased: no PO line, no low-stock draft, no supplier link, no cost prefill",
+    async () => {
+      await inTransaction(conn, async (tx) => {
+        await ownerMode(tx);
+        const supplierId = await makeSupplier(tx);
+        // The seeded jerseys (C-000003): a counted, active, consignment-owned
+        // product with stock, so only its ownership keeps it off a PO.
+        const jersey = CONSIGNMENT_PRODUCT.jersey;
+        expect(
+          (
+            await tx.query(
+              `select tracking_type::text, ownership_type::text, active, archived_at
+                 from public.products where id = $1`,
+              [jersey],
+            )
+          ).rows[0],
+        ).toEqual({
+          tracking_type: "quantity",
+          ownership_type: "consignment",
+          active: true,
+          archived_at: null,
+        });
+        await actAs(tx, ADMIN);
+        const po = await createPO(tx, { supplierId });
+        await failsWith(
+          tx,
+          () => setLine(tx, { poId: po.id, productId: jersey, quantity: 1 }),
+          p0001("purchase_line_not_shop_owned"),
+        );
+        await failsWith(
+          tx,
+          () =>
+            tx.query("select public.create_purchase_order_from_low_stock($1, $2, $3::uuid[])", [
+              randomUUID(),
+              supplierId,
+              [jersey],
+            ]),
+          p0001("purchase_line_not_shop_owned"),
+        );
+        await failsWith(
+          tx,
+          () =>
+            tx.query("select public.set_supplier_product($1, $2, 'JER-M', 5, true)", [
+              supplierId,
+              jersey,
+            ]),
+          p0001("purchase_line_not_shop_owned"),
+        );
+        const { rows: prefill } = await tx.query(
+          "select product_id from public.purchase_cost_defaults($1, $2::uuid[])",
+          [supplierId, [jersey]],
+        );
+        expect(prefill).toEqual([]);
+        const { rows: suggested } = await tx.query(
+          "select product_id from public.reorder_suggestions($1) where product_id = $2",
+          [supplierId, jersey],
+        );
+        expect(suggested).toEqual([]);
+      });
+    },
+  );
 
   it7("quantities never go below what was received; reducing to it completes the PO", async () => {
     await inTransaction(conn, async (tx) => {

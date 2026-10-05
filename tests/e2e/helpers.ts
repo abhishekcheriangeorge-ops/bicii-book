@@ -45,7 +45,7 @@ export function isPhone(page: Page): boolean {
 }
 
 /** A toast with this text (polite confirmations or errors), not the same words elsewhere on the page. */
-export function toast(page: Page, text: string): Locator {
+export function toast(page: Page, text: string | RegExp): Locator {
   return page
     .getByRole("list", { name: "Notifications" })
     .or(page.getByRole("alert", { name: "Errors" }))
@@ -265,4 +265,37 @@ export async function readMoney(scope: Locator, label: string): Promise<string> 
   const m = /([−-]?)\$([\d,]+\.\d{2})/.exec(text);
   if (!m) throw new Error(`No amount in the "${label}" tile: ${JSON.stringify(text)}`);
   return `${m[1] ? "-" : ""}${m[2].replaceAll(",", "")}`;
+}
+
+/**
+ * The first shop day on or after `from` that falls on `weekday` (0 =
+ * Sunday), plus 7 days on the tablet project so the phone and iPad runs
+ * never share a day (appointment and settings specs).
+ */
+export function clearDay(testInfo: TestInfo, from: string, weekday: number): string {
+  let day = from;
+  while (new Date(`${day}T00:00:00Z`).getUTCDay() !== weekday) day = shiftShopDay(day, 1);
+  return testInfo.project.name === "tablet" ? shiftShopDay(day, 7) : day;
+}
+
+/** Opens the Book appointment sheet from the page's Book button (the phone's FAB or the md+ button). */
+export async function openBookSheet(page: Page): Promise<Locator> {
+  await page
+    .getByRole("button", { name: /^(Book|Book appointment)$/ })
+    .filter({ visible: true })
+    .first()
+    .click();
+  const sheet = page.getByRole("dialog", { name: "Book appointment" });
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
+
+/** Picks a time in the open Book sheet by tapping its chip (the radio inside is visually hidden). */
+export async function pickTime(sheet: Locator, time: string): Promise<void> {
+  const name = new RegExp(`^${time}`);
+  await sheet
+    .locator("label")
+    .filter({ has: sheet.page().getByRole("radio", { name }) })
+    .click();
+  await expect(sheet.getByRole("radio", { name })).toBeChecked();
 }

@@ -4,7 +4,7 @@ import { Suspense, type ReactNode } from "react";
 
 import { ActivityList } from "@/components/domain/today/activity-list";
 import { AdjustmentList } from "@/components/domain/today/adjustment-list";
-import { AppointmentsSection } from "@/components/domain/today/appointments-section";
+import { AppointmentsSection, TodayArrivals } from "@/components/domain/today/appointments-section";
 import { DayNavigator } from "@/components/domain/today/day-navigator";
 import { ExceptionList } from "@/components/domain/today/exception-list";
 import { FinancialEntries } from "@/components/domain/today/financial-entries";
@@ -28,6 +28,7 @@ import {
   shopToday,
 } from "@/lib/dates";
 import { DbError } from "@/lib/db-errors";
+import { todaySummary } from "@/lib/domain/appointments";
 import {
   getDailySummaries,
   getFinancialEntriesOn,
@@ -79,13 +80,13 @@ async function loadDashboard(
 }
 
 /**
- * Today (SPEC §19.1; PLAN D30-D35): the shop's day on one screen. The
+ * Today (SPEC §19.1; PLAN D30-D35, D41): the shop's day on one screen. The
  * dashboard row comes first (one RPC); each list streams in its own
  * Suspense boundary. The database decides which day is today, and every
  * other read and label uses the day it returned. `?day=YYYY-MM-DD` shows
  * an earlier day, from EARLIEST_SHOP_DAY (flows, money, stock and
- * activity; no snapshot, no exceptions); `?entries=open` opens "What makes
- * up these figures".
+ * activity; no snapshot, no exceptions, no arrivals list); `?entries=open`
+ * opens "What makes up these figures".
  *
  * No loading.tsx at the group root (DESIGN "Loading"): it would commit a
  * 200 before child pages' 403s.
@@ -182,7 +183,15 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         </TodaySection>
       ) : null}
 
-      <AppointmentsSection appointments={dash.appointments} />
+      <AppointmentsSection appointments={dash.appointments}>
+        {isToday ? (
+          <Suspense fallback={<SectionSkeleton rows={3} />}>
+            <SectionLoader name="arrivals" load={() => todaySummary(supabase, day)}>
+              {(summary) => <TodayArrivals summary={summary} />}
+            </SectionLoader>
+          </Suspense>
+        ) : null}
+      </AppointmentsSection>
 
       <TodaySection
         id="today-flows"
@@ -410,7 +419,7 @@ function MoneySection({ dash, children }: { dash: TodayDashboard; children: Reac
     <TodaySection
       id="today-money"
       title="Money"
-      description="Jobs completed on this day, from each line's prices and costs when it was added."
+      description="Jobs completed and sales recorded on this day, from each line's prices and costs when it was added or sold."
     >
       <MoneyTile label="Gross sales" amount={money.grossSales} currency={c} large />
       {costs ? (
@@ -442,40 +451,32 @@ function MoneySection({ dash, children }: { dash: TodayDashboard; children: Reac
       ) : null}
       {dash.isToday ? null : (
         <p className="text-sm text-dust-500">
-          Counts jobs completed on this day. If one is reopened, it moves to the day it is completed
-          again.
+          Counts jobs completed and sales recorded on this day. If a job is reopened, it moves to
+          the day it is completed again.
         </p>
       )}
       <TileGrid>
-        {money.consignmentSales ? (
-          <MoneyTile
-            label="Consignment sales"
-            amount={money.consignmentSales.total}
-            currency={c}
-            hint={
-              money.consignmentSales.count === 1
-                ? "1 sale"
-                : `${money.consignmentSales.count} sales`
-            }
-          />
-        ) : (
-          <StatTile label="Consignment sales" value="" notTracked hint="Arrives with consignment" />
-        )}
+        <MoneyTile
+          label="Consignment sales"
+          amount={money.consignmentSales.total}
+          currency={c}
+          href={`/sales?day=${dash.day}`}
+          hint={
+            // Sales and completed jobs that used consigned stock (D44): the
+            // link opens that day's sales; jobs are under Jobs completed.
+            money.consignmentSales.count === 1
+              ? "1 sale or job with consigned items"
+              : `${money.consignmentSales.count} sales or jobs with consigned items`
+          }
+        />
         {costs ? (
-          costs.newConsignorLiability !== null ? (
-            <MoneyTile
-              label="New consignor liability"
-              amount={costs.newConsignorLiability}
-              currency={c}
-            />
-          ) : (
-            <StatTile
-              label="New consignor liability"
-              value=""
-              notTracked
-              hint="Arrives with consignment"
-            />
-          )
+          <MoneyTile
+            label="New consignor liability"
+            amount={costs.newConsignorLiability}
+            currency={c}
+            href="/consignment"
+            hint="Owed to consignors for what sold on this day"
+          />
         ) : null}
       </TileGrid>
       {children}

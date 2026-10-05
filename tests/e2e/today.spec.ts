@@ -295,7 +295,9 @@ test("Several days of history reconcile on Today", async ({ page }) => {
   expect(await readMoney(m, "Yield")).toBe(d3.yield_total);
   expect(await readMoney(m, "Cult Commons")).toBe(d3.cult_commons_share);
   expect(await readMoney(m, "BICII after Cult Commons")).toBe(d3.bicii_yield_after_cc);
-  await expect(m).toContainText("If one is reopened, it moves to the day it is completed again.");
+  await expect(m).toContainText(
+    "Counts jobs completed and sales recorded on this day. If a job is reopened, it moves to the day it is completed again.",
+  );
 
   // A past day has no snapshot and no exceptions (D31).
   await expect(page.getByRole("heading", { name: "Right now", exact: true })).toHaveCount(0);

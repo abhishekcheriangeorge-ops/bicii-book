@@ -18,7 +18,7 @@ afterEach(() => {
 
 describe("StatTile and MoneyTile", () => {
   it("reads a placeholder measure as NOT_TRACKED, the one source of that wording", () => {
-    render(<StatTile label="Scheduled" value="" notTracked hint="Arrives with appointments" />);
+    render(<StatTile label="Appointments" value="" notTracked hint="Arrives with appointments" />);
     expect(screen.getByText(NOT_TRACKED)).toHaveClass("sr-only");
     expect(NOT_TRACKED).toBe("Not tracked yet");
   });

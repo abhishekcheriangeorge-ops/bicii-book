@@ -1,6 +1,7 @@
 /**
  * Bulk-to-unique splits (SPEC §11 "bulk-to-unique with no machinery", §12,
- * §23; DATA-MODEL §7, §16; PLAN D27 SHOP-OWNED-ONLY, D28 SPLIT-COST):
+ * §23; DATA-MODEL §7, §16; PLAN D27 (changed by the owner; only shop-owned
+ * stock is split), D28 SPLIT-COST, D50 CONS-STOCK-MOVES):
  * split_unit_from_stock takes one counted item out of stock (a
  * stock_adjustment with the reason) and creates a draft unique product and
  * an available shop-owned unit at the same location, carrying the source's
@@ -40,6 +41,7 @@ import {
   splitUnit,
   unit,
 } from "./inventory-fixtures";
+import { createConsignor, intakeQuantity } from "./consignment-fixtures";
 import { failsWith, ownerMode } from "./workshop-fixtures";
 
 let conn: pg.Client;
@@ -224,11 +226,12 @@ describe.skipIf(!isolatedDatabase())("split_unit_from_stock (SPLIT-COST)", () =>
       await ownerMode(tx);
       const empty = await makeLocation(tx);
       const inactive = await makeLocation(tx, { active: false });
-      const consigned = await makeProduct(tx);
-      await tx.query("update public.products set ownership_type = 'consignment' where id = $1", [
-        consigned,
-      ]);
       await actAs(tx, ADMIN);
+      // Consigned stock comes only from an intake (D27 changed, D44): split
+      // refuses it, and its stock never moves by hand (D50).
+      const consignorId = await createConsignor(tx);
+      const consigned = (await intakeQuantity(tx, { consignorId, agreed: "10.00", quantity: 3 }))
+        .product_id;
       const cases: [Parameters<typeof splitUnit>[1], Record<string, unknown>][] = [
         [
           { sourceProductId: SOURCE, locationId: LOCATION.workshopStore },

@@ -148,6 +148,12 @@ export type UnitEditFields = {
   /** view_costs holders only. */
   cost?: string | null;
   internalNotes: string | null;
+  /**
+   * A consigned unit (D45): its price and cost are the consignment's
+   * asking price and agreed amount, changed with Edit terms on the item,
+   * so the sheet keeps them as they are and does not offer them.
+   */
+  consigned?: boolean;
 };
 
 type EditState = ActionResult<null> | null;
@@ -241,18 +247,28 @@ function EditUnitSheet({
         <Field label="Condition (shown publicly when published)" error={errors?.condition?.[0]}>
           <Textarea name="condition" rows={2} defaultValue={value("condition", unit.condition)} />
         </Field>
-        <Field
-          label="Unit sale price"
-          hint="Leave empty to sell at the product's price."
-          error={errors?.unitSalePrice?.[0]}
-        >
-          <NumberInput
-            kind="money"
-            name="unitSalePrice"
-            defaultValue={value("unitSalePrice", unit.ownSalePrice)}
-          />
-        </Field>
-        {viewCosts ? (
+        {unit.consigned ? (
+          <>
+            <input type="hidden" name="unitSalePrice" value={unit.ownSalePrice ?? ""} />
+            <p className="text-sm text-dust-700">
+              Its price and cost are the consignment&apos;s asking price and amount owed: change
+              them with Edit terms on the consignment item.
+            </p>
+          </>
+        ) : (
+          <Field
+            label="Unit sale price"
+            hint="Leave empty to sell at the product's price."
+            error={errors?.unitSalePrice?.[0]}
+          >
+            <NumberInput
+              kind="money"
+              name="unitSalePrice"
+              defaultValue={value("unitSalePrice", unit.ownSalePrice)}
+            />
+          </Field>
+        )}
+        {viewCosts && !unit.consigned ? (
           <Field
             label="Unit cost"
             hint="Staff with cost access only. Leave empty to keep the current cost."

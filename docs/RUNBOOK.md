@@ -1,7 +1,27 @@
 # BICII Admin — Runbook
 
+Owner: Abhishek Cherian George. Audience: technical operator. Last
+exercised, per section (as of 2026-10-05):
+
+- Hosted sections (hosted projects, migrations, first admin, key rotation,
+  Vercel): never; no hosted project exists.
+- Local Supabase with Docker (Supabase CLI): never exercised here; the
+  build environment has no Docker.
+- The camera scanner on phones and iPads: not exercised (no LAN device
+  test, no HTTPS dev server, no flag); `tests/e2e/scan.spec.ts` covers
+  scanning on localhost with a stubbed camera and manual entry.
+- Appointments: schedule before go-live: not run as a go-live procedure;
+  its screens are exercised by `tests/e2e/appointment-settings.spec.ts`.
+- CI: the `e2e` label exists, and PRs #2–#7 carry it, each with a
+  successful `e2e` workflow run (e.g.
+  [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521));
+  branch protection is unverified
+  ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)).
+
+Environment overview, administration and recovery: [OPERATIONS.md](OPERATIONS.md).
+
 Operational how-tos that are not part of day-to-day development. For the
-everyday local setup (the Docker-free devstack) see the README quickstart.
+everyday local setup (the Docker-free devstack) see [ENGINEERING.md](ENGINEERING.md).
 
 - [Local Supabase with Docker (Supabase CLI)](#local-supabase-with-docker-supabase-cli)
 - [Hosted Supabase projects: staging and production](#hosted-supabase-projects-staging-and-production)
@@ -9,6 +29,7 @@ everyday local setup (the Docker-free devstack) see the README quickstart.
 - [Creating the first admin in a hosted project](#creating-the-first-admin-in-a-hosted-project)
 - [Rotating keys and passwords](#rotating-keys-and-passwords)
 - [Vercel environment setup](#vercel-environment-setup)
+- [Appointments: schedule before go-live](#appointments-schedule-before-go-live)
 - [CI](#ci)
 
 The demo data is relative to the shop day (Singapore) the database was
@@ -81,7 +102,9 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    (Singapore). Generate a strong database password and store it in the
    password manager; it is needed for `supabase link` and `db push`.
 2. Authentication → Sign In / Providers: Email enabled (PLAN D10: staff use
-   email + password, no magic links). Turn **off** "Allow new users to sign
+   email + password, no magic links; staff sign-in is changing to email OTP,
+   [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md), and this
+   step must be revised when that work merges). Turn **off** "Allow new users to sign
    up" until the public site's customer sign-in ships (Phase 11); staff
    logins are created by admins through the Auth admin API, which works with
    sign-ups off. Minimum password length: 12 (what the Admin's password
@@ -276,6 +299,50 @@ and shows anything else as "Not a BICII label" without opening it. A label
 printed for another environment's public site URL is therefore foreign on
 this one (Phase 8 adds the database QR base to the accepted list,
 `src/lib/qr.ts`).
+
+## Appointments: schedule before go-live
+
+The seed's schedule is demo data. Before the shop takes real bookings
+(staff or online), an admin sets, in the app under Settings:
+
+1. **Shop hours and closures → Weekly hours.** Tap each weekday: switch
+   "Open on <day>" and enter up to four stretches (a lunch break is two).
+   A closing time of 00:00 means midnight.
+2. **Booking capacity → Edit.** The slot length (5 to 240 minutes and
+   dividing the day evenly, e.g. 15, 20, 30, 45 or 60; bookings start on
+   that grid from midnight)
+   and how many bikes the shop takes in per slot (one shared pool, PLAN
+   D2). The online booking rules (D37): minimum notice (default 120
+   minutes), how far ahead customers may book (60 days), how many upcoming
+   online bookings one customer may hold (3; staff bookings never count)
+   and the online cancellation cutoff (120 minutes before the start; after
+   it the customer calls the shop). Staff bookings ignore the online rules
+   but never the hours, closures or capacity.
+3. **Appointment types.** Name, description, duration (steps of 5
+   minutes), capacity units (at most the shop's capacity), "Public"
+   (customers can book it on the website) and Active. Types are never
+   deleted: switch one off to stop new bookings.
+
+**Closures and short days.** Settings → Shop hours and closures → Add
+closure. "Closed" closes whole days (first to last day) or, with "Only part
+of the day", a few hours of one day; "Short day" opens only the hours
+given on those days, instead of the weekly hours. A reason is required
+(staff see it; customers only see that no times are free). Deleting a
+closure asks for a reason too and is kept in the schedule history.
+
+**Existing bookings never move** (D38). Changing hours, closures, the slot
+length, the capacity or a type's length or units leaves every appointment
+already booked as it is. After a save the toast says how many upcoming
+appointments no longer fit, with a link to the first such day; each
+closure shows "N appointments affected"; the appointments day view marks
+them "Outside opening hours" or "Shop closed" and its capacity bars turn
+red over capacity. Call those customers and cancel and rebook (there is no
+reschedule and no automatic customer message in the MVP).
+
+**Fixed settings.** The shop's time zone is Singapore and its currency SGD
+(D35): no screen or RPC changes them. `shop_settings.public_site_url` is
+stored but not used yet: the QR base stays `NEXT_PUBLIC_PUBLIC_SITE_URL`
+until Phase 8 decides (D9).
 
 ## CI
 

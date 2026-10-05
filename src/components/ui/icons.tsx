@@ -75,6 +75,14 @@ export function ChevronRightIcon(props: IconProps) {
   );
 }
 
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M15 5l-7 7 7 7" />
+    </Icon>
+  );
+}
+
 export function AlertIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -162,11 +170,30 @@ export function CalendarIcon(props: IconProps) {
   );
 }
 
+export function ClockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </Icon>
+  );
+}
+
 export function TagIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M3.5 12.2V4.5a1 1 0 011-1h7.7l8.3 8.3-8.7 8.7-8.3-8.3z" />
       <path d="M8 8h.01" strokeWidth={3} />
+    </Icon>
+  );
+}
+
+/** A till receipt with a torn foot: in-store sales. */
+export function ReceiptIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5z" />
+      <path d="M9 8h6M9 11.5h6M9 15h3.5" />
     </Icon>
   );
 }

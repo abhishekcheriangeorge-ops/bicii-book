@@ -131,9 +131,12 @@ describe("hrefForRecord", () => {
     expect(hrefForRecord("inventory_unit", "u1")).toBe("/units/u1");
   });
 
-  it("has no page yet for consignment items and sales (Phase 6)", () => {
-    expect(hrefForRecord("consignment_item", "c1")).toBeNull();
-    expect(hrefForRecord("sale", "s1")).toBeNull();
+  it("opens consignment items on their Consignment page (Phase 6)", () => {
+    expect(hrefForRecord("consignment_item", "c1")).toBe("/consignment/items/c1");
+  });
+
+  it("opens sales on their Sales page (Phase 6)", () => {
+    expect(hrefForRecord("sale", "s1")).toBe("/sales/s1");
   });
 
   it("opens purchase orders in Purchasing (Phase 7)", () => {

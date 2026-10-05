@@ -2,7 +2,9 @@
  * The stock ledger and parts on jobs (SPEC §2 "Inventory ledger", §9, §10,
  * §12, §23, §25; DATA-MODEL §4, §5, §7, §16; PLAN D1, D6, D14, D15, D16,
  * D23 NEG-CONSUMPTION, D24 PART-PRICE-COST, D25 SOLD-AT-COMPLETION, D26
- * PUBLICATION-MACHINE, D27 SHOP-OWNED-ONLY). Test names follow the SPEC §23
+ * PUBLICATION-MACHINE, D27 as changed by the owner: customer-owned stock is
+ * never a job part; consigned parts are tests/db/consignment-job-parts.test.ts).
+ * Test names follow the SPEC §23
  * invariants and the TESTING.md Phase 4 rows.
  *
  * Every test that writes stock ends with assertLedgerConsistent(), which
@@ -546,7 +548,8 @@ describe("current stock is derivable from the ledger", () => {
       );
       expect(Object.fromEntries(stock.rows.map((r) => [r.product_id, r.on_hand]))).toEqual({
         [PRODUCT.roadTube]: 60,
-        [PRODUCT.bromptonTube]: 14,
+        // 15 opening, one on J-000010, two sold on Phase 6's S-000002.
+        [PRODUCT.bromptonTube]: 12,
         [PRODUCT.marathonRacer]: 6,
         [PRODUCT.colnago]: 1,
       });
@@ -717,7 +720,7 @@ describe.skipIf(!isolatedDatabase())(
 );
 
 describe.skipIf(!isolatedDatabase())(
-  "prices and ownership (PART-PRICE-COST, SHOP-OWNED-ONLY)",
+  "prices and ownership (PART-PRICE-COST, D27 changed: customer-owned never)",
   () => {
     it("refuses a part with no price or no cost; lines are never cost_pending", async () => {
       await inTx(async (tx) => {
@@ -782,38 +785,35 @@ describe.skipIf(!isolatedDatabase())(
       });
     });
 
-    it("consignment and customer-owned stock is never a job part (ownership_not_saleable)", async () => {
+    // D27 was changed by the owner (2026-10-05): consigned stock may be a
+    // job part (D44, tests/db/consignment-job-parts.test.ts); customer-owned
+    // stock never is. Consigned stock is never faked here: it exists only
+    // through create_consignment_item.
+    it("customer-owned stock is never a job part (ownership_not_saleable; D27 changed, D44)", async () => {
       await inTx(async (tx) => {
         await ownerMode(tx);
         const productId = await makeProduct(tx, { tracking: "unique" });
-        const units: string[] = [];
-        for (const [ownership, consignment] of [
-          ["customer_owned", null],
-          ["consignment", randomUUID()],
-        ] as const) {
-          const id = randomUUID();
-          await tx.query(
-            `select private.register_unit($1, $2, $3, $4, null, null, null, 100.00, null, $5)`,
-            [id, productId, LOCATION.shopFloor, ownership, consignment],
-          );
-          await tx.query(
-            `select private.record_movement($1, $2, $3, 1, 'consignment_received', null, 100.00, null, null, null, null)`,
-            [productId, id, LOCATION.shopFloor],
-          );
-          units.push(id);
-        }
+        const customerUnit = randomUUID();
+        await tx.query(
+          `select private.register_unit($1, $2, $3, 'customer_owned', null, null, null, 100.00, null, null)`,
+          [customerUnit, productId, LOCATION.shopFloor],
+        );
+        await tx.query(
+          `select private.record_movement($1, $2, $3, 1, 'stock_adjustment', 'Left with the shop', 100.00, null, null, null, null)`,
+          [productId, customerUnit, LOCATION.shopFloor],
+        );
         const quantity = await makeProduct(tx);
-        await tx.query("update public.products set ownership_type = 'consignment' where id = $1", [
-          quantity,
-        ]);
+        await tx.query(
+          "update public.products set ownership_type = 'customer_owned' where id = $1",
+          [quantity],
+        );
         await actAs(tx, ADMIN);
         const job = await newJob(tx);
-        for (const unitId of units) {
-          await failsWith(tx, () => addPart(tx, { workOrderId: job.id, productId, unitId }), {
-            code: "P0001",
-            message: "ownership_not_saleable",
-          });
-        }
+        await failsWith(
+          tx,
+          () => addPart(tx, { workOrderId: job.id, productId, unitId: customerUnit }),
+          { code: "P0001", message: "ownership_not_saleable" },
+        );
         await failsWith(tx, () => addPart(tx, { workOrderId: job.id, productId: quantity }), {
           code: "P0001",
           message: "ownership_not_saleable",

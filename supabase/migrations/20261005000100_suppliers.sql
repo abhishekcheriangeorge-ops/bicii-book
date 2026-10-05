@@ -206,6 +206,7 @@ set search_path = ''
 as $$
 declare
   product_currency char(3);
+  product_ownership public.ownership_type;
   supplier_archived timestamptz;
   result public.supplier_products;
 begin
@@ -214,12 +215,21 @@ begin
     raise exception 'supplier_id and product_id are required' using errcode = '22004';
   end if;
 
-  select p.currency into product_currency
+  select p.currency, p.ownership_type into product_currency, product_ownership
   from public.products p
   where p.id = set_supplier_product.product_id
   for no key update;
   if not found then
     raise exception 'product % not found', set_supplier_product.product_id using errcode = 'P0002';
+  end if;
+  -- Only shop-owned stock is bought from a supplier: consigned products
+  -- (Phase 6, D45) belong to their consignor and customer-owned ones to the
+  -- customer, so neither gets a supplier link.
+  if product_ownership <> 'shop_owned' then
+    raise exception using
+      errcode = 'P0001',
+      message = 'purchase_line_not_shop_owned',
+      detail = 'Only shop-owned products are bought from a supplier.';
   end if;
 
   select s.archived_at into supplier_archived

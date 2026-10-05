@@ -216,6 +216,55 @@ describe("describeEvent", () => {
     }
   });
 
+  it("D40: a job opened at check-in says so, names the appointment and links to it", () => {
+    const appointmentId = "e2000000-0000-4000-8000-000000000003";
+    expect(
+      d({
+        type: "appointment_linked",
+        payload: {
+          appointment_id: appointmentId,
+          starts_at: "2026-10-06T02:00:00Z",
+          appointment_type_name: "Service drop-off",
+          created: true,
+        },
+      }),
+    ).toEqual({
+      title: "Opened from the appointment on Tue 6 Oct 10:00 (Service drop-off)",
+      detail: null,
+      tone: "info",
+      href: `/appointments/${appointmentId}`,
+    });
+  });
+
+  it("D40: an existing job linked at check-in reads as linked, with the link", () => {
+    const appointmentId = "e2000000-0000-4000-8000-000000000007";
+    const linked = d({
+      type: "appointment_linked",
+      payload: {
+        appointment_id: appointmentId,
+        starts_at: "2026-10-06T07:30:00Z",
+        appointment_type_name: "Bike fit",
+        created: false,
+      },
+    });
+    expect(linked.title).toBe("Linked to the appointment on Tue 6 Oct 15:30 (Bike fit)");
+    expect(linked.href).toBe(`/appointments/${appointmentId}`);
+  });
+
+  it("an incomplete appointment payload still reads, without a broken link", () => {
+    expect(d({ type: "appointment_linked", payload: {} })).toEqual({
+      title: "Linked to an appointment",
+      detail: null,
+      tone: "info",
+    });
+    const opened = d({
+      type: "appointment_linked",
+      payload: { appointment_id: "not-a-uuid", starts_at: "soon", created: true },
+    });
+    expect(opened.title).toBe("Opened from an appointment");
+    expect(opened.href).toBeUndefined();
+  });
+
   it("survives a payload that is not an object", () => {
     expect(d({ type: "line_added", payload: null }).title).toBe("Added A line");
     expect(d({ type: "checked_in", payload: [1, 2] }).title).toBe("Checked in as a new job");

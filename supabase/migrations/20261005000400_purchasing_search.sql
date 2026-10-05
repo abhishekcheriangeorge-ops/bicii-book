@@ -2,15 +2,14 @@
 -- "Global staff search should quickly find ..."; DATA-MODEL.md §16
 -- staff_search; PLAN D9).
 --
--- MERGE: this definition must contain every staff_search branch on the
--- merged line. It replaces public.staff_search with this branch's latest
--- body (20261004002200_inventory_search.sql) plus two kinds. The parallel
--- track also replaces staff_search (its consignment kinds) in a 20261004…
--- migration; this 20261005… file runs after it, so on the merged line it
--- would silently drop that track's branches unless they are copied in here
--- (both the UNION ALL branches and the `known` entries). The DB test
--- "staff_search knows every SEARCH_KINDS entry" (tests/db/staff-search.test.ts)
--- fails the merge when a kind the app asks for is missing.
+-- MERGED LINE: this file runs after every 20261004… migration, so its
+-- staff_search is the final one. It carries every earlier kind, including
+-- Phase 6's `consignor`, `consignment_item` and `sale`
+-- (20261004003700_consignment_reporting.sql), plus this phase's two: both
+-- the UNION ALL branches and the `known` entries. A later replacement must
+-- do the same. The DB test "staff_search knows every SEARCH_KINDS entry"
+-- (tests/db/staff-search.test.ts) fails when a kind the app asks for is
+-- missing.
 --
 -- Adds the `supplier` and `purchase_order` kinds the way
 -- 20261004001100_staff_search.sql prescribes: a private.search_<kind>
@@ -187,9 +186,10 @@ $$;
 -- Active staff. Blank q returns nothing; kinds null means every kind and
 -- an unknown kind raises 22023; max_results is clamped to 1..100; archived
 -- true searches archived records only (customers, bikes, products, units,
--- suppliers; jobs and purchase orders are never archived). Phase 3 added
--- `work_order`; Phase 4 `product` and `inventory_unit`; Phase 7 adds
--- `supplier` and `purchase_order`.
+-- consignors, suppliers; jobs, consignment items, sales and purchase orders
+-- are never archived). Phase 3 added `work_order`; Phase 4 `product` and
+-- `inventory_unit`; Phase 6 `consignor`, `consignment_item` and `sale`;
+-- Phase 7 adds `supplier` and `purchase_order`.
 create or replace function public.staff_search(
   q text,
   kinds text[] default null,
@@ -206,7 +206,8 @@ declare
   term text := pg_catalog.left(pg_catalog.btrim(coalesce(staff_search.q, '')), 200);
   n integer := greatest(1, least(coalesce(staff_search.max_results, 20), 100));
   known constant text[] := array[
-    'customer', 'bike', 'work_order', 'product', 'inventory_unit', 'supplier', 'purchase_order'
+    'customer', 'bike', 'work_order', 'product', 'inventory_unit', 'consignor', 'consignment_item', 'sale',
+    'supplier', 'purchase_order'
   ];
 begin
   perform private.require_staff();
@@ -239,6 +240,15 @@ begin
       select * from private.search_units(term, n, coalesce(staff_search.archived, false))
       where staff_search.kinds is null or 'inventory_unit' = any (staff_search.kinds)
       union all
+      select * from private.search_consignors(term, n, coalesce(staff_search.archived, false))
+      where staff_search.kinds is null or 'consignor' = any (staff_search.kinds)
+      union all
+      select * from private.search_consignment_items(term, n, coalesce(staff_search.archived, false))
+      where staff_search.kinds is null or 'consignment_item' = any (staff_search.kinds)
+      union all
+      select * from private.search_sales(term, n, coalesce(staff_search.archived, false))
+      where staff_search.kinds is null or 'sale' = any (staff_search.kinds)
+      union all
       select * from private.search_suppliers(term, n, coalesce(staff_search.archived, false))
       where staff_search.kinds is null or 'supplier' = any (staff_search.kinds)
       union all
@@ -251,7 +261,7 @@ end;
 $$;
 
 comment on function public.staff_search(text, text[], integer, boolean) is
-  'Active staff: global search across customers, bikes, jobs, products, units, suppliers and purchase orders (later phases add kinds); exact short ID, serial, SKU, job and PO number first; archived=true searches archived records. MERGE: must contain every staff_search branch on the merged line.';
+  'Active staff: global search across customers, bikes, jobs, products, units, consignors, consignment items, sales, suppliers and purchase orders (later phases add kinds); exact short ID, serial, SKU, job, sale and PO number first; archived=true searches archived records. A later replacement must keep every kind.';
 
 revoke all on function
   private.search_suppliers(text, integer, boolean),

@@ -7,7 +7,10 @@
  *   2. Start the devstack services if they are not running (idempotent).
  *   3. Wait until a seeded login works end to end through the gateway
  *      (Auth issues a JWT, PostgREST answers my_staff_profile with it).
- *   4. Read the seed's anchor day once (the shop day `db:reset` ran, from
+ *   4. Hand the gateway URL and anon key to the workers (E2E_GATEWAY_URL,
+ *      E2E_ANON_KEY) for tests/e2e/api.ts: Playwright loads specs as
+ *      CommonJS, which cannot import scripts/devstack/config.mjs.
+ *   5. Read the seed's anchor day once (the shop day `db:reset` ran, from
  *      REPORT_JOB.todayReceived's check-in) into E2E_SEED_ANCHOR, which the
  *      Playwright workers inherit (helpers.ts seedAnchor(), anchorDay()).
  *
@@ -114,6 +117,8 @@ export default async function globalSetup() {
   }
   console.info("[e2e] devstack ready");
 
+  process.env.E2E_GATEWAY_URL = GATEWAY_URL;
+  process.env.E2E_ANON_KEY = ANON_KEY;
   process.env.E2E_SEED_ANCHOR = await readSeedAnchor(env.DATABASE_URL);
   console.info(`[e2e] seed anchor (day 0): ${process.env.E2E_SEED_ANCHOR}`);
 }

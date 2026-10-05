@@ -1,5 +1,7 @@
 # BICII Admin — Testing strategy
 
+Commands: [ENGINEERING.md](ENGINEERING.md#commands); current results: [NOW.md](../NOW.md).
+
 Maps SPEC.md §27 onto concrete harnesses. A feature is done when the tests in
 its row of PLAN.md pass in CI.
 
@@ -109,6 +111,28 @@ any status through allowed moves), `addServiceLine`, `addManualLine`,
 `failsWith` / `tryAndUndo` run a call in a savepoint so one transaction can
 check many refusals.
 
+Phase 2 helpers (`tests/db/appointment-fixtures.ts`): booking tests set
+the schedule they need as the owner inside their rolled-back transaction
+(`standardSchedule`, `setSettings`, `setHours` replaces every weekly row
+for the transaction, `addClosure`, `makeType` with a fresh name,
+`insertAppointment` for any status without the booking checks), on a clear
+Tuesday-Friday at least 21 days ahead (`futureDay`) unless the case is
+about today (`currentSlot`: today's grid slot containing `now()`, under an
+all-day custom-hours override), so the seeded settings, hours, types,
+closures (within 14 days, never covering the seed day) and appointments
+(at most 14 days ahead) never change a result; capacity on today's slot is set relative to
+`unitsUsed`. The shared data fixtures are
+`tests/fixtures/appointment-slot-cases.ts` (slot and booking-rule cases,
+fixed 2031 dates) and `tests/fixtures/appointment-transitions.ts` (the
+status machine); step 3's TypeScript mirror uses both. Check-in tests
+(`appointment-check-in.test.ts`) build their own customer, bike, type and
+appointment as the owner and call `check_in_appointment` as staff. One
+customer login is seeded (`CUSTOMER_LOGIN.chloe`, Chloe Lim, the local
+password): read-only customer checks may act as her
+(`customerClaims(CUSTOMER_LOGIN.chloe.authUserId)`); tests that change a
+customer's login or bookings link a fresh login to a fresh customer
+(`linkCustomerLogin`), never to `CUSTOMER.chloe`.
+
 Catalogue meta tests (`tests/db/meta.test.ts`) cover every future migration
 automatically: RLS enabled on every `public` table, no function in
 `public`/`private` executable by PUBLIC, security-definer functions pin
@@ -135,14 +159,10 @@ same PR.
 
 ### Devstack commands
 
-| Command | What it does |
-|---|---|
-| `npm run devstack:setup` | Download/build PostgREST, Supabase Auth, Node 24 and Supabase Storage into `~/.cache/bicii-devstack` (`BICII_DEVSTACK_CACHE`). Idempotent. |
-| `npm run db:reset` | Drop and rebuild the dev database (`PGDATABASE`, default `bicii_dev`): roles → Auth → Storage → migrations → seed. |
-| `npm run db:migrate` | Apply only pending app migrations. |
-| `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
-| `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, and restarts services that were started against a different database. |
-| `npm run devstack:env` | Write `.env.local` with the gateway URL and the local anon/service keys (what the app reads). The scripts and tests never read `.env.local`: `DATABASE_URL` / `PG*` come from the shell. |
+The devstack and database commands (`devstack:setup`, `devstack:start` /
+`stop` / `status`, `devstack:env`, `db:reset`, `db:migrate`, `db:types`)
+are described in one place:
+[ENGINEERING.md "Commands"](ENGINEERING.md#commands).
 
 ## What is tested where
 
@@ -286,6 +306,91 @@ same PR.
   390 × 844 (the page never scrolls sideways, so nothing else catches a
   figure running into the next card), that "Right now" says "Awaiting
   collection", and that a `?day=` before `EARLIEST_SHOP_DAY` shows today.
+- Phase 2 (appointments, step 3): the slot mirror's parity with SQL
+  (`appointment-slots.test.ts`): every `slotCases` case of
+  `tests/fixtures/appointment-slot-cases.ts` through `availableSlots`
+  gives exactly the slots and remaining units `tests/db/appointment-slots.test.ts`
+  asserts for `private.available_slots_at`, and every `problemCases` row
+  through `slotProblem` the same first code, with `SLOT_PROBLEM_ORDER`
+  equal to the database's order (misaligned, outside hours, closed,
+  capacity); plus `ignoreCapacity`, the reinstatement's `excludeId`, the
+  D2 `capacityForWindow` extension point, `windowUsage` (used over
+  capacity after a settings change, windows outside the hours that still
+  hold units), `openStretches` and `scheduleWarning` (closure first, grid
+  ignored, D38). Status actions (`appointment-status.test.ts`):
+  `availableActions` for every status against `MARK_STATUS`, `CANCEL` and
+  `CHECK_IN` of `tests/fixtures/appointment-transitions.ts`, no-show only
+  once started, reinstate on the appointment's own Singapore day and not
+  the next (D39), staff cancel after the start (D37), never "complete"
+  (D36); `primaryAction`, labels, tones, `isLate` at 15 minutes and the
+  history sentences ("Reinstated as arrived by …", "Cancelled online by
+  the customer", "Job J-… opened", "Linked to job J-…"). Zone helpers
+  (`appointment-time.test.ts`): Singapore wall times, '24:00' as the next
+  midnight, London and New York across daylight saving, `weekStart`
+  (Monday), HH:MM parsing including Postgres's seconds.
+- Phase 2 (appointments, step 4): `workshop-timeline.test.ts` reads
+  `appointment_linked` as "Opened from the appointment on Tue 6 Oct 10:00
+  (Service drop-off)" when check-in created the job and "Linked to the
+  appointment on …" otherwise, with `href` `/appointments/<id>` (none for a
+  malformed id, and a plain sentence for an incomplete payload, D40);
+  `job-timeline.test.tsx` renders an entry with an `href` as a link.
+  `today-appointments.test.tsx`: `AppointmentsSection`'s three D41 tiles
+  and their wording (the placeholder only for a null row) and
+  `TodayArrivals` (rows link to `/appointments/<id>` named "10:30, Hafiz
+  Rahman, Service drop-off, late", "Still expected" links to the day,
+  "N more expected later", "No more arrivals expected today" with Book).
+  `schedule.test.ts`: the weekday order, hours, capacity and cutoff
+  sentences and closure labels; `shopSettingsSchema` (slot lengths that
+  divide the day, every bound of the `shop_settings` checks, no time zone,
+  D35, D38), `shopHoursSchema` (four ordered intervals up to 24:00,
+  overlaps, an open day needs hours, a closed day keeps them),
+  `closureSchema` (whole days drop typed times, part of ONE day, short-day
+  times in order, day order, reason 1–200), `deleteClosureSchema` and
+  `appointmentTypeSchema` (5–480 minutes in steps of 5, units, names).
+
+- Phase 6 step 4 (sales screens): `sales.test.ts` (unit) runs `previewSale`
+  over the shared Cult Commons fixture table ("Cult Commons formula
+  reference implementation agrees with the fixture table") and the cases
+  1000/500 → 500/150, 140/70 → 21.00, 70/35 → 10.50, 1000/620 → 380/114
+  and a loss → 0.00 share, per-line summing and 0 as a known price and
+  cost (D1, D24); `priceWarnings` (D53: below asking for everyone, below
+  cost only with a cost, 0 read as a price); the status words; `saleRange`
+  around Singapore midnight and the 7- and 30-day spans; `readSaleRange`;
+  `refundableAmount` (D49); and the `saleSchema`, `restockSchema` and
+  `refundSchema` inputs. `ids.test.ts`, `search.test.ts` and
+  `reports.test.ts` cover `S-` → `/sales/[id]` and the sale search group;
+  `reports.test.ts` reads Today's consignment figures as numbers (a
+  missing value is 0); `auth-helpers.test.ts` lists Sales after
+  Consignment in More.
+
+- Phase 6 step 3 (consignment screens): `consignment.test.ts` mirrors D48
+  and D49 (`canViewConsignmentMoney`, `canViewSaleCosts`, `canRecordRefund`
+  for an admin, inactive staff, each single permission and a
+  `view_financial_reports`-only member, which reveals neither); the status
+  pills (a sold item says paid or not only when the outstanding is
+  visible); `outstandingLabel` / `outstandingTone` ("$300.00 owed",
+  "Settled", "Overpaid $40.50 (consignor owes the shop)", never credit,
+  D46); the bearer labels and explanations (D4); the item history titles
+  ("Sold on J-…", "Job J-… reopened", "Restocked", "Returned to consignor",
+  "N returned to consignor"); `autoAllocate` (zero, partial, exact, an
+  overpayment left unallocated, items with nothing or a negative
+  outstanding skipped, ties by date keep their order, unsold last);
+  `allocationProblems` (sum mismatch named, override needs a reason, a
+  negative outstanding caps at 0, zero and malformed amounts refused,
+  D47); `paidAtFromDate` (null for today, noon Singapore otherwise, around
+  Singapore midnight and month ends). `consignment-forms.test.ts`: an
+  agreed amount of 0 is accepted (D24) and a missing one refused; a
+  consignor or a new one is required; a single item is one at a time and
+  only it may link a bike (D51); a charge needs an explicit bearer and an
+  amount above 0 (D4); returns need a reason; settlements need positive
+  allocations and keep an override reason. `attachments.test.ts`:
+  `consignment_item` holds photos and offers Internal with Customer and
+  Public blocked by D52's sentence. `ids.test.ts` / `search.test.ts`: `C-`
+  opens `/consignment/items/{id}`; the `consignor` and `consignment_item`
+  search kinds, labels and links (sales are not a search kind until their
+  page exists). `segmented-control.test.tsx`: `value={null}` checks
+  nothing, submits nothing and keeps one Tab stop on the first enabled
+  segment.
 
 ### Database (SPEC §27.2 and §23)
 
@@ -293,16 +398,25 @@ Each invariant from SPEC §23 has at least one test, named after it:
 
 | Invariant | Test |
 |---|---|
-| Unique unit cannot be sold twice | `record_retail_sale` twice on one unit → second raises; one `sold` movement. |
+| Unique unit cannot be sold twice | `record_retail_sale` twice on one unit → second raises; one `sold` movement. Built in Phase 6 step 2: `sales.test.ts` "A unique inventory unit cannot be sold twice" (`unit_already_sold`, one `retail_sale` movement, an owner insert of a second live line → 23505 `sale_lines_unit_sells_once`, resale only after `restock_unit`) and `consignment-concurrency.test.ts` "…, concurrently". |
 | Stock-consuming line consumes once | call `add_inventory_line` with the same idempotency key twice → one line, one movement; concurrent calls (two connections) → one movement. |
 | Void creates reversal, never deletes | `void_line` → original movement intact, one `reversal` row with `reversal_of_id`; second `void_line` → no-op. |
 | Duplicate Shopify webhook has one effect | insert the same `integration_events` twice (unique violation) and call `process_shopify_order_paid` twice → one sale, one movement per line. |
 | Snapshots do not change with catalog edits | add service line, update `services.default_sale_price` → line totals unchanged. Phase 3: `update_service` price, cost and name → the earlier line keeps 180.00/20.00/"Full Service", the next one uses the new values. |
-| Sale liability ≠ settlement | sell a consigned bike → `consignor_ledger.outstanding = agreed_amount_owed`, `paid = 0`. |
-| Settlement cannot exceed owed | `record_settlement` over-allocating without override → raises; with override by `manage_consignments` → succeeds and stores reason. |
+| Sale liability ≠ settlement | sell a consigned bike → `consignor_ledger.outstanding = agreed_amount_owed`, `paid = 0`. Built in Phase 6 step 2: `settlements.test.ts` "Consignment sale liability and consignment settlement are separate facts" and "Consignment outstanding balance and partial settlements" (200.00 then 300.00 → 0.00). |
+| Settlement cannot exceed owed | `record_settlement` over-allocating without override → raises; with override by `manage_consignments` → succeeds and stores reason. Built in Phase 6 step 2: `settlements.test.ts` "Settlement allocations cannot exceed the amount owed without an explicit override" (600.00 against 500.00 → `settlement_exceeds_outstanding`; with a reason it stores the trimmed reason and leaves −100.00; an unsold item needs one too) and the concurrent case in `consignment-concurrency.test.ts`. |
 | Customers cannot read internal data | as customer A: select from `work_order_line_items`, `products`, `inventory_movements`, `customers.internal_notes` → zero rows or column permission error; `work_order_totals` returns no cost columns. |
 | completed_at ≠ collected_at | status walk → both stamped at different times; `collected` cannot precede `completed`. |
-| Booking cannot exceed capacity | fill a slot to capacity → next `book_appointment` raises; two concurrent bookings for the last unit → exactly one succeeds. Also: outside hours, inside closure → raise. |
+| Booking cannot exceed capacity | fill a slot to capacity → next `book_appointment` raises; two concurrent bookings for the last unit → exactly one succeeds. Also: outside hours, inside closure → raise. Built in Phase 2: `appointments.test.ts` "SPEC §23 Booking cannot exceed capacity (D2)" (a full window → `appointment_capacity_exceeded`; a 60-minute type blocked by either window; a 2-unit type needs two free units in every window; cancelled and no-show appointments free their units) and `appointment-concurrency.test.ts` (committed, real connections: two bookings for the last unit, a 60- and a 30-minute booking racing for their shared window, a staff and a customer booking racing, the same id twice → one row and one `booked` event, a no-show reinstated as arrived racing a booking for its freed unit, one customer booking two days at once with one booking left → exactly one each; the used units equal the capacity afterwards; and two concurrent check-ins of one appointment → one work order, the second returning `created` false with the same `work_order_id`). |
+| Bookings respect shop hours and closures (Phase 2, D38) | `appointments.test.ts`: before opening, at closing, crossing closing time, crossing a lunch gap and an inactive weekday → `appointment_outside_hours`; a whole-day and a partial closed override → `appointment_closed`; custom hours shorter and longer than the weekly hours; a start off the grid (or with seconds) → `appointment_slot_misaligned`. `appointment-slots.test.ts` runs every case of `tests/fixtures/appointment-slot-cases.ts` through `private.available_slots_at` (exact local slots and remaining units: split days, adjacent intervals, inactive Monday, closures, custom hours with and without a closure, 2-unit types, cancelled/no-show freeing units, 10:15 opening, 15-minute grid, staff mid-day, public notice and horizon, non-public and inactive types, 24:00 closing) and every `problemCases` row through `private.appointment_slot_problem` (each code and their order); `public.available_slots` as anon and as a customer returns remaining_units NULL and public types only, staff see the units. Step 3's TypeScript mirror runs the same cases. |
+| Self-booking rules (Phase 2, D37) | `appointments.test.ts`: inactive type → `appointment_type_unavailable`; staff `appointment_in_past` for an appointment that is over, but a started one may be booked, without notice or the public flag; customers (`book_my_appointment`): `appointment_too_soon`, `appointment_too_far_ahead`, a non-public type; the per-customer limit (precondition asserted; a staff booking first does not count; customer bookings up to the limit; the next → `appointment_customer_limit`; a replay is not a new booking; a staff booking still succeeds; cancelling frees a place); bike not owned / archived / unknown, archived or unknown customer. `appointment-customer-access.test.ts`: cancel cutoff (inside it, after the start, once arrived → `appointment_not_cancellable` and `can_cancel` false; outside it `can_cancel` true; the cutoff follows `customer_cancel_cutoff_minutes`), the default reason 'Cancelled by the customer' in `cancellation_reason` and the event, `cancelled_via` customer, a replay adds no event, a staff-made appointment is theirs to cancel; staff without a customers row → 42501. |
+| Booking is idempotent; snapshots never move (Phase 2, SPEC §2, D38) | `appointments.test.ts`: the same id and arguments → the same row and one `booked` event; another start, customer, type or day under the id → `appointment_conflict`; a replay after the type is deactivated (and the day closed) returns the original row with no event, and a customer's replay after the type stops being public too; changing the type's duration and units, the slot length and the hours leaves `ends_at`, `capacity_units` and the status as booked, and `ends_at` is immutable for the owner. `schedule-settings.test.ts`: slot length, hours, a closure and a type edit leave a booked appointment untouched (same `updated_at`). |
+| Appointment status machine (Phase 2, D39) | `appointments.test.ts`, table-driven from `tests/fixtures/appointment-transitions.ts`: `mark_appointment_status` for all 49 pairs (ok with one event, replay without, or the code: `appointment_use_check_in`, `appointment_use_cancel`, `appointment_transition_invalid`); `appointment_not_started` before the start; no_show → arrived on its own date refused while its place is taken (`appointment_capacity_exceeded`) and allowed once a unit frees, on another date `appointment_transition_invalid`; the trigger refuses the same off-diagonal pairs for the owner and needs a reason to cancel; `cancel_appointment` from every status; reason first (`reason_required` even for an unknown id, `reason_too_long`), P0002, `cancelled_via` staff, a replay returns the row without an event. |
+| Appointment changes leave history (Phase 2, SPEC §2, §22) | `appointments.test.ts`: booking, confirming and each bike or note change append exactly one `appointment_events` row with actor staff, auth user, reason and the request's correlation ID; replays and no-op updates append none; `details_changed` payloads carry only the changed fields; the bike changes only before check-in and stays the customer's; the customer's note freezes once the appointment is over; `appointment_events` refuse UPDATE/DELETE for the owner (`appointment_history_append_only`); mechanic2 (no permissions) books, marks, updates and cancels; customers and anon get 42501 from the staff RPCs and nobody writes the tables directly. |
+| Check-in creates or links exactly one work order (Phase 2, D36, D40) | `appointment-check-in.test.ts`: check-in creates a job with `appointment_id`, the job number, P3's `checked_in` then `appointment_linked` (created true) then the lead's assignment, actor the caller (mechanic2, no permissions); the appointment is checked_in with `checked_in_at`, `arrived_at` and the bike, its history `booked, checked_in, work_order_linked`; requested work defaults to the customer's note, blank both → `requested_work_required` with the appointment unchanged; a replay with the same or another `work_order_id` returns the same link (created false) and creates nothing; another job's id → `work_order_conflict`, appointment unchanged; `link_existing` to an open unlinked job of the same customer and bike sets only `appointment_id` and writes `appointment_linked` (created false); another customer's or bike's job, a completed / ready / collected / cancelled job or an already linked one → `appointment_work_order_mismatch`, an unknown one P0002; changing or clearing a set link → `work_order_immutable` (P3's detail); from cancelled or no_show → `appointment_transition_invalid`, from checked_in or completed → the existing link; someone else's bike or a shop bike → `appointment_bike_not_owned`, archived → `appointment_bike_archived`; nulls 22004, unknown appointment P0002; an owner insert or `private.create_work_order` with an appointment not checked in → `appointment_not_checked_in`, of another customer or bike → `appointment_work_order_mismatch`, the same on the null → value update; a second job for one appointment → 23505 `work_orders_appointment_id_key`; walk-ins unaffected; D36: completing the job completes the appointment once at the job's `completed_at` with the actor, ready and collected add nothing, a reopen and re-completion leave it, a cancelled job leaves it checked_in; customers never see `appointment_linked` in `my_work_order_timeline`; customers and anon 42501. `work-orders.test.ts` (P3's link-once case) uses real checked_in appointments. |
+| Appointment counts (Phase 2, D30, D41) | `appointment-reporting.test.ts`: `public.appointment_daily` over the seeded days (anchor −10 … +21) equals the counts the appointments table implies by scheduled shop day and current status, zero-filled, and `reporting.appointment_daily` (owner) holds exactly the days with appointments; `daily_summary`'s three appointment columns equal its booked / arrived / no_shows for every seeded day; `today_dashboard(null)` gives mechanic2 the same counts as the admin; customers (Chloe's login) and anon 42501; the range rules match `daily_summary`; booking, arriving, a no-show and a cancel today move today's counts exactly, and a no-show marked now on an older appointment counts on its own day; every checked_in or completed appointment has exactly one work order with its customer and bike. `reporting.test.ts` checks the columns against `appointment_daily` on test days with appointments; `reporting-access.test.ts` lists the RPC and the view. |
+| Seeded schedule and appointments (Phase 2) | `appointment-seed.test.ts` (reads only, days from the anchor): settings, the eight weekly rows (inactive Monday, split Saturday), the four types (one staff-only; anon sees the three public ones in order), the two closures as whole days within 14 days; each appointment's customer, bike, type snapshot, day, time, status and source as in `ids.ts`, booked ahead; nothing beyond 14 days, upcoming days Tuesday–Friday off the closures; Daniel has no upcoming booked/confirmed appointment, Chloe at most two upcoming online bookings, today at most three expected arrivals; Tan's appointment linked to J-000014 and completed at its completion, J-000014's timeline `checked_in, appointment_linked, …`; each status reached one update at a time; Chloe's login linked and `my_appointments()` exactly her upcoming rows with the D42 keys. |
+| Schedule configuration (Phase 2, D35, D38) | `schedule-settings.test.ts`: only admins call `update_shop_settings`, `set_shop_hours`, `save_closure_override`, `delete_closure_override`, `save_appointment_type` (mechanic1, mechanic2, anon → 42501); no time zone or currency parameter and an owner write of an unknown time zone → `shop_timezone_invalid`; null keeps, values round-trip (`customer_cancel_cutoff_minutes`; 10081 → `shop_settings_cancel_cutoff_check`; a slot length not dividing 1440 → `shop_settings_slot_minutes_check`); `shop_capacity_below_type` (inactive types ignored); the row cannot be deleted; `set_shop_hours` replaces atomically, rejects overlaps (also for the owner), bad JSON and weekdays (22023) and inverted intervals, a replay appends nothing; closure shapes store the documented Singapore instants; `closure_custom_hours_overlap`; `closure_invalid_range` and reason rules; is_new replays, `closure_conflict` / `appointment_type_conflict` after an edit (the edit survives), P0002 for a missing edit; deletion needs a reason and is kept in `schedule_events`; `appointment_type_capacity_too_large`, names unique ignoring case; one `schedule_events` row per real change with its actor, append-only. `appointments.test.ts`: `private.shop_timezone()` / `shop_currency()` follow the settings row. |
 | Duplicate receipt cannot double stock | Phase 7, proven at every layer. Database (`purchasing.test.ts`, `purchasing-concurrency.test.ts`): `receive_purchase` with the same idempotency key twice → the first receipt back, one receipt, one line, one movement, stock +18 once and the cost set once; the same key with other lines or on another PO → `purchase_receipt_key_reused` and nothing written; a replay that omits the cost matches the stored cost (an omitted cost is the PO line's); the same key from two connections at once → one receipt, stock added once; `purchase_receipt_by_key` returns that receipt (zero or one row). Ledger backstop: Phase 4's unique index `inventory_movements_receipt_line_once` (one `purchase_received` movement per receipt line, the only unique index on the column). App: `receive-form.test.ts` (the key is kept across reloads and refusals, an unknown outcome locks the form until the lookup, a retry reuses the key and the values, a new key only with fresh values). E2E (`purchasing.spec.ts`): a double-clicked "Receive 18 items" makes one receipt and one `Received +18` movement; a lost response (server committed, connection dropped) is found by the lookup and shown as recorded, one receipt, stock +6 once; a lost request (never sent) is checked, not recorded, and retried with the same key, one new receipt. |
 | Partial receipt adds the right stock (Phase 7) | 18 of 20 → `partially_received`, on hand +18, outstanding 2 in `reporting.purchase_order_progress`; the remaining 2 → `received` with `received_at`; quantities reduced to what arrived complete the PO; seeded PO-000002 is SPEC §14's 20/18/2, overdue (`purchasing.test.ts`, `purchasing-seed.test.ts`; E2E "18 of 20 received · 2 to come"). |
 | Over-receipt is refused and a received PO is closed (D65) | more than outstanding (summed per PO line across a receipt's locations) → `purchase_over_receipt`, nothing written; draft → `purchase_order_not_submitted`; received or cancelled → `purchase_order_closed`; two racing keys each receiving 18 of 20 → one succeeds, one over-receipt; receipts and their lines refuse UPDATE/DELETE (`purchase_receipt_immutable`). App: typing more than is to come shows "Only 2 still to come. Raise the ordered quantity on the order first." and blocks the commit; the receive page of a received PO shows the closed state with "Start a new order for this supplier" (E2E). |
@@ -311,13 +425,14 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Purchase cost visibility (D60) | `purchasing-access.test.ts`: mechanic2 reads suppliers, PO quantities, statuses and dates, but no cost column (42501 on the base tables' cost columns, 0 rows from the four `*_staff` views, no history) and writes nothing; mechanic1 (view_costs) reads costs and history but writes nothing; a manage_purchasing-only holder reads purchase costs and writes, gets the `purchase_cost_defaults` prefill only for an orderable product (a unique, consigned, customer-owned, inactive or archived product's id returns no row), and the Phase 3/4/5 cost surfaces stay closed to them (`products.default_direct_cost`, `product_costs`, `inventory_unit_costs`, `inventory_movement_costs`, `inventory_movements.unit_cost_snapshot`, `services_staff`, `work_order_line_items_staff`, `work_order_totals_staff`, `work_order_yield`, `financial_lines`, the money in `daily_summary` / `today_dashboard`). E2E: mechanic2's PO page has no "$", no Totals or History, no Receive link; the receive and reorder routes are a real 403. |
 | Purchase history is append-only (Phase 7) | every PO change appends one `purchase_order_events` row with actor, correlation ID and reason (cancel and line changes after submission need one); replays append none; UPDATE/DELETE refused for the owner too (`purchase_order_history_append_only`). |
 | Reorder suggestions (D66) | `purchasing-reorder.test.ts`: `suggested_reorder_quantity` = max(2 × reorder point − on hand − on order, 0); `reorder_suggestions` lists `reporting.low_stock` only, on order counts submitted and partially received POs (never drafts), names drafts holding the product, carries no cost; `create_purchase_order_from_low_stock` makes one draft, a 0 suggestion ordered at 1, cost = supplier last cost, else product cost (0 included), else 0, replay by id adds nothing; manage_purchasing only. E2E: after receiving 18 of 20 and using 1, the product is pre-ticked with on order 2 and suggestion 21, and the draft has it × 21 at $12.50. |
+| Consigned stock is never purchased (Phase 7 integration with Phase 6, D45, D62) | `purchasing.test.ts` "Phase 6's consigned stock is never purchased": the seeded consignment-owned jerseys (counted, active, in stock) are refused as a PO line, in `create_purchase_order_from_low_stock` and as a supplier link (`purchase_line_not_shop_owned`), and `purchase_cost_defaults` and `reorder_suggestions` return no row for them. |
 | Manual adjustment records actor/time/reason | `adjust_stock` without reason → raises; with reason → row has `created_by`, `reason`. |
 | Public QR exposes only published | `public_items` as anon: draft/internal rows absent; public row shows no cost; sold unique shows `sold`. Built in Phase 4: `inventory-publication.test.ts` (row below). |
 | Archived entities stay referenceable | archive a service used on a historical job → job line still joins. Phase 3: the service, the job's bike and its customer archived → the line still joins the service and the job its bike and customer; the archived service is refused for new lines. |
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
-| RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. Phase 3: a signed-in customer reads nothing of their own job (job, assignments, events, lines, line and totals views, services, categories, rates) and cannot call the workshop RPCs (42501); their projection is tested in `workshop-customer-access.test.ts` (row below). |
+| RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. Phase 3: a signed-in customer reads nothing of their own job (job, assignments, events, lines, line and totals views, services, categories, rates) and cannot call the workshop RPCs (42501); their projection is tested in `workshop-customer-access.test.ts` (row below). Phase 2 (`appointment-customer-access.test.ts`): a signed-in customer with their own booking reads zero rows from `appointments`, `appointment_events`, `appointment_types`, `shop_hours`, `closure_overrides`, `shop_settings` and `schedule_events`; `my_appointments()` returns only their own upcoming rows soonest first and `my_appointments(true)` the past ones after them, latest first, with exactly the `my_appointment` keys (D42: never `internal_note`, `cancellation_reason`, capacity units, source or actors); after the bike is archived or transferred (D12) its fields are NULL for them; `book_my_appointment` books for themselves only (source customer, their login), another customer's or an unknown bike → `appointment_bike_not_owned` with a neutral detail; `cancel_my_appointment` on someone else's id → NULL and nothing changes. |
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
 | Stable physical identity | bike short IDs are server-assigned `B-######`, increasing, unique, never client-supplied (42501) and immutable (`bike_short_id_immutable`). |
 | Storage enforces visibility (SPEC §8) | `media-internal`: anon, customers and inactive staff read/write nothing, active staff read and add; `media-public`: only active staff read or list it through the API, only staff add; nobody overwrites; staff delete only objects no attachment points at (`media-storage.test.ts`); live signed-upload round trip with anon download refused, a bare Storage remove of a recorded photo refused, `delete_attachment` replay is `[]` (`stack.smoke.test.ts`). |
@@ -325,17 +440,18 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Lists and search name records alike | `customerLabel` (TypeScript, used by table-backed lists) equals `private.customer_label` for every fallback case, and `bikeTitle`/`bikeSubtitle` equal `staff_search`'s title and subtitle for every seeded bike (`display-parity.test.ts`). |
 | Attachments describe real objects | `record_attachment` rejects a path that is not `{entity_type}/{entity_id}/{id}.{ext}`, a missing object, the wrong bucket, a non-photo, an unknown entity; replay-safe; delete needs a reason and is kept in `attachment_events`; an undecoded original (no dimensions) is never public; `attachment_stray_objects` lists only what no row points at and is old enough (`attachments.test.ts`). |
 | Anonymous cannot read costs/notes | every table in the RLS matrix: anon select returns 0 rows or is denied. |
+| Anonymous sees public appointment types only (PLAN Phase 2, D37) | `appointment-customer-access.test.ts`: as anon, `public_appointment_types()` lists active public types only, with exactly `id, name, description, duration_minutes` (no capacity units); `public_shop_hours()` the active weekly rows in order; `available_slots` works for a public type and is empty for a non-public one; every staff, admin and my_* appointment RPC and every appointment and schedule table → 42501. |
 | Mechanic permission boundaries | staff without `view_costs` cannot select cost columns; without `adjust_stock` cannot call `adjust_stock`; admin can. Phase 3: mechanic2 `select cost_total` / `unit_direct_cost_snapshot` / `cult_commons_share` / `*` on `work_order_line_items` → 42501, `work_order_line_items_staff` and `work_order_totals_staff` → 0 rows, `work_order_totals` → sale columns only; mechanic1 sees costs, yield and Cult Commons. |
-| Consignment sale yields correctly | $1,000 sale, $500 owed → yield 500, CC 150. |
+| Consignment sale yields correctly | $1,000 sale, $500 owed → yield 500, CC 150. Built in Phase 6 step 2: `sales.test.ts` "Consignment sale creates correct liability and yield" (cost 500.00, yield 500.00, CC 150.00, payout 500.00, liability 500.00, item sold with one active→sold event, no settlement written; a 120.00 shop charge → 620.00 / 380.00 / 114.00; a 45.00 consignor charge leaves the line and lowers owed) and the seeded S-000003 in `consignment-reporting.test.ts`. |
 | Cult Commons rate snapshot | insert a new rate effective tomorrow; lines today use 0.30, lines after use the new rate; old lines unchanged. Phase 3 (`work-order-lines.test.ts`): a rate scheduled for tomorrow leaves today's lines at 0.30; an owner-inserted 0.25 rate effective now gives the next line 0.25 while the earlier line keeps 0.30. |
 | Cult Commons is 30% of positive yield after direct costs (SPEC §10, D1) | every row of `tests/fixtures/cult-commons.ts` through `add_manual_line` equals the generated columns (rates other than 0.30 through an owner-inserted rate row), and both job fixtures equal `work_order_totals_staff` (the D1 job: 180.00, not 171.00); the same table runs through `src/lib/cult-commons.ts` in the unit project. |
 | Cult Commons rates are effective-dated and append-only (D21) | `workshop-catalog.test.ts`: the base 0.3000 row from 1970 ships with the migration; `cult_commons_rate_at` at, just before and before any rate (`cult_commons_rate_missing`); UPDATE/DELETE refused for the owner too; schedule/cancel admin only (view_costs is not enough), never backdated (`rate_backdated`), duplicate start 23505; cancelling a future rate restores the previous one, replays, frees its start time; a rate in effect cannot be cancelled (`cult_commons_rate_in_effect`), not even by the owner, and nobody un-cancels. |
 | Services' costs are gated (SPEC §4.2, D14) | mechanic2: `select default_direct_cost` / `select *` from `services` → 42501, `services_staff` → 0 rows; mechanic1 and admin read costs; create/update/archive need manage_inventory; a cost needs view_costs (null on update keeps it); a manage_inventory holder without view_costs making `update_service` fail a check (negative price, blank or long name, long description) gets 23514 with the constraint and no DETAIL, never the stored cost; replay by id, `service_conflict`, `category_kind_mismatch`, active-name uniqueness and reuse after archive; categories: staff read, manage_inventory writes. |
-| Work order status machine (D15, D16) | `work-orders.test.ts`: `private.work_order_transition_rule` equals `transitionRule` (src/lib/workshop.ts) for all 121 pairs; `set_work_order_status` accepts exactly the allowed 110 off-diagonal pairs (a fresh job driven to each from-state, each move tried in a rolled-back savepoint) and refuses the rest with `work_order_transition_invalid`; reason-required moves refuse a blank note; the trigger alone (the owner's direct UPDATE, which the RPC's own checks never reach) refuses the same 110 pairs the same way and a reopen or cancel without `private.set_change_reason` (`reason_required`); the 11 same-status calls are replay no-ops (row unchanged, no event); reopen needs a reason, clears completed_at/ready_for_collection_at, keeps started_at and the earlier `completed` event; cancel needs a reason and no live line (`work_order_has_lines`, also for the owner); stamps, number, customer, bike, check-in time and lead are immutable without the proper path (`work_order_immutable`); `appointment_id` is linked at most once (Phase 2 extension point: null → a value succeeds once with no event and nothing else changed, leaving it equal is a no-op, another value or null → `work_order_immutable`, also when `private.create_work_order` stored it at check-in); backwards `status_changed_at` is 22023. |
+| Work order status machine (D15, D16) | `work-orders.test.ts`: `private.work_order_transition_rule` equals `transitionRule` (src/lib/workshop.ts) for all 121 pairs; `set_work_order_status` accepts exactly the allowed 110 off-diagonal pairs (a fresh job driven to each from-state, each move tried in a rolled-back savepoint) and refuses the rest with `work_order_transition_invalid`; reason-required moves refuse a blank note; the trigger alone (the owner's direct UPDATE, which the RPC's own checks never reach) refuses the same 110 pairs the same way and a reopen or cancel without `private.set_change_reason` (`reason_required`); the 11 same-status calls are replay no-ops (row unchanged, no event); reopen needs a reason, clears completed_at/ready_for_collection_at, keeps started_at and the earlier `completed` event; cancel needs a reason and no live line (`work_order_has_lines`, also for the owner); stamps, number, customer, bike, check-in time and lead are immutable without the proper path (`work_order_immutable`); `appointment_id` is linked at most once (D40, with real checked_in appointments: null → a value succeeds once with nothing else changed and exactly one `appointment_linked` event (created false), leaving it equal is a no-op, another appointment, a random id or null → `work_order_immutable`, also when `private.create_work_order` stored it at check-in with `checked_in` then `appointment_linked` (created true)); backwards `status_changed_at` is 22023. |
 | Check-in is atomic and replay-safe (SPEC §2, §7.1) | `create_work_order` writes the job (J-######, increasing), `checked_in`, assignment and `line_added` events in that order with actor, auth user and the request's correlation ID; a bad service line rolls everything back and the burned number is never reused; replay by id returns the same row with no new event, line or assignment, even after the bike changed hands, the customer was archived and the job completed (and burns no number); another bike under the same id → `work_order_conflict`; archived customer/bike, D18 `bike_owner_mismatch` (shop bikes accepted), blank requested work, customers and inactive staff refused; no direct writes. |
 | Timeline events carry no costs (SPEC §7.3, §4.2) | one event per action with its documented payload; no-ops write nothing; `add_work_order_note` replays on its note id (same event back, `note_conflict` on another job); `set_approval_flag` with a null note keeps the stored note, '' clears it; after a full scenario with a manual line costing 62.00 (sold at 95.00), a recursive walk of every payload finds no key matching /cost\|yield\|cult\|commons\|rate/i and no value equal to 62, while 95 appears; `work_order_events` refuses UPDATE/DELETE for the owner (`work_order_history_append_only`); `work_order_timeline` names actors and assignment subjects, newest first, clamps max_rows to 1..2000. |
 | Assignments (D22) | one active lead per job; a new lead closes the previous lead's row (not demoted); additional → lead switch; replay no-op; unassign returns null on replay; `staff_inactive`; `work_order_closed` on collected/cancelled jobs; `lead_mechanic_id` equals the active lead after every operation; rows are immutable except closing once (`assignment_immutable`). |
-| Job photos are never public (D19) | `record_attachment` on a job writes `photo_added`; `delete_attachment` writes `photo_removed` with the reason; unknown job P0002; `product` and `inventory_unit` accepted from Phase 4 (unknown → P0002), `consignment_item` still unsupported; public via `record_attachment` or `set_attachment_visibility` → `attachment_work_order_never_public`; CHECK `attachments_work_order_never_public` exists. |
+| Job photos are never public (D19) | `record_attachment` on a job writes `photo_added`; `delete_attachment` writes `photo_removed` with the reason; unknown job P0002; `product` and `inventory_unit` accepted from Phase 4 and `consignment_item` from Phase 6 (unknown → P0002); public via `record_attachment` or `set_attachment_visibility` → `attachment_work_order_never_public`; CHECK `attachments_work_order_never_public` exists. |
 | Lines (D14, D15) | `work-order-lines.test.ts`: sale-price overrides by anyone, cost overrides only with view_costs (42501); a manual line with no cost (mechanic2's always, an admin's left empty) is `cost_pending` with cost 0 while one with cost 0 entered is not, `work_order_totals_staff.cost_pending_count` counts the live ones and drops a voided one once it is re-added with its cost, the flag is immutable for the owner and the CHECK keeps it to costless manual lines; mechanic2's bad quantity or price on `add_service_line` / `add_manual_line` / `create_work_order` services gets 23514 with the constraint and no DETAIL (the service's cost never appears); inactive/archived service `service_unavailable`; quantity 0/10000/negative price 23514, NaN quantity refused, overflowing totals 22003; lines locked once completed (`work_order_locked` for a new add and for void) and unlocked after reopen; replays of add_* after completion return the original id with no new event; void needs a reason, keeps the row, replays without a second event and leaves the totals; owner edits, un-voids and deletes → `line_immutable`; Phase 4: voiding an inventory line writes its linked reversal and restores stock (`line_type_unsupported` is gone); same line id on another job or type → `line_conflict`; line and service RPCs return ids only. |
 | Workshop concurrency (SPEC §25, D18, D22) | `workshop-concurrency.test.ts` (committed, real connections): same-id check-ins → one job, one `checked_in`; a check-in waiting on a bike being transferred fails with `bike_owner_mismatch`; a transfer is still pending (and waiting on a lock in `pg_stat_activity`) while a check-in holds the bike, and succeeds once it commits; two leads at once → one active lead mirrored on the job; a line racing completion is either before `completed_at` or refused with `work_order_locked` (both orders and a free race); same line id twice → one line, one event; two collections → one `collected`; two voids → one `line_voided`. |
 | Customer job projection (SPEC §4.2, §23; D8, D17, D19) | `workshop-customer-access.test.ts`, on the seeded jobs: a signed-in customer reads 0 rows from `work_orders`, `work_order_assignments`, `work_order_events`, `work_order_line_items`, `services`, `categories`, `cult_commons_rates`, `work_order_totals` and the three `_staff` views; `my_work_orders` returns exactly their non-cancelled jobs newest first (Tan: J-000001, not the cancelled J-000008) with exactly the documented keys and the coarse status (Priya's diagnosing J-000009 reads `received`, its voided line out of the total); `private.customer_job_status` maps all 11 statuses; `my_work_order_lines` has exactly description, quantity, unit price, total, currency and id, live lines only; `my_work_order_timeline` is check-in plus customer-status changes only (received → diagnosing, notes, approvals, assignments, lines and in_progress ↔ paused add nothing; completing and reopening do) plus customer photos still on the job (internal, re-hidden and deleted ones absent); `my_work_order_attachments` never internal; cancelled jobs and another customer's job return nothing; D17: after a transfer the previous owner keeps the job and the new owner does not see it (also on the seeded Bianchi sale), a job on a bike archived afterwards is still listed; staff without a customers row and archived customers get nothing; anon is refused (42501). |
@@ -344,7 +460,24 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Stock-consuming line consumes once (Phase 4) | `inventory-ledger.test.ts` "a stock-consuming work-order line cannot consume inventory twice": a replay of `add_inventory_line` → one line, one `job_consumption`, stock decremented once, `replayed = true`, also after completion; the same line id with other arguments or on another job → `line_conflict`; concurrent (committed) for a quantity part and a unique unit → one line and one movement, the second call `replayed = true`. |
 | Void creates reversal, never deletes (Phase 4) | `inventory-ledger.test.ts`: original intact, one `reversal` with `reversal_of_id`, stock restored, `stock_reversed` and `line_voided` once each, second void a no-op, two concurrent voids one reversal; "voiding is never blocked by publication rules" (photo removed and price cleared after the sale, then reopen and void → unit available, product public). `work-order-lines.test.ts` proves the same through Phase 3's void path. |
 | Unique unit cannot be consumed or sold twice (Phase 4) | `inventory-ledger.test.ts`: a unit on a line, written off or held → `unit_not_available`; one unit on two jobs at once → exactly one succeeds; ledger sum per unit in {0, 1}; owner forgeries (a second +1, a location change without a movement, +1/−1 across locations for a sold unit, a linked bike that does not point back, an in-stock unit whose bike a customer owns) → `unit_ledger_inconsistent` at `set constraints all immediate`. Every ledger test ends with `assertLedgerConsistent`. |
-| Parts on jobs (D23-D25, D27, D15, D16) | `inventory-ledger.test.ts`: consumption may go negative and shows in `low_stock` with `negative_locations` (also when the total stays positive), manual changes never go below zero; `part_price_missing`, `part_cost_missing`, the default price is `private.selling_price` (unit over product), an override wins, `cost_pending` false; customer-owned and consigned stock → `ownership_not_saleable`; held on add, available after a void, sold at completion with `sold_at = completed_at` (cause `job_completed`); adds and voids on completed or ready jobs → `work_order_locked`; complete → reopen → void (held, no movement, product stays sold, then reversal and public); complete → reopen → re-complete (sold again, one consumption); complete → `transfer_bike_ownership` to the buyer → reopen refused with `bike_with_customer` (unit stays sold, `sold_at` kept, product sold), after the bike returns to the shop reopen → void works (D29); `void_line` on a unit whose bike has a customer (forged) → `bike_with_customer`; cancel with a live part → `work_order_has_lines`, after the void it succeeds; committed races: add vs complete, add vs cancel, two jobs selling a product's last two units at once → `sold`. |
+| Parts on jobs (D23-D25, D27, D15, D16) | `inventory-ledger.test.ts`: consumption may go negative and shows in `low_stock` with `negative_locations` (also when the total stays positive), manual changes never go below zero; `part_price_missing`, `part_cost_missing`, the default price is `private.selling_price` (unit over product), an override wins, `cost_pending` false; customer-owned stock → `ownership_not_saleable` ("customer-owned stock is never a job part"; consigned parts are `consignment-job-parts.test.ts` since the owner's D27 change); held on add, available after a void, sold at completion with `sold_at = completed_at` (cause `job_completed`); adds and voids on completed or ready jobs → `work_order_locked`; complete → reopen → void (held, no movement, product stays sold, then reversal and public); complete → reopen → re-complete (sold again, one consumption); complete → `transfer_bike_ownership` to the buyer → reopen refused with `bike_with_customer` (unit stays sold, `sold_at` kept, product sold), after the bike returns to the shop reopen → void works (D29); `void_line` on a unit whose bike has a customer (forged) → `bike_with_customer`; cancel with a live part → `work_order_has_lines`, after the void it succeeds; committed races: add vs complete, add vs cancel, two jobs selling a product's last two units at once → `sold`. |
+| A consigned unit cannot exist without its consignment item (Phase 6, D9, D45, D50) | `consignment.test.ts`: a unique intake creates a `C-` item, an available consigned `U-` unit (cost = agreed, price = asking), a draft consignment product and one `consignment_received` +1 movement (item, `request_id`, cost snapshot = agreed) and one `received` event; quantity intake (+6, a second item reuses the product); validation (`product_not_consignment`, `consignment_unique_quantity_one`, `consignment_quantity_invalid`, `consignment_tracking_mismatch`, `consignment_received_in_future`, `consignment_product_required`, `consignor_archived`, P0002, 23514 for negative and NaN amounts, 22004, mechanic2 42501); D24: 0 agreed and asking stored as 0; a replayed intake ("500" then "500.00") → one item, unit and movement, other terms → `consignment_item_conflict`, a replay after the consignor is archived returns the item; review fix "intake with a new consignor: one transaction": an intake with `new_consignor` refused (`location_inactive`) leaves no consignor, the retry with the edited name stores the edited name, a double tap returns the same item, another new consignor under the same item id is `consignment_item_conflict`, and an existing consignor with that id and other details is `consignor_conflict` (the same details, email in any case, are accepted); owner inserts fail `inventory_units_consignment_shape`, `inventory_units_consignment_item_ownership` and the deferred FK; ownership and item are immutable. |
+| Consigned stock moves only by its own paths (D50, D45) | `consignment.test.ts`: after two items on one product, a job part, a partial return and a transfer keep Σ on-hand = Σ `remaining_qty`; `adjust_stock` (+, −, damaged), an owner `purchase_received` and `create_unique_unit` → `consignment_stock_adjust_blocked`; `write_off_unit` → `consignment_unit_write_off_blocked`; `product_ownership_immutable`; `inventory-split.test.ts` refuses splitting an intake-created product (`ownership_not_saleable`). |
+| One selling price (D45) | `consignment.test.ts`: a consigned unit's `private.selling_price` = its asking price before and after `update_consignment_terms`, and `reporting.public_items` shows the same after publishing; a quantity product returns the older item's price, then the newer one's after the older is returned; shop-owned prices unchanged. |
+| Terms, charges and history (D4, D45) | `consignment.test.ts`: a new agreed amount needs a reason and writes `terms_changed` with from/to; the unit's cost and price follow; `consignment_item_not_active` after a return; `charge_bearer_required`, `shop_charge_unique_only`, `shop_charge_unit_not_available` while the unit is on a job (add and void), a consignor charge on a sold item, replay by id and `consignment_charge_conflict`, void needs a reason and is idempotent, no other update or delete (`consignment_charges_immutable`), `charge_added` / `charge_voided` events; item identity, short ID and history are immutable. |
+| Consignors (D47, D48) | `consignment.test.ts`: mechanic2 cannot insert; a `manage_consignments`-only member can, and archives one with no active item by a plain UPDATE; `consignor_has_open_items`; `payout_details` 42501; 23505 `consignors_customer_id_key`; `customer_archived`; `consignors_display_name_check`. |
+| Agreement photos are internal only (D52) | `consignment.test.ts`: internal works on `consignment_item`; customer or public → `attachment_consignment_internal_only` from `record_attachment` and `set_attachment_visibility`; an owner update with triggers off fails the CHECK; D13 and D19 still hold. |
+| Consigned bikes (D51, D29) | `consignment.test.ts` "a consigned bike links a shop bike record both ways; a customer's, archived or already linked bike is refused": link both ways and `bike_id` in the `received` payload; `bike_has_owner`, `bike_archived`, `bike_already_linked`, P0002, `consignment_bike_requires_unique`; `bike_in_stock` while in stock; after a return the link stays, the bike can go to the consignor, and the same record is refused again (RISKS R-020). |
+| Partial returns are recorded once (D50) | `consignment.test.ts`: a unique return writes one `consignment_returned` −1 with its `request_id`, unit `returned_to_consignor`, item `returned` with date and reason, `stock_returned` and `status_changed` events, product `archived`; replay no-op; `consignment_item_not_active`, `consignment_return_conflict`, `reason_required`; 2 of 6 replayed → one movement and event, remaining and on-hand 4, item active; `consignment_return_quantity_invalid`, 22004 without a location, `insufficient_stock` at the location; a unit on a job → `unit_not_available` until its line is voided. |
+| Consigned job parts (D44, the owner's D27 change; D1, D4, D6/D25, D24) | `consignment-job-parts.test.ts`: a consigned unit is held on add with cost = payout = agreed, item active and nothing owed; completion sells unit and item (`status_changed` with the job context), liability 500.00, line 1000.00 / 500.00 / 500.00 / CC 150.00, BICII after CC 350.00; a 120.00 shop charge → cost 620.00, yield 380.00, CC 114.00, a consignor charge changes nothing; a loss line has CC 0.00; reopen → held, active, liability 0.00; re-completion → 500.00 once; void on the open job → a linked reversal carrying the item, unit available, item active; replayed add → one movement; quantity parts FIFO across two consignors at each item's asking price, an override wins, `consignment_quantity_unavailable`, `insufficient_stock` (no negative consigned stock); customer-owned unit and product refused by `add_inventory_line` and the backstop trigger; `line_consignment_mismatch`; `line_immutable`; D24 zeros accepted, not `cost_pending` (RISKS R-006). Review fixes: a part at a location where the only item with enough stock is elsewhere is `consignment_quantity_unavailable` (D54); a completed job whose consigned part's consignor was settled and archived is not reopened (`consignor_archived`; the job stays completed and the item sold) until the consignor is unarchived (D47). |
+| Consignment access (SPEC §23 "Customers cannot read internal notes, costs, yield, consignor or Cult Commons data"; D48, D30) | `consignment-access.test.ts`: a linked customer (also the consignor) reads 0 rows from the four tables and gets 42501 from the five RPCs and the position view; anon has no privilege; mechanic2 reads consignors, items and a line's `consignment_item_id` but gets 42501 on `payout_details`, `agreed_amount_owed`, `request_fingerprint` and `consignor_payout_snapshot`, and 0 charges, events and `work_order_line_items_staff` rows; `can_view_sale_costs` / `can_view_consignment_money` are true/true for mechanic1, false/true for a `manage_consignments`-only member, false/false for `view_financial_reports`-only and mechanic2, with charges and history visible exactly when the second is true; view_costs cannot read payout details. |
+| Consignment concurrency (SPEC §25; D44, D50) | `consignment-concurrency.test.ts` (committed, real connections; each case proves the second call waits on a lock in `pg_stat_activity`): a replayed intake → one item, unit, movement and event; a replayed partial return → one movement and one `stock_returned`; one consigned unit on two jobs → one wins (`unit_not_available`); a job part racing a return, either way round → exactly one succeeds; two completions → one liability and one `status_changed`; a shop-owned part waits on an `adjust_stock` of the same product (shared stock lock). Step 2: a sale of one unit on two connections → one sale; the last quantity → one sale, the other `insufficient_stock`; a replayed sale id → one sale; a sale racing a return and a sale racing a job part of the same unit → exactly one succeeds; two 300.00 settlements against 500.00 owed → the second `settlement_exceeds_outstanding`; a replayed settlement id → one settlement. Review fixes: two refunds of one sale whose sum exceeds its total → the second waits on the sale row and is `refund_exceeds_sale` (refunded ≤ total); a replayed refund id → one row; two restocks of one sale line → one `return` movement; a restock racing a new sale of the same unit → the sale waits and sells the restocked unit, one live line. |
+| Each consignor's stock where it is (D54, the Phase 6 review) | `consignment-locations.test.ts` (per-file clone), two consignors' items of one product, the older at the Workshop store and the newer on the Shop floor: `saleable_stock` offers each only where its stock is (10 offered against 10, never 20); a sale on the Shop floor with no item named is the newer consignor's at their price and payout, naming the older there is `consignment_quantity_unavailable`; a job part draws FIFO among the items at its location; a transfer moves the oldest item with the whole quantity at the source and both rows name it, then a sale there takes it, and a quantity no single consignor has there is `consignment_quantity_unavailable`; a return gives back only that consignor's stock at that location (by default all of it) and never another's; a consigned unit's transfer takes its item; an owner-inserted consigned movement without an item is `movement_invalid`; after every case the items' on-hand sums to the product's at every location and no movement lacks its item. |
+| In-store sales (Phase 6 step 2; D9, D24, D26, D45, D48, D53) | `sales.test.ts` (per-file clone): a shop-owned unit sale (an `S-` number, price = `selling_price`, cost and generated totals, one linked `retail_sale` −1, the unit `sold` with `sold_sale_line_id` and `sold_at = recognized_at`, a public unique product → `sold`, `shopify_line_item_id` immutable); quantity sales (on-hand drops, `insufficient_stock` here and at another location, `sale_product_is_unique`, `ownership_not_saleable`, `product_inactive`, `sale_price_required`, an override supplying it, `sale_cost_missing`); D24: price 0 and cost 0 snapshot as 0; D45 FIFO across two consignors (oldest that covers it at its own price = `selling_price`, a named item at its own price, `consignment_quantity_unavailable` when no single item covers the line, `consignment_item_not_active`); a partly sold, partly returned item stays `sold` either way round; "Historical line price/cost/yield snapshots do not change with catalog edits" (product price and cost, new terms, a rate from tomorrow); a backdated sale takes the rate then in force; idempotency ("1000", 1000, "1000.00" one request; replay after the customer is archived and after the unit was sold by it; `sale_conflict`); validation (`sale_lines_required`, `sale_too_many_lines`, `sale_duplicate_unit`, `sale_recognized_in_future`, NaN 23514, malformed 22P02, negative price 23514, `sale_line_invalid`, `sale_quantity_invalid`, 22004, P0002); mechanic2 sells, a customer and anon 42501; immutability. Review fixes: "when a sale may be dated (D55)": mechanic2's sale of a consigned unit dated 400 days back, or an hour before its intake, is `sale_before_stock` and leaves the item active, at the intake instant it is recorded; a consigned quantity line (named or FIFO) before its item's intake is refused; a restocked unit cannot be sold again before its restock, while a shop unit registered now may still be sold two days back; mechanic2 cannot put a `shopify_line_item_id` on an in-store sale (quantity or unit → `sale_line_invalid`, no line stored). |
+| Restocks and refunds (Phase 6 step 2; D7, D29, D44, D46, D49) | `sales.test.ts`: `restock_unit` needs `adjust_stock` (mechanic2 42501) and a reason; a `return` +1 movement linked by `sale_line_id` beside the line's `retail_sale`; the unit available at the chosen location, the product sold → public, the line restocked, the sale untouched; a replay writes nothing; "A delayed restock never restocks a later sale"; `restock_line_mismatch` (another unit's line, a unit sold by a job); `unit_not_sold`; a consigned unit also needs `manage_consignments`, then the item is active again with the reason and liability 0.00 and sells again; `bike_with_customer`; review fix "an archived consignor (D47)": a restock of a consigned unit whose consignor was settled and archived is `consignor_archived` (item and unit stay sold) and goes through after unarchiving. "Refunds are financial only (D7, D49)": partially refunded then refunded, movements and units untouched, `refund_exceeds_sale`, reason required, mechanic1, mechanic2 and a `view_financial_reports`-only member 42501, replay and `sale_refund_conflict`. |
+| Settlements and the ledgers (Phase 6 step 2; D4, D44, D46, D47) | `settlements.test.ts` (per-file clone): separate facts; partial settlements; consignor charges reduce owed and voiding one restores it; the override rule; a consigned job part's liability settled the same way and removed by a reopen (overpaid) until re-completion; validation codes; mechanic1 and mechanic2 42501, a `manage_consignments`-only member records and reverses; `consignor_archived`; replay ("200" vs "200.00", allocations reordered, after the outstanding changed, `settlement_conflict`; NULL `paid_at` records now() and a NULL replay matches); reversal (paid drops, rows stay, replay, `settlement_already_reversed`, `settlement_reversal_conflict`, reason rules) and `settlement_immutable`; D46 (a restock after a settlement → −500.00, a resale → 0.00); "Owed, paid and outstanding are derived, never stored" (no base-table column of those names); consignor ledger = Σ item ledgers; archiving (`consignor_has_balance` owed or overpaid; at 0 a `manage_consignments`-only member archives and the ledgers and old lines still join: "Archived entities remain available to historical references"). |
+| Sales and consignment in the reports (Phase 6 step 2; D1, D30, D44, D46, D48, D49) | `consignment-reporting.test.ts` (reads the seed; one block on a per-file clone): "Cult Commons is 30% of positive yield after the consignor payout": each seeded sale's `financial_lines` entry equals `EXPECTED_SALE` on its shop day (S-000003: source sale, channel retail, its document, line, `recognized_at`, null lead mechanic, ownership consignment); refunds not netted; `entry_key` unique; work-order entries carry their line's item; the reading path (admin costs; a `view_financial_reports`-only member with cost columns and `new_consignor_liability` NULL; mechanics as in Phase 5); `daily_summary`'s consignment columns on S-000004's and S-000003's days by Phase 5's day bucket, equal to the consigned entries' sums on every day, and `today_dashboard` agreeing; a consigned job part counts on its completion day; the seeded ledger = `EXPECTED_CONSIGNOR_LEDGER` = Σ items; `list_consignors` (since the review its awaiting-payment count is NULL without consignment money access and `sold_items` is for everyone), `consignor_statement` (22023), `list_sales`, `sale_lines_detail`, `saleable_stock`, `consignor_payout_details` with the D48 gating per role (NULL, never omitted); a customer and anon refused all six; snapshots survive catalogue edits. |
+| Consigned stock and sales in staff search (Phase 6 step 2) | `staff-search.test.ts`: `C-000002`, `c000002`, `C 000002` → the item at 1.0; product and consignor words find items; `kelvin`, phone digits and the exact email find consignors; `S-000003`, `s000003` → the sale at 1.0 with "Hafiz Rahman · date" (a walk-in reads "Walk-in"); archived consignors only with `archived` true; items and sales never. |
 | Manual adjustment records actor/time/reason (Phase 4) | `inventory-ledger.test.ts` "every manual stock adjustment records actor, timestamp and reason": null/blank reason → `reason_required`; `created_by`, trimmed reason, `created_at`; damaged positive → `quantity_invalid`; other types → `movement_type_not_manual`; `insufficient_stock`; request-id replay and `request_conflict`, concurrent same request → one movement; mechanics 42501, admin succeeds; a unit cost needs view_costs. Write-off replays by request id, no-op when already written off, again after a restore; transfers pair rows by request id, `insufficient_stock`, `transfer_same_location`, concurrent draining → one succeeds, unit transfers move the unit (`moved`), held units refused. |
 | Current stock is derivable from the ledger (Phase 4) | `inventory-ledger.test.ts`: `reporting.stock_levels` equals the per-product/location movement sums after transfers, parts, voids and damage; seeded `low_stock` is P-000009, P-000008, P-000012 by shortfall; `product_stock` totals. Snapshots do not change when product and unit prices and costs change; the ledger and both histories are append-only for the owner too; an archived product keeps its movements and lines. |
 | Catalog, cost gating and boundaries (Phase 4) | `inventory-catalog.test.ts`: P-/U- IDs server-assigned, increasing, immutable; `tracking_type` immutable; SKU unique ignoring case and punctuation; manage_inventory needed for products and locations; mechanic2 cannot select any cost column (42501), the cost views return nothing to them and rows to mechanic1/admin (product 02: yield 37.00, Cult Commons 11.10); the invoker cost-write guards refuse direct cost writes without view_costs, including a write of the stored value or null (no equality oracle), and let mechanic1 and the owner through; publication requirements, slug and `item` fallback; archive rules (`product_published`, `product_has_stock`, `unit_in_stock`, `location_has_stock`); `bike_in_stock` for transfer and archive until the unit is written off, `bike_has_owner`, `bike_already_linked`; anon denied and customers read zero rows on every stock table and view; event payloads exact, with actor, never a cost key or value (product, unit and work-order events); the publication and unit-status matrices equal `src/lib/inventory.ts` for all 25 and 36 pairs. `attachments.test.ts`: product and unit photos internal/public, never customer (`attachment_stock_never_customer`, CHECK backstop). |
@@ -354,7 +487,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Products and units in staff search (Phase 4) | `staff-search.test.ts`: the SKU typed as "shi l05a rf", "shil05arf" or in mixed case finds P-000001 at rank 1.0 with subtitle "SHI-L05A-RF · Shimano · 34 in stock"; SKU contains (≥ 3 characters) 0.7; exact P- and U- IDs rank 1.0 with or without the dash; name and brand words 0.45-0.85; on-hand from the ledger across locations (road tube 60), "Unique item" for unique products, "Inactive" appended for an inactive product; units by exact serial (1.0), part of it (0.7) and product-name words, subtitle "Available · Shop floor · S/N …"; the shop Brompton's serial finds both the bike and its unit at 1.0; the archived chain and an archived unit are left out and are the only hits with `archived = true`; "brompton" across all kinds adds products P-000005, P-000014 and unit U-000002 (the bike assertion is scoped to `['bike']`); 'product' and 'inventory_unit' are known kinds. |
 | Cult Commons end to end (Phase 5; SPEC §10, §31; D1) | `reporting.test.ts` "Cult Commons is 30% of positive yield after direct costs, per line": every `LINE_FIXTURES` row on its own job completed on its own isolated `TEST_DAY` equals the line's generated columns, its `financial_lines` entry (owner) and `daily_summary(day, day)` (admin); every `JOB_FIXTURES` row equals `work_order_yield` and the day's totals; the seeded loss-line job's Cult Commons is 12.00, not 7.50 (the Phase 5 fixture rows run through `cult-commons.test.ts` and `work-order-lines.test.ts` too). |
 | Negative yield never pays negative Cult Commons (Phase 5; SPEC §10; D32) | `reporting.test.ts`: as owner, every `financial_lines` entry's share is ≥ 0 and equals its line's share, `is_loss` matches the line's yield; every `daily_summary` row has `cult_commons_share` ≥ 0 and `loss_total` ≤ 0; a day with two loss lines and a 40.00 line: CC 12.00, yield −5.00, loss −45.00. |
-| Reports derived, never a second truth (Phase 5; SPEC §19.2) | `reporting.test.ts`: `reporting` holds views only (also `meta.test.ts`); over three test days with service, part, voided-part, collected, cancelled and open jobs, `daily_summary` money equals Σ `financial_lines` by day (both admin RPCs), each job's entries equal `work_order_totals_staff` and `work_order_yield`, the `jobs_*` counts equal the `work_order_activity_on` rows with the matching `*_on_day` flag, parts consumed/returned equal ledger sums, an empty day is a zero row and the placeholder columns are NULL; catalog price/cost edits and archiving the service leave the days and entries unchanged (snapshots). |
+| Reports derived, never a second truth (Phase 5; SPEC §19.2) | `reporting.test.ts`: `reporting` holds views only (also `meta.test.ts`); over three test days with service, part, voided-part, collected, cancelled and open jobs, `daily_summary` money equals Σ `financial_lines` by day (both admin RPCs), each job's entries equal `work_order_totals_staff` and `work_order_yield`, the `jobs_*` counts equal the `work_order_activity_on` rows with the matching `*_on_day` flag, parts consumed/returned equal ledger sums, an empty day is a zero row, the appointment columns equal `appointment_daily` (d1 two scheduled and one no-show, d3 one arrived, 0 elsewhere) and the consignment placeholders are NULL; catalog price/cost edits and archiving the service leave the days and entries unchanged (snapshots). |
 | Only completed jobs recognised; reopen restates (D32) | `reporting.test.ts`: open jobs, cancelled jobs (lines voided first, D16) and voided lines have no entry; a line added on one day of a job completed on the next is recognised on the completion day; 23:59 vs 00:01 SGT land on consecutive days; adds and voids on completed, ready and collected jobs → `work_order_locked` (RPC and owner); complete → reopen (the earlier day drops by exactly the job, no entry left) → void one line, add another → complete: the new day has exactly the current live lines once each, `started_at` kept, two `completed` events and one `reopened`. |
 | Completion recognised once (replay, concurrency) (Phase 5) | `reporting.test.ts`: a second `set_work_order_status(…, 'completed')` returns the row unchanged, no event, one entry per line. `reporting-concurrency.test.ts` (committed): two connections complete the same job; the second waits on the row lock and gets the unchanged row; one `completed_at`, one `completed` event, one entry per line, today's sales rise by the job's sale once; a third reader before the commit sees the old totals. |
 | Shop-day boundaries (D35) | `reporting.test.ts`: `completed_at` 2025-06-01 15:59:59Z → 2025-06-01, 16:00:00Z → 2025-06-02; `daily_summary` inclusive on both ends; identical results under `set local timezone` UTC and America/Los_Angeles; `shop_today()` = Singapore's date of `now()`; no reporting view or Phase 5 function contains `current_date`. |
@@ -362,7 +495,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Today flows vs snapshot (D31) | `reporting.test.ts`: inserting a job with today's check-in, start, line and completion raises today's flows by exactly those milestones and the money by its line; the `*_now` counts equal direct status counts grouped as `BOARD_GROUPS`, D20 overdue via `isOverdue` and `low_stock` rows; a past day has `is_today` false and every `*_now` NULL; tomorrow → `report_range_invalid`. Range rules: `daily_summary` from > to and 367 days raise, 366 pass; `financial_lines` 31 pass, 32 and from > to raise; null bounds mean today. |
 | Significant adjustments (D33) | `reporting.test.ts`: `private.is_significant_adjustment` cases (−6, +5, −1, 4 × 24.99 vs 4 × 25.00, a unit, 2 × 60.00, non-adjustment types false); `stock_adjustments_on(TEST_DAY)` over owner-inserted movements returns the day's six (00:00 and 23:59:59 in, the neighbouring days out), newest first, with `significant`, `actor_name` and `reason` for mechanic2 and `value_at_cost` NULL; the admin sees \|delta\| × unit cost (snapshot, else product default, else 0). |
 | Operational exceptions incl. 7-day overdue boundary (D34, D20) | `reporting.test.ts`: an open job checked in exactly `OVERDUE_AFTER_DAYS` days ago is not `overdue_job`, one second earlier is; a collected job checked in 30 days ago is neither; `work_order_activity.is_overdue` equals `isOverdue` for the same rows; a ready job completed 7 shop days ago is `uncollected_job`, 6 days ago not; a forced negative on-hand is `negative_stock` (danger, all danger rows first); an owner-held unit with no live line is `unit_hold_stale`, a unit held by `add_inventory_line` on an open job is not; a completed USD job's line is `currency_mismatch` and out of the day's totals; `exceptions_now` equals the row count; max_rows clamped to 1..200. |
-| Seeded history reconciles (Phase 5; SPEC §10 examples, SEED_DAYS) | `reporting-seed.test.ts` (reads only; days counted back from the seed's anchor, `seedToday()`): H1–H4 (and H5's rounding) through `work_order_yield` (admin) and Σ `financial_lines(anchor−6, anchor)` per job equal `SPEC_EXAMPLE_JOBS` / `ROUNDING_JOB`, recognised on their days, H4's CC 12.00 not 7.50; `daily_summary(anchor−n, anchor−n)` equals `SEED_DAYS[n]` exactly for n = 0…6 (every column, placeholders NULL); Σ entries by `recognized_day` equal each day's money columns; every completed seeded job (Phase 3, 4, 5) has entries equal to `work_order_totals_staff` and `work_order_yield` on its completion day, open and cancelled ones none; parts consumed/returned and adjustment counts equal the ledger's sums; every seeded entry's share ≥ 0 and equals its line's (H4's tyre a loss at 0); `stock_adjustments_on(anchor−n)` gives A1–A3 as `SEED_ADJUSTMENTS` (A2 significant, `value_at_cost` NULL for mechanic2, 30.00 for the admin). When the anchor is the shop's today (else skipped with a message): `today_dashboard(null)` is the anchor, `is_today`, flows = `SEED_DAYS[0]`, the `*_now` snapshot equals direct counts and `SEED_SNAPSHOT` (exactly in a fresh per-file database, at least otherwise); `operational_exceptions` has `SEED_EXCEPTIONS` and not H5, J-000002, J-000003 or J-000005. `display-parity.test.ts`: `private.shop_timezone()` = `SHOP_TIME_ZONE`, and `work_order_activity_on`'s `bike_title` / `customer_label` equal `bikeTitle()` / `customerLabel()` for every seeded job of days 0–6. |
+| Seeded history reconciles (Phase 5; SPEC §10 examples, SEED_DAYS) | `reporting-seed.test.ts` (reads only; days counted back from the seed's anchor, `seedToday()`): H1–H4 (and H5's rounding) through `work_order_yield` (admin) and Σ `financial_lines(anchor−6, anchor)` per job equal `SPEC_EXAMPLE_JOBS` / `ROUNDING_JOB`, recognised on their days, H4's CC 12.00 not 7.50; `daily_summary(anchor−n, anchor−n)` equals `SEED_DAYS[n]` exactly for n = 0…6 (every column: the D41 appointment counts, consignment placeholders NULL); Σ entries by `recognized_day` equal each day's money columns; every completed seeded job (Phase 3, 4, 5) has entries equal to `work_order_totals_staff` and `work_order_yield` on its completion day, open and cancelled ones none; parts consumed/returned and adjustment counts equal the ledger's sums; every seeded entry's share ≥ 0 and equals its line's (H4's tyre a loss at 0); `stock_adjustments_on(anchor−n)` gives A1–A3 as `SEED_ADJUSTMENTS` (A2 significant, `value_at_cost` NULL for mechanic2, 30.00 for the admin). When the anchor is the shop's today (else skipped with a message): `today_dashboard(null)` is the anchor, `is_today`, flows = `SEED_DAYS[0]`, the `*_now` snapshot equals direct counts and `SEED_SNAPSHOT` (exactly in a fresh per-file database, at least otherwise); `operational_exceptions` has `SEED_EXCEPTIONS` and not H5, J-000002, J-000003 or J-000005. `display-parity.test.ts`: `private.shop_timezone()` = `SHOP_TIME_ZONE`, and `work_order_activity_on`'s `bike_title` / `customer_label` equal `bikeTitle()` / `customerLabel()` for every seeded job of days 0–6. |
 | Seeded ledger consistent (Phase 5) | `reporting-seed.test.ts` "The seeded ledger is consistent": every seeded inventory line has exactly one `job_consumption` movement (−quantity, cost snapshot = the line's unit cost), at the line's own time for the Phase 5 lines (J-000010's, written by `add_inventory_line`, just after); no line created at or after its job's completion; no stock level below zero and the Phase 5 products' on-hand as documented; no seeded job, line, event, assignment or movement later than `now()`, and no Phase 5 row later than J-000007's seed-time check-in. |
 | Cost-pending lines flagged (D14) | `reporting.test.ts`: a `cost_pending` manual line on a completed job is recognised at cost 0 with `cost_pending` true; `today_dashboard(day).cost_pending_lines` and `work_order_yield.cost_pending_count` count it. |
 | No float money in function results (Phase 5) | `meta.test.ts`: no money-named OUT/TABLE argument of a function in `public` or `private` is `real` or `double precision`; every reporting RPC compiles and answers with exactly its documented columns (`reporting.test.ts`). |
@@ -377,9 +510,12 @@ Harness (`playwright.config.mts`, `tests/e2e/`): Chromium only, two projects
 seeds the dev database, `PGDATABASE` (default `bicii_dev`; `E2E_RESET=0`
 skips), starts the devstack if needed, and waits until the
 seeded admin can sign in through the gateway and call `my_staff_profile`.
-Tests run serially (one shared database). In this container the preinstalled
-`/opt/pw-browsers/chromium` is used via `launchOptions.executablePath`
-(`PLAYWRIGHT_CHROMIUM_EXECUTABLE` overrides); never `playwright install` here.
+Tests run serially (one shared database). The browser is
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` when set, else `/opt/pw-browsers/chromium`
+when it exists (the build agent's container, where browsers are never
+downloaded), else Playwright's own Chromium, installed once with
+`npx playwright install --with-deps chromium`
+([ENGINEERING.md](ENGINEERING.md#prerequisites-and-access)).
 
 ```sh
 npm run test:e2e                       # build + start on E2E_PORT (3100), reset PGDATABASE (bicii_dev), run
@@ -589,6 +725,147 @@ storage", Significant, Damaged) on anchorDay(1). "What needs attention"
 exceptions are relative to it): J-000017 overdue and J-000016 waiting for
 collection, each opening its job.
 
+Phase 2 spec (`appointments.spec.ts`, step 3; API helpers in
+`tests/e2e/api.ts`: `signInApi(email, password)` through the gateway's
+Auth, `rpc(token, name, args)` and `select(token, pathAndQuery)` through
+PostgREST as that user, throwing with PostgREST's error; global setup
+hands them the gateway URL and anon key as `E2E_GATEWAY_URL` /
+`E2E_ANON_KEY`, because specs load as CommonJS and cannot import
+`scripts/devstack/config.mjs`). These tests use the live shop day
+(`shopToday()`), not the seed's anchor: a customer books ahead of now.
+`beforeAll`, as the admin through the API and idempotent for the second
+project or a retry, sets the online notice to 0 and the capacity to 4,
+opens today 00:00–24:00 with custom hours under the fixed id
+`e4000000-0000-4000-8000-0000000000e2` (inserted with `is_new` when
+missing, else saved again), and cancels today's leftovers from earlier
+runs (customer note "Gears skipping…" or internal note "E2E no-show…",
+still booked, confirmed or arrived; this also keeps Chloe under her three
+online bookings, D37). `afterAll` always restores notice 120 and capacity
+2 and deletes the custom hours with a reason. Journey 2: Chloe (her
+seeded login) reads `available_slots` for today (remaining units null for
+her) and books the first one with `book_my_appointment` on her Giant with
+a tagged note; if no slot is left (the last half hour of the Singapore
+day) the test is skipped with that reason, the only allowed skip;
+`my_appointments()` lists it without internal fields. The admin opens
+today's list and clicks the row by its href (Chloe has a seeded booking
+today too), sees "Booked online", taps Arrived (pill and toast), Check
+in: the Giant preselected, the note as requested work, Marcus Tan as lead,
+"Check in and open job" lands on the new job with a J- number (and the
+toast); the job's timeline shows "Checked in as J-…" and the link
+"Opened from the appointment on … <time> (Service drop-off)" to the
+appointment, and the job's chip "Booked appointment · … · Service
+drop-off" links back too; back on the appointment: Checked in, the job card linking
+to the job, history "Booked online by the customer", "Marked as arrived
+by Asha Admin", "Checked in by Asha Admin", "Job J-… opened". "No-show
+and late arrival" makes its own data: the admin books Daniel through the
+API at now rounded down to the 30-minute grid (staff may book a slot that
+has not ended), marks it a no-show, and in the UI "Reinstate as arrived"
+turns the pill to Arrived with "Reinstated as arrived by Asha Admin" in
+the history. Walk-ins and every earlier spec are unaffected; Today's spec
+reads deltas, so the extra appointment today changes nothing it asserts.
+
+Step 4 adds to journey 2, before the staff list: Today (`/`) shows the
+booking in "Arrivals" as a link with href `/appointments/<id>` whose
+accessible name starts with the booked time and Chloe Lim, "Still
+expected" is at least 1, and Arrived is read; after check-in Today's
+Arrived is exactly one higher (read before and after with `readCount`,
+never absolute counts, D41) and the booking left the arrivals list. Chloe
+Lim (`CUSTOMER_LOGIN.chloe`, the seed password in
+[ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)) is the one
+seeded customer login, used here and in the customer-access tests. "Staff
+book for a customer and capacity closes the slot": mechanic2 (no
+permissions), on the first Tuesday at least 21 days after `shopToday()`
+(+7 on the tablet project, `clearDay`), with the capacity set to 2 through
+the API at the start (4 again in `finally`, the spec's `beforeAll` value),
+books Tan and Priya into 11:00 "Service drop-off" from each customer's
+page (the Book sheet with the customer preset and locked) with a tagged
+internal note; a third booking (Daniel) is not offered 11:00 (11:30 is);
+both are cancelled through "Cancel appointment…" with a reason and 11:00
+is offered again; `finally` also cancels the test's own tagged bookings.
+`appointment-settings.spec.ts` (each day +7 on the tablet; `afterEach`
+restores, through the replay-safe admin RPCs, Sunday's seeded
+09:00–13:00, deletes the test's closures by their tagged reason with
+"E2E cleanup" and deactivates its own type, so a failure never leaks):
+an admin adds a whole-day closure on the first Wednesday at least 35 days
+ahead → the day view says "Closed: <reason>", the Book sheet has no
+times and "Next day with free times" moves on → deleting it (ReasonConfirm
+with a reason) brings 10:00 back; a short day 12:00–16:00 on the first
+Thursday at least 35 days ahead offers exactly 12:00–15:30 for the
+30-minute type, then is deleted; a staff-only "E2E fit <tag>" (45 min, 1
+unit) appears in the Book sheet with "Staff only" until it is deactivated,
+and stays listed as Inactive; Sunday gets 14:00–16:00 (listed, and offered
+on a Sunday at least 21 days ahead), then the seeded hours are restored in
+the UI; mechanic2 reads both settings pages (Singapore time, the D2
+sentence, the week, the types with Public / Staff only) without any Edit,
+Add, New type or Delete control. Helpers: `clearDay`, `openBookSheet`
+(the phone's floating Book or the md+ button) and `pickTime` (taps a time
+chip) in `tests/e2e/helpers.ts`.
+
+Phase 6 step 3 (`consignment.spec.ts`, phone and tablet, every record
+tagged): an admin creates "Consignor <tag>" with a phone; receives one item
+"Colnago Master <tag>" (serial, owed 500, asking 1000) → the item page
+shows a `C-` number, a `U-` link and "For sale"; an agreement photo is
+uploaded and its viewer has Internal checked with Customer and Public
+`aria-disabled` and D52's sentence; a 120.00 charge cannot be added until
+"Shop pays" is chosen (D4), then is voided with a reason, and the
+"Timeline" shows Received, Charge added and Charge voided; a job made
+through `createJobViaIntake` (lead Marcus Tan) takes the consigned bike
+from Add part (the option reads "Consigned · Consignor <tag>" and
+$1,000.00) and is started and completed → the item reads "Sold, awaiting
+payment" with "Job J-…" and "Sold on J-…", and the consignor's Balance
+reads Outstanding $500.00 with the item under Awaiting payment (D44);
+mechanic2, in a second context, sees the consignor's item under Sold but
+no "Outstanding", "Owed", "Paid", "$500.00", Record payment, Show payout
+details or Receive item, and on the item page the asking price but no
+Money card, no Timeline and no "$500.00" (D48); the admin records $200.00
+with "PayNow <tag>" → Outstanding $300.00 and the payment listed; 350
+against $300.00 reveals "Why pay more than is owed?" and keeps "Record
+payment of $350.00" disabled until it is answered (D47); 300 is then
+recorded → Outstanding $0.00, "Settled", and the item reads "Settled". A
+second test receives "Several identical" (3) for a consignor created from
+the picker's "New consignor" row, sees "3 of 3 left", returns 1 with a
+reason → "2 of 3 left" and "1 returned to consignor" with the reason in
+the Timeline. Review fixes: the Receive item sheet has no fieldset, input,
+textarea or radiogroup past its right edge, on open and after "Several
+identical" (phone and iPad); before anything sells the consignor's Balance
+reads "Nothing owed yet", not "Settled"; mechanic2's consignor list row
+reads "1 sold" and never "awaiting payment", the admin's "1 awaiting
+payment".
+
+Phase 6 step 4 (phone and tablet, every created record tagged, stock
+asserted relative to a reading taken first):
+`consignment-journey.spec.ts` is journey 4 below without the label step
+(labels are Phase 8): an admin creates "Consignor <tag>", receives
+"Colnago Master <tag>" (owed 500, asking 1000; `C-`, `U-` link, "For
+sale"), uploads a listing photo and makes it Public while the agreement
+photo offers no Public (D52), makes the product internal and publishes
+it, and "What the public sees" shows it Available at $1,000.00 with no
+"$500.00" (D45); Sell on the item page prefills 1000.00 and records
+"S-…"; the sale page shows $1,000.00, Direct cost (incl. consignor payout)
+$500.00, Yield $500.00, Cult Commons (30% of positive yield) $150.00 and
+BICII after Cult Commons $350.00 with "owed $500.00, paid separately"; the
+public preview then reads Sold (D26); the consignor shows Outstanding
+$500.00 with the item under Awaiting payment; mechanic2 sees $1,000.00 but
+no "Yield", "Cult Commons", "Direct cost" or "$500.00" on the sale, and no
+"Outstanding", "Owed", "$500.00", Record payment or Show payout details on
+the consignor (D48); $200.00 ("PayNow <tag>") leaves $300.00 and $300.00
+settles it ("Settled", D47); Today's "Consignment sales" tile is at least
+$1,000.00, says "sales or jobs with consigned items", and opens
+`/sales?day=<today>`, which lists the sale. `sales.spec.ts`: an
+admin sells one "Dry chain lube 120ml" through New sale and the picker
+(price 16.00, a Preview with the $9.00 yield) → the product has one less
+in stock; a $5.00 partial refund with a reason marks it Partly refunded
+on the sale and in the list and leaves the stock unchanged (D7, D49); a
+tagged unique "Frameset <tag>" made in New product is sold from its unit
+page (450 warns "Below the asking price" and "Below cost: this sale loses
+money", D53; "Sold earlier?" with a time next year marks Sold at with
+"Enter a date and time that is not in the future." and aria-invalid and
+records nothing), the unit reads "Sold on S-…", and Restock… with a reason
+from the sale line → "Restocked" and the unit Available again (D46);
+mechanic2 sells one "DSP 3.2mm bar tape" (only "Below the asking price"
+warns; no Preview, cost, yield or Cult Commons in the sheet or on the
+sale, no "$26.00", no Record refund) and the stock drops by one.
+
 Phase 7 (`purchasing.spec.ts`, phone and iPad; suppliers, products and
 orders tagged with `tagFor`, the seeded orders `PURCHASE_ORDER` only read;
 helpers in `tests/e2e/purchasing-helpers.ts`: `createSupplier`,
@@ -635,13 +912,15 @@ database, signed in as the seeded admin and mechanic:
    with M1.5: `workshop.spec.ts` for the timeline, `today.spec.ts` for the
    milestone run ending on Today).
 2. Appointment: book (as seeded customer via RPC) → appears on Today → arrive →
-   check in → work order linked.
+   check in → work order linked (`appointments.spec.ts`: Today's arrivals
+   list and counts, the appointments list, check-in, the job's link back).
 3. Bulk product: create → receive PO (partial) → print 10 labels (PDF adapter
    produces 10 identical QR payloads) → consume one on a job → stock −1.
 4. Consignment: create consignor + unique bike → label → public page (hitting
    `public_items` through the app's preview route) → record sale → yield and
    CC shown to admin, hidden from mechanic → consignor outstanding → partial
-   settlement → full settlement → outstanding 0.
+   settlement → full settlement → outstanding 0 (`consignment-journey.spec.ts`
+   since Phase 6 step 4, without the label step until Phase 8).
 5. Shopify: publish product → simulate `orders/paid` POST to the webhook route
    with a valid HMAC → stock −1 once; POST the same payload again → unchanged.
 6. (Later, in the public-site repo) customer sign-in sees only own data.
@@ -680,6 +959,39 @@ not enforce, is pinned in `reporting-seed.test.ts`: no bike has two seeded
 jobs open at once (check-in to completion or cancellation) and none is
 collected while another job on it is open; the bikes that carry more than
 one job are listed (a bike awaiting collection may take a newer job).
+
+Since Phase 2 the seed also holds the shop's schedule (settings, weekly
+hours with an inactive Monday and a split Saturday, four appointment types
+with one staff-only, two closures within 14 days), **one customer login**
+(Chloe Lim, `CUSTOMER_LOGIN.chloe`: chloe.lim@example.com with the local
+password, linked to `CUSTOMER.chloe`, for E2E journey 2 and read-only
+customer checks) and nine appointments from three days back to at most 14
+days ahead (`APPOINTMENT`; Tan's linked to J-000014 and completed with it).
+`SEED_DAYS` carries their D41 counts. Guarantees other tests rely on,
+pinned in `appointment-seed.test.ts`: nothing seeded beyond 14 days (tests
+book on clear Tuesday–Fridays ≥ 21 days ahead), no seeded closure covers
+the anchor day, Daniel has no upcoming booked/confirmed appointment, Chloe
+at most two upcoming online bookings (under the limit of 3), today at most
+three expected arrivals.
+
+Since Phase 6 step 2 the seed ends with **consignment and sales** written
+through the RPCs: three consignors (`CONSIGNOR`), four items C-000001…
+C-000004 (`CONSIGNMENT_ITEM`, `CONSIGNMENT_ITEM_SHORT_ID`), their products
+and units, two charges, four sales S-000001…S-000004 on days 5, 4, 3 and 0
+(`SALE`, `SALE_NUMBER`), a return, a reversed settlement and its
+replacement and a refund. The figures are written by hand in
+`tests/fixtures/ids.ts` (`EXPECTED_CONSIGNOR_LEDGER`, `EXPECTED_SALE`,
+`EXPECTED_JERSEYS_POSITION`) and in `SEED_DAYS` (sales in the money
+columns; real consignment columns, 0 on days without). Two Phase 4
+assertions that read shared seed rows were made robust rather than the seed
+changed: the Brompton tube's on-hand counts S-000002 (`inventory-ledger`),
+and the "colnago" product search picks the shop's Colnago by id because the
+consigned Colnago now matches too (`staff-search`). Phase 6 helpers live in
+`tests/db/consignment-fixtures.ts` (`recordSale`, `saleLines`, `restock`,
+`refund`, `settle`, `reverseSettlement`, `itemLedger`, `consignorLedger`,
+plus step 1's intake, charge, return and position helpers); `saleLines`,
+`itemLedger` and `consignorLedger` read as the owner because costs, payouts
+and the ledger views have no API grant.
 
 ## CI
 

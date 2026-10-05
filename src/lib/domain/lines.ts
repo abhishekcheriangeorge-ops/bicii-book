@@ -76,6 +76,8 @@ export type LinePart = {
   locationName: string | null;
   /** Ledger on-hand at that location now; null when there is no location. */
   onHandAtLocation: number | null;
+  /** A consigned part (D44): its consignment and consignor. Never a payout figure. */
+  consigned?: { itemId: string; shortId: string; consignorName: string };
 };
 
 export type Totals = {
@@ -206,22 +208,48 @@ async function loadParts(
   const unitIds = [
     ...new Set(parts.map((r) => r.source_inventory_unit_id).filter((v): v is string => !!v)),
   ];
-  const [productsResult, unitsResult, movementsResult, levelsResult] = await Promise.all([
-    supabase.from("products").select("id, short_id").in("id", productIds),
-    unitIds.length > 0
-      ? supabase.from("inventory_units").select("id, short_id").in("id", unitIds)
-      : Promise.resolve({ data: [] as { id: string; short_id: string }[], error: null }),
-    supabase
-      .from("inventory_movements")
-      .select("work_order_line_item_id, location_id, location:locations(name)")
-      .in("work_order_line_item_id", lineIds)
-      .eq("movement_type", "job_consumption"),
-    supabase
-      .schema("reporting")
-      .from("stock_levels")
-      .select("product_id, location_id, on_hand")
-      .in("product_id", productIds),
-  ]);
+  const [productsResult, unitsResult, movementsResult, levelsResult, consignedResult] =
+    await Promise.all([
+      supabase.from("products").select("id, short_id").in("id", productIds),
+      unitIds.length > 0
+        ? supabase.from("inventory_units").select("id, short_id").in("id", unitIds)
+        : Promise.resolve({ data: [] as { id: string; short_id: string }[], error: null }),
+      supabase
+        .from("inventory_movements")
+        .select("work_order_line_item_id, location_id, location:locations(name)")
+        .in("work_order_line_item_id", lineIds)
+        .eq("movement_type", "job_consumption"),
+      supabase
+        .schema("reporting")
+        .from("stock_levels")
+        .select("product_id, location_id, on_hand")
+        .in("product_id", productIds),
+      // D44: the consignment a part was drawn from (the column is readable by
+      // all staff; its payout snapshot is not).
+      supabase
+        .from("work_order_line_items")
+        .select(
+          "id, consignment_item_id, item:consignment_items(id, short_id, consignor:consignors(display_name))",
+        )
+        .in("id", lineIds)
+        .not("consignment_item_id", "is", null),
+    ]);
+  const consigned = new Map(
+    (unwrap(consignedResult) ?? []).flatMap((r) =>
+      r.id && r.item
+        ? [
+            [
+              r.id,
+              {
+                itemId: r.item.id,
+                shortId: r.item.short_id,
+                consignorName: r.item.consignor?.display_name ?? "",
+              },
+            ] as const,
+          ]
+        : [],
+    ),
+  );
   const productShort = new Map((unwrap(productsResult) ?? []).map((p) => [p.id, p.short_id]));
   const unitShort = new Map((unwrap(unitsResult) ?? []).map((u) => [u.id, u.short_id]));
   const consumed = new Map(
@@ -238,7 +266,9 @@ async function loadParts(
     const productId = r.source_product_id!;
     const unitId = r.source_inventory_unit_id;
     const where = consumed.get(r.id!);
+    const consignment = consigned.get(r.id!);
     result.set(r.id!, {
+      ...(consignment ? { consigned: consignment } : {}),
       productId,
       unitId,
       shortId: (unitId ? unitShort.get(unitId) : productShort.get(productId)) ?? "",

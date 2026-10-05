@@ -6,10 +6,11 @@ import { hrefForRecord, parseShortId } from "@/lib/ids";
 
 /**
  * Kinds staff_search knows: customers and bikes (Phase 1), jobs (Phase 3),
- * products and unique units (Phase 4), suppliers and purchase orders
- * (Phase 7). Later phases add theirs here and in the RPC; the order is the
- * tie-break order of the /search groups. src/lib/domain/search.ts asks the
- * database for every entry, so each must be a kind staff_search knows
+ * products and unique units (Phase 4), consignors, consignment items and
+ * sales (Phase 6), suppliers and purchase orders (Phase 7). Later phases add
+ * theirs here and in the RPC; the order is the tie-break order of the
+ * /search groups. src/lib/domain/search.ts asks the database for every
+ * entry, so each must be a kind staff_search knows
  * (tests/db/staff-search.test.ts checks it).
  */
 export const SEARCH_KINDS = [
@@ -18,6 +19,10 @@ export const SEARCH_KINDS = [
   "work_order",
   "product",
   "inventory_unit",
+  // Consignment and sales (Phase 6)
+  "consignor",
+  "consignment_item",
+  "sale",
   // Purchasing (Phase 7)
   "supplier",
   "purchase_order",
@@ -44,6 +49,10 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
   work_order: "Jobs",
   product: "Products",
   inventory_unit: "Units",
+  // Consignment and sales (Phase 6)
+  consignor: "Consignors",
+  consignment_item: "Consignment items",
+  sale: "Sales",
   // Purchasing (Phase 7)
   supplier: "Suppliers",
   purchase_order: "Purchase orders",
@@ -55,6 +64,7 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
  */
 export function hrefForHit(hit: Pick<SearchHit, "kind" | "id">): string {
   if (hit.kind === "customer") return `/customers/${hit.id}`;
+  if (hit.kind === "consignor") return `/consignment/consignors/${hit.id}`;
   // Purchasing (Phase 7): suppliers have no short ID.
   if (hit.kind === "supplier") return `/purchasing/suppliers/${hit.id}`;
   // Every other search kind has an Admin page (hrefForRecord is null only

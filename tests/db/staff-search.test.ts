@@ -8,6 +8,8 @@
  *     number (Phase 3), never in the archived lists; products by short ID,
  *     SKU (ignoring case, spaces and punctuation) and name/brand words, and
  *     units by short ID, serial number and product name (Phase 4);
+ *     consignors by name, email and phone, consignment items by C- ID and
+ *     product or consignor name, sales by S- number (Phase 6);
  *     suppliers by name, contact, email and phone, and purchase orders by
  *     PO number, supplier reference and supplier name (Phase 7);
  *   * exact short ID and serial matches rank first (rank 1), above every
@@ -25,6 +27,9 @@ import { SEARCH_KINDS } from "@/lib/search";
 import {
   AUTH_USER,
   BIKE,
+  CONSIGNMENT_ITEM,
+  CONSIGNMENT_ITEM_SHORT_ID,
+  CONSIGNOR,
   BIKE_SERIAL,
   BIKE_SHORT_ID,
   CUSTOMER,
@@ -33,6 +38,8 @@ import {
   PRODUCT,
   PRODUCT_SHORT_ID,
   PURCHASE_ORDER,
+  SALE,
+  SALE_NUMBER,
   STAFF,
   SUPPLIER,
   UNIT,
@@ -265,9 +272,10 @@ describe("jobs by job number (Phase 3)", () => {
 
   it("the kinds filter keeps jobs in or out", async () => {
     const all = await find("000004");
-    // Phase 7's seed adds PO-000004, which contains the digits too.
+    // "000004" is also in Phase 6's seeded C-000004 and S-000004, and in
+    // Phase 7's seeded PO-000004.
     expect(new Set(all.map((h) => h.kind))).toEqual(
-      new Set(["bike", "work_order", "purchase_order"]),
+      new Set(["bike", "work_order", "consignment_item", "sale", "purchase_order"]),
     );
     expect(new Set((await find("000004", ["work_order"])).map((h) => h.kind))).toEqual(
       new Set(["work_order"]),
@@ -358,7 +366,11 @@ describe("products and units (Phase 4)", () => {
     expect((await find("SCH-SV20-60", ["product"]))[0]).toMatchObject({
       subtitle: "SCH-SV20-60 · Schwalbe · 60 in stock",
     });
-    expect((await find("colnago", ["product"]))[0]).toMatchObject({
+    // Phase 6's consigned Colnago (another product with the same brand)
+    // ranks alongside it, so the seeded shop bike is picked by id.
+    expect(
+      (await find("colnago", ["product"])).find((h) => h.id === PRODUCT.colnago),
+    ).toMatchObject({
       id: PRODUCT.colnago,
       subtitle: "Colnago · Unique item",
     });
@@ -436,6 +448,97 @@ describe("products and units (Phase 4)", () => {
       });
     },
   );
+});
+
+describe("consignors, consignment items and sales (Phase 6)", () => {
+  it("an exact C- ID finds the consignment item at rank 1, with or without its dash, in any case", async () => {
+    for (const q of [CONSIGNMENT_ITEM_SHORT_ID.cervelo, "c000002", "C 000002"]) {
+      const hits = await find(q, ["consignment_item"]);
+      expect({ q, hit: hits[0] }).toMatchObject({
+        q,
+        hit: {
+          kind: "consignment_item",
+          id: CONSIGNMENT_ITEM.cervelo,
+          short_id: "C-000002",
+          title: "Cervélo R3 (2017), 56 cm",
+          rank: 1,
+        },
+      });
+      expect(hits[0].subtitle).toMatch(/^Daniel Ong · Sold · U-\d{6}$/);
+    }
+    const all = await find(CONSIGNMENT_ITEM_SHORT_ID.cervelo);
+    expect(all[0]).toMatchObject({
+      kind: "consignment_item",
+      id: CONSIGNMENT_ITEM.cervelo,
+      rank: 1,
+    });
+    expect((await find("rapha jersey", ["consignment_item"]))[0]).toMatchObject({
+      id: CONSIGNMENT_ITEM.jerseys,
+      subtitle: "Chloe Lim · Active · Qty 6",
+    });
+  });
+
+  it("a consignor is found by name words, email and phone digits", async () => {
+    expect((await find("kelvin", ["consignor"]))[0]).toMatchObject({
+      kind: "consignor",
+      id: CONSIGNOR.kelvin,
+      title: "Kelvin Yeo",
+      subtitle: "+65 9876 5432",
+      short_id: null,
+    });
+    expect((await find("98765432", ["consignor"]))[0]).toMatchObject({
+      id: CONSIGNOR.kelvin,
+      rank: 0.95,
+    });
+    expect((await find("chloe.lim@example.com", ["consignor"]))[0]).toMatchObject({
+      id: CONSIGNOR.chloe,
+      rank: 0.95,
+    });
+    // Kelvin's items are found by his name too.
+    expect(ids(await find("kelvin", ["consignment_item"]))).toEqual(
+      expect.arrayContaining([CONSIGNMENT_ITEM.colnago, CONSIGNMENT_ITEM.crankset]),
+    );
+  });
+
+  it("an exact S- number finds the sale at rank 1 with its total, customer and day", async () => {
+    for (const q of [SALE_NUMBER.cervelo, "s000003", "S 000003"]) {
+      expect({ q, hit: (await find(q, ["sale"]))[0] }).toMatchObject({
+        q,
+        hit: {
+          kind: "sale",
+          id: SALE.cervelo,
+          short_id: "S-000003",
+          title: "S-000003 · $1,000.00",
+          rank: 1,
+        },
+      });
+    }
+    expect((await find(SALE_NUMBER.cervelo, ["sale"]))[0].subtitle).toMatch(
+      /^Hafiz Rahman · \d{1,2} \w{3} \d{4}$/,
+    );
+    expect((await find(SALE_NUMBER.tubes, ["sale"]))[0].subtitle).toMatch(/^Walk-in · /);
+  });
+
+  it("archived consignors only with archived = true; consignment items and sales never", async () => {
+    await inTransaction(conn, async (tx) => {
+      await tx.query(
+        `insert into public.consignors (id, display_name, phone, archived_at)
+         values ('6a000000-0000-4000-8000-0000000000aa', 'Archie Retired', '+65 9111 2222', now())`,
+      );
+      await actAs(tx, staffClaims(AUTH_USER.mechanic2));
+      const q = (text: string, kinds: string[], archived: boolean) =>
+        tx
+          .query<Hit>("select * from public.staff_search($1, $2, 20, $3)", [text, kinds, archived])
+          .then((r) => ids(r.rows));
+      expect(await q("archie", ["consignor"], false)).toEqual([]);
+      expect(await q("archie", ["consignor"], true)).toEqual([
+        "6a000000-0000-4000-8000-0000000000aa",
+      ]);
+      expect(await q("kelvin", ["consignor"], true)).toEqual([]);
+      expect(await q(CONSIGNMENT_ITEM_SHORT_ID.cervelo, ["consignment_item"], true)).toEqual([]);
+      expect(await q(SALE_NUMBER.cervelo, ["sale"], true)).toEqual([]);
+    });
+  });
 });
 
 describe("query handling", () => {
