@@ -1,7 +1,15 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { PRODUCT, PRODUCT_SHORT_ID } from "../fixtures/ids";
-import { createJobViaIntake, section, signIn, tagFor, toast } from "./helpers";
+import {
+  createJobViaIntake,
+  createProduct,
+  pickPart,
+  section,
+  signIn,
+  tagFor,
+  toast,
+} from "./helpers";
 
 /**
  * M1.4 inventory, on a phone and an iPad: SPEC §27.3 journey 3 without
@@ -13,56 +21,6 @@ import { createJobViaIntake, section, signIn, tagFor, toast } from "./helpers";
  */
 
 const MINUS = "−";
-
-/** Creates a counted product through New product and returns its page's URL and P- number. */
-async function createProduct(
-  page: Page,
-  { name, sku, price, cost, reorderPoint }: Record<string, string>,
-): Promise<{ url: string; shortId: string }> {
-  await page.goto("/inventory");
-  await page.getByRole("button", { name: "New product" }).first().click();
-  const sheet = page.getByRole("dialog", { name: "New product" });
-  await expect(sheet.getByRole("radio", { name: "Quantity" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await sheet.getByLabel("Name").fill(name);
-  await sheet.getByLabel("SKU").fill(sku);
-  await sheet.getByLabel("Sale price", { exact: true }).fill(price);
-  await sheet.getByLabel("Cost", { exact: true }).fill(cost);
-  await sheet.getByLabel("Reorder point").fill(reorderPoint);
-  await sheet.getByRole("button", { name: "Add product" }).click();
-  await expect(page).toHaveURL(/\/products\/[0-9a-f-]{36}$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
-  const shortId = (await page
-    .locator("header")
-    .getByText(/^P-\d{6}$/)
-    .textContent())!.trim();
-  return { url: page.url(), shortId };
-}
-
-/** Opens Add part on the job page, picks the first option matching `query` and returns the sheet. */
-async function pickPart(page: Page, query: string, option: RegExp) {
-  await page.getByRole("button", { name: "Add part" }).click();
-  const sheet = page.getByRole("dialog", { name: "Add part" });
-  await sheet.getByRole("combobox").fill(query);
-  const choice = sheet.getByRole("option", { name: option });
-  await expect(choice).toBeVisible();
-  // Really on screen before any click scrolls it there: not clipped into the
-  // sheet body's hidden scroll space, and not under the sheet footer (a
-  // short sheet on a phone used to hide the results behind it).
-  await expect(choice).toBeInViewport({ ratio: 1 });
-  await expect
-    .poll(() =>
-      choice.evaluate((el) => {
-        const r = el.getBoundingClientRect();
-        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        return hit !== null && el.contains(hit);
-      }),
-    )
-    .toBe(true);
-  return { sheet, choice };
-}
 
 test("journey 3: a product is stocked, used on a job, returned to stock and used again", async ({
   page,

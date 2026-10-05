@@ -89,19 +89,32 @@ export type IntakeJob = {
   additional?: readonly string[];
   /** Active services by name (each chosen once, prices as listed). */
   services?: readonly string[];
+  /** Condition on arrival; none when omitted. */
+  condition?: string;
+  /** A photo file to add on the intake photos step; none when omitted. */
+  photo?: string;
 };
 
 /**
  * Checks a bike in through the real intake wizard as whoever is signed in
  * (it signs nobody in): a new customer "Intake {tag}" and a new Brompton
  * for them from the sheets, the requested work, the people and services
- * given, then Create job. Skips the intake photos (Done) and returns on
+ * given, then Create job. Adds `photo` on the intake photos step when
+ * given (otherwise skips them), presses Done and returns on
  * the job's page with its id and J- number. Each call creates its own
  * customer and bike, so a test may call it more than once with one tag.
  */
 export async function createJobViaIntake(
   page: Page,
-  { tag, requestedWork = "Full service", lead, additional = [], services = [] }: IntakeJob,
+  {
+    tag,
+    requestedWork = "Full service",
+    lead,
+    additional = [],
+    services = [],
+    condition,
+    photo,
+  }: IntakeJob,
 ): Promise<{ id: string; jobNumber: string }> {
   const model = `Intake ${++intakeBikes} ${tag}`;
   await page.goto("/jobs/new");
@@ -130,6 +143,7 @@ export async function createJobViaIntake(
 
   // 3. Work.
   await page.getByLabel("Requested work").fill(requestedWork);
+  if (condition) await page.getByLabel("Condition on arrival").fill(condition);
   await nextIntakeStep(page, "Step 4 of 5");
 
   // 4. People.
@@ -155,12 +169,100 @@ export async function createJobViaIntake(
   await nextIntakeStep(page, "Review");
   await page.getByRole("button", { name: "Create job" }).click();
 
-  // The job, on its intake photos step: skip them.
+  // The job, on its intake photos step: add the photo if given, then Done.
   await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]{36}\?intake=photos$/);
   const id = new URL(page.url()).pathname.split("/").at(-1)!;
-  await section(page, "Intake photos").getByRole("link", { name: "Done" }).click();
+  const intakePhotos = section(page, "Intake photos");
+  if (photo) {
+    await page.getByLabel("Choose photos").setInputFiles(photo);
+    await expect(
+      intakePhotos.getByRole("list", { name: "Photos", exact: true }).getByRole("listitem"),
+    ).toHaveCount(1);
+  }
+  await intakePhotos.getByRole("link", { name: "Done" }).click();
   await expect(page).toHaveURL(new RegExp(`/jobs/${id}$`));
   const heading = page.getByRole("heading", { level: 1 });
   await expect(heading).toHaveText(/^J-\d{6}$/);
   return { id, jobNumber: (await heading.textContent())!.trim() };
+}
+
+/** Creates a counted product through New product and returns its page's URL and P- number. */
+export async function createProduct(
+  page: Page,
+  { name, sku, price, cost, reorderPoint }: Record<string, string>,
+): Promise<{ url: string; shortId: string }> {
+  await page.goto("/inventory");
+  await page.getByRole("button", { name: "New product" }).first().click();
+  const sheet = page.getByRole("dialog", { name: "New product" });
+  await expect(sheet.getByRole("radio", { name: "Quantity" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await sheet.getByLabel("Name").fill(name);
+  await sheet.getByLabel("SKU").fill(sku);
+  await sheet.getByLabel("Sale price", { exact: true }).fill(price);
+  await sheet.getByLabel("Cost", { exact: true }).fill(cost);
+  await sheet.getByLabel("Reorder point").fill(reorderPoint);
+  await sheet.getByRole("button", { name: "Add product" }).click();
+  await expect(page).toHaveURL(/\/products\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
+  const shortId = (await page
+    .locator("header")
+    .getByText(/^P-\d{6}$/)
+    .textContent())!.trim();
+  return { url: page.url(), shortId };
+}
+
+/** Opens Add part on the job page, picks the first option matching `query` and returns the sheet. */
+export async function pickPart(page: Page, query: string, option: RegExp) {
+  await page.getByRole("button", { name: "Add part" }).click();
+  const sheet = page.getByRole("dialog", { name: "Add part" });
+  await sheet.getByRole("combobox").fill(query);
+  const choice = sheet.getByRole("option", { name: option });
+  await expect(choice).toBeVisible();
+  // Really on screen before any click scrolls it there: not clipped into the
+  // sheet body's hidden scroll space, and not under the sheet footer (a
+  // short sheet on a phone used to hide the results behind it).
+  await expect(choice).toBeInViewport({ ratio: 1 });
+  await expect
+    .poll(() =>
+      choice.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return hit !== null && el.contains(hit);
+      }),
+    )
+    .toBe(true);
+  return { sheet, choice };
+}
+
+/**
+ * The value of the Today tile labelled exactly `label` inside `scope` (a
+ * section): the `<dd>` of the `<dl>` whose `<dt>` reads `label`.
+ */
+export function todayTile(scope: Locator, label: string): Locator {
+  return scope
+    .locator("dl")
+    .filter({
+      has: scope
+        .page()
+        .locator("dt")
+        .filter({ hasText: new RegExp(`^${escapeRegExp(label)}$`) }),
+    })
+    .locator("dd")
+    .first();
+}
+
+/** A Today count tile's number. */
+export async function readCount(scope: Locator, label: string): Promise<number> {
+  const text = ((await todayTile(scope, label).textContent()) ?? "").replace(/[^\d−-]/g, "");
+  return Number(text.replace("−", "-"));
+}
+
+/** A Today money tile's amount as a fixed-2 string ("1000.00", "-15.00"). */
+export async function readMoney(scope: Locator, label: string): Promise<string> {
+  const text = (await todayTile(scope, label).textContent()) ?? "";
+  const m = /([−-]?)\$([\d,]+\.\d{2})/.exec(text);
+  if (!m) throw new Error(`No amount in the "${label}" tile: ${JSON.stringify(text)}`);
+  return `${m[1] ? "-" : ""}${m[2].replaceAll(",", "")}`;
 }
