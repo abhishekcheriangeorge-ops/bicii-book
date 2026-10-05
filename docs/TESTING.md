@@ -348,6 +348,35 @@ are described in one place:
   times in order, day order, reason 1–200), `deleteClosureSchema` and
   `appointmentTypeSchema` (5–480 minutes in steps of 5, units, names).
 
+- Phase 6 step 3 (consignment screens): `consignment.test.ts` mirrors D48
+  and D49 (`canViewConsignmentMoney`, `canViewSaleCosts`, `canRecordRefund`
+  for an admin, inactive staff, each single permission and a
+  `view_financial_reports`-only member, which reveals neither); the status
+  pills (a sold item says paid or not only when the outstanding is
+  visible); `outstandingLabel` / `outstandingTone` ("$300.00 owed",
+  "Settled", "Overpaid $40.50 (consignor owes the shop)", never credit,
+  D46); the bearer labels and explanations (D4); the item history titles
+  ("Sold on J-…", "Job J-… reopened", "Restocked", "Returned to consignor",
+  "N returned to consignor"); `autoAllocate` (zero, partial, exact, an
+  overpayment left unallocated, items with nothing or a negative
+  outstanding skipped, ties by date keep their order, unsold last);
+  `allocationProblems` (sum mismatch named, override needs a reason, a
+  negative outstanding caps at 0, zero and malformed amounts refused,
+  D47); `paidAtFromDate` (null for today, noon Singapore otherwise, around
+  Singapore midnight and month ends). `consignment-forms.test.ts`: an
+  agreed amount of 0 is accepted (D24) and a missing one refused; a
+  consignor or a new one is required; a single item is one at a time and
+  only it may link a bike (D51); a charge needs an explicit bearer and an
+  amount above 0 (D4); returns need a reason; settlements need positive
+  allocations and keep an override reason. `attachments.test.ts`:
+  `consignment_item` holds photos and offers Internal with Customer and
+  Public blocked by D52's sentence. `ids.test.ts` / `search.test.ts`: `C-`
+  opens `/consignment/items/{id}`; the `consignor` and `consignment_item`
+  search kinds, labels and links (sales are not a search kind until their
+  page exists). `segmented-control.test.tsx`: `value={null}` checks
+  nothing, submits nothing and keeps one Tab stop on the first enabled
+  segment.
+
 ### Database (SPEC §27.2 and §23)
 
 Each invariant from SPEC §23 has at least one test, named after it:
@@ -742,6 +771,32 @@ sentence, the week, the types with Public / Staff only) without any Edit,
 Add, New type or Delete control. Helpers: `clearDay`, `openBookSheet`
 (the phone's floating Book or the md+ button) and `pickTime` (taps a time
 chip) in `tests/e2e/helpers.ts`.
+
+Phase 6 step 3 (`consignment.spec.ts`, phone and tablet, every record
+tagged): an admin creates "Consignor <tag>" with a phone; receives one item
+"Colnago Master <tag>" (serial, owed 500, asking 1000) → the item page
+shows a `C-` number, a `U-` link and "For sale"; an agreement photo is
+uploaded and its viewer has Internal checked with Customer and Public
+`aria-disabled` and D52's sentence; a 120.00 charge cannot be added until
+"Shop pays" is chosen (D4), then is voided with a reason, and the
+"Timeline" shows Received, Charge added and Charge voided; a job made
+through `createJobViaIntake` (lead Marcus Tan) takes the consigned bike
+from Add part (the option reads "Consigned · Consignor <tag>" and
+$1,000.00) and is started and completed → the item reads "Sold, awaiting
+payment" with "Job J-…" and "Sold on J-…", and the consignor's Balance
+reads Outstanding $500.00 with the item under Awaiting payment (D44);
+mechanic2, in a second context, sees the consignor's item under Sold but
+no "Outstanding", "Owed", "Paid", "$500.00", Record payment, Show payout
+details or Receive item, and on the item page the asking price but no
+Money card, no Timeline and no "$500.00" (D48); the admin records $200.00
+with "PayNow <tag>" → Outstanding $300.00 and the payment listed; 350
+against $300.00 reveals "Why pay more than is owed?" and keeps "Record
+payment of $350.00" disabled until it is answered (D47); 300 is then
+recorded → Outstanding $0.00, "Settled", and the item reads "Settled". A
+second test receives "Several identical" (3) for a consignor created from
+the picker's "New consignor" row, sees "3 of 3 left", returns 1 with a
+reason → "2 of 3 left" and "1 returned to consignor" with the reason in
+the Timeline.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:

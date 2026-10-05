@@ -122,12 +122,104 @@ Settings → Your profile.
     line has no cost entered, so cost, yield and Cult Commons count it at 0.
     Void it and add it again with its cost." The figures stay overstated
     until then ([RISKS R-005](RISKS.md#r-005--cost-pending-lines-overstate-yield-and-cult-commons)).
-  - "No part in stock matches. Archived, inactive and consigned items are
-    not offered." The database accepts consigned parts since Phase 6 step 1
-    (D44), but this sheet does not offer them until the consignment screens
-    are built (Phase 6 step 3;
-    [R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet)).
+  - "No part in stock matches. Archived, inactive and customer-owned items
+    are not offered." Consigned items are offered, marked "Consigned ·
+    <consignor>" (see [Use a consigned item on a job](#use-a-consigned-item-on-a-job)).
   - "This job is completed or closed. Reopen it to change its lines."
+
+### Receive a consigned item
+
+- Before you start: you need **Manage consignments**. Have the agreed
+  amount owed to the consignor and the asking price ready.
+- Steps:
+  - **Consignment** → **Receive item** (or **Receive item** on a
+    consignor's page, which fixes the consignor).
+  - **Consignor**: search by name, phone or email. Someone new: type the
+    name and choose **New consignor "…"**; fill in phone or email and,
+    optionally, link their **Customer record** (it fills in the name,
+    phone and email). They are created with the item.
+  - **One item (bike, frame, wheelset)** or **Several identical**. A bike
+    may link a **Shop bike record**; only bikes with no owner that are not
+    in stock are offered. If the bike is registered to the consignor,
+    first open the bike and **Transfer** it to the shop with a reason such
+    as "Consigned by Daniel Ong" (D51).
+  - **Name**, **Brand**, **Description**, **Category**; for one item the
+    **Serial number** and **Condition** (public once published); for
+    several, the **Quantity**; **Kept at**.
+  - **Amount owed to the consignor when it sells** (per item; 0 is
+    allowed) and the **Asking price** (the public, label and sale price).
+    With View costs you see "If it sells at the asking price: yield … ·
+    Cult Commons … · BICII keeps …".
+  - **Received** (today unless you change it), **Agreement notes**,
+    **Internal notes**. Press **Receive item**.
+- Success looks like: "C-000123 received" and the item's page, where you
+  add **Listing photos** (on the product; public once published) and
+  **Agreement photos** (the signed agreement; always internal: "Agreement
+  photos show the consignor's terms, so they stay internal.").
+- If it fails: "That consignor is archived. Unarchive them first."; "The
+  intake date can't be in the future."; "That bike belongs to a customer
+  …" (transfer it to the shop first). Change terms later with **Edit
+  terms** (a new amount owed needs a reason). Add work on the item with
+  **Add charge**: choose **Consignor pays** (deducted from what we owe
+  them) or **Shop pays** (added to the cost of the sale, so it lowers
+  yield; one item only, before it is on a job or sold). There is no
+  default (D4); void a charge with **Void…** and a reason.
+
+### Use a consigned item on a job
+
+- Before you start: the job is open; the consigned item is for sale.
+- Steps: **Add part** on the job, search the item's name or U-/P-/C-
+  number. Consigned choices show "Consigned · <consignor>" (several
+  identical also show the C- number of the consignment they come from:
+  the oldest one with stock left). The price is the asking price;
+  **Price each** may change it. Press **Add part**.
+- Success looks like: "Added … It is on hold for this job." The line shows
+  "Consigned · <consignor>", linked to the item. When the job is
+  **Completed** the item reads "Sold, awaiting payment" and the consignor
+  is owed the agreed amount (D44).
+- If it fails: consigned stock never goes below zero: "Only 2 of this
+  consigned item at Shop floor. Consigned stock can't go below zero.", and
+  "No single consignment of this item has that many left. Add fewer, or one
+  consignor's stock at a time." To take it back, reopen the job and void
+  the line; reopening alone removes what is owed until the job is
+  completed again.
+
+### Record a payment to a consignor
+
+- Before you start: you need **Manage consignments**.
+- Steps: open the consignor (Consignment → Consignors) → **Record
+  payment**. Enter **Amount paid**, **Paid on** (today by default) and the
+  **Reference**. Each item with something owed has a row, oldest sale
+  first: type an amount per item, or press **Auto-fill**. **Add another
+  item** pays an item that is not owed yet. Press **Record payment of
+  $x**.
+- Success looks like: "Payment of $200.00 recorded for <name>"; **Balance**
+  shows Owed, Paid and Outstanding, and the payment appears under
+  **Payments** with its allocations.
+- If it fails: the button stays disabled while the rows show "Unallocated
+  $x" or "Over by $x", and while a row pays more than that item is owed
+  without an answer to "Why pay more than is owed?". A wrong payment is
+  corrected with **Reverse…** and a reason (the whole payment; it stays in
+  the list, struck through). A negative balance reads "Overpaid $x
+  (consignor owes the shop)": it clears with a later sale, by voiding a
+  consignor-paid charge or by reversing a payment, never automatically
+  (D46).
+
+### Return an item to its consignor
+
+- Before you start: you need **Manage consignments**; the item is for sale.
+- Steps: open the item → **Return to consignor…** → answer "Why is it going
+  back?"; for several identical, choose **How many** (all that is left by
+  default) and where from. Press **Return to consignor** (or **Return N to
+  consignor**).
+- Success looks like: the stock leaves the shop; a single item reads
+  **Returned**; a quantity reads "2 of 3 left"; the history shows "1
+  returned to consignor" with the reason. Nothing is owed for returned
+  stock.
+- If it fails: "Return at least one, and no more than the shop still has."
+  An item on an open job must come off the job first. A returned bike
+  keeps its link to its bike record; transfer the bike back to the
+  consignor's customer record on the bike page ([R-020](RISKS.md#r-020--a-bike-record-consigned-once-cannot-be-consigned-again)).
 
 ### Adjust stock or move it between locations
 
@@ -236,21 +328,26 @@ visible to all; costs are not.
 | You have | What changes for you |
 |---|---|
 | Admin | Everything below, plus shop hours, closures, booking capacity, appointment types and the Cult Commons rate |
-| View costs | Cost, yield and Cult Commons on jobs, lines, products, units and movements; Unit cost on manual lines and adjustments; the Cult Commons rate card |
+| View costs | Cost, yield and Cult Commons on jobs, lines, products, units and movements; Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product |
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite, permissions and deactivation, only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
-| Manage consignments, Manage purchasing | Nothing yet |
+| Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; sees consignment money |
+| Manage purchasing | Nothing yet on this branch |
 
 Without a permission, its buttons are absent and the figures are not sent
 to your screen at all. Opening a page you may not use shows "You can't open
 this"; an action you may not take says "You don't have permission to do
 that." Ask an admin.
 
-Not available yet: **Consignment**, **Purchasing**, **Labels** and
-**Reports** show "Arrives in Phase 6 (Consignment)", "Phase 7
-(Purchasing)", "Phase 8 (QR and labels)" and "Phase 9 (Reporting)"
-([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
+Everyone can open Consignment, its consignors and items, and the asking
+prices; who is owed what, payments and agreement photos need Manage
+consignments or View costs (D48). Selling a consigned or shop item in
+store arrives with the Sales screens (Phase 6 step 4).
+
+Not available yet: **Purchasing**, **Labels** and **Reports** show
+"Arrives in Phase 7 (Purchasing)", "Phase 8 (QR and labels)" and "Phase 9
+(Reporting)" ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 There is no reschedule, no customer messaging and no data export. Help:
 ask the owner or an admin.

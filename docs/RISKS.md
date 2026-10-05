@@ -206,10 +206,12 @@ URLs, or customer data in this file.
   `tests/db/consignment-concurrency.test.ts` (two completions create one
   liability; a unit on two jobs or on a job while it is returned has one
   winner); all pass in `npm test` on 2026-10-05.
-- Workaround or containment: none needed. The Admin has no screen for
-  consignment yet (Phase 6 step 3), so staff cannot reach the path from the
-  UI until then.
-- Next action: none for the database; step 3 builds the screens.
+- Workaround or containment: none needed. Since Phase 6 step 3 the Add
+  part sheet offers consigned stock ("Consigned · <consignor>",
+  `searchParts` in `src/lib/domain/inventory.ts`), proven end to end by
+  `tests/e2e/consignment.spec.ts` (a consigned bike added to a job and
+  sold at completion).
+- Next action: none.
 - Revisit trigger: a change to `add_inventory_line` or
   `work_orders_sell_held_units`.
 - Last checked: 2026-10-05, the migrations and tests above
@@ -420,15 +422,17 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phases 6–9).
-- Trigger: staff open Consignment, Purchasing, Labels or Reports.
+- Status and owner: open; build agent (Phases 7–9). Consignment stopped
+  being a placeholder in Phase 6 step 3 (`feat/p6-consignment`, local
+  only); the heading is kept so links stay valid.
+- Trigger: staff open Purchasing, Labels or Reports.
 - Impact: those pages render the `ComingSoon` component
   (`src/components/shell/coming-soon.tsx`), which reads "Arrives in Phase
   N (…)"; none of their features exist on
   this branch.
-- Evidence and confidence: high; `src/app/(staff)/{consignment,purchasing,labels,reports}/page.tsx`.
+- Evidence and confidence: high; `src/app/(staff)/{purchasing,labels,reports}/page.tsx`.
 - Workaround or containment: none.
-- Next action: Phases 6, 7 (parallel track), 8 and 9.
+- Next action: Phases 7 (parallel track), 8 and 9.
 - Revisit trigger: each phase ends.
 - Last checked: 2026-10-05.
 
@@ -502,3 +506,58 @@ URLs, or customer data in this file.
   and online refunds together.
 - Revisit trigger: the first real refund, or Phase 9's reports.
 - Last checked: 2026-10-05, the migration and tests above.
+
+## R-022 — Agreement photos are hidden by the app, not by the database
+
+- Category: uncertainty (access design).
+- Status and owner: open; owner to confirm, build agent.
+- Trigger: a staff member without Manage consignments or View costs reads
+  a consignment item's agreement photos outside the item page (for
+  example through the attachments API with their own session).
+- Impact: agreement photos (D52) are internal, and `attachments` RLS lets
+  every active staff member read internal photos. A signed agreement
+  shows the amount owed to the consignor, which D48 otherwise reveals only
+  to Manage consignments or View costs. The item page loads and shows
+  agreement photos only to those staff (`getConsignmentItem` in
+  `src/lib/domain/consignment.ts` with `canSeeMoney`); the database does
+  not enforce it.
+- Evidence and confidence: high; `src/app/(staff)/consignment/items/[id]/page.tsx`
+  ("Agreement photos" card), the attachments policies in
+  `supabase/migrations/20261004000900_attachments.sql`;
+  `tests/e2e/consignment.spec.ts` covers the admin path only
+  (passed on 2026-10-05).
+- Workaround or containment: the app never sends the photos to other
+  staff; customers and anonymous users never read them (D52's trigger and
+  CHECK keep them internal).
+- Next action: owner decides whether agreement photos are consignment
+  money (then a later migration gates `consignment_item` attachments by
+  `private.can_view_consignment_money()`, a new D-row from D54) or ordinary
+  internal photos (then the item page shows them to all staff).
+- Revisit trigger: the owner's answer, or Phase 11's attachment access
+  review.
+- Last checked: 2026-10-05.
+
+## R-023 — A consigned unit's cost preview leaves out shop-paid charges
+
+- Category: known defect (display).
+- Status and owner: open; build agent.
+- Trigger: a View costs holder opens a consigned unit's or product's page
+  after a shop-paid charge was added to its consignment.
+- Impact: the unit page's "Cost and yield" reads `public.inventory_unit_costs`
+  (Phase 4), whose cost is the unit's direct cost, the agreed amount
+  only; D44 snapshots agreed amount plus shop-paid charges when it goes on
+  a job or a sale. The preview overstates expected yield and Cult Commons
+  by the charges; nothing stored is wrong. The consignment item page and
+  the Add part sheet use agreed amount plus shop-paid charges.
+- Evidence and confidence: high; the seeded C-000001 (agreed 2,400.00 and
+  a 120.00 shop charge) shows cost $2,400.00 on its unit page (screenshot
+  on 2026-10-05) against the 2,520.00 its line would snapshot; the rule
+  that a shop charge raises the part's cost is proven by
+  `tests/db/consignment-job-parts.test.ts` "a shop charge raises the
+  part's cost (D4) …".
+- Workaround or containment: read the consignment item's Money card.
+- Next action: a later migration adds shop-paid charges to
+  `inventory_unit_costs` for consigned units (same columns).
+- Revisit trigger: the next migration touching `inventory_unit_costs`, or
+  Phase 9's reports.
+- Last checked: 2026-10-05.

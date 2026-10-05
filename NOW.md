@@ -1,10 +1,10 @@
 # Current state
 
-Updated: 2026-10-05, Phase 6 step 2 checkpoint on `feat/p6-consignment`.
+Updated: 2026-10-05, Phase 6 step 3 checkpoint on `feat/p6-consignment`.
 Evidence checked: local refs and `git worktree list` on 2026-10-05; local
-gates on this branch at 2c402b2 plus the step 2 docs commit (below); step
-1's gates at 365bdd7. Earlier rows: GitHub REST pull list and check runs for
-the seven PR heads, local gates on b34bbcd (the head of PR #7).
+gates on this branch at ecc90f1 plus the step 3 docs (below); step 2's at
+2c402b2, step 1's at 365bdd7. Earlier rows: GitHub REST pull list and check
+runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
 
 ## Return in two minutes
 
@@ -14,16 +14,17 @@ the seven PR heads, local gates on b34bbcd (the head of PR #7).
   sales, in four steps on `feat/p6-consignment`. Steps 1 and 2 (the whole
   Phase 6 database: consignment core, consigned job parts, sales,
   restocks, refunds, settlements, the ledgers, reporting, read RPCs,
-  search and the seed) are built and committed locally.
-- Next action: Phase 6 step 3, the domain layer and the consignment
-  screens, over the RPCs in
+  search and the seed) and step 3 (the consignment domain module and
+  screens, consigned stock in the job part picker, the Phase 4 touch
+  points and `tests/e2e/consignment.spec.ts`) are built and committed
+  locally.
+- Next action: Phase 6 step 4, the sales screens over
   [DATA-MODEL §16](docs/DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public)
-  (`list_consignors`, `consignor_statement`, `consignor_payout_details`,
-  `record_settlement`, `reverse_settlement`, the step 1 intake RPCs), and
-  widening the part sheet (`searchParts` in `src/lib/domain/inventory.ts`)
-  to consigned stock. Step 4: the sales screens (`saleable_stock`,
-  `record_retail_sale`, `list_sales`, `sale_lines_detail`, `restock_unit`,
-  `record_sale_refund`), Today and journey 4.
+  (`saleable_stock`, `record_retail_sale` with a client sale id and D53's
+  warnings, `list_sales`, `sale_lines_detail`, `restock_unit`,
+  `record_sale_refund` for admins only), "Sell" on the consignment item
+  page, `S-` resolution and the `sale` search kind, Today, Sales
+  navigation, journey 4 and the closing Phase 6 docs.
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -45,7 +46,8 @@ a separate, label-triggered run. All listed results are success.
 | Staff email OTP | Parallel track; no `feat/auth-email-otp` ref visible | Not verified | Not deployed |
 | Consignment core and consigned job parts (Phase 6 step 1: D44, D45, D48, D50–D52) | Database only, `feat/p6-consignment` 13fe3f3, fe6ac53, 365bdd7; no screens yet | Locally on 365bdd7: `npm run db:reset` pass (34 migrations, `34\|20261004003400`), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 86 files / 1225 tests passed; `test:e2e` not run (no screen changed); docs link check 34 files / 506 links / 0 problems | Not deployed |
 | Sales, restocks, refunds, settlements, consignor ledgers, sale reporting, read RPCs, search, Phase 6 seed (Phase 6 step 2: D44, D46–D49) | Database only, `feat/p6-consignment` 2d2ba0c, 2c402b2; no screens yet | Locally at 2c402b2 + docs: `npm run db:reset` pass (37 migrations, latest `20261004003700`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 89 files / 1298 tests passed, `npm run build` pass, `npm run test:e2e` 106 passed (phone and tablet, 9.7 min), docs link check 34 files / 509 links / 0 problems | Not deployed |
-| Phase 6 screens (steps 3–4), labels, Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
+| Phase 6 sales screens (step 4), labels, Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -57,7 +59,8 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 - `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
 - `feat/p6-consignment`: stacked on `feat/docs-stack`; local only, not
   pushed (34783d6 decisions D44–D53, step 1's commits, step 2's 2d2ba0c and
-  2c402b2, and this checkpoint). The orchestrator pushes.
+  2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and its docs commit with
+  this checkpoint). The orchestrator pushes.
 - Parallel track: a second worktree of this clone (`bicii-book-wt`, see
   `git worktree list`) with its own database builds purchasing and email
   OTP. `feat/p7-purchasing` is local
