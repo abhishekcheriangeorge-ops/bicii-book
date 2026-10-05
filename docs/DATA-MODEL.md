@@ -45,10 +45,11 @@ This section was added by the documentation retrofit (2026-10-05, inspected
 at `c6bf6d0`). The numbered sections below are never renumbered; code and
 migration comments cite them as "DATA-MODEL §n".
 
-**Authority.** The schema source is the 34 files in
+**Authority.** The schema source is the 37 files in
 [supabase/migrations/](../supabase/migrations/), from
-`20261004000100_foundation.sql` to `20261004003400_consignment_job_parts.sql`
-(on `feat/p6-consignment`; Phase 6 step 1 added the last two).
+`20261004000100_foundation.sql` to `20261004003700_consignment_reporting.sql`
+(on `feat/p6-consignment`; Phase 6 added the last five, `20261004003300` to
+`20261004003700`).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
@@ -61,9 +62,9 @@ document is corrected.
 **Applied state.**
 
 - Local: on 2026-10-05, after `npm run db:reset` on `feat/p6-consignment`
-  (Phase 6 step 1),
+  (the Phase 6 review fixes; `npm run test:e2e` resets the same database),
   `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
-  printed `34|20261004003400` (every file applied).
+  printed `37|20261004003700` (every file applied).
 - CI: the `check` job diffs the generated types against a throwaway
   database built from the migrations, and the `test` and E2E jobs run
   `npm run db:reset` (migrations, then the seed) before testing

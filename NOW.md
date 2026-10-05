@@ -1,9 +1,10 @@
 # Current state
 
-Updated: 2026-10-05, Phase 6 review fixes on `feat/p6-consignment` (after
-step 4). Evidence checked: `git for-each-ref refs/heads refs/remotes` and
-`git worktree list` at the review fixes; local gates on this branch at the
-review-fix commit (below); step 4's at a8967c7, step 3's at ecc90f1,
+Updated: 2026-10-05, Phase 6 review fixes and the critic's documentation
+follow-up on `feat/p6-consignment` (after step 4). Evidence checked:
+`git for-each-ref refs/heads refs/remotes` and `git worktree list` at the
+review fixes; local gates on this branch at the review-fix commit and
+again at the documentation follow-up (below); step 4's at a8967c7, step 3's at ecc90f1,
 step 2's at 2c402b2, step 1's at 365bdd7. Earlier rows: GitHub REST pull list and check
 runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
 
@@ -18,7 +19,9 @@ runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
   journey 4 and the closing docs (step 4). Everything is committed locally
   and not pushed.
 - Next action: the orchestrator pushes `feat/p6-consignment` and opens its
-  PR on top of `feat/docs-stack`; then the next phase in the build order
+  PR on top of `feat/docs-stack` with the Phase 6 description drafted from
+  [the template](.github/pull_request_template.md) (held by the
+  orchestrator, not committed); then the next phase in the build order
   (labels, Phase 8). The owner answers D44–D55 (D53's price-floor and
   D55's backdating questions) in
   [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
@@ -55,7 +58,7 @@ a separate, label-triggered run. All listed results are success.
 | Sales, restocks, refunds, settlements, consignor ledgers, sale reporting, read RPCs, search, Phase 6 seed (Phase 6 step 2: D44, D46–D49) | Database only, `feat/p6-consignment` 2d2ba0c, 2c402b2; no screens yet | Locally at 2c402b2 + docs: `npm run db:reset` pass (37 migrations, latest `20261004003700`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 89 files / 1298 tests passed, `npm run build` pass, `npm run test:e2e` 106 passed (phone and tablet, 9.7 min), docs link check 34 files / 509 links / 0 problems | Not deployed |
 | Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
 | Sales screens, refunds, restocks, Today and nav wiring, journey 4 (Phase 6 step 4: D7, D46, D48, D49, D51, D53) | Yes, `feat/p6-consignment` 67b1607, b65484a, 543760f, eccd687 and the closing docs commit: `/sales`, `/sales/[id]`, `RecordSaleSheet` / `SaleablePicker`, `RefundSheet`, `RestockControl`; Sell on the consignment item, unit and product pages; "Sold on S-…" with Restock on the unit page; `S-` in `/q` and the `sale` search kind; Sales in More; Today's consignment tiles linked | Locally: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 92 files / 1364 tests passed, `npm run build` pass (inside `test:e2e`), `npm run test:e2e` 118 passed on phone and tablet (13.3 min; an earlier run had 2 failures, the Today past-day note's old wording in `today.spec.ts`, fixed in eccd687), docs link check 34 files / 528 links / 0 problems | Not deployed |
-| Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment`, the review-fix commit after a8967c7 | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems | Not deployed |
+| Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment` 32f19e6 (the follow-up commit corrects DATA-MODEL's authority and applied state, PLAN's Phase 6 test list and this file's owner-question list) | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems; rerun at the documentation follow-up: `npm run db:reset` pass (`37\|20261004003700`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.6 min, build inside, no failures, flaky or skipped), docs link check 34 files / 545 links / 0 problems | Not deployed |
 | Labels, Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
@@ -69,8 +72,9 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 - `feat/p6-consignment`: stacked on `feat/docs-stack`; committed locally,
   not pushed (34783d6 decisions D44–D53, step 1's commits, step 2's
   2d2ba0c and 2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and d8ba313,
-  step 4's 67b1607, b65484a, 543760f, eccd687 and a8967c7, and the review
-  fixes commit with this update). There is no origin branch of that name;
+  step 4's 67b1607, b65484a, 543760f, eccd687 and a8967c7, the review
+  fixes 32f19e6, and the documentation follow-up commit with this
+  update). There is no origin branch of that name;
   origin holds an orchestrator auto-save, `wip/feat/p6-consignment`
   (ed7d27e, a snapshot of uncommitted work, not reviewed). The
   orchestrator pushes it and opens its PR on top of `feat/docs-stack`.
@@ -92,10 +96,14 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   Next in play: the PR stack integration
   ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 - Decisions needed: [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions);
-  Phase 6 adds rows 9 (confirm D44–D53), 10 (D53: should a price below the
-  agreed amount plus shop charges need manage_consignments?,
+  Phase 6 adds rows 9 (confirm D44–D55; D54 and D55 came from the review),
+  10 (D53: should a price below the agreed amount plus shop charges need
+  manage_consignments?,
   [R-024](docs/RISKS.md#r-024--a-consigned-item-can-be-sold-below-what-the-consignor-is-owed)),
-  11 (agreement photos, R-022) and 12 (refund netting and Cult Commons
+  11 (agreement photos, R-022), 12 (refund netting and Cult Commons
   claw-back, decided by Phase 9's refund-reporting row, D49,
-  [R-021](docs/RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)).
+  [R-021](docs/RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock))
+  and 13 (D55: should backdating an in-store sale more than a few days need
+  a permission?,
+  [R-027](docs/RISKS.md#r-027--a-sale-can-be-backdated-without-limit-by-any-staff-member)).
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).

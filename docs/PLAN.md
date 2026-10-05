@@ -604,7 +604,8 @@ implemented for retail and D27 changed. The review also replaced
 `new_consignor` argument (a new consignor is created in the intake's own
 transaction) and added `sold_items` to `list_consignors`.
 Tests: the database files `consignment`, `consignment-access`,
-`consignment-concurrency`, `consignment-job-parts`, `sales`,
+`consignment-concurrency`, `consignment-job-parts`,
+`consignment-locations` (the review, D54), `sales`,
 `settlements` and `consignment-reporting`, plus the Phase 6 cases of
 `inventory-ledger`, `reporting`, `staff-search`, `attachments` and
 `work-orders`; unit tests for `consignment.ts`, `consignment-forms.ts`,
