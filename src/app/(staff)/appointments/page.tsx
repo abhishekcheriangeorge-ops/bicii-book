@@ -14,7 +14,7 @@ import { LinkSegments } from "@/components/domain/workshop-board";
 import { BookAppointmentButton } from "@/components/domain/book-appointment-sheet";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { buttonClasses } from "@/components/ui/button";
 import { weekStart } from "@/lib/appointments/time";
@@ -133,6 +133,19 @@ export default async function AppointmentsPage({ searchParams }: PageProps<"/app
   );
 }
 
+/** The day view's small link to the schedule settings (every staff member may read them). */
+function HoursLink() {
+  return (
+    <Link
+      href="/settings/schedule"
+      className="inline-flex min-h-tap items-center gap-2 self-start text-sm font-medium text-dust-700 underline underline-offset-4"
+    >
+      <ClockIcon className="size-4" />
+      Hours and closures
+    </Link>
+  );
+}
+
 function DayView({ day, now }: { day: Awaited<ReturnType<typeof listDay>>; now: Date }) {
   const active = day.appointments.filter((a) => a.status !== "cancelled");
   const cancelled = day.appointments.filter((a) => a.status === "cancelled");
@@ -171,6 +184,8 @@ function DayView({ day, now }: { day: Awaited<ReturnType<typeof listDay>>; now: 
         />
       ) : null}
 
+      {day.closedAllDay && active.length === 0 ? <HoursLink /> : null}
+
       {active.length > 0 || !day.closedAllDay ? (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-6">
@@ -186,15 +201,18 @@ function DayView({ day, now }: { day: Awaited<ReturnType<typeof listDay>>; now: 
               </details>
             ) : null}
           </div>
-          {day.windows.length > 0 ? (
-            <Card title="Capacity" eyebrow={`${day.settings.slotMinutes}-minute slots`}>
-              <p className="mb-3 text-sm text-dust-500">
-                Each slot takes {day.settings.capacityUnits}{" "}
-                {day.settings.capacityUnits === 1 ? "unit" : "units"} of intake across the shop.
-              </p>
-              <CapacityBars windows={day.windows} />
-            </Card>
-          ) : null}
+          <div className="flex min-w-0 flex-col gap-3">
+            {day.windows.length > 0 ? (
+              <Card title="Capacity" eyebrow={`${day.settings.slotMinutes}-minute slots`}>
+                <p className="mb-3 text-sm text-dust-500">
+                  Each slot takes {day.settings.capacityUnits}{" "}
+                  {day.settings.capacityUnits === 1 ? "unit" : "units"} of intake across the shop.
+                </p>
+                <CapacityBars windows={day.windows} />
+              </Card>
+            ) : null}
+            <HoursLink />
+          </div>
         </div>
       ) : null}
     </div>
