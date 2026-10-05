@@ -85,6 +85,16 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.split_unit_from_stock(uuid, uuid, uuid, uuid, text, text, text, text, money_amount)",
   "public.transfer_stock(uuid, uuid, uuid, uuid, integer, text, uuid)",
   "public.write_off_unit(uuid, uuid, text)",
+  // Reporting and Today (Phase 5): active staff; money gated by FIN-ACCESS
+  // (D30): financial_lines needs view_financial_reports, work_order_yield
+  // view_costs, and cost-derived figures come back NULL without view_costs
+  "public.daily_summary(date, date)",
+  "public.financial_lines(date, date)",
+  "public.operational_exceptions(integer)",
+  "public.stock_adjustments_on(date)",
+  "public.today_dashboard(date)",
+  "public.work_order_activity_on(date)",
+  "public.work_order_yield(uuid)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
