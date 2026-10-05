@@ -1989,6 +1989,38 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      daily_summary: {
+        Args: { from_day?: string; to_day?: string };
+        Returns: {
+          appointments_arrived: number;
+          appointments_no_show: number;
+          appointments_scheduled: number;
+          bicii_yield_after_cc: number;
+          cogs: number;
+          consignment_sales: number;
+          consignment_sales_total: number;
+          cult_commons_share: number;
+          currency: string;
+          day: string;
+          gross_sales: number;
+          jobs_cancelled: number;
+          jobs_checked_in: number;
+          jobs_collected: number;
+          jobs_completed: number;
+          jobs_ready_for_collection: number;
+          jobs_started: number;
+          lines_recognised: number;
+          loss_lines: number;
+          loss_total: number;
+          new_consignor_liability: number;
+          parts_consumed_lines: number;
+          parts_consumed_qty: number;
+          parts_returned_qty: number;
+          significant_stock_adjustments: number;
+          stock_adjustments: number;
+          yield_total: number;
+        }[];
+      };
       delete_attachment: {
         Args: { attachment_id: string; reason: string };
         Returns: {
@@ -2013,6 +2045,43 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      financial_lines: {
+        Args: { from_day: string; to_day: string };
+        Returns: {
+          bicii_yield_after_cc: number;
+          bike_id: string;
+          category_id: string;
+          channel: string;
+          consignment_item_id: string;
+          cost_pending: boolean;
+          cost_total: number;
+          cult_commons_rate: number;
+          cult_commons_share: number;
+          currency: string;
+          customer_id: string;
+          description: string;
+          document_id: string;
+          document_number: string;
+          entry_key: string;
+          entry_kind: string;
+          inventory_unit_id: string;
+          is_loss: boolean;
+          lead_mechanic_id: string;
+          line_type: string;
+          ownership_type: string;
+          product_id: string;
+          quantity: number;
+          recognized_at: string;
+          recognized_day: string;
+          sale_total: number;
+          service_id: string;
+          source: string;
+          source_line_id: string;
+          unit_direct_cost: number;
+          unit_sale_price: number;
+          yield_total: number;
+        }[];
       };
       grant_permission: {
         Args: {
@@ -2133,6 +2202,20 @@ export type Database = {
           ready_for_collection_at: string;
           sale_total: unknown;
           status: Database["public"]["Enums"]["customer_job_status"];
+        }[];
+      };
+      operational_exceptions: {
+        Args: { max_rows?: number };
+        Returns: {
+          days: number;
+          entity_id: string;
+          entity_label: string;
+          entity_type: string;
+          kind: string;
+          quantity: number;
+          severity: string;
+          since: string;
+          subject_label: string;
         }[];
       };
       record_attachment: {
@@ -2415,6 +2498,72 @@ export type Database = {
           title: string;
         }[];
       };
+      stock_adjustments_on: {
+        Args: { on_day?: string };
+        Returns: {
+          actor_name: string;
+          created_at: string;
+          currency: string;
+          inventory_unit_id: string;
+          location_name: string;
+          movement_id: number;
+          movement_type: string;
+          product_id: string;
+          product_name: string;
+          product_short_id: string;
+          quantity_delta: number;
+          reason: string;
+          significant: boolean;
+          unit_short_id: string;
+          value_at_cost: number;
+        }[];
+      };
+      today_dashboard: {
+        Args: { on_day?: string };
+        Returns: {
+          appointments_arrived: number;
+          appointments_no_show: number;
+          appointments_scheduled: number;
+          awaiting_collection_now: number;
+          bicii_yield_after_cc: number;
+          can_see_costs: boolean;
+          can_see_financials: boolean;
+          cogs: number;
+          consignment_sales: number;
+          consignment_sales_total: number;
+          cost_pending_lines: number;
+          cult_commons_share: number;
+          currency: string;
+          day: string;
+          exceptions_now: number;
+          generated_at: string;
+          gross_sales: number;
+          in_progress_now: number;
+          is_today: boolean;
+          jobs_cancelled: number;
+          jobs_checked_in: number;
+          jobs_collected: number;
+          jobs_completed: number;
+          jobs_ready_for_collection: number;
+          jobs_started: number;
+          lines_recognised: number;
+          loss_lines: number;
+          loss_total: number;
+          low_stock_now: number;
+          new_consignor_liability: number;
+          open_jobs_now: number;
+          overdue_now: number;
+          parts_consumed_lines: number;
+          parts_consumed_qty: number;
+          parts_returned_qty: number;
+          ready_to_start_now: number;
+          received_now: number;
+          significant_stock_adjustments: number;
+          stock_adjustments: number;
+          waiting_now: number;
+          yield_total: number;
+        }[];
+      };
       transfer_bike_ownership: {
         Args: { bike_id: string; reason: string; to_customer_id: string };
         Returns: {
@@ -2568,6 +2717,36 @@ export type Database = {
         };
       };
       void_line: { Args: { line_id: string; reason: string }; Returns: string };
+      work_order_activity_on: {
+        Args: { on_day?: string };
+        Returns: {
+          age_days: number;
+          bike_id: string;
+          bike_title: string;
+          cancelled_at: string;
+          cancelled_on_day: boolean;
+          checked_in_at: string;
+          checked_in_on_day: boolean;
+          collected_at: string;
+          collected_on_day: boolean;
+          completed_at: string;
+          completed_on_day: boolean;
+          currency: string;
+          customer_id: string;
+          customer_label: string;
+          is_open: boolean;
+          is_overdue: boolean;
+          job_number: string;
+          lead_mechanic_name: string;
+          ready_for_collection_at: string;
+          ready_on_day: boolean;
+          sale_total: number;
+          started_at: string;
+          started_on_day: boolean;
+          status: Database["public"]["Enums"]["work_order_status"];
+          work_order_id: string;
+        }[];
+      };
       work_order_timeline: {
         Args: { max_rows?: number; work_order_id: string };
         Returns: {
@@ -2579,6 +2758,27 @@ export type Database = {
           payload: Json;
           subject_display_name: string;
           subject_staff_id: string;
+        }[];
+      };
+      work_order_yield: {
+        Args: { target_work_order_id: string };
+        Returns: {
+          bicii_yield_after_cc: number;
+          cost_pending_count: number;
+          cost_total: number;
+          cult_commons_rates: number[];
+          cult_commons_share: number;
+          currency: string;
+          job_number: string;
+          line_count: number;
+          loss_line_count: number;
+          loss_total: number;
+          recognized_at: string;
+          recognized_day: string;
+          sale_total: number;
+          status: Database["public"]["Enums"]["work_order_status"];
+          work_order_id: string;
+          yield_total: number;
         }[];
       };
       write_off_unit: {
@@ -2742,6 +2942,90 @@ export type Database = {
       [_ in never]: never;
     };
     Views: {
+      daily_summary: {
+        Row: {
+          appointments_arrived: number | null;
+          appointments_no_show: number | null;
+          appointments_scheduled: number | null;
+          bicii_yield_after_cc: number | null;
+          cogs: number | null;
+          consignment_sales: number | null;
+          consignment_sales_total: number | null;
+          cult_commons_share: number | null;
+          currency: string | null;
+          day: string | null;
+          gross_sales: number | null;
+          jobs_cancelled: number | null;
+          jobs_checked_in: number | null;
+          jobs_collected: number | null;
+          jobs_completed: number | null;
+          jobs_ready_for_collection: number | null;
+          jobs_started: number | null;
+          lines_recognised: number | null;
+          loss_lines: number | null;
+          loss_total: number | null;
+          new_consignor_liability: number | null;
+          parts_consumed_lines: number | null;
+          parts_consumed_qty: number | null;
+          parts_returned_qty: number | null;
+          significant_stock_adjustments: number | null;
+          stock_adjustments: number | null;
+          yield_total: number | null;
+        };
+        Relationships: [];
+      };
+      financial_lines: {
+        Row: {
+          bicii_yield_after_cc: number | null;
+          bike_id: string | null;
+          category_id: string | null;
+          channel: string | null;
+          consignment_item_id: string | null;
+          cost_pending: boolean | null;
+          cost_total: number | null;
+          cult_commons_rate: number | null;
+          cult_commons_share: number | null;
+          currency: string | null;
+          customer_id: string | null;
+          description: string | null;
+          document_id: string | null;
+          document_number: string | null;
+          entry_key: string | null;
+          entry_kind: string | null;
+          inventory_unit_id: string | null;
+          is_loss: boolean | null;
+          lead_mechanic_id: string | null;
+          line_type: string | null;
+          ownership_type: string | null;
+          product_id: string | null;
+          quantity: number | null;
+          recognized_at: string | null;
+          recognized_day: string | null;
+          sale_total: number | null;
+          service_id: string | null;
+          source: string | null;
+          source_line_id: string | null;
+          unit_direct_cost: number | null;
+          unit_sale_price: number | null;
+          yield_total: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_line_items_source_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "low_stock";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "work_order_line_items_source_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_stock";
+            referencedColumns: ["product_id"];
+          },
+        ];
+      };
       low_stock: {
         Row: {
           name: string | null;
@@ -2752,6 +3036,20 @@ export type Database = {
           short_id: string | null;
           shortfall: number | null;
           sku: string | null;
+        };
+        Relationships: [];
+      };
+      operational_exceptions: {
+        Row: {
+          days: number | null;
+          entity_id: string | null;
+          entity_label: string | null;
+          entity_type: string | null;
+          kind: string | null;
+          quantity: number | null;
+          severity: string | null;
+          since: string | null;
+          subject_label: string | null;
         };
         Relationships: [];
       };
@@ -2814,6 +3112,38 @@ export type Database = {
             referencedColumns: ["product_id"];
           },
         ];
+      };
+      work_order_activity: {
+        Row: {
+          age_days: number | null;
+          appointment_id: string | null;
+          bike_id: string | null;
+          cancelled_at: string | null;
+          cancelled_day: string | null;
+          checked_in_at: string | null;
+          checked_in_day: string | null;
+          collected_at: string | null;
+          collected_day: string | null;
+          completed_at: string | null;
+          completed_day: string | null;
+          currency: string | null;
+          customer_id: string | null;
+          days_awaiting_collection: number | null;
+          days_to_complete: number | null;
+          days_to_start: number | null;
+          is_open: boolean | null;
+          is_overdue: boolean | null;
+          job_number: string | null;
+          lead_mechanic_id: string | null;
+          ready_day: string | null;
+          ready_for_collection_at: string | null;
+          started_at: string | null;
+          started_day: string | null;
+          status: Database["public"]["Enums"]["work_order_status"] | null;
+          time_to_complete: string | null;
+          work_order_id: string | null;
+        };
+        Relationships: [];
       };
     };
     Functions: {

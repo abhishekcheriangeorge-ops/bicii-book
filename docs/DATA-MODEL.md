@@ -1232,9 +1232,10 @@ never exposed.
 
 | View | Purpose |
 |---|---|
-| `financial_lines` | Union of non-voided `work_order_line_items` (recognised at `work_orders.completed_at`) and `sale_lines` (recognised at `sales.recognized_at`): source, recognized_at, sale, cost, yield, cult_commons_share, ownership_type, product/service/category, mechanic. |
-| `daily_summary` | One row per day: appointments, arrivals, no-shows, jobs by status transition that day, gross sales, COGS, yield, CC share, yield after CC, parts consumed, adjustments, consignment sales, new liabilities. |
-| `work_order_activity` | Per job: check-in, start, completion, collection dates and durations; drives the board and overdue filters. |
+| `financial_lines` | Built (Phase 5, D32 RECOGNITION). One row per recognised ENTRY, columns in this order: `entry_key` text ('wol:' ‖ line id, unique), `source` text, `entry_kind` text ('line'), `source_line_id` uuid, `document_id` uuid, `document_number` text, `channel` text, `recognized_at` timestamptz, `recognized_day` date (`private.shop_day`), `line_type` text, `service_id`, `product_id`, `inventory_unit_id`, `category_id` (the service's or product's), `ownership_type` text (inventory lines: the unit's, else the product's; null otherwise), `consignment_item_id` (null until P6), `customer_id`, `bike_id`, `lead_mechanic_id`, `description` text, `quantity`, `unit_sale_price`, `unit_direct_cost`, `cult_commons_rate`, `sale_total`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc` (all plain numeric), `is_loss` boolean (yield < 0), `currency` text, `cost_pending` boolean. Pinned vocabulary: `source` ∈ ('work_order','sale'); `channel` ∈ ('workshop','retail','online'); `document_id` = work_orders.id or sales.id; `document_number` = the J- job number or the S- sale number; `entry_kind` = 'line'. Recognition (D3 as modified by D15, refined by D32): every non-voided line of a job with a current `completed_at` (completed, ready for collection or collected; never open or cancelled), on the shop day of that `completed_at`. Lines are frozen once completed, so the only correction is a reopen, which removes the whole job from its earlier day until it is completed again (past days can change; no reversal entries for workshop lines). Amounts come only from the line's snapshots and generated columns; each entry's Cult Commons is the line's own share (≥ 0, D1), so no negative Cult Commons payment arises; `cost_pending` lines (D14) are recognised at cost 0 and flagged. Phase 6 appends a `union all` branch from `sale_lines`/`sales` with every column in this order (source 'sale', channel from `sales.source`, `cost_pending` false); Phase 9 appends only genuinely new columns at the end, never synonyms. |
+| `daily_summary` | Built (Phase 5). One row per shop day from the earliest activity day (check-in, recognised entry or movement; today when none) to `private.shop_today()`, zero-filled; columns fixed in this order: 1 `day`; 2–7 `jobs_checked_in`, `jobs_started`, `jobs_completed`, `jobs_ready_for_collection`, `jobs_collected`, `jobs_cancelled` (flows: jobs whose CURRENT stamp falls that day, D31); 8 `currency` (`private.shop_currency()`); 9 `lines_recognised`; 10–14 `gross_sales`, `cogs`, `yield_total`, `cult_commons_share` (Σ entry shares, D1), `bicii_yield_after_cc` (shop-currency `financial_lines` by `recognized_day`); 15 `loss_lines`, 16 `loss_total` (≤ 0); 17 `parts_consumed_qty`, 18 `parts_consumed_lines`, 19 `parts_returned_qty` (reversals of job consumptions); 20 `stock_adjustments`, 21 `significant_stock_adjustments` (D33); placeholders, NULL now: 22 `appointments_scheduled`, 23 `appointments_arrived`, 24 `appointments_no_show` (Phase 2 fills exactly these by create or replace, from `reporting.appointment_daily`: non-cancelled appointments whose `starts_at` falls that shop day; of those, CURRENT status arrived, checked_in or completed; CURRENT status no_show; it may extend the series end so future days with appointments appear), 25 `consignment_sales`, 26 `consignment_sales_total`, 27 `new_consignor_liability` (Phase 6 fills them under these names). Integer counts and numeric money with explicit casts; Phase 9 appends new measures only after column 27. |
+| `work_order_activity` | Built (Phase 5). One row per job: `work_order_id`, `job_number`, `status` (enum), `customer_id`, `bike_id`, `lead_mechanic_id`, `appointment_id`, `currency` text; the CURRENT stamps `checked_in_at`, `started_at`, `completed_at`, `ready_for_collection_at`, `collected_at`, `cancelled_at` and their shop days `checked_in_day`, `started_day`, `completed_day`, `ready_day`, `collected_day`, `cancelled_day`; `is_open`; `is_overdue` (D20: open and `now() - checked_in_at > interval '7 days'`); `age_days` (open: today − check-in day; else completion or cancellation day − check-in day); `days_to_start`, `days_to_complete`; `days_awaiting_collection` (completed/ready: today − completion day; collected: collection day − completion day); `time_to_complete` interval. Integer days and intervals only. A reopened job's completion stamps are its latest ones (D15). |
+| `operational_exceptions` | Built (Phase 5, D34). Columns in order: `kind`, `severity` ('danger' \| 'warning'), `entity_type` ('work_order', 'product', 'inventory_unit', 'work_order_line'), `entity_id`, `entity_label` (job number or P-/U- short ID), `subject_label` (customer · bike, or the product name, with the location for negative stock), `days`, `quantity`, `since`. Kinds: `overdue_job` (warning, which only orders it after danger rows: the UI shows Overdue in the danger tone, as everywhere else; exactly D20, 7 = `OVERDUE_AFTER_DAYS`, strictly more than 7 × 24 h), `uncollected_job` (warning; completed or ready, completed ≥ 7 shop days ago), `negative_stock` (danger; `stock_levels.on_hand < 0`, quantity = on-hand), `unit_hold_stale` (danger; a held_for_customer unit with no live inventory line on an open job; since = its last status change), `currency_mismatch` (danger; a would-be-recognised line not in the shop currency, excluded from totals). Kinds are text: Phase 6 (unit_state_mismatch, unsettled_consignment), Phase 9 (more kinds; columns `issue, short_id, title, detail, amount, currency` appended at the end) and Phase 10 (integration_failed) replace the view keeping these columns first. |
 | `work_order_totals` / `work_order_totals_staff` | Running totals per job; the staff variant includes cost and yield. |
 | `stock_levels` | Built (Phase 4): on-hand (`sum(quantity_delta)`) and `last_movement_at` per product and location from the ledger. security_invoker, SELECT to authenticated (staff rows only through RLS). |
 | `product_stock` | Built (Phase 4): every product with on-hand across locations (0 when none), available and held units, `negative_locations` (locations below zero) and `below_reorder` (quantity product, reorder point set, on_hand <= reorder_point). security_invoker. |
@@ -1247,6 +1248,38 @@ never exposed.
 
 Materialise `daily_summary` only if measured to be slow; refresh then runs
 `after()` completion/sale mutations.
+
+**Phase 5 reporting rules (PLAN D30–D35).**
+
+- `financial_lines`, `daily_summary`, `work_order_activity` and
+  `operational_exceptions` are security_invoker views that are granted to
+  NO API role, although `reporting` is exposed (the explicit revoke is
+  tested). The app reads them only through the §16 RPCs, plus Phase 4's
+  granted `reporting.low_stock`.
+- The RPCs select view columns BY NAME and pass the `daily_summary`
+  placeholders through un-coalesced, so Phases 2 and 6 replace only the
+  views (create or replace, same leading columns) and the RPC results
+  follow.
+- Shop days (D35): every day computation goes through
+  `private.shop_day(ts)`, `private.shop_today()` and
+  `private.shop_day_start(day)`, never `current_date` or `ts::date`. They
+  read `private.shop_timezone()` ('Asia/Singapore') and totals use
+  `private.shop_currency()` ('SGD'); Phase 2 replaces those two bodies with
+  the same signatures to read `shop_settings` (timezone, default_currency)
+  with these fallbacks. All five are `stable`, `language sql`, not
+  definer, with no API grants. The TypeScript mirror is `SHOP_TIME_ZONE` /
+  `shopDateKey` in `src/lib/dates.ts`.
+- "Recognised once" needs no lock of its own: `set_work_order_status` takes
+  the job FOR UPDATE (`private.lock_work_order`) before its same-status and
+  transition checks, so concurrent completions serialise and a repeat
+  returns the row unchanged with no event; `financial_lines` has one entry
+  per live line of a job with a `completed_at`
+  (`reporting-concurrency.test.ts`).
+- Significant adjustment (D33) lives in one replaceable function,
+  `private.is_significant_adjustment(movement_type, quantity_delta,
+  is_unit, unit_cost)`: a `stock_adjustment` or `damaged` movement with
+  |delta| ≥ 5, on a unique unit, or |delta| × unit cost ≥ 100.00 (unit
+  cost = `unit_cost_snapshot`, else `products.default_direct_cost`, else 0).
 
 ## 15. Row-level security matrix
 
@@ -1292,7 +1325,7 @@ security-definer function. Blank = no access.
 | label_templates, printer_profiles | S | A | A | A |
 | print_jobs | S | S | S | — |
 | integration_events, retry queue, sync | A | service role only | service role / RPC | — |
-| reporting.* financial views | P(view_financial_reports) | — | — | — |
+| reporting.* financial views (financial_lines, daily_summary, work_order_activity, operational_exceptions) | no grants (not even SELECT to authenticated); via RPCs: S for counts; P(view_financial_reports) for money rows; cost columns P(view_costs) (FIN-ACCESS D30) | — | — | — |
 | reporting.public_items | everyone: anon and authenticated (definer view, published rows and public columns only; the only anonymous inventory surface; anon has USAGE on `reporting` for it and EXECUTE on `private.selling_price`, which it calls) | — | — | — |
 
 **Customer access pattern (Phase 1, binding for every later phase).** Staff
@@ -1388,6 +1421,13 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `write_off_unit(request_id, unit_id, reason)` → `unit_status_result (unit_id, status)` | P(adjust_stock) | Built (Phase 4). `reason_required`; P0002; `lock_stock`, the unit FOR UPDATE; replay: a damaged movement with this request_id for this unit → current state, the key used for anything else → `request_conflict`; already written off → no-op; available or reserved → written_off plus a `damaged` −1; else `unit_not_available`. |
 | `set_publication_status(product_id, status, reason = null)` → `publication_result (product_id, publication_status, public_slug)` | P(manage_inventory) | Built (Phase 4). 22004 on null ids; `reason_too_long` (> 500); `lock_stock(product)`, then the product FOR UPDATE (P0002). A target of `sold`, or leaving `sold` for anything but `archived` → `publication_sold_by_sale`. Same status → the row, no event. Otherwise the products trigger: `publication_transition_invalid`, `publication_requires_price` / `_photo` / `_available_unit`, slug at the first publish, `publication_changed {from, to}` with the reason. Phase 10 hooks the Shopify sync onto publication changes by trigger. |
 | `split_unit_from_stock(new_product_id, unit_id, source_product_id, location_id, name, reason, serial_number = null, condition = null, sale_price = null)` → `split_unit_result (product_id, product_short_id, unit_id, unit_short_id)` | P(adjust_stock) and P(manage_inventory) | Built (Phase 4, D28). 22004 on null ids; `reason_required`, `reason_too_long` (> 480: the movements' reason is "Split to U-######: " + reason). `lock_stock(source)`, then replay (unit id on new_product_id → the same result; the unit id or new_product_id used otherwise → `unit_conflict`); P0002; `product_not_quantity`, `product_archived`, `ownership_not_saleable` (D27); P0002 / `location_inactive`; `insufficient_stock` (on-hand at the location < 1). Inserts a draft unique product (name; description, brand, category, currency from the source; price = sale_price else the source's; default cost = the source's), `private.register_unit` (shop_owned, cost = the source's default cost) and two `stock_adjustment` movements (−1 source, +1 unit) with the reason, cost snapshot and request_id = unit id. Writes the carried cost for a caller without P(view_costs) (definer path; the invoker cost-write guards still refuse that caller's direct writes); never returns a cost. 23514 checks re-raised without the row. |
+| `daily_summary(from_day date = null, to_day date = null)` → table of the 27 `reporting.daily_summary` columns | S | Built (Phase 5). A null bound takes the other; both null = shop today; `report_range_invalid` when from > to or the range exceeds 366 days. One zero-filled row per day (`generate_series` left join the view), future and pre-history days as zero rows; placeholders passed through. D30: without view_financial_reports `currency`, `lines_recognised`, `gross_sales`, `consignment_sales`, `consignment_sales_total` and every cost column are NULL; with it but without view_costs `cogs`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc`, `loss_lines`, `loss_total`, `new_consignor_liability` are NULL. By day. |
+| `today_dashboard(on_day date = null)` → `day, is_today, generated_at, can_see_financials, can_see_costs`, daily_summary columns 2–27, `received_now, waiting_now, ready_to_start_now, in_progress_now, awaiting_collection_now, open_jobs_now, overdue_now, low_stock_now, exceptions_now, cost_pending_lines` | S | Built (Phase 5). Null = today; a future day → `report_range_invalid`. Reads `public.daily_summary(d, d)` (gating in one place). The `*_now` snapshot (D31; BOARD_GROUPS: received+diagnosing, awaiting_customer+awaiting_parts+paused, ready_to_start, in_progress, completed+ready_for_collection, open, D20 overdue, `reporting.low_stock` rows, `operational_exceptions` rows) only when d is today, else NULL. `cost_pending_lines` = d's shop-currency entries with `cost_pending` (D14), NULL without view_financial_reports. |
+| `work_order_activity_on(on_day date = null)` → `work_order_id, job_number, status, customer_id, customer_label, bike_id, bike_title, lead_mechanic_name, checked_in_at, started_at, completed_at, ready_for_collection_at, collected_at, cancelled_at, checked_in_on_day, started_on_day, completed_on_day, ready_on_day, collected_on_day, cancelled_on_day, is_open, is_overdue, age_days, sale_total, currency` | S | Built (Phase 5). Jobs with at least one current stamp on that shop day (null = today), by job number; `customer_label` = `private.customer_label`, `bike_title` = brand model variant (bikeTitle rule), `sale_total` sale only (`work_order_totals`). |
+| `stock_adjustments_on(on_day date = null)` → `movement_id, created_at, movement_type, product_id, product_short_id, product_name, inventory_unit_id, unit_short_id, location_name, quantity_delta, reason, actor_name, significant, value_at_cost, currency` | S; value_at_cost P(view_costs) | Built (Phase 5). `stock_adjustment` and `damaged` movements of that shop day (null = today), newest first; `significant` per D33 for every staff member; `value_at_cost` = \|delta\| × coalesce(snapshot, product default, 0), NULL without view_costs (D30). |
+| `operational_exceptions(max_rows integer = 50)` → `kind, severity, entity_type, entity_id, entity_label, subject_label, days, quantity, since` | S | Built (Phase 5, D34). Danger first, then oldest `since`; max_rows clamped to 1..200. Phase 9 drops and recreates it with appended columns. |
+| `financial_lines(from_day date, to_day date)` → the 32 `reporting.financial_lines` columns in order | P(view_financial_reports) (42501 otherwise) | Built (Phase 5). Null bounds as daily_summary; at most 31 days inclusive (`report_range_invalid`); PostgREST returns ≤ 1000 rows, so callers page with `.range()`. Without view_costs `unit_direct_cost`, `cult_commons_rate`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc`, `is_loss` are NULL. By recognized_at, document_number, source_line_id. |
+| `work_order_yield(target_work_order_id uuid)` → `work_order_id, job_number, status, currency, line_count, sale_total, cost_total, yield_total, cult_commons_share, bicii_yield_after_cc, loss_line_count, loss_total, cult_commons_rates numeric[], recognized_at, recognized_day, cost_pending_count` | P(view_costs) (42501 otherwise) | Built (Phase 5). The job's live lines whether or not it is completed (running economics; equals `work_order_totals_staff`); rates = distinct snapshot rates ascending; recognized_at = `completed_at` (NULL while open, cancelled or reopened, D32). Unknown job P0002. |
 | `record_retail_sale(lines[], customer_id, recognized_at, idempotency_key)` | S | Sale + lines + movements; unit/consignment → sold. |
 | `restock_unit(unit_id, location_id, reason)` | P(adjust_stock) | `return` movement; unit → available; product status back from `sold`. |
 | `create_consignment_item(...)` | P(manage_consignments) | Item + unit + movement. |
@@ -1443,7 +1483,8 @@ project; never to production.
 Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
 `tests/fixtures/ids.ts`; none has a login yet) and bikes
 `b1000000-…-0000000000NN` (`BIKE`, short IDs `B-000001`…`B-000010` in insert
-order, `BIKE_SHORT_ID`), one shop bike without an owner and one bike
+order, `BIKE_SHORT_ID`; Phase 4 adds B-000011…B-000013 and Phase 5
+B-000014…B-000017), one shop bike without an owner and one bike
 transferred between customers (two ownership events). No attachments.
 
 Phase 3 part (done): service categories `ca000000-…-00000000000N`
@@ -1456,17 +1497,19 @@ not public) and Suspension Fork Service 120/25 (inactive, archived 30 days
 ago). Nine jobs `f1000000-…-00000000000N` (`WORK_ORDER`, job numbers
 `J-000001`…`J-000009` in insert order, `JOB_NUMBER`), lines
 `f2000000-…-0000000000NN` (`LINE`, all at rate 0.3000) and assignments
-`f3000000-…-0000000000NN`. Times are offsets from the seed's `now()`
-(d = days, h = hours):
+`f3000000-…-0000000000NN`. Times are relative to the shop day the seed
+runs: `pg_temp.seed_at(N, '10:00')` plus the same minute/hour offsets (one
+base local time per job, all between 08:00 and 18:00 Singapore time; see
+"Phase 5 part"); d = shop days before the reset day, h = hours:
 
 | Job | Customer, bike | Status | What it demonstrates |
 |---|---|---|---|
 | J-000001 | Tan, Tarmac | collected | The full walk: checked in −9d, in progress −8d, completed −7d, ready −7d+1h, collected −6d; lead Marcus; Full Service + Brake Bleed ×2: sale 290.00, cost 16.00, yield 274.00, Cult Commons 82.20; intake and completion notes. |
 | J-000002 | Priya, Domane | ready_for_collection | Money the E2E tests assert: Basic Service, Tyre Installation ×2 and a manual "Continental GP5000 700×28c tyre" ×2 at 95.00 (cost 62.00): sale 300.00, cost 124.00, yield 176.00, CC 52.80, BICII after CC 123.20; approval flag with one `approval_flagged` event (Asha, −5d+1h); lead Nur. |
-| J-000003 | Hafiz, Brompton | completed | Completed two hours ago, not yet ready; lead Marcus with Nur as additional staff; Drivetrain Service. |
+| J-000003 | Hafiz, Brompton | completed | Started −1d 10:00, completed −1d 16:00, not yet ready; lead Marcus with Nur as additional staff; Drivetrain Service. |
 | J-000004 | Chloe, Giant | in_progress | Diagnosing −3d+1h then in progress −1d (a received → diagnosing step the customer never sees); Wheel True ×2. |
 | J-000005 | Chloe, Surly | awaiting_parts | A note (Nur, −5d−1h) before waiting for the customer's part; Custom Labour ×1.5. |
-| J-000006 | Daniel, Cannondale | awaiting_customer | The one overdue job (D20: open, checked in −8d); a diagnosis (Marcus, −8d+2h); no lines. |
+| J-000006 | Daniel, Cannondale | awaiting_customer | Phase 3's one overdue job (D20: open, checked in −8d; Phase 5's H7 is the other); a diagnosis (Marcus, −8d+2h); no lines. |
 | J-000007 | Nurul, Bianchi | received | Just checked in, unassigned, no lines: checked in at seed time, after the Bianchi's sale from Daniel. |
 | J-000008 | Tan, Brompton | cancelled | Cancelled an hour after check-in with a reason (hidden from the customer, D17). |
 | J-000009 | Priya, Tern | diagnosing | A voided line: Asha quoted a bottom bracket (45.00, cost 28.00), Nur voided it at −1d+3h; live total 80.00. |
@@ -1499,8 +1542,14 @@ tubes, Drivetrain, Cables & hoses, Care, Cockpit, Bikes; `PRODUCT_CATEGORY`).
 Products `9a000000-…-0000000000NN` (`PRODUCT`, `PRODUCT_SHORT_ID`) are
 inserted directly as the owner with `request.jwt.claims` naming the admin
 (so `created_by` and the history name an actor), in order, giving
-`P-000001`…`P-000016`; stock, units and the job go through the real RPCs
-as the admin, every request id used once.
+`P-000001`…`P-000016`, dated −30d 07:00. The opening stock and the units
+are dated −30d (from 08:00, a minute apart): owner statements writing
+exactly the rows `adjust_stock` and `create_unique_unit` write (same request
+ids, quantities, movement type, reason, cost snapshot, currency, actor), so
+they never show as today's adjustments; history events written by triggers
+(product and unit `created`, the bikes' stock link) keep seed time. The
+inventory job goes through the real RPCs as the admin, at seed time (today),
+every request id used once.
 
 | Short ID | Product | Price / cost | Reorder | On hand after the seed |
 |---|---|---|---|---|
@@ -1522,14 +1571,15 @@ as the admin, every request id used once.
 | P-000016 | X10 10-speed chain (discontinued), archived | 35.00 / 18.00 | — | none |
 
 All are internal_only except P-000007 (draft); none is public and there are
-no attachments. Opening stock is `adjust_stock` with request ids
+no attachments. Opening stock is written as `adjust_stock` would, with request ids
 `9c000000-…-0000000000NN` per product at its first location and
 `9c000000-…-0000000001NN` for the Workshop store rows of P-000003 and
 P-000012 ("Opening stock count"). Three shop bikes without an owner,
 `b1000000-…-000000000011`…`…013` (`BIKE.shopColnago`, `shopBrompton`,
 `shopSurly`; B-000011…B-000013), are in stock as units
-`9b000000-…-00000000000N` (`UNIT`, U-000001…U-000003, created by
-`create_unique_unit` at the Shop floor with their bikes linked).
+`9b000000-…-00000000000N` (`UNIT`, U-000001…U-000003, written as
+`create_unique_unit` would: shop-owned at the Shop floor, bike linked, a +1
+'Registered as a unique item' movement at the unit's direct cost).
 `reporting.low_stock` lists exactly P-000009, P-000008 and P-000012.
 
 The inventory job `9e000000-…-000000000001` (`INVENTORY_JOB`, J-000010) is
@@ -1539,3 +1589,91 @@ Schrader from the Shop floor (live), and line `…0002`, one Marathon Racer
 tyre, was voided ("Customer brought their own tyre"), so the ledger shows a
 `job_consumption` and its linked `reversal` (`SEED_LINE`). It is kept out of
 `WORK_ORDER` / `JOB_NUMBER`, which list Phase 3's nine jobs.
+
+Phase 5 part (done): **history relative to the reset day.** Every Phase 3,
+4 and 5 timestamp is written through the session-temporary
+`pg_temp.seed_at(days_ago integer, local_time time) returns timestamptz`,
+defined before the first Phase 3 statement: for `days_ago > 0` it is
+`((private.shop_today() - days_ago) + local_time) at time zone
+'Asia/Singapore'`; for day 0 it maps `local_time` proportionally into the
+part of today that has already passed (`shop_day_start(today) + (now() −
+shop_day_start(today)) × local_time / 24 h`), so today's rows keep their
+order and are never in the future at any time of day. The seed runs in one
+session and one transaction (`now()` is the same everywhere); Singapore has
+no DST, so `seed_at(n, t) − seed_at(m, t)` is exactly (m − n) × 24 h. Phase
+3 keeps its day offsets (not moved to days 7–13, which would make every
+open Phase 3 job overdue); J-000007 and J-000010 stay at seed time; Phase
+4's opening stock and units are at day 30; trigger-written history events
+keep their own (seed) time where the seed does not write them by hand.
+No migration was needed: no Phase 3/4 trigger overwrites an owner's
+timestamps.
+
+Eleven jobs `d5000000-…-0000000000NN` (`REPORT_JOB`, J-000011…J-000021 in
+insert order, `REPORT_JOB_NUMBER`), lines `d5100000-…` (`REPORT_LINE`, all at
+rate 0.3000), assignments `d5200000-…`, written as Phase 3's are (owner
+inserts, explicit times, claims naming whoever acts; a part from stock is
+the line, one `job_consumption` movement at the line's time with −quantity
+and cost snapshot = the line's unit cost, and a hand-written
+`stock_consumed` event one second later). d = shop days before the reset
+day; times are Singapore time. Four more customers' bikes
+`b1000000-…-000000000014`…`17` (B-000014…B-000017: Chloe's Specialized
+Diverge, Daniel's Canyon Endurace, Priya's Cervelo R5, Hafiz's Dahon Mu;
+`BIKE.chloeDiverge`, `danielEndurace`, `priyaCervelo`, `hafizDahon`) are
+inserted before H1 so that, as seed realism (the schema allows it), no
+bike has two jobs open at once and none is collected while another job on
+it is open (`reporting-seed.test.ts`). A bike awaiting collection may take
+a newer job (J-000003 then J-000010; H6 then J-000009):
+
+| Case | Job | Customer, bike, lead | Timeline | Lines (qty × sale / cost) → sale / cost / yield / CC / after CC |
+|---|---|---|---|---|
+| H1 service only (SPEC §10 ex. 1) | J-000011 | Tan, Brompton, Marcus | in d6 09:30, start d6 10:15, done d6 16:40, ready 16:45, collected d5 11:10 | Full Service 1 × 200.00 / 0.00 → 200 / 0 / 200 / 60.00 / 140.00 |
+| H2 parts (ex. 2) | J-000012 | Chloe, Diverge (B-000014), Nur | in d5 10:00, start d5 13:00, done d4 15:30, ready 15:35, collected d3 10:20 | wheelset 1 × 800.00 / 400.00 → 800 / 400 / 400 / 120.00 / 280.00 |
+| H3 combined (ex. 3) | J-000013 | Daniel, Endurace (B-000015), Marcus | in d4 09:45, start d4 11:00, done d3 17:10, ready 17:15, collected d2 12:00 | Full Service 200.00 + wheelset 800.00 / 400.00 → 1000 / 400 / 600 / 180.00 / 420.00 |
+| H4 loss line (D1) | J-000014 | Tan, Tarmac, Marcus | in d3 10:30, start d3 14:00, done d2 15:00, ready 15:05, collected d1 09:40 | Wheel True 1 × 40.00 / 0.00 + tyre 1 × 20.00 / 35.00 (yield −15.00, CC 0) → 60 / 35 / 25 / 12.00 (not 7.50) / 13.00 |
+| H5 rounding | J-000015 | Tan, Brompton, Nur (Asha prices) | in d2 10:00, start d2 15:00, done d1 14:00, ready 14:05 | manual 3 × 33.33 / 10.00 (CC 21.00) + 1 × 12.05 / 12.00 (CC 0.02, 0.015 half up) → 112.04 / 42.00 / 70.04 / 21.02 / 49.02 |
+| H6 uncollected (D34) | J-000016 | Priya, Tern, Nur | in d12 09:00, start d11 10:00, done d9 16:00, ready d9 16:05 | Custom Labour 1 × 120.00 |
+| H7 overdue (D20) | J-000017 | Priya, Cervelo R5 (B-000016), Marcus | in d11 11:00, start d10 10:00, awaiting parts d10 15:00 | Bike Build 1 × 150.00 (open, never recognised) |
+| H8 cancelled (D16) | J-000018 | Hafiz, Dahon (B-000017), Nur | in d2 11:30, cancelled d2 12:15 "Customer declined the quote" | none |
+| T1 in progress today | J-000019 | Daniel, Endurace, Marcus | in d0 09:00, start d0 09:30 | Drivetrain Service 1 × 90.00 / 10.00 (open) |
+| T2 collected today | J-000020 | Chloe, Diverge, Marcus | in d1 17:00, start d0 09:15, done 11:30, ready 11:35, collected 12:10 | Drivetrain Service 1 × 120.00 / 0.00 + chain 1 × 45.00 / 22.00 → 165 / 22 / 143 / 42.90 / 100.10 |
+| T3 received today (the anchor) | J-000021 | Chloe, Diverge (after T2's collection), Nur | in d0 13:00 | none |
+
+Six quantity products `d5300000-…-00000000000N` (`REPORT_PRODUCT`,
+`REPORT_PRODUCT_SHORT_ID`, P-000017…P-000022) in a new product category
+'Wheels' (`ca000000-…-000000000013`, sort 8) and the existing ones, with
+opening stock at the Shop floor at d30 08:30 (request ids
+`d5400000-…-00000000000N`), so Phase 4's figures are untouched: Carbon disc
+wheelset 700c, 45mm (Hunt, 849.00 / 400.00, reorder 1, 4 → 2 after H2, H3),
+Corsa Pro 700x28c tyre (Vittoria, 95.00 / 35.00, reorder 2, 6 → 5), SLA-110
+11-speed chain (YBN, 45.00 / 22.00, reorder 3, 10 → 9), Disc 34 RS brake
+pads (SwissStop, 32.00 / 15.00, reorder 5, 20 → 19), Butyl inner
+700x25-32c, Presta 48mm (Panaracer, 12.00 / 5.00, reorder 10, 30 → 24) and
+CO2 cartridge 25g, threaded (Genuine Innovations, 6.00 / 3.00, no reorder
+point, 10 → 12). None is low: `reporting.low_stock` still lists exactly
+P-000008, P-000009 and P-000012. Stock adjustments by Asha (request ids
+`d5400000-…-00000000001N`): A1 d2 11:00, brake pads −1 `stock_adjustment`
+"Damaged packaging, written off" (not significant); A2 d1 16:30, inner −6
+`damaged` "Water damage in storage" (significant, D33: ≥ 5 units; 30.00 at
+cost); A3 d0 (08:30 scaled), CO2 +2 `stock_adjustment` "Recount found two in
+the workshop drawer" (not significant). No open job is checked in on d7, so
+which jobs are overdue never depends on the time of day the reset ran.
+
+At the anchor the snapshot is received 4 (J-000007, J-000009, J-000010,
+T3), waiting 3 (J-000005, J-000006, H7), ready to start 0, in progress 2
+(J-000004, T1), awaiting collection 4 (J-000002, J-000003, H5, H6), open 9,
+overdue 2 (J-000006, H7), low stock 3 and exceptions 3 (overdue J-000006 and
+H7, uncollected H6). The per-day figures for d0…d6 (Phase 3/4 rows
+included) are `SEED_DAYS` in `tests/fixtures/reporting.ts`, written by hand
+together with `SPEC_EXAMPLE_JOBS`, `SEED_SNAPSHOT`, `SEED_EXCEPTIONS` and
+`SEED_ADJUSTMENTS`; `tests/db/reporting-seed.test.ts` proves the views
+reproduce them exactly.
+
+**The anchor rule.** The seed is anchored to the shop day `db:reset` ran,
+which need not be today (the DB test template is built once per run, an
+existing database keeps its seed, a run can cross Singapore midnight).
+Tests read the anchor from T3's check-in without the functions under test
+(`seedToday()` in `tests/db/reporting-fixtures.ts`; `E2E_SEED_ANCHOR`, set
+by `tests/e2e/global-setup.mts`, with `seedAnchor()` / `anchorDay(n)` in
+`tests/e2e/helpers.ts`), count days back from it, and skip with a message
+the assertions that need the anchor to be today. Reset (`npm run
+db:reset`) to move the demo's "today".

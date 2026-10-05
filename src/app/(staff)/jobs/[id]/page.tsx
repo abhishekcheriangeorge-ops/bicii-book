@@ -23,6 +23,7 @@ import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime, shopDaysBetween } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
 import { listLocations } from "@/lib/domain/inventory";
+import { getWorkOrderYield } from "@/lib/domain/reports";
 import {
   TIMELINE_ALL_ROWS,
   getWorkOrder,
@@ -32,7 +33,14 @@ import {
 import { telHref } from "@/lib/people";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
-import { STATUS_LABELS, isClosedStatus, isOpenStatus, isOverdue, statusTone } from "@/lib/workshop";
+import {
+  OVERDUE_AFTER_DAYS,
+  STATUS_LABELS,
+  isClosedStatus,
+  isOpenStatus,
+  isOverdue,
+  statusTone,
+} from "@/lib/workshop";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -82,7 +90,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   const allEvents = query.events === "all";
   const viewCosts = hasPermission(staff, "view_costs");
   const supabase = await createClient();
-  const [job, photos, activeStaff, locations] = await Promise.all([
+  const [job, photos, activeStaff, locations, report] = await Promise.all([
     getWorkOrder(supabase, id, {
       viewCosts,
       ...(allEvents ? { timelineRows: TIMELINE_ALL_ROWS } : {}),
@@ -90,6 +98,8 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
     listPhotos(supabase, { entityType: "work_order", entityId: id }),
     listActiveStaff(supabase),
     listLocations(supabase),
+    // The yield panel's rates, losses and recognition (view_costs only, D30).
+    viewCosts ? getWorkOrderYield(supabase, id) : Promise.resolve(null),
   ]);
   if (!job) notFound();
   // Units on live part lines: a reopen puts them back on hold (D25).
@@ -148,7 +158,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
         </p>
         <p className="text-sm text-dust-500">
           Checked in {formatDateTime(job.stamps.checkedInAt)} · {age(job.stamps.checkedInAt, now)}
-          {overdue ? " · open more than 7 days" : ""}
+          {overdue ? ` · open more than ${OVERDUE_AFTER_DAYS} days` : ""}
         </p>
       </header>
 
@@ -241,7 +251,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
             ) : null}
             <LineTable lines={job.lines} viewCosts={viewCosts} canVoid={open} />
             <div className="mt-3">
-              <TotalsSummary totals={job.totals} ccRate={sharedRate(job)} />
+              <TotalsSummary totals={job.totals} ccRate={sharedRate(job)} report={report} />
             </div>
           </Card>
 

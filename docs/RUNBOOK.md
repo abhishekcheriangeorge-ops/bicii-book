@@ -11,6 +11,11 @@ everyday local setup (the Docker-free devstack) see the README quickstart.
 - [Vercel environment setup](#vercel-environment-setup)
 - [CI](#ci)
 
+The demo data is relative to the shop day (Singapore) the database was
+last reset with `npm run db:reset` or `supabase db reset`: reset again to
+move the demo's "today" (Today, the daily summary and the board read it);
+E2E global setup reads that anchor day once into `E2E_SEED_ANCHOR`.
+
 Pin the CLI version the repo uses (`supabase@2.119.0`, the one that ran
 `supabase init` and generates `src/lib/database.types.ts`). Every command
 below is written as `npx supabase@2.119.0 …`; `supabase …` from a global
@@ -60,7 +65,7 @@ Differences from the devstack:
   needs the devstack.
 - **E2E:** `npx supabase@2.119.0 db reset && E2E_EXTERNAL_STACK=1 npm run test:e2e`.
   Playwright then skips its own reset and devstack start and only checks
-  that the seeded admin can sign in.
+  that the seeded admin can sign in (and reads the seed's anchor day).
 - `config.toml` sets `[db] major_version = 17`, so Docker runs Postgres 17
   while the devstack and CI run 16. Keep migrations to SQL both accept.
   When the hosted projects exist, set `major_version` to theirs (`show

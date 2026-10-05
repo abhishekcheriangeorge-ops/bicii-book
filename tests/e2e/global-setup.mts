@@ -7,12 +7,19 @@
  *   2. Start the devstack services if they are not running (idempotent).
  *   3. Wait until a seeded login works end to end through the gateway
  *      (Auth issues a JWT, PostgREST answers my_staff_profile with it).
+ *   4. Read the seed's anchor day once (the shop day `db:reset` ran, from
+ *      REPORT_JOB.todayReceived's check-in) into E2E_SEED_ANCHOR, which the
+ *      Playwright workers inherit (helpers.ts seedAnchor(), anchorDay()).
  *
  * Needs Postgres 16 and the devstack cache (`npm run devstack:setup`, once).
  * E2E_EXTERNAL_STACK=1 skips steps 1 and 2 for a stack this script does not
- * manage (`supabase start`, already reset and seeded); step 3 still runs.
+ * manage (`supabase start`, already reset and seeded); steps 3 and 4 still
+ * run (same DATABASE_URL). With E2E_RESET=0 or an external stack the anchor
+ * may be an earlier day than today: tests count days from it.
  */
 import { execFileSync } from "node:child_process";
+
+import pg from "pg";
 
 import {
   ANON_KEY,
@@ -22,7 +29,7 @@ import {
   databaseUrl,
   withDatabase,
 } from "../../scripts/devstack/config.mjs";
-import { SEED_PASSWORD, STAFF_EMAIL } from "../fixtures/ids";
+import { REPORT_JOB, SEED_PASSWORD, STAFF_EMAIL } from "../fixtures/ids";
 
 function run(script: string, args: string[], env: Record<string, string>) {
   execFileSync(process.execPath, [`scripts/devstack/${script}`, ...args], {
@@ -58,6 +65,27 @@ async function stackWorks(): Promise<boolean> {
   }
 }
 
+/** The seed's anchor day ('YYYY-MM-DD'), read the way tests/db seedToday() reads it. */
+async function readSeedAnchor(url: string): Promise<string> {
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ d: string }>(
+      `select (checked_in_at at time zone 'Asia/Singapore')::date::text as d
+         from public.work_orders where id = $1`,
+      [REPORT_JOB.todayReceived],
+    );
+    if (rows.length === 0) {
+      throw new Error(
+        "[e2e] the seed's anchor job (REPORT_JOB.todayReceived) is missing: reset the database (`npm run db:reset`).",
+      );
+    }
+    return rows[0].d;
+  } finally {
+    await client.end();
+  }
+}
+
 export default async function globalSetup() {
   const env = { DATABASE_URL: withDatabase(databaseUrl(), DEFAULT_DB_NAME) };
 
@@ -86,4 +114,7 @@ export default async function globalSetup() {
     await new Promise((r) => setTimeout(r, 500));
   }
   console.info("[e2e] devstack ready");
+
+  process.env.E2E_SEED_ANCHOR = await readSeedAnchor(env.DATABASE_URL);
+  console.info(`[e2e] seed anchor (day 0): ${process.env.E2E_SEED_ANCHOR}`);
 }

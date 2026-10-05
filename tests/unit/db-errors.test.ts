@@ -178,6 +178,14 @@ describe("mapDbError", () => {
     ).toBe("Stock photos have no customer; choose Internal or Public.");
   });
 
+  it("maps the reporting range error (Phase 5)", () => {
+    expect(mapDbError(pgrst("P0001", "report_range_invalid"))).toMatchObject({
+      kind: "business",
+      reason: "report_range_invalid",
+      message: "Pick a start day on or before the end day, within the allowed range.",
+    });
+  });
+
   it("maps numeric overflow (22003) to a plain message", () => {
     expect(mapDbError(pgrst("22003", "numeric field overflow"))).toEqual({
       message: "That amount is too large.",

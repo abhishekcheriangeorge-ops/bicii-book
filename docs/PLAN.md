@@ -412,6 +412,33 @@ job-level yield panel, and the `view_financial_reports` gate. Tests: fixture
 table reconciles end to end from seed; a staff user without the permission
 gets no financial rows.
 
+Shipped (M1.5, Phase 5 as a whole): migrations
+`20261004002300_reporting_calendar`, `…2400_financial_lines`,
+`…2500_daily_summary` and `…2600_dashboard_rpcs` (read-only: no table and
+no change to a Phase 3 or 4 function); `private.shop_timezone`,
+`shop_currency`, `shop_day`, `shop_today`, `shop_day_start` and
+`is_significant_adjustment`; views `reporting.financial_lines`,
+`work_order_activity`, `daily_summary` and `operational_exceptions`
+(granted to no API role); security definer read RPCs `daily_summary`,
+`today_dashboard`, `work_order_activity_on`, `stock_adjustments_on`,
+`operational_exceptions`, `financial_lines` (view_financial_reports) and
+`work_order_yield` (view_costs), and the error code
+`report_range_invalid`. A seed spanning a week of shop days relative to
+the reset day (the SPEC §10 examples, a loss line, rounding, overdue,
+uncollected and cancelled jobs, stock adjustments;
+`tests/fixtures/reporting.ts`). App: `src/lib/reports.ts` and
+`src/lib/domain/reports.ts`; the Today dashboard at `/` (flows, the
+current snapshot linked to the board, appointment and consignment
+placeholders, Money, stock, low stock, what needs attention, activity and
+the last 7 days; any earlier day by `?day=`); the job yield panel as an
+extension of P3's `TotalsSummary` (snapshot rate range, loss note,
+recognition day). Decisions D30-D35 (§6). Tests: the database files
+`reporting`, `reporting-access`, `reporting-concurrency` and
+`reporting-seed` plus `meta` checks; unit tests for `reports.ts`, the new
+`dates.ts` helpers and `TotalsSummary`; E2E `today.spec.ts` (the
+milestone journey on phone and iPad, the mechanics' boundaries, the
+seeded history, low stock, adjustments and exceptions).
+
 ### Phase 6 — Consignment
 
 - Migrations: consignors, consignment_items, consignment_item_charges,
@@ -593,6 +620,12 @@ build proceeds with; confirm or change before the phase that uses it.
 | D27 | SHOP-OWNED-ONLY: whose stock can be a job part | Phase 4 creates shop-owned units only. Consignment and customer_owned stock is never a job part: `add_inventory_line` refuses it with `ownership_not_saleable`, and Phase 6 keeps that refusal (its backstop trigger raises the same code; it does not replace `add_inventory_line`). Consigned units are created only by Phase 6's `create_consignment_item` (through `private.register_unit`), so a consigned item never exists without its liability record. customer_owned stays reserved and never saleable. | Phase 4 |
 | D28 | SPLIT-COST: turning one counted item into a unique item | One RPC, `split_unit_from_stock` (Phase 4 step 2). It decrements the source by one (a `stock_adjustment` with a reason) and creates a new draft unique product and unit at the same location; the new unit's direct cost is the source's `default_direct_cost`. | Phase 4 |
 | D29 | BIKE-WITH-CUSTOMER: a sold shop bike after it reached its buyer | Once `transfer_bike_ownership` has given a sold unit's bike to a customer, the unit never goes back into stock while the bike has a customer. Reopening the job that sold it is refused with `bike_with_customer` (the reopen would hold the unit again, clear `sold_at` and let a void make a customer's bike available and public); `void_line` refuses the same state, and `private.assert_unit_consistent` fails an available, reserved or held_for_customer unit whose bike has a customer. Safe default: to correct that job, transfer the bike back to the shop (with a reason), reopen, correct, complete, transfer again. `reporting.public_items` cuts a unit's bike photos at the earlier of `sold_at` and the bike's first transfer to a customer after the unit was registered. | Phase 4 |
+| D30 | FIN-ACCESS: who sees financial reports | Financial report ROWS (`financial_lines`, the money columns of `daily_summary` / `today_dashboard`, Today's Money section) need `view_financial_reports` (`financial_lines` raises 42501 without it). Every cost-derived figure in them also needs `view_costs`; without it the figure comes back NULL and the UI says it is hidden: COGS, unit cost, yield, Cult Commons share and rate, BICII yield after CC, losses and loss counts, value at cost and (Phase 6) consignor liability. The job-level yield panel (P3's totals summary on the job page, `work_order_yield`) needs `view_costs` only (job costing, SPEC §4.2/§22). Operational counts (jobs, parts used, adjustments and whether one is significant, low stock, exceptions) are visible to all active staff. Adopted by every later phase (P6 sales/consignment, P9 reports). | Phase 5 |
+| D31 | TODAY-TILES: Today's job tiles | Checked in, started, completed, ready for collection, collected and cancelled are FLOWS: the jobs whose CURRENT stamp falls on that shop day (a reopened job leaves its earlier Completed/Ready flow until it is completed again, D15). Received (received + diagnosing), waiting (awaiting_customer + awaiting_parts + paused), ready to start, in progress, awaiting collection (completed + ready_for_collection) and overdue (D20) are the CURRENT SNAPSHOT, from status, returned only for today and grouped as P3's `BOARD_GROUPS`; past-day snapshots would need status replay (Phase 9 may add it). | Phase 5 |
+| D32 | RECOGNITION: workshop revenue recognition (refines D3 as modified by D15; **owner to confirm, with D15**) | A workshop line is recognised when it is not voided and its job has a `completed_at`, on the shop day of the job's CURRENT `work_orders.completed_at`: completed, ready-for-collection and collected jobs count, open and cancelled jobs never do. Phase 3 freezes a job's lines once it is completed (no add, no void), so the only correction is a reopen: it removes the whole job from its earlier completion day until it is completed again, when its then-current live lines are recognised on the new completion day. Past days CAN change after a reopen; there are no reversal entries for workshop lines. Each entry's Cult Commons share is the line's own share (≥ 0), so a day's and a job's Cult Commons are always ≥ 0 and no negative Cult Commons payment arises (SPEC §10); gross sales ≥ 0 (D14 forbids negative prices); `loss_total` ≤ 0. Lines with `cost_pending` (D14) are recognised as stored (cost 0) and FLAGGED, never excluded or estimated (`financial_lines.cost_pending`, `today_dashboard.cost_pending_lines`, `work_order_yield.cost_pending_count`), so the UI can label the figures provisional (D14's safe default). Phase 9 reports restate earlier periods the same way. | Phase 5 |
+| D33 | SIGNIFICANT-ADJ: significant stock adjustment | A `stock_adjustment` or `damaged` movement is significant when \|quantity_delta\| ≥ 5, or it is on a unique unit, or \|quantity_delta\| × unit cost ≥ 100.00 SGD; unit cost = `unit_cost_snapshot`, else `products.default_direct_cost`, else 0. One function, `private.is_significant_adjustment`, holds the rule; Phase 9 or shop settings may replace it. The flag is shown to all staff (it reveals only that a value reached the threshold, never the value); the value at cost needs `view_costs`. | Phase 5 |
+| D34 | EXCEPTIONS: operational exception rules (the Phase 5 set) | `overdue_job`: exactly D20 (`private.work_order_status_is_open(status)` and `now() - checked_in_at > interval '7 days'`, 7 = `OVERDUE_AFTER_DAYS`; exactly 7 × 24 h is not yet overdue). `uncollected_job`: status completed or ready_for_collection and completed ≥ 7 shop days ago. `negative_stock`: any product/location with on-hand < 0. `unit_hold_stale`: a `held_for_customer` unit with no non-voided inventory line on an OPEN job referencing it (D6/D25). `currency_mismatch`: a line that would be recognised but whose currency is not the shop currency; such entries are excluded from totals. Kinds are text; Phases 6, 9 and 10 add kinds (unit_state_mismatch, unsettled_consignment, integration_failed) by create or replace of the view, keeping these columns first. | Phase 5 |
+| D35 | SHOP-TZ: shop time zone and currency before Phase 2 | `private.shop_timezone()` returns 'Asia/Singapore' and `private.shop_currency()` returns 'SGD'; Phase 2 replaces both bodies (create or replace, same signatures) to read `shop_settings` (timezone, default_currency) with those fallbacks, and Phases 7 and 9 call these functions and create no alternatives. Every shop-day computation in SQL goes through `private.shop_day()` / `private.shop_today()` / `private.shop_day_start()`: never `current_date`, never `ts::date` without `at time zone`; the app lets the database decide which day is today. Totals sum the shop currency only. | Phase 5 |
 
 ## 7. Out of scope (restated from SPEC §30)
 

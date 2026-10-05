@@ -157,6 +157,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   product_events_append_only: "Product history can't be changed.",
   inventory_unit_events_append_only: "Unit history can't be changed.",
   attachment_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
+  // Reporting (Phase 5; Phase 9 reuses it)
+  report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
 };
 
 /** 23505 unique violations by constraint name. */

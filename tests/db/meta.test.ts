@@ -220,6 +220,43 @@ describe("money", () => {
     expect(rows).toEqual([]);
   });
 
+  // Phase 5: report RPCs return money in result columns, which
+  // information_schema.columns does not cover.
+  it("no money-like function result (OUT/TABLE argument) is real or double precision", async () => {
+    const { rows } = await conn.query<{ fn: string; arg: string; type: string }>(
+      `select p.oid::regprocedure::text as fn, a.name as arg, format_type(a.type, null) as type
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+         cross join lateral unnest(p.proallargtypes, p.proargmodes, p.proargnames)
+           as a(type, mode, name)
+        where n.nspname in ('public', 'private')
+          and p.proallargtypes is not null
+          and a.mode in ('o', 't', 'b')
+          and a.name ~* $1
+          and a.type in ('real'::regtype, 'double precision'::regtype)
+        order by 1, 2`,
+      [MONEY_NAME],
+    );
+    expect(rows).toEqual([]);
+    // The check sees the Phase 5 report results it is meant for.
+    const seen = await conn.query<{ n: number }>(
+      `select count(*)::int as n
+         from pg_proc p cross join lateral unnest(p.proallargtypes, p.proargmodes, p.proargnames) as a(type, mode, name)
+        where p.oid = 'public.daily_summary(date, date)'::regprocedure and a.mode = 't' and a.name ~* $1`,
+      [MONEY_NAME],
+    );
+    expect(seen.rows[0].n).toBeGreaterThan(0);
+  });
+
+  it("reporting holds views only (SPEC §19.2: derived, never a second truth)", async () => {
+    const { rows } = await conn.query(
+      `select c.relname, c.relkind from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'reporting' and c.relkind not in ('v')
+        order by 1`,
+    );
+    expect(rows).toEqual([]);
+  });
+
   it("money_amount is numeric(12,2) and rate_fraction numeric(5,4)", async () => {
     const { rows } = await conn.query(
       `select domain_name, data_type, numeric_precision, numeric_scale

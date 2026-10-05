@@ -101,11 +101,12 @@ describe("staff access", () => {
     await asStaff(conn, STAFF.mechanic2, async (tx) => {
       expect(await scalar(tx, "select count(*)::int from public.customers")).toBe(6);
       // Every seeded bike (Phase 4 adds three shop bikes, which have no owner
-      // and so no ownership event).
+      // and so no ownership event; Phase 5 four customers' bikes, one
+      // `registered` event each).
       expect(await scalar(tx, "select count(*)::int from public.bikes")).toBe(
         Object.keys(BIKE).length,
       );
-      expect(await scalar(tx, "select count(*)::int from public.bike_ownership_events")).toBe(10);
+      expect(await scalar(tx, "select count(*)::int from public.bike_ownership_events")).toBe(14);
       expect(
         await scalar(tx, "select internal_notes from public.customers where id = $1", [
           CUSTOMER.tan,

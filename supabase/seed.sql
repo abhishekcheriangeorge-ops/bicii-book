@@ -19,8 +19,9 @@
 -- Phase 3 contents: five service categories, nine services (one archived,
 -- one not public) and nine workshop jobs J-000001 .. J-000009 in insert
 -- order, one in each interesting status, with assignments, lines (one
--- voided), notes, a diagnosis and an approval flag, backdated over the last
--- nine days so every job's timeline reads true (see the Phase 3 block).
+-- voided), notes, a diagnosis and an approval flag, dated over the nine
+-- shop days before the reset day (pg_temp.seed_at, between 08:00 and 18:00
+-- local time) so every job's timeline reads true (see the Phase 3 block).
 -- Still no attachments. The Cult Commons base rate (0.3000) is not seed
 -- data: the workshop catalog migration ships it.
 --
@@ -31,7 +32,21 @@
 -- in stock as units U-000001 .. U-000003, and an open job J-000010 for
 -- Hafiz's Brompton with one live part and one voided part (so the ledger
 -- shows a consumption and a reversal). Three parts sit at or below their
--- reorder point. Stock, units and the job go through the real RPCs.
+-- reorder point. The opening stock and the units are dated 30 days back
+-- (owner statements writing exactly what adjust_stock and
+-- create_unique_unit write); the job goes through the real RPCs today.
+--
+-- Phase 5 contents: history relative to the shop day the seed runs
+-- (Singapore time). pg_temp.seed_at(days_ago, local time), defined before
+-- Phase 3, dates the Phase 3, 4 and 5 rows; Phase 3 keeps its day offsets.
+-- Eleven more jobs J-000011 .. J-000021 (the SPEC §10 examples, a loss
+-- line, a rounding case, an uncollected and an overdue job, a cancelled
+-- one, and three jobs today), four more customers' bikes B-000014 ..
+-- B-000017 (so no bike is worked on under two jobs at once, or collected
+-- while another job on it is open), six products P-000017 .. P-000022 with
+-- opening stock 30 days back, and three stock adjustments (one significant,
+-- D33). Today and the daily summary reproduce tests/fixtures/reporting.ts
+-- exactly.
 
 -- ---------------------------------------------------------------------------
 -- Auth users (shape matches Supabase Auth v2.178). GoTrue scans the token
@@ -171,6 +186,33 @@ where id = 'b1000000-0000-4000-8000-000000000009';
 select private.set_change_reason(null);
 
 -- ===========================================================================
+-- History relative to the reset day (DATA-MODEL.md §18 "Phase 5 part").
+-- pg_temp.seed_at(days_ago, local_time) is the instant at `local_time`
+-- Singapore time on the shop day `days_ago` days before the shop day the
+-- seed runs (private.shop_today(), D35). Day 0 (today) is compressed into
+-- the part of today that has already passed, in proportion, so today's
+-- rows keep their order and are never in the future, whatever time the
+-- reset runs. Session-temporary: it exists only while the seed runs (one
+-- session, one transaction, so now() is the same in every statement).
+-- Singapore has no DST, so seed_at(n, t) - seed_at(m, t) is exactly
+-- (m - n) x 24 h for n, m > 0.
+-- ===========================================================================
+create function pg_temp.seed_at(days_ago integer, local_time time)
+returns timestamptz
+language sql
+stable
+as $$
+  select case
+    when days_ago > 0 then
+      ((private.shop_today() - days_ago) + local_time) at time zone 'Asia/Singapore'
+    else
+      private.shop_day_start(private.shop_today())
+        + (now() - private.shop_day_start(private.shop_today()))
+          * (extract(epoch from local_time) / 86400)
+  end;
+$$;
+
+-- ===========================================================================
 -- Phase 3: workshop catalog and nine jobs (DATA-MODEL.md §18 "Phase 3
 -- part"). Written directly as the owner; the triggers still enforce every
 -- rule (status machine, D18 owner check, line locking, append-only
@@ -194,9 +236,13 @@ select private.set_change_reason(null);
 --   (c) Each job is inserted as `received` with an explicit checked_in_at,
 --       then gets its assignments and lines (explicit times) while it is
 --       open, then walks its statuses one UPDATE at a time with an explicit
---       status_changed_at. All times are offsets from now() (the seed runs
---       in one transaction), strictly increasing per job, and no line or
---       void comes after a job's completion.
+--       status_changed_at. Every time is pg_temp.seed_at(days ago, local
+--       time) plus the same minute/hour offsets as before: one base local
+--       time per job (10:00), so every stamp keeps its exact hours after
+--       check-in, and every time falls between 08:00 and 18:00 Singapore
+--       time on a past shop day (J-000003 completes on day 1 at 16:00).
+--       Times are strictly increasing per job, and no line or void comes
+--       after a job's completion.
 --   (d) J-000007 is checked in AFTER the Phase 1 Bianchi sale above (Daniel
 --       -> Nurul, at seed time): its checked_in_at is clock_timestamp() at
 --       its insert, so by the bike's ownership history Nurul already owns
@@ -245,7 +291,7 @@ values
   ('5e000000-0000-4000-8000-000000000009', 'Suspension Fork Service',
    'Lower-leg service with new seals and fork oil.',
    'ca000000-0000-4000-8000-000000000001', 120.00, 25.00, 'SGD', false, true, 9,
-   now() - interval '30 days');
+   pg_temp.seed_at(30, '09:00'));
 
 -- ---------------------------------------------------------------------------
 -- J-000001: Tan's Tarmac, collected. Lead Marcus. Sale 290.00, cost 16.00,
@@ -263,14 +309,14 @@ values
    'Full service before the Desaru ride; rear brake feels spongy.',
    'Light scratches on the top tube; rear tyre worn.',
    'Bled the rear brake twice; pads at 40%.',
-   now() - interval '9 days', now() - interval '9 days',
+   pg_temp.seed_at(9, '10:00'), pg_temp.seed_at(9, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000001', 'f1000000-0000-4000-8000-000000000001',
    '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '9 days' + interval '5 minutes');
+   pg_temp.seed_at(9, '10:00') + interval '5 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
@@ -282,19 +328,19 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000001', 'f1000000-0000-4000-8000-000000000001', 'service',
    '5e000000-0000-4000-8000-000000000002', 'Full Service', 1, 200.00, 0.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000002', now() - interval '9 days' + interval '10 minutes'),
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(9, '10:00') + interval '10 minutes'),
   ('f2000000-0000-4000-8000-000000000002', 'f1000000-0000-4000-8000-000000000001', 'service',
    '5e000000-0000-4000-8000-000000000005', 'Brake Bleed', 2, 45.00, 8.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000002', now() - interval '9 days' + interval '11 minutes');
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(9, '10:00') + interval '11 minutes');
 
-update public.work_orders set status = 'in_progress', status_changed_at = now() - interval '8 days'
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(8, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000001';
-update public.work_orders set status = 'completed', status_changed_at = now() - interval '7 days'
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(7, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000001';
 update public.work_orders
-set status = 'ready_for_collection', status_changed_at = now() - interval '7 days' + interval '1 hour'
+set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(7, '10:00') + interval '1 hour'
 where id = 'f1000000-0000-4000-8000-000000000001';
-update public.work_orders set status = 'collected', status_changed_at = now() - interval '6 days'
+update public.work_orders set status = 'collected', status_changed_at = pg_temp.seed_at(6, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000001';
 
 -- ---------------------------------------------------------------------------
@@ -313,14 +359,14 @@ values
    'b1000000-0000-4000-8000-000000000003',
    'Basic service and new tyres.',
    true, 'Customer approved the GP5000 upgrade by phone.',
-   now() - interval '5 days', now() - interval '5 days',
+   pg_temp.seed_at(5, '10:00'), pg_temp.seed_at(5, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000002', 'f1000000-0000-4000-8000-000000000002',
    '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '5 days' + interval '5 minutes');
+   pg_temp.seed_at(5, '10:00') + interval '5 minutes');
 
 insert into public.work_order_line_items
   (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
@@ -329,10 +375,10 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000003', 'f1000000-0000-4000-8000-000000000002', 'service',
    '5e000000-0000-4000-8000-000000000001', 'Basic Service', 1, 80.00, 0.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000001', now() - interval '5 days' + interval '10 minutes'),
+   '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(5, '10:00') + interval '10 minutes'),
   ('f2000000-0000-4000-8000-000000000004', 'f1000000-0000-4000-8000-000000000002', 'service',
    '5e000000-0000-4000-8000-000000000004', 'Tyre Installation', 2, 15.00, 0.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000001', now() - interval '5 days' + interval '11 minutes');
+   '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(5, '10:00') + interval '11 minutes');
 
 -- (a) The approval as it happened, an hour after check-in.
 insert into public.work_order_events
@@ -341,7 +387,7 @@ values
   ('f1000000-0000-4000-8000-000000000002', 'approval_flagged',
    '5a000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
    jsonb_build_object('flagged', true, 'note', 'Customer approved the GP5000 upgrade by phone.'),
-   now() - interval '5 days' + interval '1 hour');
+   pg_temp.seed_at(5, '10:00') + interval '1 hour');
 
 insert into public.work_order_line_items
   (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
@@ -350,22 +396,22 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000005', 'f1000000-0000-4000-8000-000000000002', 'manual',
    null, 'Continental GP5000 700×28c tyre', 2, 95.00, 62.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000001', now() - interval '5 days' + interval '90 minutes');
+   '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(5, '10:00') + interval '90 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
 
-update public.work_orders set status = 'in_progress', status_changed_at = now() - interval '4 days'
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(4, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000002';
-update public.work_orders set status = 'completed', status_changed_at = now() - interval '1 day'
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(1, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000002';
 update public.work_orders
-set status = 'ready_for_collection', status_changed_at = now() - interval '1 day' + interval '30 minutes'
+set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(1, '10:00') + interval '30 minutes'
 where id = 'f1000000-0000-4000-8000-000000000002';
 
 -- ---------------------------------------------------------------------------
--- J-000003: Hafiz's Brompton, completed two hours ago. Lead Marcus,
--- Nur helping.
+-- J-000003: Hafiz's Brompton, completed yesterday at 16:00 (six hours
+-- after work started). Lead Marcus, Nur helping.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
@@ -376,17 +422,17 @@ values
   ('f1000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000003',
    'b1000000-0000-4000-8000-000000000005',
    'Drivetrain noisy, chain skipping.',
-   now() - interval '2 days', now() - interval '2 days',
+   pg_temp.seed_at(2, '10:00'), pg_temp.seed_at(2, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000003', 'f1000000-0000-4000-8000-000000000003',
    '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '2 days' + interval '5 minutes'),
+   pg_temp.seed_at(2, '10:00') + interval '5 minutes'),
   ('f3000000-0000-4000-8000-000000000004', 'f1000000-0000-4000-8000-000000000003',
    '5a000000-0000-4000-8000-000000000003', 'additional', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '2 days' + interval '6 minutes');
+   pg_temp.seed_at(2, '10:00') + interval '6 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
@@ -398,11 +444,11 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000006', 'f1000000-0000-4000-8000-000000000003', 'service',
    '5e000000-0000-4000-8000-000000000006', 'Drivetrain Service', 1, 90.00, 5.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000002', now() - interval '2 days' + interval '10 minutes');
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(2, '10:00') + interval '10 minutes');
 
-update public.work_orders set status = 'in_progress', status_changed_at = now() - interval '1 day'
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(1, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000003';
-update public.work_orders set status = 'completed', status_changed_at = now() - interval '2 hours'
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(1, '16:00')
 where id = 'f1000000-0000-4000-8000-000000000003';
 
 -- ---------------------------------------------------------------------------
@@ -417,14 +463,14 @@ values
   ('f1000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000004',
    'b1000000-0000-4000-8000-000000000006',
    'Both wheels out of true after a pothole.',
-   now() - interval '3 days', now() - interval '3 days',
+   pg_temp.seed_at(3, '10:00'), pg_temp.seed_at(3, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000005', 'f1000000-0000-4000-8000-000000000004',
    '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '3 days' + interval '5 minutes');
+   pg_temp.seed_at(3, '10:00') + interval '5 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
@@ -436,12 +482,12 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000007', 'f1000000-0000-4000-8000-000000000004', 'service',
    '5e000000-0000-4000-8000-000000000003', 'Wheel True', 2, 35.00, 0.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000002', now() - interval '3 days' + interval '10 minutes');
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(3, '10:00') + interval '10 minutes');
 
 update public.work_orders
-set status = 'diagnosing', status_changed_at = now() - interval '3 days' + interval '1 hour'
+set status = 'diagnosing', status_changed_at = pg_temp.seed_at(3, '10:00') + interval '1 hour'
 where id = 'f1000000-0000-4000-8000-000000000004';
-update public.work_orders set status = 'in_progress', status_changed_at = now() - interval '1 day'
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(1, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000004';
 
 -- ---------------------------------------------------------------------------
@@ -456,14 +502,14 @@ values
   ('f1000000-0000-4000-8000-000000000005', 'c1000000-0000-4000-8000-000000000004',
    'b1000000-0000-4000-8000-000000000007',
    'Replace worn 9-speed shifter; customer supplying the part.',
-   now() - interval '6 days', now() - interval '6 days',
+   pg_temp.seed_at(6, '10:00'), pg_temp.seed_at(6, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000006', 'f1000000-0000-4000-8000-000000000005',
    '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '6 days' + interval '5 minutes');
+   pg_temp.seed_at(6, '10:00') + interval '5 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
@@ -475,7 +521,7 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000008', 'f1000000-0000-4000-8000-000000000005', 'service',
    '5e000000-0000-4000-8000-000000000008', 'Custom Labour', 1.5, 60.00, 0.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000003', now() - interval '6 days' + interval '10 minutes');
+   '5a000000-0000-4000-8000-000000000003', pg_temp.seed_at(6, '10:00') + interval '10 minutes');
 
 -- (a) Nur's note, an hour before the job waits for the part.
 insert into public.work_order_events
@@ -484,9 +530,9 @@ values
   ('f1000000-0000-4000-8000-000000000005', 'note_added',
    '5a000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003',
    jsonb_build_object('body', 'Waiting for the customer''s 9-speed shifter to arrive.'),
-   now() - interval '5 days' - interval '1 hour');
+   pg_temp.seed_at(5, '10:00') - interval '1 hour');
 
-update public.work_orders set status = 'awaiting_parts', status_changed_at = now() - interval '5 days'
+update public.work_orders set status = 'awaiting_parts', status_changed_at = pg_temp.seed_at(5, '10:00')
 where id = 'f1000000-0000-4000-8000-000000000005';
 
 -- ---------------------------------------------------------------------------
@@ -502,14 +548,14 @@ values
   ('f1000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000005',
    'b1000000-0000-4000-8000-000000000008',
    'Shifting rough; check chain wear.',
-   now() - interval '8 days', now() - interval '8 days',
+   pg_temp.seed_at(8, '10:00'), pg_temp.seed_at(8, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000007', 'f1000000-0000-4000-8000-000000000006',
    '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '8 days' + interval '5 minutes');
+   pg_temp.seed_at(8, '10:00') + interval '5 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
@@ -521,10 +567,10 @@ values
   ('f1000000-0000-4000-8000-000000000006', 'diagnosis_added',
    '5a000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002',
    jsonb_build_object('body', 'Chain at 0.75% wear; cassette worn. Quoted new chain and cassette.'),
-   now() - interval '8 days' + interval '2 hours');
+   pg_temp.seed_at(8, '10:00') + interval '2 hours');
 
 update public.work_orders
-set status = 'awaiting_customer', status_changed_at = now() - interval '8 days' + interval '3 hours'
+set status = 'awaiting_customer', status_changed_at = pg_temp.seed_at(8, '10:00') + interval '3 hours'
 where id = 'f1000000-0000-4000-8000-000000000006';
 
 -- ---------------------------------------------------------------------------
@@ -552,21 +598,21 @@ values
   ('f1000000-0000-4000-8000-000000000008', 'c1000000-0000-4000-8000-000000000001',
    'b1000000-0000-4000-8000-000000000002',
    'Gear cable replacement.',
-   now() - interval '4 days', now() - interval '4 days',
+   pg_temp.seed_at(4, '10:00'), pg_temp.seed_at(4, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000008', 'f1000000-0000-4000-8000-000000000008',
    '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '4 days' + interval '5 minutes');
+   pg_temp.seed_at(4, '10:00') + interval '5 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
 
 select private.set_change_reason('Customer will bring it back next month.');
 update public.work_orders
-set status = 'cancelled', status_changed_at = now() - interval '4 days' + interval '1 hour'
+set status = 'cancelled', status_changed_at = pg_temp.seed_at(4, '10:00') + interval '1 hour'
 where id = 'f1000000-0000-4000-8000-000000000008';
 select private.set_change_reason(null);
 
@@ -583,14 +629,14 @@ values
   ('f1000000-0000-4000-8000-000000000009', 'c1000000-0000-4000-8000-000000000002',
    'b1000000-0000-4000-8000-000000000004',
    'Bottom bracket creak.',
-   now() - interval '1 day', now() - interval '1 day',
+   pg_temp.seed_at(1, '10:00'), pg_temp.seed_at(1, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('f3000000-0000-4000-8000-000000000009', 'f1000000-0000-4000-8000-000000000009',
    '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
-   now() - interval '1 day' + interval '5 minutes');
+   pg_temp.seed_at(1, '10:00') + interval '5 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
@@ -602,7 +648,7 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000009', 'f1000000-0000-4000-8000-000000000009', 'service',
    '5e000000-0000-4000-8000-000000000001', 'Basic Service', 1, 80.00, 0.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000003', now() - interval '1 day' + interval '10 minutes');
+   '5a000000-0000-4000-8000-000000000003', pg_temp.seed_at(1, '10:00') + interval '10 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
@@ -614,17 +660,17 @@ insert into public.work_order_line_items
 values
   ('f2000000-0000-4000-8000-000000000010', 'f1000000-0000-4000-8000-000000000009', 'manual',
    null, 'Shimano BB-RS500 bottom bracket', 1, 45.00, 28.00, 0.3000, 'SGD',
-   '5a000000-0000-4000-8000-000000000001', now() - interval '1 day' + interval '15 minutes');
+   '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(1, '10:00') + interval '15 minutes');
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
 
 update public.work_orders
-set status = 'diagnosing', status_changed_at = now() - interval '1 day' + interval '1 hour'
+set status = 'diagnosing', status_changed_at = pg_temp.seed_at(1, '10:00') + interval '1 hour'
 where id = 'f1000000-0000-4000-8000-000000000009';
 
 update public.work_order_line_items
-set voided_at = now() - interval '1 day' + interval '3 hours',
+set voided_at = pg_temp.seed_at(1, '10:00') + interval '3 hours',
     voided_by = '5a000000-0000-4000-8000-000000000003',
     void_reason = 'Wrong part quoted; the frame takes a press-fit bracket.'
 where id = 'f2000000-0000-4000-8000-000000000010';
@@ -635,11 +681,18 @@ select set_config('request.jwt.claims', '', false);
 -- Phase 4: inventory (DATA-MODEL.md §18 "Phase 4 part"). Locations,
 -- product categories and products are written directly as the owner with
 -- request.jwt.claims naming the admin (so created_by and every history
--- event name an actor); stock, units and the inventory job go through the
--- real RPCs as the admin, so every movement is what the app would write.
--- Every request id is used for exactly one call. Products get P-000001 ..
--- P-000016, units U-000001 .. U-000003, the shop bikes B-000011 ..
--- B-000013 and the job J-000010, in insert order on a fresh build.
+-- event name an actor). The opening stock and the three units are dated
+-- 30 days before the reset day (pg_temp.seed_at(30, ...)), so they never
+-- count as today's stock adjustments: they are owner statements writing
+-- exactly the rows public.adjust_stock and public.create_unique_unit write
+-- (same request ids, quantities, types, reasons, cost snapshots, actor),
+-- with an explicit created_at. The products and units are dated that day
+-- too; trigger-written history (product and unit events, the bikes' stock
+-- link) keeps seed time. The inventory job J-000010 still goes through
+-- the real RPCs as the admin, at seed time (today). Every request id is
+-- used once. Products get P-000001 .. P-000016, units U-000001 ..
+-- U-000003, the shop bikes B-000011 .. B-000013 and the job J-000010, in
+-- insert order on a fresh build.
 -- ===========================================================================
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
@@ -667,100 +720,116 @@ insert into public.categories (id, kind, name, sort_order) values
 -- (draft).
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000001', 'SHI-L05A-RF', 'Road disc brake pads, resin (pair)',
   'Shimano', 'ca000000-0000-4000-8000-000000000006', 'quantity', 'internal_only', 28.00, 13.50, 10,
-  'L05A resin pads for Shimano road disc callipers. Quiet, good modulation.');
+  'L05A resin pads for Shimano road disc callipers. Quiet, good modulation.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000002', 'CON-GP5K-25', 'Grand Prix 5000 700x25c tyre',
   'Continental', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 89.00, 52.00, 4,
-  'Folding clincher road tyre, BlackChili compound.');
+  'Folding clincher road tyre, BlackChili compound.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000003', 'SCH-SV20-60', 'Road inner tube 700x23-28c Presta 60mm',
   'Schwalbe', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 9.00, 3.80, 20,
-  'SV20 tube with a 60 mm Presta valve for deep rims.');
+  'SV20 tube with a 60 mm Presta valve for deep rims.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000004', 'SCH-MR-16', 'Marathon Racer 16x1.35 tyre',
   'Schwalbe', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 55.00, 30.00, 3,
-  'Puncture-resistant 16-inch tyre for folding bikes.');
+  'Puncture-resistant 16-inch tyre for folding bikes.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000005', 'BRO-QTUBE16', 'Inner tube 16in Schrader',
   'Brompton', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 14.00, 6.00, 6,
-  'Genuine Brompton 16-inch tube, Schrader valve.');
+  'Genuine Brompton 16-inch tube, Schrader valve.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000006', 'KMC-X11-GY', 'X11 11-speed chain',
   'KMC', 'ca000000-0000-4000-8000-000000000008', 'quantity', 'internal_only', 45.00, 24.00, 5,
-  '118 links with a MissingLink connector.');
+  '118 links with a MissingLink connector.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000007', 'SHI-CSR7000-1134', '105 CS-R7000 11-34 cassette',
   'Shimano', 'ca000000-0000-4000-8000-000000000008', 'quantity', 'draft', 109.00, 68.00, 2,
-  null);
+  null,
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000008', 'JAG-PRO-BRK', 'Pro brake cable kit',
   'Jagwire', 'ca000000-0000-4000-8000-000000000009', 'quantity', 'internal_only', 35.00, 16.00, 4,
-  'Slick-polished cables with compressionless housing, road and MTB.');
+  'Slick-polished cables with compressionless housing, road and MTB.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000009', 'SHI-BH90-1000', 'SM-BH90 hydraulic hose 1000mm',
   'Shimano', 'ca000000-0000-4000-8000-000000000009', 'quantity', 'internal_only', 28.00, 12.00, 5,
-  null);
+  null,
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000010', 'FL-DRY-120', 'Dry chain lube 120ml',
   'Finish Line', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 16.00, 7.00, 6,
-  'Teflon-fortified dry lube for dusty, dry rides.');
+  'Teflon-fortified dry lube for dusty, dry rides.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000011', 'LS-DSP32', 'DSP 3.2mm bar tape',
   'Lizard Skins', 'ca000000-0000-4000-8000-000000000011', 'quantity', 'internal_only', 49.00, 26.00, 4,
-  null);
+  null,
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000012', 'OS-REG-237', 'Tubeless sealant 237ml',
   'Orange Seal', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 32.00, 17.00, 3,
-  null);
+  null,
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000013', null, 'Colnago C64 Disc 52s (pre-owned)',
   'Colnago', 'ca000000-0000-4000-8000-000000000012', 'unique', 'internal_only', 6800.00, 4200.00, null,
-  'Lugged carbon road frame, Dura-Ace Di2 R9170, Fulcrum Racing Zero wheels.');
+  'Lugged carbon road frame, Dura-Ace Di2 R9170, Fulcrum Racing Zero wheels.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000014', null, 'Brompton C Line Explore (ex-demo)',
   'Brompton', 'ca000000-0000-4000-8000-000000000012', 'unique', 'internal_only', 1950.00, 1400.00, null,
-  'Six-speed folding bike from the demo fleet, serviced and with new tyres.');
+  'Six-speed folding bike from the demo fleet, serviced and with new tyres.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000015', null, 'Surly Bridge Club 27.5 M (new old stock)',
   'Surly', 'ca000000-0000-4000-8000-000000000012', 'unique', 'internal_only', 1650.00, 1100.00, null,
-  'Steel all-road tourer, 27.5 x 2.4 tyres, unridden from 2022 stock.');
+  'Steel all-road tourer, 27.5 x 2.4 tyres, unridden from 2022 stock.',
+  pg_temp.seed_at(30, '07:00'));
 insert into public.products
   (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
-   default_direct_cost, reorder_point, description)
+   default_direct_cost, reorder_point, description, created_at)
 values ('9a000000-0000-4000-8000-000000000016', 'KMC-X10-OLD', 'X10 10-speed chain (discontinued)',
   'KMC', 'ca000000-0000-4000-8000-000000000008', 'quantity', 'internal_only', 35.00, 18.00, null,
-  'No longer stocked; kept for the jobs that used it.');
+  'No longer stocked; kept for the jobs that used it.',
+  pg_temp.seed_at(30, '07:00'));
 -- Archived after it sold out (no stock): an `archived` event.
 update public.products set archived_at = now() where id = '9a000000-0000-4000-8000-000000000016';
 
@@ -778,9 +847,19 @@ values
    'Surly', 'Bridge Club', '27.5', 'M', 'Metallic Blue', 'SRY-BC-55102',
    'New old stock.', null);
 
--- Opening stock through adjust_stock (request ids 9c…0NN per product at its
--- first location; 9c…1NN for the Workshop store rows of 03 and 12).
-select public.adjust_stock(r.request_id, r.product_id, r.location_id, r.qty, 'stock_adjustment', 'Opening stock count')
+-- Opening stock, 30 days before the reset day: what public.adjust_stock
+-- writes for (request id, product, location, +qty, 'stock_adjustment',
+-- 'Opening stock count') with no unit cost, i.e. one 'stock_adjustment'
+-- movement whose cost snapshot is the product's default direct cost, in
+-- the product's currency, by the admin. Request ids 9c…0NN per product at
+-- its first location; 9c…1NN for the Workshop store rows of 03 and 12.
+-- One minute apart from 08:00, in this order.
+insert into public.inventory_movements
+  (product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason,
+   unit_cost_snapshot, request_id, currency, created_by, created_at)
+select r.product_id, null, r.location_id, r.qty, 'stock_adjustment', 'Opening stock count',
+       p.default_direct_cost, r.request_id, p.currency, '5a000000-0000-4000-8000-000000000001',
+       pg_temp.seed_at(30, '08:00') + (r.ord - 1) * interval '1 minute'
 from (values
   ('9c000000-0000-4000-8000-000000000001'::uuid, '9a000000-0000-4000-8000-000000000001'::uuid,
    '1c000000-0000-4000-8000-000000000001'::uuid, 34, 1),
@@ -811,24 +890,68 @@ from (values
   ('9c000000-0000-4000-8000-000000000112', '9a000000-0000-4000-8000-000000000012',
    '1c000000-0000-4000-8000-000000000002', 1, 14)
 ) as r (request_id, product_id, location_id, qty, ord)
+join public.products p on p.id = r.product_id
 order by r.ord;
 
--- The unique units, each linked to its shop bike (U-000001 .. U-000003).
-select public.create_unique_unit(
-  '9b000000-0000-4000-8000-000000000001', '9a000000-0000-4000-8000-000000000013',
-  '1c000000-0000-4000-8000-000000000001', 'COL-C64-11873',
+-- The unique units (U-000001 .. U-000003), each linked to its shop bike,
+-- right after the opening stock on the same day: what
+-- public.create_unique_unit writes with no reason, one unit at a time in
+-- this order: the shop-owned unit (no sale price), the bike's link to it
+-- and its +1 'stock_adjustment' movement ('Registered as a unique item',
+-- cost snapshot = the unit's direct cost, request id = the unit id). The
+-- products stay internal_only, so no publication refresh applies.
+select private.set_change_reason(null);
+
+insert into public.inventory_units
+  (id, product_id, location_id, ownership_type, serial_number, condition, sale_price, direct_cost,
+   bike_id, created_at)
+values ('9b000000-0000-4000-8000-000000000001', '9a000000-0000-4000-8000-000000000013',
+  '1c000000-0000-4000-8000-000000000001', 'shop_owned', 'COL-C64-11873',
   'Excellent: light wear on the bar tape, new chain and cassette at 3,000 km.',
-  null, 4200.00, 'b1000000-0000-4000-8000-000000000011');
-select public.create_unique_unit(
-  '9b000000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000014',
-  '1c000000-0000-4000-8000-000000000001', '2209183344',
+  null, 4200.00, 'b1000000-0000-4000-8000-000000000011', pg_temp.seed_at(30, '08:14'));
+update public.bikes set inventory_unit_id = '9b000000-0000-4000-8000-000000000001'
+where id = 'b1000000-0000-4000-8000-000000000011';
+insert into public.inventory_movements
+  (product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason,
+   unit_cost_snapshot, request_id, currency, created_by, created_at)
+values ('9a000000-0000-4000-8000-000000000013', '9b000000-0000-4000-8000-000000000001',
+  '1c000000-0000-4000-8000-000000000001', 1, 'stock_adjustment', 'Registered as a unique item',
+  4200.00, '9b000000-0000-4000-8000-000000000001', 'SGD', '5a000000-0000-4000-8000-000000000001',
+  pg_temp.seed_at(30, '08:14'));
+
+insert into public.inventory_units
+  (id, product_id, location_id, ownership_type, serial_number, condition, sale_price, direct_cost,
+   bike_id, created_at)
+values ('9b000000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000014',
+  '1c000000-0000-4000-8000-000000000001', 'shop_owned', '2209183344',
   'Very good: demo fleet, serviced, new Marathon Racer tyres.',
-  null, 1400.00, 'b1000000-0000-4000-8000-000000000012');
-select public.create_unique_unit(
-  '9b000000-0000-4000-8000-000000000003', '9a000000-0000-4000-8000-000000000015',
-  '1c000000-0000-4000-8000-000000000001', 'SRY-BC-55102',
+  null, 1400.00, 'b1000000-0000-4000-8000-000000000012', pg_temp.seed_at(30, '08:15'));
+update public.bikes set inventory_unit_id = '9b000000-0000-4000-8000-000000000002'
+where id = 'b1000000-0000-4000-8000-000000000012';
+insert into public.inventory_movements
+  (product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason,
+   unit_cost_snapshot, request_id, currency, created_by, created_at)
+values ('9a000000-0000-4000-8000-000000000014', '9b000000-0000-4000-8000-000000000002',
+  '1c000000-0000-4000-8000-000000000001', 1, 'stock_adjustment', 'Registered as a unique item',
+  1400.00, '9b000000-0000-4000-8000-000000000002', 'SGD', '5a000000-0000-4000-8000-000000000001',
+  pg_temp.seed_at(30, '08:15'));
+
+insert into public.inventory_units
+  (id, product_id, location_id, ownership_type, serial_number, condition, sale_price, direct_cost,
+   bike_id, created_at)
+values ('9b000000-0000-4000-8000-000000000003', '9a000000-0000-4000-8000-000000000015',
+  '1c000000-0000-4000-8000-000000000001', 'shop_owned', 'SRY-BC-55102',
   'New: unridden, small storage mark on the left chainstay.',
-  null, 1100.00, 'b1000000-0000-4000-8000-000000000013');
+  null, 1100.00, 'b1000000-0000-4000-8000-000000000013', pg_temp.seed_at(30, '08:16'));
+update public.bikes set inventory_unit_id = '9b000000-0000-4000-8000-000000000003'
+where id = 'b1000000-0000-4000-8000-000000000013';
+insert into public.inventory_movements
+  (product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason,
+   unit_cost_snapshot, request_id, currency, created_by, created_at)
+values ('9a000000-0000-4000-8000-000000000015', '9b000000-0000-4000-8000-000000000003',
+  '1c000000-0000-4000-8000-000000000001', 1, 'stock_adjustment', 'Registered as a unique item',
+  1100.00, '9b000000-0000-4000-8000-000000000003', 'SGD', '5a000000-0000-4000-8000-000000000001',
+  pg_temp.seed_at(30, '08:16'));
 
 -- The inventory job (J-000010): Hafiz's own Brompton (D18; his other job,
 -- J-000003, is completed), left open with a tube used and a tyre returned.
@@ -843,5 +966,691 @@ select public.add_inventory_line(
   '9d000000-0000-4000-8000-000000000002', '9e000000-0000-4000-8000-000000000001',
   '9a000000-0000-4000-8000-000000000004', 1, '1c000000-0000-4000-8000-000000000001');
 select public.void_line('9d000000-0000-4000-8000-000000000002', 'Customer brought their own tyre');
+
+select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 5: a week of shop history for Today and the reports (DATA-MODEL.md
+-- §18 "Phase 5 part"; fixtures in tests/fixtures/reporting.ts). Eleven
+-- jobs J-000011 .. J-000021 in insert order: H1-H8 on past shop days, T1-T3
+-- today, and three stock adjustments A1-A3, on six new products P-000017 ..
+-- P-000022 (so Phase 4's on-hand figures stay as they were). Written as the
+-- owner like Phase 3: each job inserted `received` with its check-in time,
+-- assignments and lines (explicit times, rate snapshot 0.3000) while it is
+-- open, then one status UPDATE at a time; request.jwt.claims names whoever
+-- acts so trigger-written actors match. A part from stock is the line, one
+-- job_consumption movement at the line's time (-quantity, cost snapshot =
+-- the line's unit cost) and the stock_consumed event add_inventory_line
+-- would write. Recognition (D32): a line counts on the shop day of its
+-- job's completed_at; open and cancelled jobs never count. No open job is
+-- checked in 7 days ago, so which jobs are overdue (D20) never depends on
+-- the time of day the reset ran.
+-- ===========================================================================
+-- Product category for the wheelsets (kind 'product', sort 8).
+insert into public.categories (id, kind, name, sort_order) values
+  ('ca000000-0000-4000-8000-000000000013', 'product', 'Wheels', 8);
+
+-- The Phase 5 products (P-000017 .. P-000022), quantity-tracked, internal
+-- only, dated 30 days back like Phase 4's. Reorder points sit below their
+-- final on-hand (or none), so reporting.low_stock still lists exactly
+-- Phase 4's three. SGD price / default direct cost.
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description, created_at)
+values ('d5300000-0000-4000-8000-000000000001', 'HNT-45CD-700', 'Carbon disc wheelset 700c, 45mm',
+  'Hunt', 'ca000000-0000-4000-8000-000000000013', 'quantity', 'internal_only', 849.00, 400.00, 1,
+  null, pg_temp.seed_at(30, '07:00'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description, created_at)
+values ('d5300000-0000-4000-8000-000000000002', 'VIT-CPRO-28', 'Corsa Pro 700x28c tyre',
+  'Vittoria', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 95.00, 35.00, 2,
+  null, pg_temp.seed_at(30, '07:00'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description, created_at)
+values ('d5300000-0000-4000-8000-000000000003', 'YBN-SLA110', 'SLA-110 11-speed chain',
+  'YBN', 'ca000000-0000-4000-8000-000000000008', 'quantity', 'internal_only', 45.00, 22.00, 3,
+  null, pg_temp.seed_at(30, '07:00'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description, created_at)
+values ('d5300000-0000-4000-8000-000000000004', 'SWS-D34RS', 'Disc 34 RS brake pads (pair)',
+  'SwissStop', 'ca000000-0000-4000-8000-000000000006', 'quantity', 'internal_only', 32.00, 15.00, 5,
+  null, pg_temp.seed_at(30, '07:00'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description, created_at)
+values ('d5300000-0000-4000-8000-000000000005', 'PAN-RAIR-48', 'Butyl inner 700x25-32c, Presta 48mm',
+  'Panaracer', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 12.00, 5.00, 10,
+  null, pg_temp.seed_at(30, '07:00'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, reorder_point, description, created_at)
+values ('d5300000-0000-4000-8000-000000000006', 'GI-CO2-25', 'CO2 cartridge 25g, threaded',
+  'Genuine Innovations', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 6.00, 3.00, null,
+  null, pg_temp.seed_at(30, '07:00'));
+
+-- Their opening stock at the Shop floor, written like Phase 4's (what
+-- adjust_stock writes; request ids d54…0N), from 08:30 on day 30.
+insert into public.inventory_movements
+  (product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason,
+   unit_cost_snapshot, request_id, currency, created_by, created_at)
+select r.product_id, null, '1c000000-0000-4000-8000-000000000001', r.qty, 'stock_adjustment', 'Opening stock count',
+       p.default_direct_cost, r.request_id, p.currency, '5a000000-0000-4000-8000-000000000001',
+       pg_temp.seed_at(30, '08:30') + (r.ord - 1) * interval '1 minute'
+from (values
+  ('d5400000-0000-4000-8000-000000000001'::uuid, 'd5300000-0000-4000-8000-000000000001'::uuid, 4, 1),
+  ('d5400000-0000-4000-8000-000000000002'::uuid, 'd5300000-0000-4000-8000-000000000002'::uuid, 6, 2),
+  ('d5400000-0000-4000-8000-000000000003'::uuid, 'd5300000-0000-4000-8000-000000000003'::uuid, 10, 3),
+  ('d5400000-0000-4000-8000-000000000004'::uuid, 'd5300000-0000-4000-8000-000000000004'::uuid, 20, 4),
+  ('d5400000-0000-4000-8000-000000000005'::uuid, 'd5300000-0000-4000-8000-000000000005'::uuid, 30, 5),
+  ('d5400000-0000-4000-8000-000000000006'::uuid, 'd5300000-0000-4000-8000-000000000006'::uuid, 10, 6)
+) as r (request_id, product_id, qty, ord)
+join public.products p on p.id = r.product_id
+order by r.ord;
+
+-- Four more customers' bikes (B-000014 .. B-000017), so no Phase 5 job
+-- shares a bike with a job that is still being worked on, and no bike is
+-- collected while another job on it is open (seed realism, checked in
+-- tests/db/reporting-seed.test.ts; the system does not forbid it). Chloe's
+-- Diverge carries H2, T2 and T3 in turn; Daniel's Endurace H3 then T1.
+insert into public.bikes
+  (id, customer_id, brand, model, variant, frame_size, colour, serial_number, description, internal_notes)
+values
+  ('b1000000-0000-4000-8000-000000000014', 'c1000000-0000-4000-8000-000000000004',
+   'Specialized', 'Diverge', 'Comp Carbon', '54', 'Gloss Teal Tint', 'WSBC123009871D',
+   'Gravel and touring build with rack mounts.', null),
+  ('b1000000-0000-4000-8000-000000000015', 'c1000000-0000-4000-8000-000000000005',
+   'Canyon', 'Endurace', 'CF 7', 'M', 'Stealth', 'CYN-EN7-30412',
+   'Second road bike, kept for wet days.', null),
+  ('b1000000-0000-4000-8000-000000000016', 'c1000000-0000-4000-8000-000000000002',
+   'Cervelo', 'R5', null, '51', 'Five Black', 'CV-R5-77310',
+   'Warranty replacement frame; build moved over from the cracked one.', null),
+  ('b1000000-0000-4000-8000-000000000017', 'c1000000-0000-4000-8000-000000000003',
+   'Dahon', 'Mu', 'D9', 'One size', 'Matte Silver', 'DHN-MU-40981',
+   'Weekend folding bike.', null);
+
+-- ---------------------------------------------------------------------------
+-- H1 J-000011: Tan's Brompton, service only (SPEC §10 example 1), collected.
+-- Lead Marcus. Sale 200.00, cost 0.00, yield 200.00, Cult Commons 60.00,
+-- BICII after CC 140.00; recognised 6 days ago.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001',
+   'b1000000-0000-4000-8000-000000000002',
+   'Full service; gears skip under load on the climbs.',
+   pg_temp.seed_at(6, '09:30'), pg_temp.seed_at(6, '09:30'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000001',
+   '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(6, '09:35'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(6, '10:15')
+where id = 'd5000000-0000-4000-8000-000000000001';
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000001', 'd5000000-0000-4000-8000-000000000001', 'service',
+   '5e000000-0000-4000-8000-000000000002', 'Full Service', 1, 200.00, 0.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(6, '10:20'));
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(6, '16:40')
+where id = 'd5000000-0000-4000-8000-000000000001';
+update public.work_orders set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(6, '16:45')
+where id = 'd5000000-0000-4000-8000-000000000001';
+update public.work_orders set status = 'collected', status_changed_at = pg_temp.seed_at(5, '11:10')
+where id = 'd5000000-0000-4000-8000-000000000001';
+
+-- ---------------------------------------------------------------------------
+-- H2 J-000012: Chloe's Diverge, a part from stock (SPEC §10 example 2),
+-- collected. Lead Nur. One wheelset at 800.00 (cost 400.00): yield 400.00,
+-- Cult Commons 120.00, BICII after CC 280.00; recognised 4 days ago.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000004',
+   'b1000000-0000-4000-8000-000000000014',
+   'New wheelset fitted; customer bringing the old one home.',
+   pg_temp.seed_at(5, '10:00'), pg_temp.seed_at(5, '10:00'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000002', 'd5000000-0000-4000-8000-000000000002',
+   '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(5, '10:05'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(5, '13:00')
+where id = 'd5000000-0000-4000-8000-000000000002';
+
+-- A part from stock: the line, its job_consumption movement at the line's
+-- time and the stock_consumed event add_inventory_line writes (a second
+-- later); 3 left at the Shop floor.
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_product_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cost_pending, cult_commons_rate_snapshot,
+   currency, created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000002', 'd5000000-0000-4000-8000-000000000002', 'inventory',
+   'd5300000-0000-4000-8000-000000000001', 'Carbon disc wheelset 700c, 45mm', 1, 800.00, 400.00, false, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000003', pg_temp.seed_at(5, '13:30'));
+with m as (
+  insert into public.inventory_movements
+    (product_id, location_id, quantity_delta, movement_type, unit_cost_snapshot, work_order_id,
+     work_order_line_item_id, currency, created_by, created_at)
+  values ('d5300000-0000-4000-8000-000000000001', '1c000000-0000-4000-8000-000000000001', -1, 'job_consumption', 400.00,
+    'd5000000-0000-4000-8000-000000000002', 'd5100000-0000-4000-8000-000000000002', 'SGD', '5a000000-0000-4000-8000-000000000003', pg_temp.seed_at(5, '13:30'))
+  returning id
+)
+insert into public.work_order_events
+  (work_order_id, event_type, actor_staff_id, actor_user_id, payload, created_at)
+select 'd5000000-0000-4000-8000-000000000002', 'stock_consumed', '5a000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003',
+  jsonb_build_object(
+    'line_id', 'd5100000-0000-4000-8000-000000000002'::uuid, 'movement_id', m.id,
+    'product_id', 'd5300000-0000-4000-8000-000000000001'::uuid,
+    'product_short_id', (select p.short_id from public.products p where p.id = 'd5300000-0000-4000-8000-000000000001'),
+    'inventory_unit_id', null, 'unit_short_id', null,
+    'location_id', '1c000000-0000-4000-8000-000000000001'::uuid, 'location_name', 'Shop floor',
+    'quantity', 1, 'on_hand_after', 3),
+  pg_temp.seed_at(5, '13:30:01')
+from m;
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(4, '15:30')
+where id = 'd5000000-0000-4000-8000-000000000002';
+update public.work_orders set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(4, '15:35')
+where id = 'd5000000-0000-4000-8000-000000000002';
+update public.work_orders set status = 'collected', status_changed_at = pg_temp.seed_at(3, '10:20')
+where id = 'd5000000-0000-4000-8000-000000000002';
+
+-- ---------------------------------------------------------------------------
+-- H3 J-000013: Daniel's Endurace, service and a part (SPEC §10
+-- example 3), collected. Lead Marcus. Full Service 200.00 + wheelset 800.00
+-- (cost 400.00): sale 1000.00, yield 600.00, Cult Commons 180.00, BICII
+-- after CC 420.00; recognised 3 days ago.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000005',
+   'b1000000-0000-4000-8000-000000000015',
+   'Full service and a wheelset upgrade, approved by phone.',
+   pg_temp.seed_at(4, '09:45'), pg_temp.seed_at(4, '09:45'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000003', 'd5000000-0000-4000-8000-000000000003',
+   '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(4, '09:50'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(4, '11:00')
+where id = 'd5000000-0000-4000-8000-000000000003';
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000003', 'd5000000-0000-4000-8000-000000000003', 'service',
+   '5e000000-0000-4000-8000-000000000002', 'Full Service', 1, 200.00, 0.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(4, '11:05'));
+
+-- A part from stock: the line, its job_consumption movement at the line's
+-- time and the stock_consumed event add_inventory_line writes (a second
+-- later); 2 left at the Shop floor.
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_product_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cost_pending, cult_commons_rate_snapshot,
+   currency, created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000004', 'd5000000-0000-4000-8000-000000000003', 'inventory',
+   'd5300000-0000-4000-8000-000000000001', 'Carbon disc wheelset 700c, 45mm', 1, 800.00, 400.00, false, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(4, '11:30'));
+with m as (
+  insert into public.inventory_movements
+    (product_id, location_id, quantity_delta, movement_type, unit_cost_snapshot, work_order_id,
+     work_order_line_item_id, currency, created_by, created_at)
+  values ('d5300000-0000-4000-8000-000000000001', '1c000000-0000-4000-8000-000000000001', -1, 'job_consumption', 400.00,
+    'd5000000-0000-4000-8000-000000000003', 'd5100000-0000-4000-8000-000000000004', 'SGD', '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(4, '11:30'))
+  returning id
+)
+insert into public.work_order_events
+  (work_order_id, event_type, actor_staff_id, actor_user_id, payload, created_at)
+select 'd5000000-0000-4000-8000-000000000003', 'stock_consumed', '5a000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002',
+  jsonb_build_object(
+    'line_id', 'd5100000-0000-4000-8000-000000000004'::uuid, 'movement_id', m.id,
+    'product_id', 'd5300000-0000-4000-8000-000000000001'::uuid,
+    'product_short_id', (select p.short_id from public.products p where p.id = 'd5300000-0000-4000-8000-000000000001'),
+    'inventory_unit_id', null, 'unit_short_id', null,
+    'location_id', '1c000000-0000-4000-8000-000000000001'::uuid, 'location_name', 'Shop floor',
+    'quantity', 1, 'on_hand_after', 2),
+  pg_temp.seed_at(4, '11:30:01')
+from m;
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(3, '17:10')
+where id = 'd5000000-0000-4000-8000-000000000003';
+update public.work_orders set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(3, '17:15')
+where id = 'd5000000-0000-4000-8000-000000000003';
+update public.work_orders set status = 'collected', status_changed_at = pg_temp.seed_at(2, '12:00')
+where id = 'd5000000-0000-4000-8000-000000000003';
+
+-- ---------------------------------------------------------------------------
+-- H4 J-000014: Tan's Tarmac, a loss line (D1), collected. Lead Marcus.
+-- Wheel True 40.00 (yield 40.00, CC 12.00) and a tyre at a goodwill 20.00
+-- against a 35.00 cost (yield -15.00, CC 0.00): sale 60.00, cost 35.00,
+-- yield 25.00, Cult Commons 12.00 (not 7.50), BICII after CC 13.00;
+-- recognised 2 days ago.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000001',
+   'b1000000-0000-4000-8000-000000000001',
+   'Rear wheel wobbles; tyre cut on the sidewall.',
+   pg_temp.seed_at(3, '10:30'), pg_temp.seed_at(3, '10:30'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000004', 'd5000000-0000-4000-8000-000000000004',
+   '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(3, '10:35'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(3, '14:00')
+where id = 'd5000000-0000-4000-8000-000000000004';
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000005', 'd5000000-0000-4000-8000-000000000004', 'service',
+   '5e000000-0000-4000-8000-000000000003', 'Wheel True', 1, 40.00, 0.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(3, '14:10'));
+
+-- A part from stock: the line, its job_consumption movement at the line's
+-- time and the stock_consumed event add_inventory_line writes (a second
+-- later); 5 left at the Shop floor.
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_product_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cost_pending, cult_commons_rate_snapshot,
+   currency, created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000006', 'd5000000-0000-4000-8000-000000000004', 'inventory',
+   'd5300000-0000-4000-8000-000000000002', 'Corsa Pro 700x28c tyre', 1, 20.00, 35.00, false, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(3, '14:30'));
+with m as (
+  insert into public.inventory_movements
+    (product_id, location_id, quantity_delta, movement_type, unit_cost_snapshot, work_order_id,
+     work_order_line_item_id, currency, created_by, created_at)
+  values ('d5300000-0000-4000-8000-000000000002', '1c000000-0000-4000-8000-000000000001', -1, 'job_consumption', 35.00,
+    'd5000000-0000-4000-8000-000000000004', 'd5100000-0000-4000-8000-000000000006', 'SGD', '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(3, '14:30'))
+  returning id
+)
+insert into public.work_order_events
+  (work_order_id, event_type, actor_staff_id, actor_user_id, payload, created_at)
+select 'd5000000-0000-4000-8000-000000000004', 'stock_consumed', '5a000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002',
+  jsonb_build_object(
+    'line_id', 'd5100000-0000-4000-8000-000000000006'::uuid, 'movement_id', m.id,
+    'product_id', 'd5300000-0000-4000-8000-000000000002'::uuid,
+    'product_short_id', (select p.short_id from public.products p where p.id = 'd5300000-0000-4000-8000-000000000002'),
+    'inventory_unit_id', null, 'unit_short_id', null,
+    'location_id', '1c000000-0000-4000-8000-000000000001'::uuid, 'location_name', 'Shop floor',
+    'quantity', 1, 'on_hand_after', 5),
+  pg_temp.seed_at(3, '14:30:01')
+from m;
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(2, '15:00')
+where id = 'd5000000-0000-4000-8000-000000000004';
+update public.work_orders set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(2, '15:05')
+where id = 'd5000000-0000-4000-8000-000000000004';
+update public.work_orders set status = 'collected', status_changed_at = pg_temp.seed_at(1, '09:40')
+where id = 'd5000000-0000-4000-8000-000000000004';
+
+-- ---------------------------------------------------------------------------
+-- H5 J-000015: Tan's Brompton, rounding, ready for collection. Lead Nur;
+-- Asha prices the two manual lines. 3 x 33.33 (cost 10.00 each): yield
+-- 69.99, CC 21.00; 1 x 12.05 (cost 12.00): yield 0.05, CC 0.02 (0.015
+-- rounded half up). Sale 112.04, cost 42.00, yield 70.04, Cult Commons
+-- 21.02, BICII after CC 49.02; recognised yesterday.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000005', 'c1000000-0000-4000-8000-000000000001',
+   'b1000000-0000-4000-8000-000000000002',
+   'Fit a rear rack and a bell.',
+   pg_temp.seed_at(2, '10:00'), pg_temp.seed_at(2, '10:00'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000005', 'd5000000-0000-4000-8000-000000000005',
+   '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(2, '10:05'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(2, '15:00')
+where id = 'd5000000-0000-4000-8000-000000000005';
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000007', 'd5000000-0000-4000-8000-000000000005', 'manual',
+   null, 'Rear rack fitting kit', 3, 33.33, 10.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(2, '15:10'));
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000008', 'd5000000-0000-4000-8000-000000000005', 'manual',
+   null, 'Bell, brass', 1, 12.05, 12.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(2, '15:20'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(1, '14:00')
+where id = 'd5000000-0000-4000-8000-000000000005';
+update public.work_orders set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(1, '14:05')
+where id = 'd5000000-0000-4000-8000-000000000005';
+
+-- ---------------------------------------------------------------------------
+-- H6 J-000016: Priya's Tern, ready for collection for 9 days: an
+-- uncollected_job exception (D34). Lead Nur. Custom Labour 120.00.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000002',
+   'b1000000-0000-4000-8000-000000000004',
+   'Rear hub service and gear adjustment.',
+   pg_temp.seed_at(12, '09:00'), pg_temp.seed_at(12, '09:00'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000006', 'd5000000-0000-4000-8000-000000000006',
+   '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(12, '09:05'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(11, '10:00')
+where id = 'd5000000-0000-4000-8000-000000000006';
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000009', 'd5000000-0000-4000-8000-000000000006', 'service',
+   '5e000000-0000-4000-8000-000000000008', 'Custom Labour', 1, 120.00, 0.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000003', pg_temp.seed_at(11, '10:05'));
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(9, '16:00')
+where id = 'd5000000-0000-4000-8000-000000000006';
+update public.work_orders set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(9, '16:05')
+where id = 'd5000000-0000-4000-8000-000000000006';
+
+-- ---------------------------------------------------------------------------
+-- H7 J-000017: Priya's Cervelo, waiting for parts since 10 days ago and
+-- checked in 11 days ago: overdue (D20), never recognised. Lead Marcus.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000007', 'c1000000-0000-4000-8000-000000000002',
+   'b1000000-0000-4000-8000-000000000016',
+   'Move the build onto the warranty frame; waiting for the headset.',
+   pg_temp.seed_at(11, '11:00'), pg_temp.seed_at(11, '11:00'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000007', 'd5000000-0000-4000-8000-000000000007',
+   '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(11, '11:05'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(10, '10:00')
+where id = 'd5000000-0000-4000-8000-000000000007';
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000010', 'd5000000-0000-4000-8000-000000000007', 'service',
+   '5e000000-0000-4000-8000-000000000007', 'Bike Build', 1, 150.00, 0.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(10, '10:05'));
+update public.work_orders set status = 'awaiting_parts', status_changed_at = pg_temp.seed_at(10, '15:00')
+where id = 'd5000000-0000-4000-8000-000000000007';
+
+-- ---------------------------------------------------------------------------
+-- H8 J-000018: Hafiz's Dahon, cancelled 45 minutes after check-in with
+-- no lines (D16). Lead Nur.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000008', 'c1000000-0000-4000-8000-000000000003',
+   'b1000000-0000-4000-8000-000000000017',
+   'Quote for a dynamo hub conversion.',
+   pg_temp.seed_at(2, '11:30'), pg_temp.seed_at(2, '11:30'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000008', 'd5000000-0000-4000-8000-000000000008',
+   '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(2, '11:35'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000003","role":"authenticated"}', false);
+
+select private.set_change_reason('Customer declined the quote');
+update public.work_orders set status = 'cancelled', status_changed_at = pg_temp.seed_at(2, '12:15')
+where id = 'd5000000-0000-4000-8000-000000000008';
+select private.set_change_reason(null);
+
+-- ---------------------------------------------------------------------------
+-- T1 J-000019: Daniel's Endurace, in progress today. Lead Marcus.
+-- Drivetrain Service 90.00 (cost 10.00), open, so not recognised.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000009', 'c1000000-0000-4000-8000-000000000005',
+   'b1000000-0000-4000-8000-000000000015',
+   'Drivetrain clean; chain noisy in the small cog.',
+   pg_temp.seed_at(0, '09:00'), pg_temp.seed_at(0, '09:00'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000009', 'd5000000-0000-4000-8000-000000000009',
+   '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(0, '09:05'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(0, '09:30')
+where id = 'd5000000-0000-4000-8000-000000000009';
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000011', 'd5000000-0000-4000-8000-000000000009', 'service',
+   '5e000000-0000-4000-8000-000000000006', 'Drivetrain Service', 1, 90.00, 10.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(0, '09:35'));
+
+-- ---------------------------------------------------------------------------
+-- T2 J-000020: Chloe's Diverge, checked in yesterday evening and collected
+-- today. Lead Marcus. Drivetrain Service 120.00 (CC 36.00) and a chain at
+-- 45.00 (cost 22.00, CC 6.90): sale 165.00, cost 22.00, yield 143.00, Cult
+-- Commons 42.90, BICII after CC 100.10; recognised today.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000010', 'c1000000-0000-4000-8000-000000000004',
+   'b1000000-0000-4000-8000-000000000014',
+   'Drivetrain service and a new chain before the tour.',
+   pg_temp.seed_at(1, '17:00'), pg_temp.seed_at(1, '17:00'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000010', 'd5000000-0000-4000-8000-000000000010',
+   '5a000000-0000-4000-8000-000000000002', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(1, '17:05'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.work_orders set status = 'in_progress', status_changed_at = pg_temp.seed_at(0, '09:15')
+where id = 'd5000000-0000-4000-8000-000000000010';
+
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_service_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency,
+   created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000012', 'd5000000-0000-4000-8000-000000000010', 'service',
+   '5e000000-0000-4000-8000-000000000006', 'Drivetrain Service', 1, 120.00, 0.00, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(0, '09:20'));
+
+-- A part from stock: the line, its job_consumption movement at the line's
+-- time and the stock_consumed event add_inventory_line writes (a second
+-- later); 9 left at the Shop floor.
+insert into public.work_order_line_items
+  (id, work_order_id, line_type, source_product_id, description_snapshot, quantity,
+   unit_sale_price_snapshot, unit_direct_cost_snapshot, cost_pending, cult_commons_rate_snapshot,
+   currency, created_by, created_at)
+values
+  ('d5100000-0000-4000-8000-000000000013', 'd5000000-0000-4000-8000-000000000010', 'inventory',
+   'd5300000-0000-4000-8000-000000000003', 'SLA-110 11-speed chain', 1, 45.00, 22.00, false, 0.3000, 'SGD',
+   '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(0, '10:00'));
+with m as (
+  insert into public.inventory_movements
+    (product_id, location_id, quantity_delta, movement_type, unit_cost_snapshot, work_order_id,
+     work_order_line_item_id, currency, created_by, created_at)
+  values ('d5300000-0000-4000-8000-000000000003', '1c000000-0000-4000-8000-000000000001', -1, 'job_consumption', 22.00,
+    'd5000000-0000-4000-8000-000000000010', 'd5100000-0000-4000-8000-000000000013', 'SGD', '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(0, '10:00'))
+  returning id
+)
+insert into public.work_order_events
+  (work_order_id, event_type, actor_staff_id, actor_user_id, payload, created_at)
+select 'd5000000-0000-4000-8000-000000000010', 'stock_consumed', '5a000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002',
+  jsonb_build_object(
+    'line_id', 'd5100000-0000-4000-8000-000000000013'::uuid, 'movement_id', m.id,
+    'product_id', 'd5300000-0000-4000-8000-000000000003'::uuid,
+    'product_short_id', (select p.short_id from public.products p where p.id = 'd5300000-0000-4000-8000-000000000003'),
+    'inventory_unit_id', null, 'unit_short_id', null,
+    'location_id', '1c000000-0000-4000-8000-000000000001'::uuid, 'location_name', 'Shop floor',
+    'quantity', 1, 'on_hand_after', 9),
+  pg_temp.seed_at(0, '10:00:01')
+from m;
+update public.work_orders set status = 'completed', status_changed_at = pg_temp.seed_at(0, '11:30')
+where id = 'd5000000-0000-4000-8000-000000000010';
+update public.work_orders set status = 'ready_for_collection', status_changed_at = pg_temp.seed_at(0, '11:35')
+where id = 'd5000000-0000-4000-8000-000000000010';
+update public.work_orders set status = 'collected', status_changed_at = pg_temp.seed_at(0, '12:10')
+where id = 'd5000000-0000-4000-8000-000000000010';
+
+-- ---------------------------------------------------------------------------
+-- T3 J-000021: Chloe's Diverge again, received today with no lines, after
+-- T2 on it was collected (12:10): the brakes rub on the ride home. Lead
+-- Nur. Its check-in is the seed's anchor (tests read the reset day from it).
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+insert into public.work_orders
+  (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
+values
+  ('d5000000-0000-4000-8000-000000000011', 'c1000000-0000-4000-8000-000000000004',
+   'b1000000-0000-4000-8000-000000000014',
+   'Brakes rubbing after the wheel change.',
+   pg_temp.seed_at(0, '13:00'), pg_temp.seed_at(0, '13:00'),
+   '5a000000-0000-4000-8000-000000000001');
+
+insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
+values
+  ('d5200000-0000-4000-8000-000000000011', 'd5000000-0000-4000-8000-000000000011',
+   '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(0, '13:05'));
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Stock adjustments by Asha (what adjust_stock writes: the reason, the
+-- product's default cost as the snapshot), one each on the last three days:
+-- A1, 2 days ago: not significant (1 x 15.00); 19 left.
+-- A2, yesterday: significant (6 units, D33); 24 left.
+-- A3, today: not significant (2 x 3.00); 12 left.
+insert into public.inventory_movements
+  (product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason,
+   unit_cost_snapshot, request_id, currency, created_by, created_at)
+values
+  ('d5300000-0000-4000-8000-000000000004', null, '1c000000-0000-4000-8000-000000000001', -1, 'stock_adjustment', 'Damaged packaging, written off',
+   15.00, 'd5400000-0000-4000-8000-000000000011', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(2, '11:00')),
+  ('d5300000-0000-4000-8000-000000000005', null, '1c000000-0000-4000-8000-000000000001', -6, 'damaged', 'Water damage in storage',
+   5.00, 'd5400000-0000-4000-8000-000000000012', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(1, '16:30')),
+  ('d5300000-0000-4000-8000-000000000006', null, '1c000000-0000-4000-8000-000000000001', 2, 'stock_adjustment', 'Recount found two in the workshop drawer',
+   3.00, 'd5400000-0000-4000-8000-000000000013', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(0, '08:30'));
 
 select set_config('request.jwt.claims', '', false);

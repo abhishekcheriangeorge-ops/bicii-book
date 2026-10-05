@@ -248,6 +248,45 @@ same PR.
   getUserMedia errors to denied / insecure / unsupported / failed, Phase
   0's messages kept).
 
+- Phase 5 (M1.5) app: shop days for people (`dates.test.ts`: today
+  flips at 16:00:00Z, `shopDayToDate` is noon Singapore time and reads back
+  as the same day in any zone, `formatShopDay` "Sat, 3 Oct 2026",
+  `formatShopDayLong`, `formatShopDayShort`; `parseShopDay` and
+  `shiftShopDay` from step 2, plus years 0001-0099 read as themselves,
+  `shiftShopDay` across the 0100/0099 boundary and refusing a result it
+  could not parse back, and `EARLIEST_SHOP_DAY`); the Today DTO and wording (`reports.test.ts`:
+  `toTodayDashboard` for every permission combination: no money without
+  View financial reports, money without costs for it alone, costs never
+  shown when the flags say hidden, no snapshot on a past day, the Phase 2/6
+  placeholders null until tracked and their values once filled, losses and
+  cost-pending counts carried; the loss and provisional notes
+  with a real minus sign; `formatRateRange` "30%" / "25–30%";
+  `exceptionCopy` for every D34 kind (overdue in the danger tone, as
+  everywhere else), the overdue sentence from `OVERDUE_AFTER_DAYS`, an
+  unknown kind rendered generically; `exceptionKeys` unique for a product
+  below zero at two locations; `exceptionsShownNote`;
+  `exceptionHref` (a line opens its job through `/q`); `weekStrip` exactly
+  seven days oldest first with quiet and missing days; `TILE_LINKS` naming
+  only `BOARD_GROUPS` ids and parsing back through `parseBoardFilters`;
+  `groupEntries`, `documentHref`); the job yield panel
+  (`totals-summary.test.tsx`: sale only without view_costs even if a report
+  were passed, Phase 3's summary without a report, the rate range over the
+  shared rate, the loss note, "Counted in reports on Sat, 3 Oct 2026
+  (completed)", "once the job is completed" and, on a cancelled job, "Not
+  counted in reports (cancelled)"); Today's components
+  (`today-components.test.tsx`: StatTile's placeholder reads exactly
+  `NOT_TRACKED`; MoneyTile keeps the amount on one line with the code
+  free to wrap, sized by `moneySizeClass` smaller for longer amounts and
+  never below 1rem; ExceptionList renders two negative_stock rows for one
+  product without a duplicate key and says "Showing the N most urgent of
+  M" only when capped; AdjustmentList puts significant ones first, lists
+  `ADJUSTMENT_ROWS` and puts the rest behind "Show N more"). E2E
+  (`today.spec.ts`) also checks that every visible box in each Money tile
+  stays inside the tile's padding at the project's size, 1024 × 1366 and
+  390 × 844 (the page never scrolls sideways, so nothing else catches a
+  figure running into the next card), that "Right now" says "Awaiting
+  collection", and that a `?day=` before `EARLIEST_SHOP_DAY` shows today.
+
 ### Database (SPEC §27.2 and §23)
 
 Each invariant from SPEC §23 has at least one test, named after it:
@@ -306,6 +345,20 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Publication by hand (Phase 4, D26) | `inventory-publication.test.ts` "set_publication_status": for quantity products and unique products with and without an available unit, from every state, the targets the RPC accepts equal `manualPublicationTargets` and every refusal has its code (`publication_transition_invalid`, `publication_sold_by_sale`, `publication_requires_available_unit`); a manual `sold` and sold → public/internal_only refused, sold → archived allowed; a unit registered on a sold product restores it to public (`publication_changed` {sold → public}, both rows `available` to anon), so 'sold' with an available unit is unreachable and skipped in the matrix; same status is a no-op without an event; `publication_requires_photo` (none, or internal only) and `publication_requires_price` (a unique product with no price on product or unit); the slug is assigned once and survives unpublish, rename, archive and republish, `item-p-…` for a name without letters or digits; `publication_changed` events carry `{from, to}`, the actor and the trimmed reason; `reason_too_long`; mechanic1, mechanic2 and anon 42501; unknown product P0002. |
 | Split to a unique item (Phase 4, D28) | `inventory-split.test.ts`: the source loses one at the location and a draft unique product (name, description, brand, category and currency from the source; price from the source unless given) gets an available shop-owned unit there, both costs equal the source's default cost (read through the cost views as the admin), one `stock_adjustment` each side with "Split to U-…: reason", cost snapshot and request_id = unit id, `created` event with actor and reason; replay with the same ids returns the same result with one pair of movements, a reused unit or product id is `unit_conflict`; `insufficient_stock` (empty or other location), `location_inactive`, `product_not_quantity`, `product_archived`, `ownership_not_saleable`, `reason_required`, `reason_too_long` (> 480), a blank name 23514 without DETAIL; needs both adjust_stock and manage_inventory (42501 otherwise, anon too); mechanic2 with both but no view_costs splits and the carried costs equal the source's while their direct cost UPDATEs on the new product and unit are 42501; committed concurrency: the same unit id twice → one result, one pair of movements; two splits racing for the last item → one succeeds, the other `insufficient_stock`. |
 | Products and units in staff search (Phase 4) | `staff-search.test.ts`: the SKU typed as "shi l05a rf", "shil05arf" or in mixed case finds P-000001 at rank 1.0 with subtitle "SHI-L05A-RF · Shimano · 34 in stock"; SKU contains (≥ 3 characters) 0.7; exact P- and U- IDs rank 1.0 with or without the dash; name and brand words 0.45-0.85; on-hand from the ledger across locations (road tube 60), "Unique item" for unique products, "Inactive" appended for an inactive product; units by exact serial (1.0), part of it (0.7) and product-name words, subtitle "Available · Shop floor · S/N …"; the shop Brompton's serial finds both the bike and its unit at 1.0; the archived chain and an archived unit are left out and are the only hits with `archived = true`; "brompton" across all kinds adds products P-000005, P-000014 and unit U-000002 (the bike assertion is scoped to `['bike']`); 'product' and 'inventory_unit' are known kinds. |
+| Cult Commons end to end (Phase 5; SPEC §10, §31; D1) | `reporting.test.ts` "Cult Commons is 30% of positive yield after direct costs, per line": every `LINE_FIXTURES` row on its own job completed on its own isolated `TEST_DAY` equals the line's generated columns, its `financial_lines` entry (owner) and `daily_summary(day, day)` (admin); every `JOB_FIXTURES` row equals `work_order_yield` and the day's totals; the seeded loss-line job's Cult Commons is 12.00, not 7.50 (the Phase 5 fixture rows run through `cult-commons.test.ts` and `work-order-lines.test.ts` too). |
+| Negative yield never pays negative Cult Commons (Phase 5; SPEC §10; D32) | `reporting.test.ts`: as owner, every `financial_lines` entry's share is ≥ 0 and equals its line's share, `is_loss` matches the line's yield; every `daily_summary` row has `cult_commons_share` ≥ 0 and `loss_total` ≤ 0; a day with two loss lines and a 40.00 line: CC 12.00, yield −5.00, loss −45.00. |
+| Reports derived, never a second truth (Phase 5; SPEC §19.2) | `reporting.test.ts`: `reporting` holds views only (also `meta.test.ts`); over three test days with service, part, voided-part, collected, cancelled and open jobs, `daily_summary` money equals Σ `financial_lines` by day (both admin RPCs), each job's entries equal `work_order_totals_staff` and `work_order_yield`, the `jobs_*` counts equal the `work_order_activity_on` rows with the matching `*_on_day` flag, parts consumed/returned equal ledger sums, an empty day is a zero row and the placeholder columns are NULL; catalog price/cost edits and archiving the service leave the days and entries unchanged (snapshots). |
+| Only completed jobs recognised; reopen restates (D32) | `reporting.test.ts`: open jobs, cancelled jobs (lines voided first, D16) and voided lines have no entry; a line added on one day of a job completed on the next is recognised on the completion day; 23:59 vs 00:01 SGT land on consecutive days; adds and voids on completed, ready and collected jobs → `work_order_locked` (RPC and owner); complete → reopen (the earlier day drops by exactly the job, no entry left) → void one line, add another → complete: the new day has exactly the current live lines once each, `started_at` kept, two `completed` events and one `reopened`. |
+| Completion recognised once (replay, concurrency) (Phase 5) | `reporting.test.ts`: a second `set_work_order_status(…, 'completed')` returns the row unchanged, no event, one entry per line. `reporting-concurrency.test.ts` (committed): two connections complete the same job; the second waits on the row lock and gets the unchanged row; one `completed_at`, one `completed` event, one entry per line, today's sales rise by the job's sale once; a third reader before the commit sees the old totals. |
+| Shop-day boundaries (D35) | `reporting.test.ts`: `completed_at` 2025-06-01 15:59:59Z → 2025-06-01, 16:00:00Z → 2025-06-02; `daily_summary` inclusive on both ends; identical results under `set local timezone` UTC and America/Los_Angeles; `shop_today()` = Singapore's date of `now()`; no reporting view or Phase 5 function contains `current_date`. |
+| Financial reports gated (D30) | `reporting-access.test.ts` "Mechanic permission boundaries" and "Customers cannot read internal data": mechanic2 → `financial_lines` / `work_order_yield` 42501, counts with every money column NULL (`can_see_financials` false), `value_at_cost` NULL; mechanic1 (view_costs) → `financial_lines` 42501, `work_order_yield` works, summary money NULL; mechanic2 + view_financial_reports → rows and gross sales with every cost column NULL (`can_see_costs` false); admin → everything; customers, anon and inactive staff → 42501 from all seven RPCs; selecting the four Phase 5 reporting views as anon or authenticated → 42501. |
+| Today flows vs snapshot (D31) | `reporting.test.ts`: inserting a job with today's check-in, start, line and completion raises today's flows by exactly those milestones and the money by its line; the `*_now` counts equal direct status counts grouped as `BOARD_GROUPS`, D20 overdue via `isOverdue` and `low_stock` rows; a past day has `is_today` false and every `*_now` NULL; tomorrow → `report_range_invalid`. Range rules: `daily_summary` from > to and 367 days raise, 366 pass; `financial_lines` 31 pass, 32 and from > to raise; null bounds mean today. |
+| Significant adjustments (D33) | `reporting.test.ts`: `private.is_significant_adjustment` cases (−6, +5, −1, 4 × 24.99 vs 4 × 25.00, a unit, 2 × 60.00, non-adjustment types false); `stock_adjustments_on(TEST_DAY)` over owner-inserted movements returns the day's six (00:00 and 23:59:59 in, the neighbouring days out), newest first, with `significant`, `actor_name` and `reason` for mechanic2 and `value_at_cost` NULL; the admin sees \|delta\| × unit cost (snapshot, else product default, else 0). |
+| Operational exceptions incl. 7-day overdue boundary (D34, D20) | `reporting.test.ts`: an open job checked in exactly `OVERDUE_AFTER_DAYS` days ago is not `overdue_job`, one second earlier is; a collected job checked in 30 days ago is neither; `work_order_activity.is_overdue` equals `isOverdue` for the same rows; a ready job completed 7 shop days ago is `uncollected_job`, 6 days ago not; a forced negative on-hand is `negative_stock` (danger, all danger rows first); an owner-held unit with no live line is `unit_hold_stale`, a unit held by `add_inventory_line` on an open job is not; a completed USD job's line is `currency_mismatch` and out of the day's totals; `exceptions_now` equals the row count; max_rows clamped to 1..200. |
+| Seeded history reconciles (Phase 5; SPEC §10 examples, SEED_DAYS) | `reporting-seed.test.ts` (reads only; days counted back from the seed's anchor, `seedToday()`): H1–H4 (and H5's rounding) through `work_order_yield` (admin) and Σ `financial_lines(anchor−6, anchor)` per job equal `SPEC_EXAMPLE_JOBS` / `ROUNDING_JOB`, recognised on their days, H4's CC 12.00 not 7.50; `daily_summary(anchor−n, anchor−n)` equals `SEED_DAYS[n]` exactly for n = 0…6 (every column, placeholders NULL); Σ entries by `recognized_day` equal each day's money columns; every completed seeded job (Phase 3, 4, 5) has entries equal to `work_order_totals_staff` and `work_order_yield` on its completion day, open and cancelled ones none; parts consumed/returned and adjustment counts equal the ledger's sums; every seeded entry's share ≥ 0 and equals its line's (H4's tyre a loss at 0); `stock_adjustments_on(anchor−n)` gives A1–A3 as `SEED_ADJUSTMENTS` (A2 significant, `value_at_cost` NULL for mechanic2, 30.00 for the admin). When the anchor is the shop's today (else skipped with a message): `today_dashboard(null)` is the anchor, `is_today`, flows = `SEED_DAYS[0]`, the `*_now` snapshot equals direct counts and `SEED_SNAPSHOT` (exactly in a fresh per-file database, at least otherwise); `operational_exceptions` has `SEED_EXCEPTIONS` and not H5, J-000002, J-000003 or J-000005. `display-parity.test.ts`: `private.shop_timezone()` = `SHOP_TIME_ZONE`, and `work_order_activity_on`'s `bike_title` / `customer_label` equal `bikeTitle()` / `customerLabel()` for every seeded job of days 0–6. |
+| Seeded ledger consistent (Phase 5) | `reporting-seed.test.ts` "The seeded ledger is consistent": every seeded inventory line has exactly one `job_consumption` movement (−quantity, cost snapshot = the line's unit cost), at the line's own time for the Phase 5 lines (J-000010's, written by `add_inventory_line`, just after); no line created at or after its job's completion; no stock level below zero and the Phase 5 products' on-hand as documented; no seeded job, line, event, assignment or movement later than `now()`, and no Phase 5 row later than J-000007's seed-time check-in. |
+| Cost-pending lines flagged (D14) | `reporting.test.ts`: a `cost_pending` manual line on a completed job is recognised at cost 0 with `cost_pending` true; `today_dashboard(day).cost_pending_lines` and `work_order_yield.cost_pending_count` count it. |
+| No float money in function results (Phase 5) | `meta.test.ts`: no money-named OUT/TABLE argument of a function in `public` or `private` is `real` or `double precision`; every reporting RPC compiles and answers with exactly its documented columns (`reporting.test.ts`). |
 
 ### End-to-end (SPEC §27.3)
 
@@ -325,6 +378,14 @@ npm run test:e2e                       # build + start on :3100, reset bicii_dev
 E2E_REUSE_SERVER=1 npm run test:e2e    # reuse an app already on E2E_PORT (3100)
 E2E_RESET=0 npm run test:e2e           # keep bicii_dev as it is
 ```
+
+The seed's history is relative to the day it was reset (DATA-MODEL §18
+"Phase 5 part"). Global setup reads that anchor day once, from the seeded
+T3 job's check-in, into `E2E_SEED_ANCHOR` ('YYYY-MM-DD'; the workers
+inherit it); specs use `seedAnchor()` and `anchorDay(n)` from
+`tests/e2e/helpers.ts`, never the wall clock, because with `E2E_RESET=0`,
+`E2E_EXTERNAL_STACK=1` or a run across Singapore midnight the anchor is not
+today.
 
 Phase 0 specs (`auth.spec.ts`, `staff.spec.ts`): signed-out `/` redirects to
 `/login`; `?next=` deep links survive sign-in and cannot leave the origin
@@ -479,12 +540,51 @@ timeline shows both lead assignments, "Marcus Tan removed from the job",
 the note, "Marked customer-approved" and the details change; the board
 finds the job by number with Nur as lead.
 
+Phase 5 (`today.spec.ts`, phone and iPad; today's values asserted as
+deltas read just before acting, past days only from `seedAnchor()` /
+`anchorDay(n)`, seeded jobs found by `REPORT_JOB_NUMBER`; Today tiles read
+with `readCount` / `readMoney` from `helpers.ts`, which find a tile's
+`<dt>` and read its `<dd>`). "Milestone M1.5" is a serial describe whose
+job is kept per project: (1a) PLAN §3's exit criteria on a phone: as the
+admin, Today's Checked in, Completed, Collected, Gross sales, Yield and
+Cult Commons; a tagged customer and bike checked in through the intake with
+the fixture photo, condition, requested work and Nur Aisyah as lead
+(`createJobViaIntake` with `photo` and `condition`); a tagged product
+(`createProduct`, moved here from `inventory.spec.ts` unchanged, as was
+`pickPart`) with opening stock 10; Basic Service and one part added, the
+line and product reading 9 before and after a reload; the totals panel
+equal to `jobEconomics` over the two lines; start → complete → ready →
+collected with separate Completed and Collected timeline entries and
+stamps and "Counted in reports on <today> (completed)"; Today then reads
++1 checked in, completed and collected and gross, yield and Cult Commons
+up by exactly the job's (summed with Decimal); the job under Activity →
+Completed and Collected, its row opening the job; `/?entries=open` listing
+its lines. (1b) mechanic2 sees the job's sale total and no cost, yield,
+Cult Commons or recognition text, and on Today the workshop tiles and the
+job in Activity but no Money section; mechanic1 (view_costs) sees the full
+panel and no Money section. "Several days of history reconcile":
+`/?day=anchorDay(3)` flows and money equal `SEED_DAYS[3]` (1000.00 /
+400.00 / 600.00 / 180.00 / 420.00) with the past-day note and no "Right
+now" or "Needs attention"; Previous / Next move one day; anchorDay(2)
+shows the loss note with −$15.00 and Cult Commons $12.00; Last 7 days from
+anchorDay(1) has seven rows, days 1–6 with the seeded completed,
+collected, gross, yield and Cult Commons, the shown day `aria-current`;
+`?day=garbage` is today. "Low stock and the day's significant adjustment":
+P-000009, P-000008 and P-000012 listed and linking to their pages, "See
+all" → `/inventory?filter=low`; A2 (P-000021 −6, "Water damage in
+storage", Significant, Damaged) on anchorDay(1). "What needs attention"
+(skipped with a message unless the seed's anchor is the live day, since
+exceptions are relative to it): J-000017 overdue and J-000016 waiting for
+collection, each opening its job.
+
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
 
 1. Walk-in: new customer + bike → intake photo (fixture image upload) → job →
    add service + part → stock badge decrements → complete → ready → collected;
-   timeline shows every step.
+   timeline shows every step; Today shows the job and its money (complete
+   with M1.5: `workshop.spec.ts` for the timeline, `today.spec.ts` for the
+   milestone run ending on Today).
 2. Appointment: book (as seeded customer via RPC) → appears on Today → arrive →
    check in → work order linked.
 3. Bulk product: create → receive PO (partial) → print 10 labels (PDF adapter
@@ -506,6 +606,31 @@ create their own workshop rows pick service and category names the seed
 does not use (active names are unique) and scope counts to their own job or
 customer; the seed's own shape and timelines are pinned by
 `workshop-seed.test.ts`.
+
+Since Phase 5 the seed is a week of shop history **relative to the shop day
+`db:reset` ran** (the anchor): every Phase 3, 4 and 5 timestamp goes through
+the session-temporary `pg_temp.seed_at(days_ago, local_time)`. The figures
+it must produce are written by hand in `tests/fixtures/reporting.ts`
+(`SEED_DAYS` for days 0–6, `SPEC_EXAMPLE_JOBS`, `SEED_SNAPSHOT`,
+`SEED_EXCEPTIONS`, `SEED_ADJUSTMENTS`) and the Phase 5 rows' ids in
+`tests/fixtures/ids.ts` (`REPORT_JOB`, `REPORT_JOB_NUMBER`, `REPORT_LINE`,
+`REPORT_PRODUCT`, `REPORT_PRODUCT_SHORT_ID`). The anchor rule: the anchor
+need not be today (the DB test template is built once per run,
+existing-database mode keeps an old seed, a run can cross Singapore
+midnight), so seed assertions read it with `seedToday()`
+(`tests/db/reporting-fixtures.ts`, from T3's check-in, not through the
+functions under test) and use explicit days `anchor − n`, never
+`shop_today()` or null bounds; assertions that need anchor = today
+(`today_dashboard(null)`, `is_today`, the `*_now` snapshot, the exceptions)
+compare the two first and skip with a message when they differ; tests that
+take a short ID or sequence value skip when `isolatedDatabase()` is false.
+E2E reads the same anchor in global setup (`E2E_SEED_ANCHOR`). Tests that
+list a seeded customer's jobs list the Phase 5 jobs too
+(`workshop-customer-access.test.ts`). Seed realism, which the schema does
+not enforce, is pinned in `reporting-seed.test.ts`: no bike has two seeded
+jobs open at once (check-in to completion or cancellation) and none is
+collected while another job on it is open; the bikes that carry more than
+one job are listed (a bike awaiting collection may take a newer job).
 
 ## CI
 
