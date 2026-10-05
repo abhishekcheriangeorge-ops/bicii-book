@@ -1,7 +1,27 @@
 # BICII Admin — Runbook
 
+Owner: Abhishek Cherian George. Audience: technical operator. Last
+exercised, per section (as of 2026-10-05):
+
+- Hosted sections (hosted projects, migrations, first admin, key rotation,
+  Vercel): never; no hosted project exists.
+- Local Supabase with Docker (Supabase CLI): never exercised here; the
+  build environment has no Docker.
+- The camera scanner on phones and iPads: not exercised (no LAN device
+  test, no HTTPS dev server, no flag); `tests/e2e/scan.spec.ts` covers
+  scanning on localhost with a stubbed camera and manual entry.
+- Appointments: schedule before go-live: not run as a go-live procedure;
+  its screens are exercised by `tests/e2e/appointment-settings.spec.ts`.
+- CI: the `e2e` label exists, and PRs #2–#7 carry it, each with a
+  successful `e2e` workflow run (e.g.
+  [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521));
+  branch protection is unverified
+  ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)).
+
+Environment overview, administration and recovery: [OPERATIONS.md](OPERATIONS.md).
+
 Operational how-tos that are not part of day-to-day development. For the
-everyday local setup (the Docker-free devstack) see the README quickstart.
+everyday local setup (the Docker-free devstack) see [ENGINEERING.md](ENGINEERING.md).
 
 - [Local Supabase with Docker (Supabase CLI)](#local-supabase-with-docker-supabase-cli)
 - [Hosted Supabase projects: staging and production](#hosted-supabase-projects-staging-and-production)
@@ -82,7 +102,9 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    (Singapore). Generate a strong database password and store it in the
    password manager; it is needed for `supabase link` and `db push`.
 2. Authentication → Sign In / Providers: Email enabled (PLAN D10: staff use
-   email + password, no magic links). Turn **off** "Allow new users to sign
+   email + password, no magic links; staff sign-in is changing to email OTP,
+   [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md), and this
+   step must be revised when that work merges). Turn **off** "Allow new users to sign
    up" until the public site's customer sign-in ships (Phase 11); staff
    logins are created by admins through the Auth admin API, which works with
    sign-ups off. Minimum password length: 12 (what the Admin's password

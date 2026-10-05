@@ -1,5 +1,7 @@
 # BICII Admin — Testing strategy
 
+Commands: [ENGINEERING.md](ENGINEERING.md#commands); current results: [NOW.md](../NOW.md).
+
 Maps SPEC.md §27 onto concrete harnesses. A feature is done when the tests in
 its row of PLAN.md pass in CI.
 
@@ -157,14 +159,10 @@ same PR.
 
 ### Devstack commands
 
-| Command | What it does |
-|---|---|
-| `npm run devstack:setup` | Download/build PostgREST, Supabase Auth, Node 24 and Supabase Storage into `~/.cache/bicii-devstack` (`BICII_DEVSTACK_CACHE`). Idempotent. |
-| `npm run db:reset` | Drop and rebuild the dev database (`bicii_dev`): roles → Auth → Storage → migrations → seed. |
-| `npm run db:migrate` | Apply only pending app migrations. |
-| `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
-| `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, and restarts services that were started against a different database. |
-| `npm run devstack:env` | Write `.env.local` with the gateway URL and the local anon/service keys (what the app reads). The scripts and tests never read `.env.local`: `DATABASE_URL` / `PG*` come from the shell. |
+The devstack and database commands (`devstack:setup`, `devstack:start` /
+`stop` / `status`, `devstack:env`, `db:reset`, `db:migrate`, `db:types`)
+are described in one place:
+[ENGINEERING.md "Commands"](ENGINEERING.md#commands).
 
 ## What is tested where
 
@@ -442,9 +440,12 @@ with the devstack URL and local demo keys passed explicitly (so `.env.local`
 does not matter). `tests/e2e/global-setup.mts` resets and seeds `bicii_dev`
 (`E2E_RESET=0` skips), starts the devstack if needed, and waits until the
 seeded admin can sign in through the gateway and call `my_staff_profile`.
-Tests run serially (one shared database). In this container the preinstalled
-`/opt/pw-browsers/chromium` is used via `launchOptions.executablePath`
-(`PLAYWRIGHT_CHROMIUM_EXECUTABLE` overrides); never `playwright install` here.
+Tests run serially (one shared database). The browser is
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` when set, else `/opt/pw-browsers/chromium`
+when it exists (the build agent's container, where browsers are never
+downloaded), else Playwright's own Chromium, installed once with
+`npx playwright install --with-deps chromium`
+([ENGINEERING.md](ENGINEERING.md#prerequisites-and-access)).
 
 ```sh
 npm run test:e2e                       # build + start on :3100, reset bicii_dev, run
@@ -695,7 +696,8 @@ accessible name starts with the booked time and Chloe Lim, "Still
 expected" is at least 1, and Arrived is read; after check-in Today's
 Arrived is exactly one higher (read before and after with `readCount`,
 never absolute counts, D41) and the booking left the arrivals list. Chloe
-Lim (`CUSTOMER_LOGIN.chloe`, password `bicii-dev-password`) is the one
+Lim (`CUSTOMER_LOGIN.chloe`, the seed password in
+[ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)) is the one
 seeded customer login, used here and in the customer-access tests. "Staff
 book for a customer and capacity closes the slot": mechanic2 (no
 permissions), on the first Tuesday at least 21 days after `shopToday()`

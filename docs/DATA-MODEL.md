@@ -6,7 +6,8 @@ them into tables, constraints, functions and views. Where this document adds
 structure the spec did not prescribe (join tables, idempotency keys, generated
 columns) that is implementation mechanics the agent is free to refine. Where a
 choice would change business semantics it is listed under **Open decisions** in
-PLAN.md and must not be changed silently.
+PLAN.md (records in [decisions/](decisions/README.md)) and must not be changed
+silently.
 
 Conventions used throughout:
 
@@ -37,6 +38,119 @@ Conventions used throughout:
 - Schemas: `public` holds tables, RPCs and views (exposed through PostgREST);
   `private` holds security-definer helpers that must not be callable through
   the API; `reporting` holds views only.
+
+## Authority, applied state and implementation status
+
+This section was added by the documentation retrofit (2026-10-05, inspected
+at `c6bf6d0`). The numbered sections below are never renumbered; code and
+migration comments cite them as "DATA-MODEL §n".
+
+**Authority.** The schema source is the 32 files in
+[supabase/migrations/](../supabase/migrations/), from
+`20261004000100_foundation.sql` to `20261004003200_appointment_reporting.sql`.
+[src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
+them by `npm run db:types`, and CI fails when it drifts
+(`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
+[tests/fixtures/api-surface.ts](../tests/fixtures/api-surface.ts) is the
+allow-list of every function and privilege the API roles hold, enforced by
+[tests/db/meta.test.ts](../tests/db/meta.test.ts). This document explains
+meaning; where it disagrees with a migration, the migration wins and this
+document is corrected.
+
+**Applied state.**
+
+- Local: on 2026-10-05
+  `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
+  printed `32|20261004003200` (every file applied), and `npm run db:migrate`,
+  which applies pending files in order, printed "already up to date".
+- CI: the `check` job diffs the generated types against a throwaway
+  database built from the migrations, and the `test` and E2E jobs run
+  `npm run db:reset` (migrations, then the seed) before testing
+  ([TESTING.md](TESTING.md#ci)).
+- Hosted: `npx supabase@2.119.0 migration list` per
+  [RUNBOOK](RUNBOOK.md#applying-migrations-to-a-hosted-project). Never
+  exercised: no hosted project exists
+  ([R-001](RISKS.md#r-001--nothing-is-deployed)).
+
+**Implementation status on this branch.** Determined by matching each
+section's tables, views and functions against `create table`, `create view`
+and `create function` statements in the migrations (file names below drop
+the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
+§16 are design, not schema.
+
+| Section | Status | Where, or what is missing |
+|---|---|---|
+| §1 Identity and authorization | Implemented | `000200_staff`, `000300_staff_management`, `000500_staff_history` |
+| §2 Customers, bikes, attachments | Implemented | `000600_customers`, `000700_bikes`, `000800_media_storage`, `000900_attachments`, `001000_customer_access`, `001100_staff_search` |
+| §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2) |
+| §4 Workshop | Implemented | `001300_work_orders`, `001500_workshop_rpcs`, `001600_workshop_customer_access`, `001700_workshop_search` |
+| §5 Services and line items | Implemented | `001200_workshop_catalog`, `001400_work_order_lines`, `001500_workshop_rpcs` |
+| §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; the consignment, sale-line and Shopify reference columns exist without foreign keys until Phases 6 and 10; `supplier_products` moved to Phase 7 |
+| §7 Inventory movement ledger | Implemented | `001800_inventory`, `001900_inventory_jobs`, `002000_inventory_reporting`; sale, receipt and consignment references wait for Phases 6 and 7 |
+| §8 Sales | Planned | Phase 6 (in-store sales) and Phase 10 (Shopify); no `sales` table yet |
+| §9 Consignment | Planned | Phase 6; D27's consigned job parts also land there ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet)) |
+| §10 Suppliers and purchasing | Planned | Phase 7; built only on the parallel branch `feat/p7-purchasing`, not on this line |
+| §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`). Missing: the QR base decision and labels (Phase 8), C-/S-/PO- resolution (Phases 6, 7), the public `/q` route (Phase 11) |
+| §12 Label printing | Planned | Phase 8 (browser/PDF), Phase 12 (hardware) |
+| §13 Shopify integration | Planned | Phase 10; only reserved columns exist (`customers.shopify_customer_id`, the product Shopify ids) |
+| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). Missing: `stock_reconciliation` (Phase 9), consignor ledgers (Phase 6), `purchase_order_progress` (Phase 7), `shopify_sync_status` (Phase 10) |
+| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested; rows for sales, consignment, purchasing, labels and integrations are design |
+| §16 RPC catalogue | Partly | Rows marked "Built" exist; `record_retail_sale`, `restock_unit`, the consignment and settlement RPCs, `receive_purchase` and the Shopify processors are design |
+| §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes; C, PO and S are reserved for Phases 6 and 7) |
+| §18 Seed data | Partly | Phase 1–5 and Phase 2 parts are in `supabase/seed.sql`; the consigned bikes, suppliers, purchase order and settlements of the opening list wait for Phases 6 and 7 |
+
+**Access summary.** The matrix is [§15](#15-row-level-security-matrix) and
+the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
+
+| Actor | Reaches | Enforced by | Test evidence |
+|---|---|---|---|
+| anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`; objects in the public bucket `media-public` by URL, with no listing ([§2](#2-customers-bikes-attachments), [§15](#15-row-level-security-matrix)); nothing else | grants, RLS, definer projections, public bucket (`20261004000800_media_storage.sql`) | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access` |
+| customer (signed in) | own rows only, through `my_*` RPCs; base tables return nothing | staff-only RLS, `private.current_customer_id()` | `customer-access`, `workshop-customer-access`, `appointment-customer-access` |
+| staff (active) | base tables through RLS; cost columns hidden | `private.is_staff()`, column grants, `*_staff` views | `staff-rls`, `work-order-lines`, `inventory-catalog` |
+| staff with a permission | costs, inventory writes, stock changes, financial reports, staff management | `private.require_permission` / `has_permission` in RPCs | `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger` |
+| admin | everything above plus settings, hours, rates and admin staff | `private.require_admin()`, `private.is_admin()` | `staff-management`, `staff-history`, `schedule-settings` |
+| service role | bypasses RLS; used only for the Auth admin API in `src/lib/admin/` | ESLint import restriction, `server-only` | no dedicated test |
+
+**Lifecycle.**
+
+- Customers, bikes, categories, services, products and units are archived
+  (`archived_at`), not deleted; stock locations and appointment types are
+  switched off (`active`). Archived rows stay readable to history and hidden
+  from pickers. Work orders and appointments are never deleted; they end in
+  a status.
+- Exceptions that are hard-deleted, each leaving an append-only event row
+  with who and when:
+  - photos: `delete_attachment` (any active staff member, reason required)
+    deletes the `attachments` row, kept as the payload of an
+    `attachment_events` 'deleted' row, and the server then removes the
+    Storage object ([§2](#2-customers-bikes-attachments)); the file
+    cannot be recovered (nothing is backed up,
+    [R-002](RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery));
+  - closures: `delete_closure_override` (admin, reason required), kept in
+    `schedule_events`;
+  - weekly hours: `set_shop_hours` (admin) replaces a weekday's intervals,
+    the old ones kept in `schedule_events` (no reason is asked);
+  - permission grants: `revoke_permission` deletes the `staff_permissions`
+    row, kept in a `permission_revoked` `staff_events` row (no reason is
+    asked).
+- Event and ledger tables are append-only (triggers refuse updates and
+  deletes); a correction is a linked reversal or a new event.
+- Financial snapshots on lines never change after the line is written.
+- Short IDs come from sequences that are never reset or reused (§17).
+- No retention or deletion policy for customer personal data exists
+  ([R-016](RISKS.md#r-016--no-retention-or-deletion-policy-for-customer-personal-data)).
+- The seed is synthetic: fixed UUIDs, `example.com` customer and
+  `bicii.test` staff addresses; it is never applied to production (§18).
+
+**Integration contracts.**
+
+- Public site (Phase 11 consumes them; nothing in that repo uses them yet):
+  the `my_*` RPCs, the three anonymous functions above and
+  `reporting.public_items` (§11, §15).
+- Errors: business refusals are `P0001` with a stable snake_case code in
+  `MESSAGE`, mapped to user messages in
+  [src/lib/db-errors.ts](../src/lib/db-errors.ts) (§16).
+- Shopify: designed in §13, planned for Phase 10.
 
 ## 1. Identity and authorization
 

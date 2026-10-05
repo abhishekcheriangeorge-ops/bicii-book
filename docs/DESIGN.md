@@ -1,5 +1,7 @@
 # BICII Admin — Design tokens and primitives
 
+Staff-facing tasks on these screens: [USER-GUIDE.md](USER-GUIDE.md).
+
 The Admin has to look like it belongs to BICII. Its tokens start from the
 public site's `src/app/globals.css` (palette, dust ramp, Archivo + Inter,
 spring easings, two-tone focus ring, `.gutter` / `.eyebrow` / `.measure`)
