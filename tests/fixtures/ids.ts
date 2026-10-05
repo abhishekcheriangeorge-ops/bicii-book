@@ -8,19 +8,26 @@ export const AUTH_USER = {
   admin: "a0000000-0000-4000-8000-000000000001",
   mechanic1: "a0000000-0000-4000-8000-000000000002",
   mechanic2: "a0000000-0000-4000-8000-000000000003",
+  manager: "a0000000-0000-4000-8000-000000000004",
 } as const;
 
-/** public.staff.id. admin: role admin. mechanic1: view_costs. mechanic2: no permissions. */
+/**
+ * public.staff.id (D90). admin: role admin. manager: role manager, no
+ * exceptions. mechanic1: role mechanic, view_costs as an exception.
+ * mechanic2: role mechanic, no exceptions.
+ */
 export const STAFF = {
   admin: "5a000000-0000-4000-8000-000000000001",
   mechanic1: "5a000000-0000-4000-8000-000000000002",
   mechanic2: "5a000000-0000-4000-8000-000000000003",
+  manager: "5a000000-0000-4000-8000-000000000004",
 } as const;
 
 export const STAFF_EMAIL = {
   admin: "admin@bicii.test",
   mechanic1: "mechanic1@bicii.test",
   mechanic2: "mechanic2@bicii.test",
+  manager: "manager@bicii.test",
 } as const;
 
 export type SeedStaff = keyof typeof STAFF;

@@ -376,7 +376,7 @@ export async function staffWith(
   const authUserId = await createAuthUser(tx, email);
   const { rows } = await tx.query<{ id: string }>(
     `insert into public.staff (auth_user_id, display_name, email, role, active)
-     values ($1, $2, $3, 'staff', true) returning id`,
+     values ($1, $2, $3, 'mechanic', true) returning id`,
     [authUserId, `Staff ${email}`, email],
   );
   for (const permission of permissions) {

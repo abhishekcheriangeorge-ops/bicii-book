@@ -35,6 +35,8 @@ import {
 export const ADMIN = staffClaims(AUTH_USER.admin);
 export const MECHANIC1 = staffClaims(AUTH_USER.mechanic1);
 export const MECHANIC2 = staffClaims(AUTH_USER.mechanic2);
+/** Role manager (D90): every permission except manage_staff, and refunds (D94). */
+export const MANAGER = staffClaims(AUTH_USER.manager);
 
 export type Outcome<T> =
   { ok: true; value: T } | { ok: false; error: { code?: string; message?: string } };

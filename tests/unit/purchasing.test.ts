@@ -120,25 +120,25 @@ describe("isOverdue (display only; reporting.purchase_order_progress decides lis
 describe("purchasing permissions (D60 D-PO-COSTS)", () => {
   it("shows purchase costs to view_costs or manage_purchasing holders and admins", () => {
     expect(canSeePurchaseCosts(staff("admin", []))).toBe(true);
-    expect(canSeePurchaseCosts(staff("staff", ["view_costs"]))).toBe(true);
-    expect(canSeePurchaseCosts(staff("staff", ["manage_purchasing"]))).toBe(true);
-    expect(canSeePurchaseCosts(staff("staff", ["manage_inventory"]))).toBe(false);
-    expect(canSeePurchaseCosts(staff("staff", ["view_costs"], false))).toBe(false);
+    expect(canSeePurchaseCosts(staff("mechanic", ["view_costs"]))).toBe(true);
+    expect(canSeePurchaseCosts(staff("mechanic", ["manage_purchasing"]))).toBe(true);
+    expect(canSeePurchaseCosts(staff("mechanic", ["manage_inventory"]))).toBe(false);
+    expect(canSeePurchaseCosts(staff("mechanic", ["view_costs"], false))).toBe(false);
   });
 
   it("shows supplier last costs on the product page to view_costs holders and admins only", () => {
     expect(canSeeProductPageSupplierCosts(staff("admin", []))).toBe(true);
-    expect(canSeeProductPageSupplierCosts(staff("staff", ["view_costs"]))).toBe(true);
+    expect(canSeeProductPageSupplierCosts(staff("mechanic", ["view_costs"]))).toBe(true);
     // D60: manage_purchasing alone shows costs on purchasing screens only.
-    expect(canSeeProductPageSupplierCosts(staff("staff", ["manage_purchasing"]))).toBe(false);
-    expect(canSeeProductPageSupplierCosts(staff("staff", ["manage_inventory"]))).toBe(false);
-    expect(canSeeProductPageSupplierCosts(staff("staff", ["view_costs"], false))).toBe(false);
+    expect(canSeeProductPageSupplierCosts(staff("mechanic", ["manage_purchasing"]))).toBe(false);
+    expect(canSeeProductPageSupplierCosts(staff("mechanic", ["manage_inventory"]))).toBe(false);
+    expect(canSeeProductPageSupplierCosts(staff("mechanic", ["view_costs"], false))).toBe(false);
   });
 
   it("lets only manage_purchasing holders (and admins) write", () => {
     expect(canManagePurchasing(staff("admin", []))).toBe(true);
-    expect(canManagePurchasing(staff("staff", ["manage_purchasing"]))).toBe(true);
-    expect(canManagePurchasing(staff("staff", ["view_costs"]))).toBe(false);
+    expect(canManagePurchasing(staff("mechanic", ["manage_purchasing"]))).toBe(true);
+    expect(canManagePurchasing(staff("mechanic", ["view_costs"]))).toBe(false);
   });
 });
 

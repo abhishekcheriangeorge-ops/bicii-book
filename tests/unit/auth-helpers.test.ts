@@ -8,6 +8,7 @@ import {
   hasPermission,
   isPermissionKey,
   permissionChangeBlocker,
+  roleImplies,
   type StaffDTO,
 } from "@/lib/auth/permissions";
 import { isPublicPath } from "@/lib/auth/routes";
@@ -23,16 +24,29 @@ describe("permission resolution (mirrors private.has_permission)", () => {
     );
   });
 
+  it("a manager has every permission except manage_staff, plus exceptions (D91)", () => {
+    expect(effectivePermissions("manager", true, [])).toEqual(
+      PERMISSIONS.filter((p) => p !== "manage_staff"),
+    );
+    expect(effectivePermissions("manager", true, ["manage_staff"])).toEqual([...PERMISSIONS]);
+    expect(roleImplies("manager", "manage_staff")).toBe(false);
+    expect(roleImplies("admin", "manage_staff")).toBe(true);
+    for (const p of PERMISSIONS) expect(roleImplies("mechanic", p), p).toBe(false);
+  });
+
   it("staff have exactly what was granted", () => {
-    expect(effectivePermissions("staff", true, ["view_costs"])).toEqual(["view_costs"]);
+    expect(effectivePermissions("mechanic", true, ["view_costs"])).toEqual(["view_costs"]);
     expect(
-      hasPermission({ role: "staff", active: true, permissions: ["view_costs"] }, "adjust_stock"),
+      hasPermission(
+        { role: "mechanic", active: true, permissions: ["view_costs"] },
+        "adjust_stock",
+      ),
     ).toBe(false);
   });
 
   it("inactive staff have none, admins included", () => {
     expect(effectivePermissions("admin", false, [])).toEqual([]);
-    expect(effectivePermissions("staff", false, ["view_costs"])).toEqual([]);
+    expect(effectivePermissions("mechanic", false, ["view_costs"])).toEqual([]);
     expect(
       hasPermission({ role: "admin", active: false, permissions: [...PERMISSIONS] }, "view_costs"),
     ).toBe(false);
@@ -137,13 +151,13 @@ describe("greetingFor", () => {
 });
 
 describe("delegation ceiling (mirrors private.authorize_permission_change, PLAN D11)", () => {
-  const actor = (role: "admin" | "staff", permissions: StaffDTO["permissions"]) => ({
+  const actor = (role: "admin" | "mechanic", permissions: StaffDTO["permissions"]) => ({
     staffId: "me",
     role,
     active: true,
     permissions,
   });
-  const colleague = { staffId: "them", role: "staff" as const };
+  const colleague = { staffId: "them", role: "mechanic" as const };
 
   it("admins may change anything", () => {
     for (const p of PERMISSIONS) {
@@ -152,12 +166,12 @@ describe("delegation ceiling (mirrors private.authorize_permission_change, PLAN 
   });
 
   it("a manager grants only what they hold, never manage_staff, never to themselves or admins", () => {
-    const manager = actor("staff", ["manage_staff", "adjust_stock"]);
+    const manager = actor("mechanic", ["manage_staff", "adjust_stock"]);
     expect(permissionChangeBlocker(manager, colleague, "adjust_stock")).toBeNull();
     expect(permissionChangeBlocker(manager, colleague, "view_costs")).toMatch(/you have yourself/);
     expect(permissionChangeBlocker(manager, colleague, "manage_staff")).toMatch(/Only an admin/);
     expect(
-      permissionChangeBlocker(manager, { staffId: "me", role: "staff" }, "adjust_stock"),
+      permissionChangeBlocker(manager, { staffId: "me", role: "mechanic" }, "adjust_stock"),
     ).toMatch(/your permissions/);
     expect(
       permissionChangeBlocker(manager, { staffId: "x", role: "admin" }, "adjust_stock"),
@@ -166,14 +180,14 @@ describe("delegation ceiling (mirrors private.authorize_permission_change, PLAN 
 
   it("staff without manage_staff change nothing", () => {
     expect(
-      permissionChangeBlocker(actor("staff", ["view_costs"]), colleague, "view_costs"),
+      permissionChangeBlocker(actor("mechanic", ["view_costs"]), colleague, "view_costs"),
     ).toMatch(/Manage staff/);
   });
 
   it("access: nobody deactivates themselves; only admins change an admin's access", () => {
-    const manager = actor("staff", ["manage_staff"]);
+    const manager = actor("mechanic", ["manage_staff"]);
     expect(accessChangeBlocker(manager, colleague)).toBeNull();
-    expect(accessChangeBlocker(manager, { staffId: "me", role: "staff" })).toMatch(/yourself/);
+    expect(accessChangeBlocker(manager, { staffId: "me", role: "mechanic" })).toMatch(/yourself/);
     expect(accessChangeBlocker(manager, { staffId: "x", role: "admin" })).toMatch(/Only an admin/);
     expect(
       accessChangeBlocker(actor("admin", [...PERMISSIONS]), { staffId: "x", role: "admin" }),

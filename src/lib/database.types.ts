@@ -5720,7 +5720,7 @@ export type Database = {
         | "reactivated"
         | "permission_granted"
         | "permission_revoked";
-      staff_role: "admin" | "staff";
+      staff_role: "admin" | "manager" | "mechanic";
       tracking_type: "quantity" | "unique";
       unit_status:
         | "available"
@@ -6471,7 +6471,7 @@ export const Constants = {
         "permission_granted",
         "permission_revoked",
       ],
-      staff_role: ["admin", "staff"],
+      staff_role: ["admin", "manager", "mechanic"],
       tracking_type: ["quantity", "unique"],
       unit_status: [
         "available",

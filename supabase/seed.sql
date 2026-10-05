@@ -5,13 +5,15 @@
 -- tests/fixtures/ids.ts, so tests never query by name. Applied to local and
 -- preview databases only; NEVER to production.
 --
--- Phase 0 contents: three staff with working Supabase Auth logins. They have
+-- Phase 0 contents: four staff with working Supabase Auth logins (the
+-- manager since the staff roles, D90-D94). They have
 -- no usable password (PLAN D10): sign in with a code emailed to the address,
 -- which the devstack's mail catcher shows (docs/ENGINEERING.md, "Clean
 -- checkout to running application", says how to read a code). The logins:
 --   admin@bicii.test      role admin (implies every permission)
---   mechanic1@bicii.test  role staff, view_costs
---   mechanic2@bicii.test  role staff, no permissions
+--   manager@bicii.test    role manager (every permission except manage_staff), no exceptions
+--   mechanic1@bicii.test  role mechanic, view_costs as an exception
+--   mechanic2@bicii.test  role mechanic, no exceptions
 --
 -- Phase 1 contents: six customers (only Chloe Lim has a login, added in
 -- Phase 2; customer sign-up is Phase 11) and ten bikes, one of them a shop bike without an owner, so
@@ -118,7 +120,8 @@ select
 from (values
   ('a0000000-0000-4000-8000-000000000001'::uuid, 'admin@bicii.test', 'Asha Admin'),
   ('a0000000-0000-4000-8000-000000000002'::uuid, 'mechanic1@bicii.test', 'Marcus Tan'),
-  ('a0000000-0000-4000-8000-000000000003'::uuid, 'mechanic2@bicii.test', 'Nur Aisyah')
+  ('a0000000-0000-4000-8000-000000000003'::uuid, 'mechanic2@bicii.test', 'Nur Aisyah'),
+  ('a0000000-0000-4000-8000-000000000004'::uuid, 'manager@bicii.test', 'Kavya Menon')
 ) as u (id, email, display_name);
 
 insert into auth.identities (
@@ -139,7 +142,8 @@ select
 from (values
   ('a1000000-0000-4000-8000-000000000001'::uuid, 'a0000000-0000-4000-8000-000000000001'::uuid),
   ('a1000000-0000-4000-8000-000000000002'::uuid, 'a0000000-0000-4000-8000-000000000002'::uuid),
-  ('a1000000-0000-4000-8000-000000000003'::uuid, 'a0000000-0000-4000-8000-000000000003'::uuid)
+  ('a1000000-0000-4000-8000-000000000003'::uuid, 'a0000000-0000-4000-8000-000000000003'::uuid),
+  ('a1000000-0000-4000-8000-000000000004'::uuid, 'a0000000-0000-4000-8000-000000000004'::uuid)
 ) as i (id, user_id)
 join auth.users u on u.id = i.user_id;
 
@@ -150,9 +154,11 @@ insert into public.staff (id, auth_user_id, display_name, email, role, active) v
   ('5a000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001',
    'Asha Admin', 'admin@bicii.test', 'admin', true),
   ('5a000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002',
-   'Marcus Tan', 'mechanic1@bicii.test', 'staff', true),
+   'Marcus Tan', 'mechanic1@bicii.test', 'mechanic', true),
   ('5a000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000003',
-   'Nur Aisyah', 'mechanic2@bicii.test', 'staff', true);
+   'Nur Aisyah', 'mechanic2@bicii.test', 'mechanic', true),
+  ('5a000000-0000-4000-8000-000000000004', 'a0000000-0000-4000-8000-000000000004',
+   'Kavya Menon', 'manager@bicii.test', 'manager', true);
 
 insert into public.staff_permissions (staff_id, permission, granted_by) values
   ('5a000000-0000-4000-8000-000000000002', 'view_costs', '5a000000-0000-4000-8000-000000000001');

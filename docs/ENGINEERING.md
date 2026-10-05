@@ -88,11 +88,12 @@ curl "http://127.0.0.1:${BICII_MAIL_HTTP_PORT:-8025}/messages/latest?to=admin@bi
 # the "code" field is the code; or open the newest file in .devstack/mail/
 ```
 
-| Email | Role | Permissions |
+| Email | Role | Exceptions (on top of the role, D92) |
 |---|---|---|
-| `admin@bicii.test` | admin | all |
-| `mechanic1@bicii.test` | staff | `view_costs` |
-| `mechanic2@bicii.test` | staff | none |
+| `admin@bicii.test` | admin (every permission) | none |
+| `manager@bicii.test` | manager (every permission except `manage_staff`, D91) | none |
+| `mechanic1@bicii.test` | mechanic | `view_costs` |
+| `mechanic2@bicii.test` | mechanic | none |
 
 The seed also has one customer login, `chloe.lim@example.com` (Chloe Lim,
 no password either), for the public site's customer pages; the Admin does

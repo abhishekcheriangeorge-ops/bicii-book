@@ -24,7 +24,7 @@ const inviteSchema = z.object({
     .min(1, { error: "Enter their name." })
     .max(80, { error: "Keep the name under 80 characters." }),
   email: z.email({ error: "Enter a valid email address." }).trim().toLowerCase(),
-  role: z.enum(Constants.public.Enums.staff_role).default("staff"),
+  role: z.enum(Constants.public.Enums.staff_role).default("mechanic"),
 });
 
 /** Invite a colleague (src/lib/domain/staff.ts inviteStaff). */

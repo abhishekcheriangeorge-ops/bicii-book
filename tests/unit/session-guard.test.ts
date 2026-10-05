@@ -36,7 +36,7 @@ type ProfileRow = {
   auth_user_id: string;
   display_name: string;
   email: string;
-  role: "admin" | "staff";
+  role: "admin" | "mechanic";
   active: boolean;
   permissions: string[];
 };
@@ -47,7 +47,7 @@ function profile(overrides: Partial<ProfileRow> = {}): ProfileRow {
     auth_user_id: USER,
     display_name: "Wendy Window",
     email: "wendy@example.test",
-    role: "staff",
+    role: "mechanic",
     active: true,
     permissions: [],
     ...overrides,

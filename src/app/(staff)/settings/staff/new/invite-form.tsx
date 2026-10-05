@@ -41,7 +41,7 @@ function Invited({ result, onAnother }: { result: InviteResult; onAnother: () =>
 
 function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () => void }) {
   const [state, formAction] = useActionState<State, FormData>(inviteStaff, null);
-  const [role, setRole] = useState<"staff" | "admin">("staff");
+  const [role, setRole] = useState<"mechanic" | "admin">("mechanic");
   const formRef = useFocusFirstInvalid(state);
 
   if (state?.ok) return <Invited result={state.data} onAnother={onDone} />;
@@ -82,9 +82,9 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
           <SegmentedControl
             label="Role"
             value={role}
-            onValueChange={(v) => setRole(v as "staff" | "admin")}
+            onValueChange={(v) => setRole(v as "mechanic" | "admin")}
             options={[
-              { value: "staff", label: "Staff" },
+              { value: "mechanic", label: "Staff" },
               { value: "admin", label: "Admin" },
             ]}
           />

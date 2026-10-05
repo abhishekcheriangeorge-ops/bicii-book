@@ -36,7 +36,7 @@ describe("Phase 6 access helpers (mirror D48 SALES-ACCESS, D30, D49)", () => {
   });
 
   it("inactive staff see neither, an inactive admin included", () => {
-    for (const s of [who("admin", [], false), who("staff", ["view_costs"], false)]) {
+    for (const s of [who("admin", [], false), who("mechanic", ["view_costs"], false)]) {
       expect(canViewConsignmentMoney(s)).toBe(false);
       expect(canViewSaleCosts(s)).toBe(false);
       expect(canRecordRefund(s)).toBe(false);
@@ -44,21 +44,45 @@ describe("Phase 6 access helpers (mirror D48 SALES-ACCESS, D30, D49)", () => {
   });
 
   it("manage_consignments alone sees consignment money, not sale costs", () => {
-    const s = who("staff", ["manage_consignments"]);
+    const s = who("mechanic", ["manage_consignments"]);
     expect(canViewConsignmentMoney(s)).toBe(true);
     expect(canViewSaleCosts(s)).toBe(false);
     expect(canRecordRefund(s)).toBe(false);
   });
 
   it("view_costs alone sees both", () => {
-    const s = who("staff", ["view_costs"]);
+    const s = who("mechanic", ["view_costs"]);
     expect(canViewConsignmentMoney(s)).toBe(true);
     expect(canViewSaleCosts(s)).toBe(true);
     expect(canRecordRefund(s)).toBe(false);
   });
 
+  it("an active manager sees both and may refund (D94); an inactive one neither", () => {
+    const manager = who("manager");
+    expect(canViewConsignmentMoney(manager)).toBe(true);
+    expect(canViewSaleCosts(manager)).toBe(true);
+    expect(canRecordRefund(manager)).toBe(true);
+    expect(canRecordRefund(who("manager", [], false))).toBe(false);
+  });
+
+  it("a mechanic holding every permission as exceptions still cannot refund (D94)", () => {
+    expect(
+      canRecordRefund(
+        who("mechanic", [
+          "view_costs",
+          "manage_inventory",
+          "adjust_stock",
+          "manage_consignments",
+          "manage_purchasing",
+          "manage_staff",
+          "view_financial_reports",
+        ]),
+      ),
+    ).toBe(false);
+  });
+
   it("view_financial_reports alone reveals neither and never authorises a refund", () => {
-    const s = who("staff", ["view_financial_reports"]);
+    const s = who("mechanic", ["view_financial_reports"]);
     expect(canViewConsignmentMoney(s)).toBe(false);
     expect(canViewSaleCosts(s)).toBe(false);
     expect(canRecordRefund(s)).toBe(false);
@@ -71,12 +95,12 @@ describe("Phase 6 access helpers (mirror D48 SALES-ACCESS, D30, D49)", () => {
       "manage_purchasing",
       "manage_staff",
     ] as const) {
-      const s = who("staff", [p]);
+      const s = who("mechanic", [p]);
       expect(canViewConsignmentMoney(s), p).toBe(false);
       expect(canViewSaleCosts(s), p).toBe(false);
       expect(canRecordRefund(s), p).toBe(false);
     }
-    expect(canViewConsignmentMoney(who("staff"))).toBe(false);
+    expect(canViewConsignmentMoney(who("mechanic"))).toBe(false);
   });
 });
 

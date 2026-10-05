@@ -67,7 +67,7 @@ describe.skipIf(!reachable)("deactivation revokes Auth sessions on the live stac
       auth_user_id: authUserId,
       display_name: "Deactivated Stack Test",
       email,
-      role: "staff",
+      role: "mechanic",
     });
     if (staff.error) throw staff.error;
     const staffId = staff.data.id;

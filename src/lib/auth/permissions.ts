@@ -46,6 +46,26 @@ export function isPermissionKey(value: unknown): value is PermissionKey {
   return typeof value === "string" && (PERMISSIONS as readonly string[]).includes(value);
 }
 
+export const STAFF_ROLES: readonly StaffRole[] = Constants.public.Enums.staff_role;
+
+/**
+ * What each role implies (PLAN D91 ROLE-PERMISSIONS), mirroring
+ * private.role_implies: an admin every permission; a manager every
+ * permission except manage_staff; a mechanic none. A database test
+ * (tests/db/staff-roles.test.ts) proves the two agree for every role and
+ * permission.
+ */
+export const ROLE_PERMISSIONS: Record<StaffRole, readonly PermissionKey[]> = {
+  admin: PERMISSIONS,
+  manager: PERMISSIONS.filter((p) => p !== "manage_staff"),
+  mechanic: [],
+};
+
+/** Whether `role` implies `permission` (D91); mirrors private.role_implies. */
+export function roleImplies(role: StaffRole, permission: PermissionKey): boolean {
+  return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;
+}
+
 /** What the DAL hands to pages and actions: no tokens, no Auth internals. */
 export type StaffDTO = {
   staffId: string;
@@ -53,15 +73,15 @@ export type StaffDTO = {
   displayName: string;
   email: string;
   role: StaffRole;
-  /** Effective permissions: every permission for an active admin, none when inactive. */
+  /** Effective permissions: what the role implies plus exceptions; none when inactive. */
   permissions: PermissionKey[];
   active: boolean;
 };
 
 /**
- * Effective permissions, the same rule as private.has_permission: inactive
- * staff have none; an active admin has every permission; active staff have
- * what was granted.
+ * Effective permissions, the same rule as private.has_permission (D91):
+ * inactive staff have none; active staff have what their role implies plus
+ * their exceptions (`granted`), in enum order.
  */
 export function effectivePermissions(
   role: StaffRole,
@@ -69,8 +89,7 @@ export function effectivePermissions(
   granted: readonly PermissionKey[],
 ): PermissionKey[] {
   if (!active) return [];
-  if (role === "admin") return [...PERMISSIONS];
-  return PERMISSIONS.filter((p) => granted.includes(p));
+  return PERMISSIONS.filter((p) => roleImplies(role, p) || granted.includes(p));
 }
 
 export function hasPermission(
@@ -145,9 +164,11 @@ export function canViewSaleCosts(staff: AccessSubject): boolean {
 }
 
 /**
- * Recording a retail refund (money going out): D49 RETAIL-REFUND, admins
- * only. view_financial_reports is a read permission and never enough.
+ * Recording a retail refund (money going out): D94 REFUND-ROLES (amends
+ * D49), mirroring private.can_record_refunds(): an active admin or manager,
+ * by role. view_financial_reports is a read permission and never enough,
+ * and no exception grants it.
  */
 export function canRecordRefund(staff: Pick<StaffDTO, "role" | "active">): boolean {
-  return staff.active && staff.role === "admin";
+  return staff.active && (staff.role === "admin" || staff.role === "manager");
 }

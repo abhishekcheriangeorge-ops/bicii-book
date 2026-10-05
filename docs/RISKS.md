@@ -804,7 +804,7 @@ URLs, or customer data in this file.
 - Status and owner: open; owner.
 - Trigger: an admin grants `manage_purchasing` to a mechanic as a
   single-permission exception (managers hold `view_costs` through their
-  role once the staff roles are built, so this is the exception case).
+  role since the staff roles, D91, so this is the exception case).
 - Impact: that mechanic sees purchase costs on purchasing screens: PO line
   costs and totals, actual receipt costs, supplier last costs, the cost
   prefill (the product's cost for products a PO can hold) and PO history.
@@ -815,8 +815,11 @@ URLs, or customer data in this file.
   last costs to `view_costs` holders only (`canSeeProductPageSupplierCosts`
   in `src/lib/purchasing.ts`, since the integration review; before it the
   card used the purchasing rule and showed them to the exception holder
-  too). Until the staff roles are built, this applies to every non-admin
-  holding `manage_purchasing`, not only a mechanic.
+  too). Since the staff roles (D90–D94; in the database on
+  `feat/staff-roles`, `private.role_implies`), a manager holds
+  `view_costs` and `manage_purchasing` through the role and an exception
+  the role implies cannot exist (D92), so this applies only to a mechanic
+  holding `manage_purchasing` as an exception.
 - Evidence and confidence: high; `private.can_view_purchase_costs()` in
   `20261005000100_suppliers.sql`; `tests/db/purchasing-access.test.ts`
   ("manage_purchasing alone runs purchasing and sees purchase costs, but no
@@ -828,7 +831,7 @@ URLs, or customer data in this file.
 - Next action: revisit with the staff roles (D90–D99) if the owner wants
   the exception to hide costs (a buyer would then order blind).
 - Revisit trigger: the staff roles land, or the owner objects.
-- Last checked: 2026-10-05.
+- Last checked: 2026-10-06 (staff roles, database step).
 
 ## R-035 — Logins created before email codes keep a known password until the pre-deploy reset
 
