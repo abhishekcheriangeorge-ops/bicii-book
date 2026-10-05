@@ -45,12 +45,17 @@ This section was added by the documentation retrofit (2026-10-05, inspected
 at `c6bf6d0`). The numbered sections below are never renumbered; code and
 migration comments cite them as "DATA-MODEL §n".
 
-**Authority.** The schema source is the 42 files in
+**Authority.** The schema source is the 44 files in
 [supabase/migrations/](../supabase/migrations/), from
-`20261004000100_foundation.sql` to `20261005000500_purchasing_reorder.sql`
+`20261004000100_foundation.sql` to `20261005006000_sign_in_throttle.sql`
 (Phase 6 added `20261004003300` to `20261004003700`; Phase 7, purchasing,
-integrated onto the main line on `feat/p7-purchasing`, added the five
-`20261005…` files, which sort after every `20261004…` file).
+integrated onto the main line on `feat/p7-purchasing`, added
+`20261005000100` to `20261005000500`, which sort after every `20261004…`
+file; staff email sign-in, integrated on `feat/auth-email-otp`, added
+`20261005005000_staff_session_revocation` and
+`20261005006000_sign_in_throttle`, which sort after purchasing's and
+create only new objects: no function, view, policy, grant or trigger they
+define is also defined by a main-line or purchasing migration).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
@@ -62,11 +67,12 @@ document is corrected.
 
 **Applied state.**
 
-- Local: on 2026-10-05, after `npm run db:reset` on `feat/p7-purchasing`
-  at the Phase 7 integration (the second worktree's database,
-  `PGDATABASE=bicii_dev_wt`; `npm run test:e2e` resets the same database),
+- Local: on 2026-10-06, after `npm run db:reset` on `feat/auth-email-otp`
+  at its integration with main and purchasing (the second worktree's
+  database, `PGDATABASE=bicii_dev_wt`; `npm run test:e2e` resets the same
+  database),
   `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev_wt -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
-  printed `42|20261005000500` (every file applied).
+  printed `44|20261005006000` (every file applied).
 - CI: the `check` job diffs the generated types against a throwaway
   database built from the migrations, and the `test` and E2E jobs run
   `npm run db:reset` (migrations, then the seed) before testing
@@ -84,7 +90,7 @@ the `20261004` prefix; Phase 7's keep `20261005`). For planned tables, the rows 
 
 | Section | Status | Where, or what is missing |
 |---|---|---|
-| §1 Identity and authorization | Implemented | `000200_staff`, `000300_staff_management`, `000500_staff_history` |
+| §1 Identity and authorization | Implemented | `000200_staff`, `000300_staff_management`, `000500_staff_history`; staff email sign-in: `20261005005000_staff_session_revocation` (D71) and `20261005006000_sign_in_throttle` (D72) |
 | §2 Customers, bikes, attachments | Implemented | `000600_customers`, `000700_bikes`, `000800_media_storage`, `000900_attachments`, `001000_customer_access`, `001100_staff_search` |
 | §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2) |
 | §4 Workshop | Implemented | `001300_work_orders`, `001500_workshop_rpcs`, `001600_workshop_customer_access`, `001700_workshop_search` |
@@ -113,7 +119,7 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 | staff (active) | base tables through RLS; cost columns hidden | `private.is_staff()`, column grants, `*_staff` views | `staff-rls`, `work-order-lines`, `inventory-catalog` |
 | staff with a permission | costs, inventory writes, stock changes, financial reports, staff management, consignment money, purchasing (`manage_purchasing` also sees purchase costs on purchasing surfaces, D60) | `private.require_permission` / `has_permission` in RPCs; `private.can_view_purchase_costs()` | `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger`, `purchasing-access` |
 | admin | everything above plus settings, hours, rates and admin staff | `private.require_admin()`, `private.is_admin()` | `staff-management`, `staff-history`, `schedule-settings` |
-| service role | bypasses RLS; used only for the Auth admin API in `src/lib/admin/` | ESLint import restriction, `server-only` | no dedicated test |
+| service role | bypasses RLS; used only in `src/lib/admin/`: the Auth admin API (invites without a password) and `note_sign_in_attempt` (D72, the only function granted to it alone) | ESLint import restriction, `server-only`; `note_sign_in_attempt` is revoked from anon and authenticated | `sign-in-throttle` (anon and staff get 42501) |
 
 **Lifecycle.**
 
@@ -2022,6 +2028,7 @@ security-definer function. Blank = no access.
 | staff | S (own row + names of others); A full; A or P(manage_staff) via `staff_roster()` | RPC `create_staff` (A or P(manage_staff); only A creates A) | RPC `update_staff`, `set_staff_active` | — |
 | staff_permissions | A, own | RPC `grant_permission` (A, or P(manage_staff) within D11) | — | RPC `revoke_permission` (same) |
 | staff_events | A or P(manage_staff) via `staff_history()` | triggers only | never | never |
+| private.sign_in_attempts (D72) | nobody (RLS on, no policy, no grant) | service role via RPC `note_sign_in_attempt` | the same RPC (counts) | the same RPC (counters older than a day) |
 | customers | S; C own via `my_customer_profile()` | S (no `auth_user_id`, `shopify_customer_id`); C on sign-up via RPC (Phase 11) | S (same columns, `archived_at`); C own name/phone via `update_my_profile()` | — (archive) |
 | bikes | S; C own current, non-archived via `my_bikes()` | S (no `short_id`: server-assigned) | S (no `short_id`, `customer_id`, `inventory_unit_id`); owner via RPC `transfer_bike_ownership` | — (archive) |
 | bike_ownership_events | S | trigger only | never | never |

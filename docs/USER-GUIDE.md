@@ -4,9 +4,9 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: `feat/p7-purchasing` at the Phase 7 integration with the main
-line (the merge 06979ec and its documentation commit; not deployed; on a
-developer machine at http://localhost:3000).
+Applies to: `feat/auth-email-otp` after its integration with the main line
+and purchasing (2026-10-06; not deployed; on a developer machine at
+http://localhost:3000). Staff sign in with an emailed code.
 
 Last walkthrough: not walked through by a person. These flows are exercised
 by the E2E specs `tests/e2e/auth.spec.ts`, `workshop.spec.ts`,
@@ -23,24 +23,38 @@ Where a step below is not covered by a spec, it says so.
 
 1. Open the Admin (on a developer machine: http://localhost:3000). You see
    **Staff sign in**.
-2. Enter your **Email** and **Password** and press **Sign in**. On a
-   developer machine only, the seeded logins work (listed with their
-   password in
-   [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application));
-   a real shop has its own logins, created by an admin.
-3. **Today** opens with a greeting and today's date. On a phone the tabs at
+2. Enter your **Email** and press **Email me a code**. The screen says
+   **Check your email**.
+3. Open the email "Your BICII sign-in code" and type the 6-digit **Code**,
+   then press **Sign in**. The code works once, for 10 minutes; only the
+   newest code works. No password is needed, and there is none. On a
+   developer machine only, the seeded logins work and their codes are read
+   from the devstack's mail catcher
+   ([ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application));
+   a real shop has its own logins, created by an admin's invite.
+4. **Today** opens with a greeting and today's date. On a phone the tabs at
    the bottom are Today, Jobs, Scan, Inventory and More (Customers, Bikes,
    Appointments, Settings and the rest); on an iPad every section is in the
    rail on the left.
 
-If it fails: "That email and password don't match. Try again." (check both;
-the message is the same for an unknown email). "Too many attempts. Wait a
-minute and try again." "Sign-in is unavailable right now. Try again in a
-minute." (the service is down; tell whoever runs the system). A link you
-opened before signing in takes you back there afterwards.
+If it fails:
 
-Your own details, permissions, password change and **Sign out** are under
-Settings → Your profile.
+- No email: check the address and your spam folder, wait a minute, then
+  press **Send a new code** (it unlocks 60 seconds after the last one) or
+  **Use a different email**. The screen says "Check your email" for every
+  address, also one without a login, so a typo shows no error.
+- "That code is wrong or has expired. Check your latest email or send a new
+  code." (an older code stops working when a new one is sent).
+- "This email doesn't have access to BICII Admin. Ask an admin to invite or
+  reactivate you." (the code was right, but you are not active staff).
+- "Too many attempts. Wait a minute and try again."
+- "Sign-in is unavailable right now. Try again in a minute." (the service
+  is down; tell whoever runs the system).
+
+A link you opened before signing in takes you back there afterwards.
+
+Your own details, permissions and **Sign out** are under Settings → Your
+profile.
 
 ## Routine tasks
 
@@ -482,7 +496,7 @@ prices and sale totals are visible to all; costs are not.
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
-| Manage staff | Settings → Staff: invite, permissions and deactivation, only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
+| Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), permissions and deactivation (it ends their sessions at once), only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
 | Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history, D60), not job, sale, product-page or report costs (supplier last costs on a product's **Suppliers & orders** card need View costs) |
 

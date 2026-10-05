@@ -45,8 +45,9 @@ the Next.js 16 differences (`proxy.ts`, async request APIs, Turbopack):
 - A second checkout (a `git worktree`) on the same machine runs its own
   stack beside the first by setting, in its shell before every command:
   `PGDATABASE` (its own database name), `BICII_AUTH_PORT`,
-  `BICII_REST_PORT`, `BICII_STORAGE_PORT` and `BICII_GATEWAY_PORT`, other
-  than the first checkout's, and `E2E_PORT`
+  `BICII_REST_PORT`, `BICII_STORAGE_PORT`, `BICII_GATEWAY_PORT`,
+  `BICII_SMTP_PORT` and `BICII_MAIL_HTTP_PORT`, other than the first
+  checkout's, and `E2E_PORT`
   (the E2E app port). Then `npm run db:reset` and `npm run devstack:start`
   in it, `npm run devstack:env` if its dev server should talk to its own
   stack, and `next dev -p <another port>`. Its devstack state lives in its
@@ -67,9 +68,9 @@ with the components already cached and `bicii_dev` already present.
 |---|---|---|---|
 | Install | `npm ci` | `node_modules` from `package-lock.json` | Not run locally in the retrofit; CI runs it in every job through [`.github/actions/prepare`](../.github/actions/prepare/action.yml), e.g. [PR #7 `check`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574607) |
 | Devstack components (once per machine) | `npm run devstack:setup` | Each component "cached" (first run downloads and builds, a few minutes); ends "devstack components ready" | Local: all four "cached", 0.5 s |
-| Database | `npm run db:reset` | Drops and rebuilds `bicii_dev`: roles, Auth, Storage, the migrations (42 since the Phase 7 integration), seed; "database ready in …s" and the seeded logins line | Local: "database ready in 2.8s" |
-| Services | `npm run devstack:start` | Auth :9999, PostgREST :3001, Storage :5000 and the gateway "ready: http://127.0.0.1:54321". Builds `bicii_dev` itself if it does not exist yet | Local: four services started, 3.3 s |
-| Health | `npm run devstack:status` | A table with each service "running" and "ok (200)" | Local: all four ok (200) |
+| Database | `npm run db:reset` | Drops and rebuilds `bicii_dev`: roles, Auth, Storage, the migrations (44 since the email sign-in integration), seed; "database ready in …s" and the seeded logins line | Local: "database ready in 2.8s" |
+| Services | `npm run devstack:start` | The mail catcher :8025 (SMTP :2525), Auth :9999, PostgREST :3001, Storage :5000 and the gateway "ready: http://127.0.0.1:54321". Builds `bicii_dev` itself if it does not exist yet | Local (2026-10-06, second worktree ports): five services started |
+| Health | `npm run devstack:status` | A table with each service "running" and "ok (200)", and the gateway and mail URLs | Local: all five ok (200) |
 | Configure | `npm run devstack:env` | Writes the gateway URL, the local anon and service-role keys and a placeholder public site URL into `.env.local`, keeping other lines | Local: exit 0 (contents not printed) |
 | Run | `npm run dev` | Next dev server (Turbopack) on :3000; open **http://localhost:3000** and sign in | Local: `GET /login` 200, `/` redirects (307) to `/login` |
 
@@ -77,8 +78,15 @@ with the components already cached and `bicii_dev` already present.
 `/dev/ui` in the dev server.
 
 Seeded logins (synthetic, local and CI only; never seed a hosted project,
-see [RISKS R-015](RISKS.md#r-015--the-seed-has-published-logins)). The
-password for all of them is `bicii-dev-password`:
+see [RISKS R-015](RISKS.md#r-015--the-seed-has-published-logins)). Nobody
+has a password (PLAN D10): enter the email on `/login`, press **Email me a
+code**, then read the 6-digit code from the devstack's mail catcher and
+type it in. A code is valid for 10 minutes and only the newest one works.
+
+```sh
+curl "http://127.0.0.1:${BICII_MAIL_HTTP_PORT:-8025}/messages/latest?to=admin@bicii.test"
+# the "code" field is the code; or open the newest file in .devstack/mail/
+```
 
 | Email | Role | Permissions |
 |---|---|---|
@@ -87,9 +95,19 @@ password for all of them is `bicii-dev-password`:
 | `mechanic2@bicii.test` | staff | none |
 
 The seed also has one customer login, `chloe.lim@example.com` (Chloe Lim,
-same password), for the public site's customer pages; the Admin does not
-let customers in. A first useful result: sign in as `admin@bicii.test` and
-Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
+no password either), for the public site's customer pages; the Admin does
+not let customers in. A first useful result: sign in as `admin@bicii.test`
+and Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
+
+The mail catcher (`scripts/devstack/mailcatcher.mjs`) receives everything
+the devstack's Auth sends and keeps it in `.devstack/mail/` only; nothing
+leaves the machine. It is generic (it knows nothing about staff), so the
+public site's customer codes can be read the same way. Its HTTP API
+(`/health`, `/messages`, `/messages/latest?to=…&after=…`, `/raw`,
+`/templates`, `DELETE /messages`) is in
+[TESTING.md](TESTING.md#the-devstack-mail-catcher). With the Docker CLI
+stack, codes go to its Mailpit instead
+([RUNBOOK](RUNBOOK.md#local-supabase-with-docker-supabase-cli)).
 
 ## Commands
 
@@ -97,17 +115,17 @@ Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
 |---|---|---|
 | `npm run dev` | Next dev server (Turbopack) on :3000. | Local: `/login` 200 |
 | `npm run build` / `npm start` | Production build / serve it. | Local: both ran inside `npm run test:e2e` (its web server is `npm run build && next start -p 3100`); CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766) |
-| `npm run check` | `next typegen` + `tsc --noEmit`, ESLint, `prettier --check`. | Local: pass (30 s); `feat/p6-consignment` Phase 6 steps 1 and 2: pass; the Phase 6 review fixes: pass; `feat/p7-purchasing` at the Phase 7 integration: pass |
-| `npm run check:types` | Regenerate the database types from a throwaway database built from the migrations and fail if `src/lib/database.types.ts` differs. | Local: pass (5 s); `feat/p6-consignment` Phase 6 step 1 (at 365bdd7) and step 2 (at 2c402b2): pass; the Phase 6 review fixes: pass; the Phase 7 integration: pass |
-| `npm test` | Every Vitest project (unit + db). | Local: 82 files, 1186 tests passed (58 s); `feat/p6-consignment` Phase 6 step 1: 86 files, 1225 tests passed (78 s); step 2: 89 files, 1298 tests passed (65 s); step 4: 92 files, 1364 tests passed (81 s); the Phase 6 review fixes: 93 files, 1384 tests passed (70 s); `feat/p7-purchasing` at the Phase 7 integration: 102 files, 1517 tests passed (105 s); its review fixes: 102 files, 1518 tests passed (83 s) |
-| `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. | Local: 45 files, 512 tests passed (37 s); `feat/p6-consignment` Phase 6 step 4 (`npx vitest run --project unit`): 48 files, 579 tests passed (22 s); the Phase 7 integration: 52 files, 643 tests passed; its review fixes: 52 files, 644 tests passed (in `npm test`) |
+| `npm run check` | `next typegen` + `tsc --noEmit`, ESLint, `prettier --check`. | Local: pass (30 s); `feat/p6-consignment` Phase 6 steps 1 and 2: pass; the Phase 6 review fixes: pass; `feat/p7-purchasing` at the Phase 7 integration: pass; `feat/auth-email-otp` at its integration: pass |
+| `npm run check:types` | Regenerate the database types from a throwaway database built from the migrations and fail if `src/lib/database.types.ts` differs. | Local: pass (5 s); `feat/p6-consignment` Phase 6 step 1 (at 365bdd7) and step 2 (at 2c402b2): pass; the Phase 6 review fixes: pass; the Phase 7 integration: pass; the email sign-in integration: pass |
+| `npm test` | Every Vitest project (unit + db). | Local: 82 files, 1186 tests passed (58 s); `feat/p6-consignment` Phase 6 step 1: 86 files, 1225 tests passed (78 s); step 2: 89 files, 1298 tests passed (65 s); step 4: 92 files, 1364 tests passed (81 s); the Phase 6 review fixes: 93 files, 1384 tests passed (70 s); `feat/p7-purchasing` at the Phase 7 integration: 102 files, 1517 tests passed (105 s); its review fixes: 102 files, 1518 tests passed (83 s); `feat/auth-email-otp` at its integration with main and purchasing (2026-10-06, `BICII_REQUIRE_STACK=1`): 111 files, 1585 tests passed |
+| `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. | Local: 45 files, 512 tests passed (37 s); `feat/p6-consignment` Phase 6 step 4 (`npx vitest run --project unit`): 48 files, 579 tests passed (22 s); the Phase 7 integration: 52 files, 643 tests passed; its review fixes: 52 files, 644 tests passed (in `npm test`); the email sign-in integration: 56 files, 686 tests passed |
 | `npm run test:db` | DB project: invariants, RLS and RPCs on per-file clones of a template database. Includes a live-stack smoke test when the devstack is running. | Local: 37 files, 674 tests passed (48 s) |
-| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on :3100, resets `bicii_dev`, starts the devstack if needed. | Local: 106 passed (11.1 min); `feat/p6-consignment` Phase 6 step 2: 106 passed (9.7 min); step 3: 110 passed (12.4 min); step 4: 118 passed (13.3 min); the Phase 6 review fixes: 118 passed (11.8 min); the Phase 7 integration (`E2E_PORT=3200`, database `bicii_dev_wt`): 138 passed (16.8 min); its review fixes: 138 passed (15.0 min) |
+| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on :3100, resets `bicii_dev`, starts the devstack if needed. | Local: 106 passed (11.1 min); `feat/p6-consignment` Phase 6 step 2: 106 passed (9.7 min); step 3: 110 passed (12.4 min); step 4: 118 passed (13.3 min); the Phase 6 review fixes: 118 passed (11.8 min); the Phase 7 integration (`E2E_PORT=3200`, database `bicii_dev_wt`): 138 passed (16.8 min); its review fixes: 138 passed (15.0 min); the email sign-in integration (same worktree): 152 passed (18.2 min) |
 | `npm run format` / `npm run lint` | Prettier write / ESLint. | `lint` runs inside `check`; `format` not exercised |
 | `npm run tokens:contrast` | Recompute WCAG ratios for the colour tokens; fails on a miss. | Local: 29 pairs ok |
 | `npm run icons` | Regenerate the PWA icons from `brand/logo-source.png`. | Not exercised |
 | `npm run devstack:setup` | Download and build the devstack components into `~/.cache/bicii-devstack` (`BICII_DEVSTACK_CACHE` moves it; idempotent; `-- --force` rebuilds). | Local: cached; `--force` not exercised |
-| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321; pids and logs in `.devstack/`. `start` builds the database first if it does not exist yet (as `db:reset` would), never touches an existing one, and restarts services that were started against a different database. | Local: all three |
+| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of the mail catcher (HTTP :8025, SMTP :2525), Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321, started in that order; pids and logs in `.devstack/`. `start` builds the database first if it does not exist yet (as `db:reset` would), never touches an existing one, restarts services that were started against a different database, restarts a service that is unhealthy or was started with another configuration (a digest of its command, env and the files it runs, kept next to its pid as `<name>.config`; after a pull or merge changes `services.mjs`, say) together with the services started after it, and refuses to start a service whose port another process holds. Ports: `BICII_MAIL_HTTP_PORT`, `BICII_SMTP_PORT`, `BICII_AUTH_PORT`, `BICII_REST_PORT`, `BICII_STORAGE_PORT`, `BICII_GATEWAY_PORT`. | Local: all three |
 | `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. Only the app reads `.env.local`; the scripts and tests take `DATABASE_URL` / `PG*` from the shell. | Local: exit 0 |
 | `npm run db:reset` | Drop and rebuild the dev database, then seed it. The demo history is relative to the shop day of the reset: reset to move "today". | Local: 2.8 s |
 | `npm run db:migrate` | Apply pending migrations without a reset. | Local: "already up to date" |
@@ -120,7 +138,7 @@ Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
 | Static | `npm run check` | Types (with Next's generated route types), lint rules (including the service-role import boundary), formatting | `next build` does not lint; Markdown is not formatted (prettier ignores `*.md`) | Local pass, 2026-10-05 |
 | Generated types | `npm run check:types` | `database.types.ts` matches the migrations | Needs Postgres and the devstack cache | Local pass, 2026-10-05 |
 | Unit | `npm run test:unit` | Pure rules: money, permissions, status transitions, labels, form parsing, components | No database | Local: 45 files, 512 tests |
-| Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests; `feat/p6-consignment` Phase 6 step 4 `npm test`: 92 files, 1364 tests (unit 48 / 579, so database 44 / 785); the review fixes: 93 files, 1384 tests (unit 48 / 581, database 45 / 803); the Phase 7 integration: 102 files, 1517 tests (unit 52 / 643, database 50 / 874); its review fixes: 102 files, 1518 tests (unit 52 / 644, database 50 / 874) |
+| Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests; `feat/p6-consignment` Phase 6 step 4 `npm test`: 92 files, 1364 tests (unit 48 / 579, so database 44 / 785); the review fixes: 93 files, 1384 tests (unit 48 / 581, database 45 / 803); the Phase 7 integration: 102 files, 1517 tests (unit 52 / 643, database 50 / 874); its review fixes: 102 files, 1518 tests (unit 52 / 644, database 50 / 874); the email sign-in integration: 111 files, 1585 tests (unit 56 / 686, database 55 / 899) |
 | End to end | `npm run test:e2e` | The staff journeys on an iPhone 13 and an iPad viewport against a production build and the devstack | Chromium only (installed once, see [Prerequisites](#prerequisites-and-access)); resets `bicii_dev`; not a required check in CI ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) | Local: 106 passed in 11.1 min (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, no dev server running); CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521) |
 | Contrast | `npm run tokens:contrast` | WCAG ratios of the colour token pairs | Tokens only, not rendered pages | Local: 29 pairs ok |
 | Build | `npm run build` | The app compiles for production with placeholder public env | Does not contact Supabase; writes under `.next`, as `npm run dev` does; it was exercised only with no dev server running in the checkout | Local inside `test:e2e`; CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766) |
@@ -154,7 +172,8 @@ from the code:
   `20261004…` main line (through labels and Shopify), `20261005…`
   purchasing and staff email sign-in, `20261006000100`–`20261006000900`
   staff roles, `20261006001000` and up reporting, `20261007…` public site.
-  The latest file today is `20261005000500_purchasing_reorder.sql`. A
+  The latest file today is `20261005006000_sign_in_throttle.sql` (staff
+  email sign-in, after purchasing's `20261005000100`–`20261005000500`). A
   migration that replaces a function another track also replaces (as
   `staff_search`) must carry both tracks' behaviour. Never edit an applied
   migration; add a new one (nothing is hosted yet, so a track's own
@@ -211,14 +230,15 @@ process yet ([OPERATIONS.md](OPERATIONS.md#releases)).
 | Symptom | Diagnostic | Fix |
 |---|---|---|
 | DB tests stop with "could not build the template database on … Is Postgres running (pg_ctlcluster 16 main start) and has `npm run devstack:setup` been run?" | `pg_isready -h 127.0.0.1`; `ls ~/.cache/bicii-devstack` | Start Postgres (`pg_ctlcluster 16 main start` on this machine) or set `PG*` in the shell; run `npm run devstack:setup` |
-| Sign-in fails right after `npm run db:reset` while the services were running ("Sign-in is unavailable right now. Try again in a minute.") | `npm run devstack:status` shows everything healthy; Auth answered 500 "Database error querying schema" | Observed workaround: `npm run devstack:stop` then `npm run devstack:start`. On 2026-10-05 the first password sign-in after a reset failed and the next ones succeeded; the reset drops the database with `force`, closing Auth's open connections, and the scripts reload only PostgREST (inferred cause) |
+| Sign-in fails right after `npm run db:reset` while the services were running ("Sign-in is unavailable right now. Try again in a minute.") | `npm run devstack:status` shows everything healthy; Auth answered 500 "Database error querying schema" | Observed workaround: `npm run devstack:stop` then `npm run devstack:start`. On 2026-10-05 the first sign-in after a reset failed and the next ones succeeded (then with a password; not seen with codes since); the reset drops the database with `force`, closing Auth's open connections, and the scripts reload only PostgREST (inferred cause) |
 | The app shows another environment's data or rejects the keys after switching stacks | Compare `NEXT_PUBLIC_SUPABASE_URL` in `.env.local` with `npm run devstack:status` (do not print the keys) | `npm run devstack:env`, then restart `npm run dev` |
 | Signed out or dev tooling misbehaving when the app is opened on `http://127.0.0.1:3000` | Check the address bar | Use `http://localhost:3000`. Auth's site URL is localhost (`scripts/devstack/services.mjs`) and the session cookie belongs to the host you signed in on. `next.config.ts` already allows `127.0.0.1` as a dev origin, and `/login` answered 200 there on 2026-10-05 |
 | Today, the board and the demo appointments look a day or more old | The demo history is anchored to the shop day of the last reset | `npm run db:reset` (then restart the services, as above) |
 | The Scan screen says "The camera only works over a secure connection. Open the app over HTTPS (or on localhost)." | Opened from a phone over `http://<LAN IP>:3000` | Expected; type the code instead, or follow [RUNBOOK "The camera scanner on phones and iPads"](RUNBOOK.md#the-camera-scanner-on-phones-and-ipads) |
 | Playwright cannot find a browser ("Executable doesn't exist …") | Is `PLAYWRIGHT_CHROMIUM_EXECUTABLE` set? Does `/opt/pw-browsers/chromium` exist? | On your own machine: `npx playwright install --with-deps chromium` (as CI does), or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`. In the build agent's container Chromium is preinstalled at `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH`); do not download browsers there |
 | `check:types` fails in CI | The job prints "Out of date. Run 'npm run db:types' …" | `npm run db:reset && npm run db:types`, commit `src/lib/database.types.ts` |
-| A service will not start | `npm run devstack:status`; logs in `.devstack/logs/{auth,rest,storage,gateway}.log` | Free the port or set `BICII_*_PORT` in the shell ([`.env.example`](../.env.example)) |
+| No sign-in code arrives on the devstack | `npm run devstack:status` (is `mail` running?); `.devstack/logs/auth.log` for `over_email_send_rate_limit` (one email per address per second here) | `npm run devstack:start` (it restarts an Auth started before the mail settings); ask again after a second; the newest code is the only valid one |
+| A service will not start | `npm run devstack:status`; logs in `.devstack/logs/{mail,auth,rest,storage,gateway}.log` | Free the port or set `BICII_*_PORT` in the shell ([`.env.example`](../.env.example)) |
 
 Known gaps (no hosted environment, devstack differences from hosted
 Supabase, unmerged PR stack): [RISKS.md](RISKS.md).
@@ -229,13 +249,14 @@ Supabase, unmerged PR stack): [RISKS.md](RISKS.md).
 |---|---|
 | [`src/app`](../src/app) | App Router: `(auth)/login`, the `(staff)/…` screens, manifest, error pages; `src/proxy.ts` (session refresh and sign-in redirect, Next 16's middleware) and `src/instrumentation.ts` |
 | [`src/lib/domain`](../src/lib/domain) | Typed, server-only wrappers over the RPCs |
-| [`src/lib/auth`](../src/lib/auth) | Session, `requireStaff`, permissions, redirects, sign-in messages |
+| [`src/lib/auth`](../src/lib/auth) | Session, `requireStaff`, permissions, redirects, sign-in code rules (`otp.ts`), messages and limits |
 | [`src/lib`](../src/lib) | Money, IDs, dates, env, logger, actions, DB error messages; `supabase/` (server, browser and restricted service-role clients); `admin/` (Auth admin API, service role) |
 | [`src/components`](../src/components) | `ui/` design-system primitives ([DESIGN.md](DESIGN.md)); `shell/` tab bar, rail, header with global search; `domain/` record components and sheets |
 | [`supabase/migrations`](../supabase/migrations) | Schema, RLS and RPCs (Supabase CLI timestamp names) |
 | [`supabase/seed.sql`](../supabase/seed.sql) | Demo data and test fixtures (synthetic) |
 | [`supabase/devstack`](../supabase/devstack) | `roles.sql`: platform roles for plain Postgres (never a migration) |
-| [`scripts/devstack`](../scripts/devstack) | Docker-free Supabase: setup, start/stop, database reset/migrate/types, gateway |
+| [`scripts/devstack`](../scripts/devstack) | Docker-free Supabase: setup, start/stop, database reset/migrate/types, gateway, the mail catcher and its client (`mail-client.mjs`) |
+| [`supabase/templates`](../supabase/templates) | Auth's email templates: sign-in codes, no links (D70) |
 | [`scripts`](../scripts) | Contrast and icon generators |
 | [`tests/unit`](../tests/unit), [`tests/db`](../tests/db), [`tests/e2e`](../tests/e2e), [`tests/fixtures`](../tests/fixtures) | The three harnesses and shared IDs, the API-surface allow-list and the public-site fixture |
 | [`.github`](../.github) | CI workflows and the shared `prepare` action |

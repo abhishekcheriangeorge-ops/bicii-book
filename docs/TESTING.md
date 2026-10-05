@@ -159,8 +159,8 @@ fixed 2031 dates) and `tests/fixtures/appointment-transitions.ts` (the
 status machine); step 3's TypeScript mirror uses both. Check-in tests
 (`appointment-check-in.test.ts`) build their own customer, bike, type and
 appointment as the owner and call `check_in_appointment` as staff. One
-customer login is seeded (`CUSTOMER_LOGIN.chloe`, Chloe Lim, the local
-password): read-only customer checks may act as her
+customer login is seeded (`CUSTOMER_LOGIN.chloe`, Chloe Lim, no usable
+password since the email sign-in integration): read-only customer checks may act as her
 (`customerClaims(CUSTOMER_LOGIN.chloe.authUserId)`); tests that change a
 customer's login or bookings link a fresh login to a fresh customer
 (`linkCustomerLogin`), never to `CUSTOMER.chloe`.
@@ -336,6 +336,32 @@ restarts on a changed configuration), same worktree and ports:
 - `npm run test:e2e` (phone and tablet): 102 tests: **pass**.
 - Hosted steps (password reset SQL, "Secure password change", Auth's
   per-IP limits): **not run** (no hosted project; owner's step).
+
+Verification of the integration with main and purchasing (2026-10-06,
+`origin/feat/p7-purchasing` merged into `feat/auth-email-otp`; second
+worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
+
+- Before the gates: main's `tests/e2e/api.ts` `signInApi(email,
+  password)` (Auth's password grant, used by `appointments.spec.ts` and
+  `appointment-settings.spec.ts` for the admin and the seeded customer)
+  became `signInApi(email)` with a generated code; Chloe Lim's seeded
+  login got a random secret's hash. A grep over `src/`, `tests/`,
+  `scripts/` and `supabase/` for `SEED_PASSWORD`, `signInWithPassword`,
+  `grant_type=password` and `bicii-dev-password` finds only
+  `seed-logins.test.ts`, which asserts that the former password matches
+  no seeded login: **pass**.
+- `npm run db:reset`: 44 migrations, `44|20261005006000`, seed applied;
+  `npm run db:types`: no diff: **pass**.
+- `npm run check`: **pass**. `npm run check:types` (fresh database):
+  **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 111 files, 1585
+  tests (unit 56 / 686, database 55 / 899): **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, every spec signing in with codes):
+  152 passed in 18.2 min, no failures, flaky or skipped: **pass** (run
+  before `seed-logins.test.ts` and the documentation were added; neither
+  touches the app or the specs).
+- Docs link check: **pass** (counts in [NOW.md](../NOW.md)).
 
 ## What is tested where
 
@@ -643,6 +669,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
 | The Admin's sign-in limits (PLAN D72) | `sign-in-throttle.test.ts`: `note_sign_in_attempt` adds one per bucket per call (a bucket named twice counts once) and returns the counts; a new window starts a new count, windows are aligned, counters older than a day are deleted; 6 concurrent committed calls count 6; anon and staff get 42501 on the function and the table, the service role on the table; malformed arguments (no, 0 or 9 buckets, an empty, null or 201-character key, a window under 60 s, over 3600 s or null) are 22023. Live: `sign-in-throttle.stack.test.ts` (above). |
+| No seeded login has a usable password (PLAN D10) | `seed-logins.test.ts`: every seeded staff login and the seeded customer login store a bcrypt hash (cost 10) that is not the shared local password the seed used before email codes, and no two share a hash. |
 | Deactivation ends Auth sessions (PLAN D71) | `staff-sessions.test.ts`, with sessions and refresh tokens inserted for mechanic1 and mechanic2: the admin deactivating mechanic2 (with a reason) deletes mechanic2's sessions and refresh tokens (with and without a session) and leaves mechanic1's; a replayed deactivation (with or without a reason) neither errors nor deletes; reactivation deletes nothing; a `manage_staff` holder who is not an admin deactivating a non-admin has the same effect; a refused deactivation (P0001 `reason_required`) leaves the sessions intact; a direct superuser `update staff set active = false` revokes too (false over false and updates of other columns do not); the migration's first statement passes for the migration role and fails, naming RUNBOOK, for a role without DELETE on `auth.sessions`. Live (`staff-sessions.stack.test.ts`): a throwaway staff login (admin API without a password, then `create_staff` as the admin) signs in with a code and is deactivated by the admin; Auth then answers its access token with 403 `session_not_found` (supabase-js: `AuthSessionMissingError`), its refresh token gets `refresh_token_not_found`, PostgREST still accepts the unexpired token but `my_staff_profile` says `active = false` (the hosted window), and a fresh code still verifies at Auth while `my_staff_profile` says `active = false`, which the Admin's `verifyCode` and `requireStaff` refuse. |
 | RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. Phase 3: a signed-in customer reads nothing of their own job (job, assignments, events, lines, line and totals views, services, categories, rates) and cannot call the workshop RPCs (42501); their projection is tested in `workshop-customer-access.test.ts` (row below). Phase 2 (`appointment-customer-access.test.ts`): a signed-in customer with their own booking reads zero rows from `appointments`, `appointment_events`, `appointment_types`, `shop_hours`, `closure_overrides`, `shop_settings` and `schedule_events`; `my_appointments()` returns only their own upcoming rows soonest first and `my_appointments(true)` the past ones after them, latest first, with exactly the `my_appointment` keys (D42: never `internal_note`, `cancellation_reason`, capacity units, source or actors); after the bike is archived or transferred (D12) its fields are NULL for them; `book_my_appointment` books for themselves only (source customer, their login), another customer's or an unknown bike → `appointment_bike_not_owned` with a neutral detail; `cancel_my_appointment` on someone else's id → NULL and nothing changes. |
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
@@ -999,12 +1026,17 @@ exceptions are relative to it): J-000017 overdue and J-000016 waiting for
 collection, each opening its job.
 
 Phase 2 spec (`appointments.spec.ts`, step 3; API helpers in
-`tests/e2e/api.ts`: `signInApi(email, password)` through the gateway's
-Auth, `rpc(token, name, args)` and `select(token, pathAndQuery)` through
-PostgREST as that user, throwing with PostgREST's error; global setup
-hands them the gateway URL and anon key as `E2E_GATEWAY_URL` /
-`E2E_ANON_KEY`, because specs load as CommonJS and cannot import
-`scripts/devstack/config.mjs`). These tests use the live shop day
+`tests/e2e/api.ts`: `signInApi(email)` signs in with an email code
+without sending email (the service-role admin API generates it, Auth
+verifies it, as `tests/db/stack.ts` `otpClient` does; it tells the UI
+helper the address just had a code, so the next form request waits out
+Auth's per-address interval), `rpc(token, name, args)` and
+`select(token, pathAndQuery)` through PostgREST as that user, throwing
+with PostgREST's error; global setup hands them the gateway URL and keys
+as `E2E_GATEWAY_URL`, `E2E_ANON_KEY` and `E2E_SERVICE_ROLE_KEY`, because
+specs load as CommonJS and cannot import `scripts/devstack/config.mjs`.
+Until the email sign-in integration (2026-10-06) it used Auth's password
+grant with the shared seed password; no password path remains). These tests use the live shop day
 (`shopToday()`), not the seed's anchor: a customer books ahead of now.
 `beforeAll`, as the admin through the API and idempotent for the second
 project or a retry, sets the online notice to 0 and the capacity to 4,
@@ -1043,8 +1075,7 @@ accessible name starts with the booked time and Chloe Lim, "Still
 expected" is at least 1, and Arrived is read; after check-in Today's
 Arrived is exactly one higher (read before and after with `readCount`,
 never absolute counts, D41) and the booking left the arrivals list. Chloe
-Lim (`CUSTOMER_LOGIN.chloe`, the seed password in
-[ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)) is the one
+Lim (`CUSTOMER_LOGIN.chloe`, signed in with `signInApi`, an email code) is the one
 seeded customer login, used here and in the customer-access tests. "Staff
 book for a customer and capacity closes the slot": mechanic2 (no
 permissions), on the first Tuesday at least 21 days after `shopToday()`
@@ -1236,8 +1267,8 @@ one job are listed (a bike awaiting collection may take a newer job).
 Since Phase 2 the seed also holds the shop's schedule (settings, weekly
 hours with an inactive Monday and a split Saturday, four appointment types
 with one staff-only, two closures within 14 days), **one customer login**
-(Chloe Lim, `CUSTOMER_LOGIN.chloe`: chloe.lim@example.com with the local
-password, linked to `CUSTOMER.chloe`, for E2E journey 2 and read-only
+(Chloe Lim, `CUSTOMER_LOGIN.chloe`: chloe.lim@example.com, no usable
+password like every seeded login, `seed-logins.test.ts`; linked to `CUSTOMER.chloe`, for E2E journey 2 and read-only
 customer checks) and nine appointments from three days back to at most 14
 days ahead (`APPOINTMENT`; Tan's linked to J-000014 and completed with it).
 `SEED_DAYS` carries their D41 counts. Guarantees other tests rely on,
