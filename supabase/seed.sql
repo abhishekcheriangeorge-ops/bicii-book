@@ -11,8 +11,8 @@
 --   mechanic1@bicii.test  role staff, view_costs
 --   mechanic2@bicii.test  role staff, no permissions
 --
--- Phase 1 contents: six customers (none has a login yet; customer sign-up
--- is Phase 11) and ten bikes, one of them a shop bike without an owner, so
+-- Phase 1 contents: six customers (only Chloe Lim has a login, added in
+-- Phase 2; customer sign-up is Phase 11) and ten bikes, one of them a shop bike without an owner, so
 -- bikes get the short IDs B-000001 .. B-000010 in insert order. One bike
 -- changed hands, so its ownership history has two events. No attachments.
 --
@@ -47,6 +47,15 @@
 -- opening stock 30 days back, and three stock adjustments (one significant,
 -- D33). Today and the daily summary reproduce tests/fixtures/reporting.ts
 -- exactly.
+--
+-- Phase 2 contents: the shop's schedule (settings with D37's defaults and
+-- public_site_url http://localhost:4000; Tuesday-Friday 10:00-19:00, a split
+-- Saturday, a short Sunday, Mondays closed), four appointment types (one
+-- staff-only), two closures within the next 14 days, Chloe Lim's customer
+-- login (chloe.lim@example.com, the same local password) and nine
+-- appointments from 3 days ago to at most 14 days ahead, one in each
+-- interesting status; Tan's is linked to J-000014 (D40) and completed with
+-- it (D36). Today and the daily summary count them by D41.
 
 -- ---------------------------------------------------------------------------
 -- Auth users (shape matches Supabase Auth v2.178). GoTrue scans the token
@@ -1652,5 +1661,271 @@ values
    5.00, 'd5400000-0000-4000-8000-000000000012', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(1, '16:30')),
   ('d5300000-0000-4000-8000-000000000006', null, '1c000000-0000-4000-8000-000000000001', 2, 'stock_adjustment', 'Recount found two in the workshop drawer',
    3.00, 'd5400000-0000-4000-8000-000000000013', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(0, '08:30'));
+
+select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 2: the shop's schedule and appointments (DATA-MODEL.md §18 "Phase 2
+-- part"; ids in tests/fixtures/ids.ts). Written as the owner after every
+-- job exists. The owner may bypass the booking rules (notice, horizon, the
+-- customer limit, hours, closures and capacity are RPC rules, D37, D38);
+-- the appointments triggers still enforce the status machine, the stamps,
+-- bike ownership and the history, and the work-order link triggers still
+-- check the link (D40). Each appointment is inserted `booked` at its
+-- created_at (a day or more before it starts), then walks its statuses one
+-- UPDATE at a time with explicit stamps, so every history reads true.
+-- request.jwt.claims names whoever acts (Asha, Marcus for J-000014's
+-- completion, Chloe for her own online bookings).
+--
+-- Past rows use pg_temp.seed_at(days_ago, local time); today's and future
+-- rows start at fixed shop-local times, ((shop_today() + n) + time) at
+-- time zone shop_timezone(). Today's and yesterday's rows deliberately
+-- ignore the weekly hours when that day is a Monday (closed) or Sunday.
+-- Future rows fall on Tuesday-Friday, never on a seeded closure or short
+-- day, and nothing is more than 14 days ahead (tests book on clear days at
+-- least 21 days ahead). Daniel has no upcoming booked or confirmed
+-- appointment; Chloe has at most two upcoming online bookings; today has
+-- at most three expected (booked or confirmed) arrivals.
+-- ===========================================================================
+
+-- Shop-local instant at `local_time` on the shop day `days_ahead` from today.
+create function pg_temp.seed_ahead(days_ahead integer, local_time time)
+returns timestamptz
+language sql
+stable
+as $$
+  select ((private.shop_today() + days_ahead) + local_time) at time zone private.shop_timezone();
+$$;
+
+-- The first shop day at least `days_ahead` from today whose weekday
+-- (0 = Sunday, as extract(dow)) is in `weekdays`.
+create function pg_temp.seed_first_day(days_ahead integer, weekdays integer[])
+returns date
+language sql
+stable
+as $$
+  select min(d)::date
+  from generate_series(private.shop_today() + days_ahead, private.shop_today() + days_ahead + 6, interval '1 day') g(d)
+  where extract(dow from d)::integer = any (weekdays);
+$$;
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Settings: D37's defaults, and the local public site (3000 is the Admin).
+update public.shop_settings
+set intake_slot_minutes = 30,
+    intake_capacity_units = 2,
+    booking_min_notice_minutes = 120,
+    booking_horizon_days = 60,
+    customer_max_active_bookings = 3,
+    customer_cancel_cutoff_minutes = 120,
+    public_site_url = 'http://localhost:4000',
+    updated_by = '5a000000-0000-4000-8000-000000000001'
+where id = 1;
+
+-- Weekly hours (0 = Sunday): Tuesday-Friday 10:00-19:00, a split Saturday,
+-- a short Sunday, and Monday closed with its usual hours remembered.
+insert into public.shop_hours (id, weekday, opens_at, closes_at, active) values
+  ('e3000000-0000-4000-8000-000000000001', 1, '10:00', '19:00', false),
+  ('e3000000-0000-4000-8000-000000000002', 2, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000003', 3, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000004', 4, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000005', 5, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000006', 6, '09:00', '12:30', true),
+  ('e3000000-0000-4000-8000-000000000007', 6, '13:30', '18:00', true),
+  ('e3000000-0000-4000-8000-000000000008', 0, '09:00', '13:00', true);
+
+-- Appointment types: three bookable online, one staff-only.
+insert into public.appointment_types
+  (id, name, description, duration_minutes, capacity_units, public, active, sort_order)
+values
+  ('e1000000-0000-4000-8000-000000000001', 'Service drop-off',
+   'Leave your bike with us for a service; we confirm the work and price before starting.', 30, 1, true, true, 1),
+  ('e1000000-0000-4000-8000-000000000002', 'Repair assessment',
+   'A mechanic looks at the problem with you and quotes the repair.', 30, 1, true, true, 2),
+  ('e1000000-0000-4000-8000-000000000003', 'Custom build consultation',
+   'An hour with a builder to plan a new bike or a rebuild: fit, parts and budget.', 60, 2, true, true, 3),
+  ('e1000000-0000-4000-8000-000000000004', 'Warranty inspection',
+   'Manufacturer warranty claims; booked by the shop only.', 30, 1, false, true, 4);
+
+-- Closures, with the whole-day rules save_closure_override uses: the shop
+-- closed all day on the first Wednesday at least 7 days ahead, and short
+-- hours on the first Thursday at least 8 days ahead (both within 14 days).
+insert into public.closure_overrides
+  (id, kind, starts_at, ends_at, opens_at, closes_at, reason, created_by, created_at)
+values
+  ('e4000000-0000-4000-8000-000000000001', 'closed',
+   private.shop_day_start(pg_temp.seed_first_day(7, array[3])),
+   private.shop_day_start(pg_temp.seed_first_day(7, array[3]) + 1),
+   null, null, 'Team at the Taipei Cycle show', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(6, '18:30')),
+  ('e4000000-0000-4000-8000-000000000002', 'custom_hours',
+   private.shop_day_start(pg_temp.seed_first_day(8, array[4])),
+   private.shop_day_start(pg_temp.seed_first_day(8, array[4]) + 1),
+   '12:00', '16:00', 'Short day for stocktake', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(6, '18:35'));
+
+-- Chloe Lim's customer login (the staff logins' shape; E2E journey 2 and
+-- the customer-access tests sign in as her).
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, last_sign_in_at,
+  raw_app_meta_data, raw_user_meta_data,
+  created_at, updated_at,
+  confirmation_token, recovery_token, email_change_token_new, email_change,
+  email_change_token_current, phone_change, phone_change_token, reauthentication_token,
+  is_super_admin, is_sso_user, is_anonymous
+) values (
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  'a0000000-0000-4000-8000-000000000101'::uuid,
+  'authenticated',
+  'authenticated',
+  'chloe.lim@example.com',
+  extensions.crypt('bicii-dev-password', extensions.gen_salt('bf')),
+  now(), null,
+  '{"provider": "email", "providers": ["email"]}'::jsonb,
+  jsonb_build_object('display_name', 'Chloe Lim'),
+  now(), now(),
+  '', '', '', '',
+  '', '', '', '',
+  false, false, false
+);
+
+insert into auth.identities (
+  id, provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+) values (
+  'a1000000-0000-4000-8000-000000000101'::uuid,
+  'a0000000-0000-4000-8000-000000000101',
+  'a0000000-0000-4000-8000-000000000101'::uuid,
+  jsonb_build_object(
+    'sub', 'a0000000-0000-4000-8000-000000000101',
+    'email', 'chloe.lim@example.com',
+    'email_verified', true,
+    'phone_verified', false
+  ),
+  'email',
+  null, now(), now()
+);
+
+update public.customers
+set auth_user_id = 'a0000000-0000-4000-8000-000000000101'
+where id = 'c1000000-0000-4000-8000-000000000004';
+
+-- Appointments booked by staff (Asha), each `booked` at its created_at;
+-- ends_at and capacity_units are the type's snapshot (D38).
+insert into public.appointments
+  (id, customer_id, bike_id, appointment_type_id, starts_at, ends_at, capacity_units, status, source,
+   customer_note, internal_note, created_by_staff_id, created_at)
+select r.id, r.customer_id, r.bike_id, r.type_id, r.starts_at,
+       r.starts_at + make_interval(mins => t.duration_minutes), t.capacity_units, 'booked', 'staff',
+       r.customer_note, r.internal_note, '5a000000-0000-4000-8000-000000000001', r.created_at
+from (values
+  -- Tan's Tarmac, 3 days ago 10:00: checked in as J-000014, completed with it.
+  ('e2000000-0000-4000-8000-000000000001'::uuid, 'c1000000-0000-4000-8000-000000000001'::uuid,
+   'b1000000-0000-4000-8000-000000000001'::uuid, 'e1000000-0000-4000-8000-000000000002'::uuid,
+   pg_temp.seed_at(3, '10:00'), 'Rear wheel wobbles and the tyre has a cut.',
+   'Booked by phone.', pg_temp.seed_at(5, '17:40')),
+  -- Daniel's Cannondale, yesterday 11:00: a no-show.
+  ('e2000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000005',
+   'b1000000-0000-4000-8000-000000000008', 'e1000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(1, '11:00'), 'Pre-race check before the weekend crit.',
+   null, pg_temp.seed_at(4, '15:10')),
+  -- Priya's Domane, today 10:00: arrived, not checked in yet.
+  ('e2000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000002',
+   'b1000000-0000-4000-8000-000000000003', 'e1000000-0000-4000-8000-000000000001',
+   pg_temp.seed_ahead(0, '10:00'), 'Full service before a trip to Bintan.',
+   null, pg_temp.seed_at(3, '12:00')),
+  -- Hafiz's Brompton, today 10:30: confirmed (J-000010 is open on this bike).
+  ('e2000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000003',
+   'b1000000-0000-4000-8000-000000000005', 'e1000000-0000-4000-8000-000000000002',
+   pg_temp.seed_ahead(0, '10:30'), 'Rear hub clicks when freewheeling.',
+   'Confirmed by WhatsApp.', pg_temp.seed_at(2, '09:40')),
+  -- Nurul's Bianchi, today 16:00: booked.
+  ('e2000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000006',
+   'b1000000-0000-4000-8000-000000000009', 'e1000000-0000-4000-8000-000000000002',
+   pg_temp.seed_ahead(0, '16:00'), 'Brake levers feel spongy.',
+   'No email on file; call to remind.', pg_temp.seed_at(1, '10:05')),
+  -- Tan's Brompton, the first Tuesday-Friday from tomorrow, 11:00: confirmed.
+  ('e2000000-0000-4000-8000-000000000007', 'c1000000-0000-4000-8000-000000000001',
+   'b1000000-0000-4000-8000-000000000002', 'e1000000-0000-4000-8000-000000000001',
+   (pg_temp.seed_first_day(1, array[2, 3, 4, 5]) + time '11:00') at time zone private.shop_timezone(),
+   'Annual service.', null, pg_temp.seed_at(2, '16:00')),
+  -- Priya's Tern, the first Tuesday-Friday at least 3 days ahead, 10:00:
+  -- cancelled by the shop.
+  ('e2000000-0000-4000-8000-000000000008', 'c1000000-0000-4000-8000-000000000002',
+   'b1000000-0000-4000-8000-000000000004', 'e1000000-0000-4000-8000-000000000002',
+   (pg_temp.seed_first_day(3, array[2, 3, 4, 5]) + time '10:00') at time zone private.shop_timezone(),
+   'Folding hinge is loose.', null, pg_temp.seed_at(4, '11:00'))
+) as r (id, customer_id, bike_id, type_id, starts_at, customer_note, internal_note, created_at)
+join public.appointment_types t on t.id = r.type_id;
+
+-- Chloe's own online bookings (source customer, created by her login).
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000101","role":"authenticated"}', false);
+
+insert into public.appointments
+  (id, customer_id, bike_id, appointment_type_id, starts_at, ends_at, capacity_units, status, source,
+   customer_note, created_by_user_id, created_at)
+select r.id, 'c1000000-0000-4000-8000-000000000004', r.bike_id, r.type_id, r.starts_at,
+       r.starts_at + make_interval(mins => t.duration_minutes), t.capacity_units, 'booked', 'customer',
+       r.customer_note, 'a0000000-0000-4000-8000-000000000101', r.created_at
+from (values
+  -- Chloe's Giant, today 15:00.
+  ('e2000000-0000-4000-8000-000000000005'::uuid, 'b1000000-0000-4000-8000-000000000006'::uuid,
+   'e1000000-0000-4000-8000-000000000001'::uuid, pg_temp.seed_ahead(0, '15:00'),
+   'Gears slip on the biggest cog; please check the chain too.', pg_temp.seed_at(1, '21:15')),
+  -- Chloe's Surly, the first Tuesday-Friday at least 5 days ahead, 14:00.
+  ('e2000000-0000-4000-8000-000000000009', 'b1000000-0000-4000-8000-000000000007',
+   'e1000000-0000-4000-8000-000000000003',
+   (pg_temp.seed_first_day(5, array[2, 3, 4, 5]) + time '14:00') at time zone private.shop_timezone(),
+   'Planning a touring rebuild with dynamo lights.', pg_temp.seed_at(1, '21:30'))
+) as r (id, bike_id, type_id, starts_at, customer_note, created_at)
+join public.appointment_types t on t.id = r.type_id;
+
+-- Status changes, one UPDATE each with its own stamp (the history event of
+-- a status change is dated by that stamp).
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+update public.appointments set status = 'no_show', no_show_at = pg_temp.seed_at(1, '11:20')
+where id = 'e2000000-0000-4000-8000-000000000002';
+update public.appointments set status = 'arrived', arrived_at = pg_temp.seed_at(0, '09:55')
+where id = 'e2000000-0000-4000-8000-000000000003';
+update public.appointments set status = 'confirmed', confirmed_at = pg_temp.seed_at(1, '17:30')
+where id = 'e2000000-0000-4000-8000-000000000004';
+update public.appointments set status = 'confirmed', confirmed_at = pg_temp.seed_at(1, '09:30')
+where id = 'e2000000-0000-4000-8000-000000000007';
+select private.set_change_reason('Customer travelling');
+update public.appointments set status = 'cancelled', cancelled_via = 'staff', cancelled_at = pg_temp.seed_at(1, '14:00')
+where id = 'e2000000-0000-4000-8000-000000000008';
+select private.set_change_reason(null);
+
+-- Tan's appointment and J-000014 (D40, D36): checked in when J-000014 was
+-- (Asha, 10:30 three days ago), then linked: the triggers check the link and
+-- write the appointment's work_order_linked and the job's
+-- appointment_linked events, dated at that check-in, so J-000014's timeline
+-- reads checked_in, appointment_linked, ... as before. J-000014 was
+-- completed (Marcus) before the link existed, so the D36 trigger never saw
+-- it: the appointment completes here at the job's completed_at.
+update public.appointments a
+set status = 'checked_in',
+    arrived_at = w.checked_in_at,
+    checked_in_at = w.checked_in_at
+from public.work_orders w
+where a.id = 'e2000000-0000-4000-8000-000000000001'
+  and w.id = 'd5000000-0000-4000-8000-000000000004';
+
+update public.work_orders
+set appointment_id = 'e2000000-0000-4000-8000-000000000001'
+where id = 'd5000000-0000-4000-8000-000000000004';
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.appointments a
+set status = 'completed', completed_at = w.completed_at
+from public.work_orders w
+where a.id = 'e2000000-0000-4000-8000-000000000001'
+  and w.id = 'd5000000-0000-4000-8000-000000000004';
 
 select set_config('request.jwt.claims', '', false);
