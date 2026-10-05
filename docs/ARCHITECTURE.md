@@ -82,8 +82,9 @@ are Phase 8; [R-019](RISKS.md#r-019--adr-001-names-versions-the-code-does-not-us
    written to the job's timeline.
    Consigned stock (D44, the owner's D27 change): after the unit, the
    consignment item is locked (lock order step 6; for a quantity product,
-   all its active items in id order, then the oldest item whose remaining
-   quantity covers the part, else `consignment_quantity_unavailable`); the
+   all its active items in id order, then the oldest item whose stock at
+   the part's location covers the part (D54), else
+   `consignment_quantity_unavailable`); the
    item must be active; the cost is the agreed amount (+ a unique item's
    shop charges), the line also stores the item and
    `consignor_payout_snapshot` (the agreed amount), consigned stock never
@@ -195,6 +196,13 @@ All records: [decisions/README.md](decisions/README.md).
   it unchanged. The consignor ledgers are views over the item position
   and the settlements, so owed, paid and outstanding are never stored
   ([DATA-MODEL §8, §9, §14](DATA-MODEL.md#8-sales-non-workshop-revenue)).
+- Where each consignor's stock is (D54, from the Phase 6 review): every
+  movement of a consigned product names its consignment item, so
+  `private.consignment_item_on_hand(item, location)` is derived from the
+  ledger like product on-hand, never stored; sales, job parts, returns,
+  transfers and `saleable_stock` read it under the product's stock lock,
+  so a consignor is charged only for stock that was where it was sold
+  ([ADR-016](decisions/ADR-016-consignment-and-sales.md)).
 - Errors: `P0001` with a stable code, `42501` for authorization, `P0002` for
   missing rows; mapped in [src/lib/db-errors.ts](../src/lib/db-errors.ts)
   ([DATA-MODEL §16](DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public)).
@@ -203,7 +211,7 @@ All records: [decisions/README.md](decisions/README.md).
 
 | Concern | Measured fact | Assumption or unknown | Revisit trigger |
 |---|---|---|---|
-| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2: intake, returns, parts, completions, sales and settlements; each case proves the second call waits on a lock) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 on `feat/p6-consignment` (89 files, 1298 tests) | Behaviour under real shop load | First hosted use |
+| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2 and the review fixes: intake, returns, parts, completions, sales, settlements, refunds and restocks; each case proves the second call waits on a lock) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 on `feat/p6-consignment` (89 files, 1298 tests) | Behaviour under real shop load | First hosted use |
 | Load and latency | Not measured | Single shop, a few staff | Slow screens reported, or Phase 9 reports |
 | Upload size | 20 MiB per object on both buckets (`file_size_limit` 20971520); photos are scaled to at most 2048 px and re-encoded as JPEG in the browser first (`prepare-photo.ts`) | Hosted Storage limits per plan | Hosted project created |
 | Hosted behaviour | None: everything runs on the devstack | Platform roles, Auth settings and versions may differ | [R-001](RISKS.md#r-001--nothing-is-deployed), [R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase) |
@@ -223,8 +231,8 @@ All records: [decisions/README.md](decisions/README.md).
   change ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet))
   was built in Phase 6 step 1.
 - [R-018](RISKS.md#r-018--four-sections-are-placeholder-pages):
-  consignment, purchasing, labels and reports are placeholders by design,
-  not defects.
+  purchasing, labels and reports are placeholders by design, not defects
+  (consignment and sales were built in Phase 6).
 - The lock order and the single helpers in
   [DATA-MODEL §7](DATA-MODEL.md#7-inventory-movement-ledger) before touching
   any stock path: work order → line → stock → bikes → units → consignment

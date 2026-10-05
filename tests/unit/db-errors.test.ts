@@ -189,7 +189,15 @@ describe("mapDbError", () => {
       "Consigned stock can't be adjusted, damaged, split or received by hand. Return it to the consignor or sell it.",
     );
     expect(mapDbError(pgrst("P0001", "consignment_quantity_unavailable")).message).toBe(
-      "No single consignment of this item has that many left. Add fewer, or one consignor's stock at a time.",
+      "No single consignor has that many of this item at that location. Use fewer, or one consignor's stock at a time.",
+    );
+    // D55: a sale dated before its stock came in; an intake's new consignor
+    // whose id is already someone else's.
+    expect(mapDbError(pgrst("P0001", "sale_before_stock")).message).toMatch(
+      /before the item came into the shop/,
+    );
+    expect(mapDbError(pgrst("P0001", "consignor_conflict")).message).toMatch(
+      /already saved with other details/,
     );
     // An internal guard: never explained to the user.
     expect(mapDbError(pgrst("P0001", "consignment_quantity_negative")).message).toBe(GENERIC_ERROR);

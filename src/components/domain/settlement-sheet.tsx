@@ -328,10 +328,14 @@ function SettlementSheet({
             className={
               problems.mismatch
                 ? "rounded-xl bg-waiting-soft px-4 py-3 text-sm font-medium text-waiting-deep tabular-nums"
-                : "rounded-xl bg-done-soft px-4 py-3 text-sm font-medium text-done-deep tabular-nums"
+                : total && total.greaterThan(0)
+                  ? "rounded-xl bg-done-soft px-4 py-3 text-sm font-medium text-done-deep tabular-nums"
+                  : // A prompt, not a result: the done tone only once it is allocated.
+                    "rounded-xl bg-sunken px-4 py-3 text-sm font-medium text-dust-700 tabular-nums"
             }
           >
-            {problems.mismatch ?? (total ? "Fully allocated" : "Enter the amount paid")}
+            {problems.mismatch ??
+              (total && total.greaterThan(0) ? "Fully allocated" : "Enter the amount paid")}
           </p>
         </section>
 

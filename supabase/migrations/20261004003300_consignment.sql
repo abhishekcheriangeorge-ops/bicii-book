@@ -25,6 +25,15 @@
 --     write-off, create_unique_unit, split and purchase receipts are
 --     refused (consignment_stock_adjust_blocked), so on-hand of a consigned
 --     product always equals the consignors' remaining quantity.
+--   * CONS-ITEM-LOCATION (D54): every movement of a consignment-owned
+--     product names its consignment item (a unit's movement takes its
+--     unit's item), so private.consignment_item_on_hand(item, location)
+--     derives where each consignor's stock is and, at every location, the
+--     product's on-hand equals the sum of its items' on-hand there. A
+--     transfer of consigned quantity stock moves one item's stock: the
+--     oldest active item (received_at, short_id) with that much at the
+--     source location. Sales, job parts and returns take a quantity item's
+--     stock only where that item has it.
 --   * Every charge has an explicit bearer (D4, no default): `consignor`
 --     (deducted from what is owed) or `shop` (added to the item's direct
 --     cost, lowering yield). Shop charges exist only on unique items, and
@@ -796,6 +805,12 @@ begin
   end if;
 
   if prod_ownership = 'consignment' then
+    -- D54: a unit's movement (a transfer, a restock) takes its unit's item.
+    if new.consignment_item_id is null and new.inventory_unit_id is not null then
+      new.consignment_item_id := (
+        select u.consignment_item_id from public.inventory_units u where u.id = new.inventory_unit_id
+      );
+    end if;
     if new.movement_type = 'reversal' then
       select m.* into original from public.inventory_movements m where m.id = new.reversal_of_id;
       allowed := found and original.movement_type in ('transfer', 'job_consumption');
@@ -831,6 +846,14 @@ begin
         errcode = 'P0001',
         message = 'consignment_stock_adjust_blocked',
         detail = 'Consigned stock is not adjusted, damaged, split or received by hand; return it to the consignor or sell it.';
+    end if;
+    -- D54: every consigned movement names its item, so the stock of each
+    -- consignor is known per location (private.consignment_item_on_hand).
+    if new.consignment_item_id is null then
+      raise exception using
+        errcode = 'P0001',
+        message = 'movement_invalid',
+        detail = 'A consigned stock movement names its consignment item.';
     end if;
   end if;
 
@@ -881,6 +904,247 @@ create trigger inventory_movements_consignment_history
   for each row
   when (new.movement_type = 'consignment_returned')
   execute function private.inventory_movements_consignment_history();
+
+-- ---------------------------------------------------------------------------
+-- D54 CONS-ITEM-LOCATION: one consignment item's stock at one location, from
+-- the movements that name the item (every consigned movement does). Summed
+-- over the locations it equals the item's remaining quantity; at each
+-- location the items' on-hand sum to the product's. Callers hold the
+-- product's stock lock when they act on it.
+-- ---------------------------------------------------------------------------
+create function private.consignment_item_on_hand(item_id uuid, location_id uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(sum(m.quantity_delta), 0)::integer
+  from public.inventory_movements m
+  where m.consignment_item_id = consignment_item_on_hand.item_id
+    and m.location_id = consignment_item_on_hand.location_id;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- transfer_stock, replaced with the same signature and grants (Phase 4's
+-- rules unchanged) so that a transfer of consigned quantity stock names
+-- its item (D54): one item's stock moves, the oldest active item
+-- (received_at, short_id) that has the whole quantity at the source
+-- location (consignment_quantity_unavailable otherwise: move one
+-- consignor's stock at a time). A unit's transfer takes its unit's item in
+-- the D50 movement trigger.
+-- ---------------------------------------------------------------------------
+create or replace function public.transfer_stock(
+  request_id uuid,
+  product_id uuid,
+  from_location_id uuid,
+  to_location_id uuid,
+  quantity integer,
+  reason text default null,
+  inventory_unit_id uuid default null
+)
+returns table (movement_id bigint, location_id uuid, quantity_delta integer)
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  cleaned text := nullif(pg_catalog.btrim(coalesce(transfer_stock.reason, '')), '');
+  prod_tracking public.tracking_type;
+  prod_ownership public.ownership_type;
+  prod_archived timestamptz;
+  unit public.inventory_units;
+  moving_item uuid;
+  found_count integer;
+  matching integer;
+  from_active boolean;
+  to_active boolean;
+  err_state text;
+  err_constraint text;
+  err_table text;
+  err_schema text;
+  err_column text;
+  err_message text;
+begin
+  perform private.require_permission('manage_inventory');
+  if transfer_stock.request_id is null or transfer_stock.product_id is null
+     or transfer_stock.from_location_id is null or transfer_stock.to_location_id is null
+     or transfer_stock.quantity is null then
+    raise exception 'request_id, product_id, from_location_id, to_location_id and quantity are required'
+      using errcode = '22004';
+  end if;
+  if cleaned is not null and pg_catalog.char_length(cleaned) > 500 then
+    raise exception using
+      errcode = 'P0001',
+      message = 'reason_too_long',
+      detail = 'Keep the reason under 500 characters.';
+  end if;
+  if transfer_stock.from_location_id = transfer_stock.to_location_id then
+    raise exception using
+      errcode = 'P0001',
+      message = 'transfer_same_location',
+      detail = 'Choose two different locations.';
+  end if;
+
+  perform private.lock_stock(transfer_stock.product_id);
+  select p.tracking_type, p.ownership_type, p.archived_at into prod_tracking, prod_ownership, prod_archived
+  from public.products p where p.id = transfer_stock.product_id;
+  if not found then
+    raise exception 'product % not found', transfer_stock.product_id using errcode = 'P0002';
+  end if;
+  if transfer_stock.inventory_unit_id is not null then
+    select u.* into unit from public.inventory_units u where u.id = transfer_stock.inventory_unit_id for update;
+    if not found then
+      raise exception 'unit % not found', transfer_stock.inventory_unit_id using errcode = 'P0002';
+    end if;
+  end if;
+
+  -- Replay: both rows of the same transfer return; the key used for
+  -- anything else is request_conflict.
+  select count(*)::integer,
+         count(*) filter (
+           where m.product_id = transfer_stock.product_id
+             and m.movement_type = 'transfer'
+             and m.inventory_unit_id is not distinct from transfer_stock.inventory_unit_id
+             and ((m.location_id = transfer_stock.from_location_id and m.quantity_delta = -transfer_stock.quantity)
+               or (m.location_id = transfer_stock.to_location_id and m.quantity_delta = transfer_stock.quantity))
+         )::integer
+    into found_count, matching
+  from public.inventory_movements m
+  where m.request_id = transfer_stock.request_id;
+  if found_count > 0 then
+    if found_count = 2 and matching = 2 then
+      return query
+        select m.id, m.location_id, m.quantity_delta
+        from public.inventory_movements m
+        where m.request_id = transfer_stock.request_id
+        order by m.id;
+      return;
+    end if;
+    raise exception using
+      errcode = 'P0001',
+      message = 'request_conflict',
+      detail = 'That request id was already used for another stock change.';
+  end if;
+
+  select l.active into from_active from public.locations l where l.id = transfer_stock.from_location_id;
+  if not found then
+    raise exception 'location % not found', transfer_stock.from_location_id using errcode = 'P0002';
+  end if;
+  select l.active into to_active from public.locations l where l.id = transfer_stock.to_location_id;
+  if not found then
+    raise exception 'location % not found', transfer_stock.to_location_id using errcode = 'P0002';
+  end if;
+  if not from_active or not to_active then
+    raise exception using
+      errcode = 'P0001',
+      message = 'location_inactive',
+      detail = 'That location is inactive; choose another or reactivate it.';
+  end if;
+  if prod_archived is not null then
+    raise exception using
+      errcode = 'P0001',
+      message = 'product_archived',
+      detail = 'That product is archived; unarchive it first.';
+  end if;
+
+  if prod_tracking = 'quantity' then
+    if transfer_stock.inventory_unit_id is not null then
+      raise exception using
+        errcode = 'P0001',
+        message = 'unit_product_mismatch',
+        detail = 'That unit does not belong to this product.';
+    end if;
+    if transfer_stock.quantity < 1 or transfer_stock.quantity > 100000 then
+      raise exception using
+        errcode = 'P0001',
+        message = 'quantity_invalid',
+        detail = 'Move at least one.';
+    end if;
+    if private.stock_on_hand(transfer_stock.product_id, transfer_stock.from_location_id) < transfer_stock.quantity then
+      raise exception using
+        errcode = 'P0001',
+        message = 'insufficient_stock',
+        detail = 'There is not that much stock at that location.';
+    end if;
+    if prod_ownership = 'consignment' then
+      -- D54: one consignor's stock moves (the stock lock serialises every
+      -- writer of this product's movements).
+      select i.id into moving_item
+      from public.consignment_items i
+      where i.product_id = transfer_stock.product_id and i.status = 'active'
+        and private.consignment_item_on_hand(i.id, transfer_stock.from_location_id) >= transfer_stock.quantity
+      order by i.received_at, i.short_id
+      limit 1;
+      if not found then
+        raise exception using
+          errcode = 'P0001',
+          message = 'consignment_quantity_unavailable',
+          detail = 'No single consignment of this item has that many at that location; move one consignor''s stock at a time.';
+      end if;
+    end if;
+  else
+    if transfer_stock.inventory_unit_id is null then
+      raise exception using
+        errcode = 'P0001',
+        message = 'unit_required',
+        detail = 'Choose which unit to move.';
+    end if;
+    if transfer_stock.quantity <> 1 then
+      raise exception using
+        errcode = 'P0001',
+        message = 'quantity_invalid',
+        detail = 'A unique item moves one at a time.';
+    end if;
+    if unit.product_id <> transfer_stock.product_id then
+      raise exception using
+        errcode = 'P0001',
+        message = 'unit_product_mismatch',
+        detail = 'That unit does not belong to this product.';
+    end if;
+    if unit.status not in ('available', 'reserved') or unit.archived_at is not null then
+      raise exception using
+        errcode = 'P0001',
+        message = 'unit_not_available',
+        detail = 'That unit is not in stock.';
+    end if;
+    if unit.location_id <> transfer_stock.from_location_id then
+      raise exception using
+        errcode = 'P0001',
+        message = 'unit_location_mismatch',
+        detail = 'That unit is somewhere else.';
+    end if;
+    perform private.set_change_reason(cleaned);
+    begin
+      update public.inventory_units u set location_id = transfer_stock.to_location_id where u.id = unit.id;
+    exception
+      when check_violation or not_null_violation then
+        get stacked diagnostics
+          err_state = returned_sqlstate, err_constraint = constraint_name, err_table = table_name,
+          err_schema = schema_name, err_column = column_name, err_message = message_text;
+        perform private.raise_without_row(err_state, err_constraint, err_table, err_schema, err_column, err_message);
+    end;
+    perform private.set_change_reason(null);
+  end if;
+
+  perform private.record_linked_movement(
+    transfer_stock.product_id, transfer_stock.inventory_unit_id, transfer_stock.from_location_id,
+    -transfer_stock.quantity, 'transfer', cleaned, null, transfer_stock.request_id, null, null, null, null,
+    moving_item
+  );
+  perform private.record_linked_movement(
+    transfer_stock.product_id, transfer_stock.inventory_unit_id, transfer_stock.to_location_id,
+    transfer_stock.quantity, 'transfer', cleaned, null, transfer_stock.request_id, null, null, null, null,
+    moving_item
+  );
+  return query
+    select m.id, m.location_id, m.quantity_delta
+    from public.inventory_movements m
+    where m.request_id = transfer_stock.request_id
+    order by m.id;
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- D52: photos on a consignment item (the Phase 1 extension point) are
@@ -1165,6 +1429,11 @@ $$;
 -- unit_cost_snapshot = the agreed amount). Replay-safe by item id: the same
 -- request returns the same item, even after the consignor was archived;
 -- the same id with other terms is consignment_item_conflict.
+-- new_consignor {"display_name", "phone"?, "email"?, "customer_id"?} creates
+-- the consignor `consignor_id` in the same transaction (part of the
+-- request), so a refused intake leaves no consignor behind and a retry
+-- with edited details stores the edited details; an existing consignor
+-- with that id and other details is consignor_conflict.
 create function public.create_consignment_item(
   item_id uuid,
   consignor_id uuid,
@@ -1185,7 +1454,8 @@ create function public.create_consignment_item(
   internal_notes text default null,
   new_product_id uuid default null,
   new_unit_id uuid default null,
-  bike_id uuid default null
+  bike_id uuid default null,
+  new_consignor jsonb default null
 )
 returns public.consignment_item_result
 language plpgsql
@@ -1198,6 +1468,12 @@ declare
   fingerprint text;
   existing public.consignment_items;
   consignor_archived timestamptz;
+  new_name text;
+  new_email text;
+  new_phone text;
+  new_customer uuid;
+  stored_consignor public.consignors;
+  created_consignor uuid;
   loc_active boolean;
   prod public.products;
   target_product uuid;
@@ -1242,6 +1518,20 @@ begin
       message = 'consignment_bike_requires_unique',
       detail = 'Only a unique item can be a bike.';
   end if;
+  if create_consignment_item.new_consignor is not null then
+    if pg_catalog.jsonb_typeof(create_consignment_item.new_consignor) <> 'object' or exists (
+         select 1 from pg_catalog.jsonb_object_keys(create_consignment_item.new_consignor) k
+         where k not in ('display_name', 'phone', 'email', 'customer_id')
+       ) then
+      raise exception 'new_consignor takes display_name, phone, email and customer_id' using errcode = '22023';
+    end if;
+    -- consignors_normalize's rules, so the fingerprint and the comparison
+    -- see what is stored.
+    new_name := pg_catalog.btrim(coalesce(create_consignment_item.new_consignor ->> 'display_name', ''));
+    new_phone := nullif(pg_catalog.btrim(create_consignment_item.new_consignor ->> 'phone'), '');
+    new_email := nullif(pg_catalog.btrim(create_consignment_item.new_consignor ->> 'email'), '');
+    new_customer := (create_consignment_item.new_consignor ->> 'customer_id')::uuid;
+  end if;
 
   -- (b) Idempotency: this request's own lock (lock order 0), then the replay
   -- by item id. No state check runs before it. The money casts make "500"
@@ -1261,6 +1551,11 @@ begin
       'asking', create_consignment_item.asking_price::text,
       'bike', create_consignment_item.bike_id
     )::text
+    || case when create_consignment_item.new_consignor is null then '' else
+         pg_catalog.jsonb_build_object(
+           'name', new_name, 'phone', new_phone, 'email', pg_catalog.lower(new_email), 'customer', new_customer
+         )::text
+       end
   );
   select i.* into existing from public.consignment_items i where i.id = create_consignment_item.item_id;
   if found then
@@ -1273,7 +1568,35 @@ begin
       detail = 'That consignment item id is already used for another intake.';
   end if;
 
-  -- (c) State. The consignor FOR SHARE (lock order 0b): archiving waits.
+  -- (c) State. A new consignor is inserted first (its row lock is lock
+  -- order 0b); an existing row with this id must be the same person.
+  if create_consignment_item.new_consignor is not null then
+    begin
+      insert into public.consignors as c (id, customer_id, display_name, email, phone)
+      values (create_consignment_item.consignor_id, new_customer, new_name, new_email, new_phone)
+      on conflict (id) do nothing
+      returning c.id into created_consignor;
+    exception
+      when check_violation or not_null_violation then
+        get stacked diagnostics
+          err_state = returned_sqlstate, err_constraint = constraint_name, err_table = table_name,
+          err_schema = schema_name, err_column = column_name, err_message = message_text;
+        perform private.raise_without_row(err_state, err_constraint, err_table, err_schema, err_column, err_message);
+    end;
+    if created_consignor is null then
+      select c.* into stored_consignor from public.consignors c where c.id = create_consignment_item.consignor_id;
+      if stored_consignor.display_name is distinct from new_name
+         or stored_consignor.phone is distinct from new_phone
+         or pg_catalog.lower(stored_consignor.email::text) is distinct from pg_catalog.lower(new_email)
+         or stored_consignor.customer_id is distinct from new_customer then
+        raise exception using
+          errcode = 'P0001',
+          message = 'consignor_conflict',
+          detail = 'That consignor id is already used for someone else.';
+      end if;
+    end if;
+  end if;
+  -- The consignor FOR SHARE (lock order 0b): archiving waits.
   select c.archived_at into consignor_archived
   from public.consignors c where c.id = create_consignment_item.consignor_id
   for share;
@@ -1436,8 +1759,8 @@ $$;
 
 comment on function public.create_consignment_item(
   uuid, uuid, uuid, public.money_amount, public.money_amount, uuid, text, text, text, uuid,
-  public.tracking_type, integer, text, text, timestamptz, text, text, uuid, uuid, uuid
-) is 'manage_consignments: take in a consigned unique item (its unit, optionally a shop bike record) or a quantity, on a consignment product (a new draft one when none is given), with its consignment_received movement; replay-safe by item id.';
+  public.tracking_type, integer, text, text, timestamptz, text, text, uuid, uuid, uuid, jsonb
+) is 'manage_consignments: take in a consigned unique item (its unit, optionally a shop bike record) or a quantity, on a consignment product (a new draft one when none is given) and, with new_consignor, for a consignor created in the same transaction, with its consignment_received movement; replay-safe by item id.';
 
 -- The item's product and unit (both immutable), read without a lock, then
 -- the stock (3), the unit (5) and the item (6) locked in order and the item
@@ -1754,7 +2077,8 @@ comment on function public.void_consignment_charge(uuid, text) is
 -- unit held on a job is returned by voiding its line first); it becomes
 -- returned_to_consignor, keeps its bike link (D51) and its product is
 -- archived when no unit is left in stock. A quantity item returns
--- `quantity` (default: all that remains) from one location.
+-- `quantity` (default: all of this item's stock there) from one location
+-- where the item has it (D54).
 create function public.return_consignment_item(
   return_id uuid,
   item_id uuid,
@@ -1774,6 +2098,7 @@ declare
   unit public.inventory_units;
   existing public.inventory_movements;
   remaining integer;
+  here integer;
   qty integer;
   from_location uuid;
   prod_status public.publication_status;
@@ -1852,15 +2177,6 @@ begin
     qty := 1;
     from_location := unit.location_id;
   else
-    select p.remaining_qty into remaining
-    from reporting.consignment_item_position p where p.consignment_item_id = item.id;
-    qty := coalesce(return_consignment_item.quantity, remaining);
-    if qty < 1 or qty > remaining then
-      raise exception using
-        errcode = 'P0001',
-        message = 'consignment_return_quantity_invalid',
-        detail = pg_catalog.format('Return between 1 and %s.', remaining);
-    end if;
     if return_consignment_item.location_id is null then
       raise exception 'location_id is required to return a quantity' using errcode = '22004';
     end if;
@@ -1868,11 +2184,23 @@ begin
     if not exists (select 1 from public.locations l where l.id = from_location) then
       raise exception 'location % not found', from_location using errcode = 'P0002';
     end if;
-    if private.stock_on_hand(item.product_id, from_location) < qty then
+    -- D54: only this item's stock at that location goes back (by default
+    -- all of it); another consignor's stock there is never handed over.
+    select p.remaining_qty into remaining
+    from reporting.consignment_item_position p where p.consignment_item_id = item.id;
+    here := least(remaining, private.consignment_item_on_hand(item.id, from_location));
+    qty := coalesce(return_consignment_item.quantity, here);
+    if return_consignment_item.quantity is not null and (qty < 1 or qty > remaining) then
+      raise exception using
+        errcode = 'P0001',
+        message = 'consignment_return_quantity_invalid',
+        detail = pg_catalog.format('Return between 1 and %s.', remaining);
+    end if;
+    if qty < 1 or qty > here or private.stock_on_hand(item.product_id, from_location) < qty then
       raise exception using
         errcode = 'P0001',
         message = 'insufficient_stock',
-        detail = 'There is not that much of this item at that location.';
+        detail = pg_catalog.format('%s has %s at that location.', item.short_id, greatest(here, 0));
     end if;
   end if;
 
@@ -1937,6 +2265,7 @@ revoke all on function
   ),
   private.inventory_movements_consignment_rules(),
   private.inventory_movements_consignment_history(),
+  private.consignment_item_on_hand(uuid, uuid),
   private.attachment_entity_exists(public.attachment_entity, uuid),
   private.attachments_consignment_item_internal_only(),
   private.refresh_consignment_item_status(uuid),
@@ -1958,7 +2287,7 @@ grant execute on function private.selling_price(uuid, uuid) to anon, authenticat
 revoke all on function
   public.create_consignment_item(
     uuid, uuid, uuid, public.money_amount, public.money_amount, uuid, text, text, text, uuid,
-    public.tracking_type, integer, text, text, timestamptz, text, text, uuid, uuid, uuid
+    public.tracking_type, integer, text, text, timestamptz, text, text, uuid, uuid, uuid, jsonb
   ),
   public.update_consignment_terms(uuid, public.money_amount, public.money_amount, text),
   public.add_consignment_charge(uuid, uuid, text, public.money_amount, public.charge_bearer, uuid),
@@ -1969,7 +2298,7 @@ from public, anon, authenticated, service_role;
 grant execute on function
   public.create_consignment_item(
     uuid, uuid, uuid, public.money_amount, public.money_amount, uuid, text, text, text, uuid,
-    public.tracking_type, integer, text, text, timestamptz, text, text, uuid, uuid, uuid
+    public.tracking_type, integer, text, text, timestamptz, text, text, uuid, uuid, uuid, jsonb
   ),
   public.update_consignment_terms(uuid, public.money_amount, public.money_amount, text),
   public.add_consignment_charge(uuid, uuid, text, public.money_amount, public.charge_bearer, uuid),

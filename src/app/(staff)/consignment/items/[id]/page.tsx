@@ -311,7 +311,7 @@ export default async function ConsignmentItemPage({
             </dl>
             {st.outstanding !== null ? (
               <p className="mt-2 text-sm text-dust-700">
-                {outstandingLabel(st.outstanding, item.currency)}
+                {outstandingLabel(st.outstanding, item.currency, st)}
                 {toDecimal(st.outstanding).isNegative() ? `. ${OVERPAID_REMEDIES}` : ""}
               </p>
             ) : null}

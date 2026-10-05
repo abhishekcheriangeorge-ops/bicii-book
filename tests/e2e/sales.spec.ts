@@ -128,6 +128,17 @@ test("a unique item is sold from its page and restocked from the sale", async ({
   await expect(line).toContainText("Below cost: this sale loses money");
   await line.getByLabel("Price").fill("800");
   await expect(line).not.toContainText("Below the asking price");
+  // Sold earlier? A time in the future is marked on its own field, which
+  // takes the focus (not only an alert scrolled out of view), and nothing
+  // is recorded.
+  await sheet.getByRole("button", { name: "Sold earlier?" }).click();
+  const soldAt = sheet.getByLabel("Sold at");
+  await soldAt.fill(`${new Date().getFullYear() + 1}-03-01T10:00`);
+  await sheet.getByRole("button", { name: "Record sale · $800.00" }).click();
+  await expect(sheet.getByText("Enter a date and time that is not in the future.")).toBeVisible();
+  await expect(soldAt).toHaveAttribute("aria-invalid", "true");
+  await expect(page).toHaveURL(unitUrl);
+  await soldAt.fill("");
   await sheet.getByRole("button", { name: "Record sale · $800.00" }).click();
   await expect(toast(page, /^S-\d{6} recorded$/)).toBeVisible();
   await expect(page).toHaveURL(/\/sales\/[0-9a-f-]{36}$/);

@@ -3,8 +3,9 @@
 -- DATA-MODEL.md §7, §8, §9, §15, §16; PLAN D1, D6/D25 SOLD-AT-COMPLETION,
 -- D7, D9, D14, D24 PART-PRICE-COST (amended: only NULL is missing), D26
 -- PUBLICATION-MACHINE, D29 BIKE-WITH-CUSTOMER, D44 CONS-JOB-PART, D45
--- CONS-QTY-FIFO, D46 CONS-RESTOCK, D48 SALES-ACCESS, D49 RETAIL-REFUND, D50
--- CONS-STOCK-MOVES, D53 PRICE-OVERRIDE).
+-- CONS-QTY-FIFO, D46 CONS-RESTOCK, D47 SETTLEMENT-RULES, D48 SALES-ACCESS,
+-- D49 RETAIL-REFUND, D50 CONS-STOCK-MOVES, D53 PRICE-OVERRIDE, D54
+-- CONS-ITEM-LOCATION, D55 SALE-DATE).
 --
 -- Rules encoded here, for every writer (RPC, seed, SQL editor):
 --   * A sale (S-######, D9, from a never-reused sequence) snapshots each
@@ -24,19 +25,27 @@
 --     DATA-MODEL §8's plain unique: a unit may be sold again only after
 --     restock_unit marked its previous line restocked; D46).
 --   * A retail sale never takes stock below zero (insufficient_stock).
+--   * D55 SALE-DATE: a sale may be dated in the past by any staff member,
+--     never more than 5 minutes ahead (sale_recognized_in_future) and never
+--     before its stock was with the shop: a consigned item's received_at,
+--     a unit's latest restock (sale_before_stock).
+--   * An in-store sale never carries a Shopify line id (sale_line_invalid):
+--     only Phase 10's ingestion writes one, through private.sell_line.
 --   * Consigned stock: a unit line costs its item's agreed amount plus its
 --     live shop-borne charges (D4) and owes the consignor the agreed amount;
 --     a quantity line draws from exactly one item, the one named or the
---     FIFO head whose remaining quantity covers it (D45), at that item's
+--     FIFO head whose stock at the line's location covers it (D45, D54:
+--     private.consignment_item_on_hand), at that item's
 --     asking price unless overridden (D53). The consignor liability is
 --     derived from live, non-restocked lines (reporting.
 --     consignment_item_position), never stored (D46).
 --   * restock_unit puts a sold unit back into stock with a reason: a
 --     `return` movement linked to the sale line, the line marked restocked,
 --     the unit available again. A consigned unit also needs
---     manage_consignments (D46); a unit sold through a job is never
---     restocked (D44); a unit whose bike a customer owns never goes back
---     into stock (D29). The sale and its refunds are untouched (D7).
+--     manage_consignments (D46) and a consignor that is not archived (D47:
+--     consignor_archived); a unit sold through a job is never restocked
+--     (D44); a unit whose bike a customer owns never goes back into stock
+--     (D29). The sale and its refunds are untouched (D7).
 --   * Refunds are financial facts only (D7, D49): admins record them,
 --     capped at the sale total minus earlier refunds; they never move stock
 --     or change a unit. Reports net neither refunds nor restocks (D49).
@@ -49,8 +58,9 @@
 -- GLOBAL LOCK ORDER: the consignment migration's header (0 the request's
 -- own header insert, 0b consignors, 1 work order, 2 line, 3 stock, 4 bikes,
 -- 5 units, 6 consignment items, 7 products). record_retail_sale inserts its
--- header first (0), then 3 -> 5 -> 6 -> 7; restock_unit takes 3 -> 4 -> 5 ->
--- 6 -> 7; record_sale_refund locks only its sale row. No path locks a sale
+-- header first (0), then 3 -> 5 -> 6 -> 7; restock_unit takes 0b (a
+-- consigned unit's consignor FOR SHARE) -> 3 -> 4 -> 5 -> 6 -> 7;
+-- record_sale_refund locks only its sale row. No path locks a sale
 -- header after a stock lock, unit or item.
 --
 -- Idempotency: record_retail_sale by sale id (the header insert ... on
@@ -519,6 +529,8 @@ declare
   prod public.products;
   item public.consignment_items;
   remaining integer;
+  in_stock_since timestamptz;
+  stock_label text;
   loc_active boolean;
   sale_price public.money_amount;
   direct_cost public.money_amount;
@@ -587,6 +599,7 @@ begin
           message = 'consignment_item_not_active',
           detail = 'That consigned item is no longer with the shop.';
       end if;
+      in_stock_since := item.received_at;
       select pos.shop_charges into shop_charges
       from reporting.consignment_item_position pos where pos.consignment_item_id = item.id;
       -- D4/D44: the agreed amount plus the live shop-borne charges; the
@@ -599,6 +612,12 @@ begin
     description := prod.name || ' · ' || unit.short_id || coalesce(' · S/N ' || unit.serial_number, '');
     qty := 1;
     location_key := unit.location_id;
+    -- D55: a restocked unit was back in stock only from its restock.
+    in_stock_since := greatest(
+      in_stock_since,
+      (select max(sl.restocked_at) from public.sale_lines sl where sl.inventory_unit_id = unit.id)
+    );
+    stock_label := unit.short_id;
 
   elsif product_key is not null and unit_key is null and not exists (
        select 1 from pg_catalog.jsonb_object_keys(sell_line.p_line) k
@@ -664,7 +683,7 @@ begin
         message = 'location_inactive',
         detail = 'That location is inactive; choose another or reactivate it.';
     end if;
-    -- A retail sale never takes stock below zero (D23 covers job parts only).
+    -- A sale never takes stock below zero (D23 covers job parts only).
     if private.stock_on_hand(prod.id, location_key) < qty then
       raise exception using
         errcode = 'P0001',
@@ -673,8 +692,10 @@ begin
     end if;
 
     if prod.ownership_type = 'consignment' then
-      -- D45: the item named, else the FIFO head whose remaining quantity
-      -- covers the line (the caller holds the product's items, lock order 6).
+      -- D45/D54: the item named, else the FIFO head whose stock at this
+      -- location covers the line (the caller holds the product's stock and
+      -- items, lock orders 3 and 6). Another consignor's stock elsewhere
+      -- never answers for it.
       if item_key is not null then
         select i.* into item from public.consignment_items i where i.id = item_key;
         if not found then
@@ -694,26 +715,30 @@ begin
         end if;
         select pos.remaining_qty into remaining
         from reporting.consignment_item_position pos where pos.consignment_item_id = item.id;
+        remaining := least(remaining, private.consignment_item_on_hand(item.id, location_key));
         if remaining < qty then
           raise exception using
             errcode = 'P0001',
             message = 'consignment_quantity_unavailable',
-            detail = pg_catalog.format('%s has %s left.', item.short_id, remaining);
+            detail = pg_catalog.format('%s has %s at that location.', item.short_id, greatest(remaining, 0));
         end if;
       else
         select i.* into item
         from public.consignment_items i
         join reporting.consignment_item_position pos on pos.consignment_item_id = i.id
         where i.product_id = prod.id and i.status = 'active' and pos.remaining_qty >= qty
+          and private.consignment_item_on_hand(i.id, location_key) >= qty
         order by i.received_at, i.short_id
         limit 1;
         if not found then
           raise exception using
             errcode = 'P0001',
             message = 'consignment_quantity_unavailable',
-            detail = 'No single consignment of this item has that many left; sell fewer, or one consignor''s stock at a time.';
+            detail = 'No single consignment of this item has that many at that location; sell fewer, or one consignor''s stock at a time.';
         end if;
       end if;
+      in_stock_since := item.received_at;
+      stock_label := item.short_id;
       sale_price := coalesce(price_arg, item.asking_price, prod.default_sale_price);
       direct_cost := item.agreed_amount_owed;
       payout := item.agreed_amount_owed;
@@ -734,6 +759,21 @@ begin
       errcode = 'P0001',
       message = 'sale_line_invalid',
       detail = 'Each sale line is a unit, or a product with a location and a quantity.';
+  end if;
+
+  -- D55: a sale is never dated before its stock was with the shop (a
+  -- consigned item's intake, a unit's restock). Shop-owned stock otherwise
+  -- has no lower bound: its registration is when it was entered, not when
+  -- it arrived.
+  if in_stock_since is not null and sell_line.p_sale.recognized_at < in_stock_since then
+    raise exception using
+      errcode = 'P0001',
+      message = 'sale_before_stock',
+      detail = pg_catalog.format(
+        '%s came into the shop on %s; a sale cannot be dated before that.',
+        stock_label,
+        pg_catalog.to_char(in_stock_since at time zone private.shop_timezone(), 'FMDD Mon YYYY, HH24:MI')
+      );
   end if;
 
   -- D24 (amended): 0 is a known price and a known cost; only NULL is missing.
@@ -858,6 +898,18 @@ begin
       errcode = 'P0001',
       message = 'sale_duplicate_unit',
       detail = 'The same unit is on the sale twice.';
+  end if;
+  -- A Shopify line id is written only by Phase 10's ingestion through
+  -- private.sell_line: an in-store sale never claims one.
+  if exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(record_retail_sale.lines) e(l)
+    where pg_catalog.jsonb_typeof(e.l) = 'object' and e.l ? 'shopify_line_item_id'
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'sale_line_invalid',
+      detail = 'In-store sales do not carry Shopify references.';
   end if;
   if record_retail_sale.customer_id is not null and not exists (
     select 1 from public.customers c where c.id = record_retail_sale.customer_id
@@ -1023,6 +1075,8 @@ declare
   cleaned text := nullif(pg_catalog.btrim(coalesce(restock_unit.reason, '')), '');
   unit_product uuid;
   unit_bike uuid;
+  unit_consignor uuid;
+  consignor_archived timestamptz;
   unit public.inventory_units;
   bike_owner uuid;
   bike_short text;
@@ -1054,11 +1108,21 @@ begin
       detail = 'Keep the reason under 500 characters.';
   end if;
 
-  -- Locks: the stock (3), the bike (4), the unit (5), the item (6).
-  select u.product_id, u.bike_id into unit_product, unit_bike
-  from public.inventory_units u where u.id = restock_unit.unit_id;
+  -- Locks: the consignor FOR SHARE (0b: archiving waits), the stock (3),
+  -- the bike (4), the unit (5), the item (6). The unit's product, bike and
+  -- item and the item's consignor are read first without a lock (the
+  -- product, item and consignor are immutable; the bike is re-read locked).
+  select u.product_id, u.bike_id, i.consignor_id into unit_product, unit_bike, unit_consignor
+  from public.inventory_units u
+  left join public.consignment_items i on i.id = u.consignment_item_id
+  where u.id = restock_unit.unit_id;
   if not found then
     raise exception 'unit % not found', restock_unit.unit_id using errcode = 'P0002';
+  end if;
+  if unit_consignor is not null then
+    select c.archived_at into consignor_archived
+    from public.consignors c where c.id = unit_consignor
+    for share;
   end if;
   perform private.lock_stock(unit_product);
   if unit_bike is not null then
@@ -1087,6 +1151,14 @@ begin
   end if;
   if unit.consignment_item_id is not null and not private.has_permission('manage_consignments') then
     raise exception 'permission manage_consignments required to restock a consigned item' using errcode = '42501';
+  end if;
+  -- D47: an archived consignor has no stock with the shop and a balance of
+  -- 0; a restock would give it both.
+  if consignor_archived is not null then
+    raise exception using
+      errcode = 'P0001',
+      message = 'consignor_archived',
+      detail = 'That item''s consignor is archived; unarchive them first.';
   end if;
   if unit.status <> 'sold' then
     raise exception using

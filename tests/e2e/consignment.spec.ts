@@ -16,6 +16,22 @@ import { createJobViaIntake, section, signIn, tagFor, toast } from "./helpers";
 
 const PHOTO = path.join(__dirname, "fixtures", "bike-photo.jpg");
 
+/**
+ * Nothing in a sheet reaches past its right edge (a fieldset's min-content
+ * width once pushed the "2. What" controls ~90px off a phone screen); a
+ * segmented control scrolls inside its own row instead.
+ */
+async function expectNoSidewaysOverflow(page: Page, dialogName: string) {
+  const dialog = page.getByRole("dialog", { name: dialogName });
+  const outside = await dialog.evaluate((d) => {
+    const right = d.getBoundingClientRect().right + 0.5;
+    return [...d.querySelectorAll("fieldset, input, textarea, [role=radiogroup]")]
+      .filter((el) => el.getBoundingClientRect().right > right)
+      .map((el) => `${el.tagName} ${el.getAttribute("aria-label") ?? ""}`.trim());
+  });
+  expect(outside).toEqual([]);
+}
+
 /** Receives a consigned item through the Receive item sheet already open as `dialog`. */
 async function fillMoney(page: Page, owed: string, asking: string) {
   const dialog = page.getByRole("dialog", { name: "Receive item" });
@@ -50,6 +66,7 @@ test("a consigned bike is received, used on a job, sold at completion and settle
   await page.getByRole("button", { name: "Receive item" }).click();
   const intake = page.getByRole("dialog", { name: "Receive item" });
   await expect(intake.getByText(consignorName)).toBeVisible();
+  await expectNoSidewaysOverflow(page, "Receive item");
   await intake.getByRole("textbox", { name: "Name (required)", exact: true }).fill(bikeName);
   await intake.getByLabel("Brand").fill("Colnago");
   await intake.getByLabel("Serial number").fill(`SN${tag}`);
@@ -64,6 +81,12 @@ test("a consigned bike is received, used on a job, sold at completion and settle
   const itemShortId = (await header.getByText(/^C-\d{6}$/).textContent())!.trim();
   await expect(header.getByRole("link", { name: /^U-\d{6}$/ })).toBeVisible();
   await expect(header.getByText("For sale", { exact: true })).toBeVisible();
+
+  // Nothing has sold, so nothing is owed yet: not "Settled".
+  await page.goto(consignorUrl);
+  await expect(section(page, "Balance")).toContainText("Nothing owed yet");
+  await expect(section(page, "Balance")).not.toContainText("Settled");
+  await page.goto(itemUrl);
 
   // 3. The signed agreement: internal only (D52).
   const agreement = section(page, "Agreement photos");
@@ -168,7 +191,17 @@ test("a consigned bike is received, used on a job, sold at completion and settle
   await expect(mechanicPage.getByRole("heading", { name: "Money" })).toHaveCount(0);
   await expect(mechanicPage.getByRole("list", { name: "Timeline" })).toHaveCount(0);
   await expect(mechanicPage.getByText("$500.00")).toHaveCount(0);
+  // The list tells the same story: how many sold, never who awaits payment.
+  await mechanicPage.goto(`/consignment?q=${encodeURIComponent(consignorName)}`);
+  const row = mechanicPage.getByRole("link", { name: new RegExp(consignorName) });
+  await expect(row).toContainText("1 sold");
+  await expect(row).not.toContainText("awaiting payment");
   await mechanic.close();
+  await page.goto(`/consignment?q=${encodeURIComponent(consignorName)}`);
+  await expect(page.getByRole("link", { name: new RegExp(consignorName) })).toContainText(
+    "1 awaiting payment",
+  );
+  await page.goto(consignorUrl);
 
   // 7. Payments: $200, then $350 against $300 needs a reason (D47), then $300.
   await page.getByRole("button", { name: "Record payment" }).click();
@@ -222,6 +255,7 @@ test("a quantity consignment is received for a new consignor and partly returned
   await intake.getByRole("option", { name: `New consignor “${consignorName}”` }).click();
   await expect(intake.getByLabel("Consignor name")).toHaveValue(consignorName);
   await intake.getByRole("radio", { name: "Several identical" }).click();
+  await expectNoSidewaysOverflow(page, "Receive item");
   await intake.getByRole("textbox", { name: "Name (required)", exact: true }).fill(productName);
   await intake.getByLabel("Quantity").fill("3");
   await fillMoney(page, "5", "12");

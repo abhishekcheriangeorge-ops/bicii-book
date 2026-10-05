@@ -21,6 +21,19 @@ D49 `tests/db/sales.test.ts`, `tests/e2e/sales.spec.ts`; D50 and D51
 (`priceWarnings`) and `tests/e2e/sales.spec.ts`. Gate results are in
 [NOW.md](../../NOW.md).
 
+Status update 2026-10-05 (Phase 6 review fixes): D54 and D55 were added
+for two defects the review confirmed, both still awaiting the owner's
+confirmation, and D55 has an open question. D54: a sale or job part at
+one location could be charged to a consignor whose stock was at another
+(reproduced on `bicii_dev` by the reviewer), putting the liability on the
+wrong consignor; evidence `tests/db/consignment-locations.test.ts`. D55: a
+sale could be dated before its consigned item was received (reproduced
+400 days back); evidence `tests/db/sales.test.ts` ("when a sale may be
+dated"). The same review also made the D47 archived state hold after
+archiving (restock and job reopen refuse `consignor_archived`), refused a
+Shopify line id on an in-store sale, and moved a new consignor's creation
+into the intake's transaction (`create_consignment_item(…, new_consignor)`).
+
 ## Context
 
 SPEC §13 asks for consignment with liability kept apart from settlement,
@@ -55,6 +68,8 @@ consignment stock with the same signature; `customer_owned` stays refused
 | D51 CONS-BIKE-LINK | Intake links only a shop bike record (not archived, no owner, not already a unit; Phase 4's codes); a consignor's own bike record is first transferred to the shop with a reason; links both ways; no automatic transfer on sale; the link stays on return and the bike record cannot be consigned again | Accepted: build default, owner to confirm | `create_consignment_item`, `return_consignment_item` (`20261004003300_consignment.sql`); `tests/db/consignment.test.ts`; limitation in [RISKS R-020](../RISKS.md#r-020--a-bike-record-consigned-once-cannot-be-consigned-again) |
 | D52 CONS-PHOTOS-INTERNAL | Photos on a consignment item are internal only (trigger + CHECK `attachments_consignment_item_internal_only`, P0001 `attachment_consignment_internal_only`); listing photos live on the product or unit | Accepted: build default, owner to confirm | `20261004003300_consignment.sql`; `tests/db/consignment.test.ts` |
 | D53 PRICE-OVERRIDE | Any staff may override a sale price, no database floor; the sale sheet warns below the asking price (everyone) and below cost (`view_costs`) | Accepted: build default, owner to confirm; open question below | Phase 6 steps 2 and 4 |
+| D54 CONS-ITEM-LOCATION | Every consigned movement names its item, so each item's stock is known per location (`private.consignment_item_on_hand`); sales and job parts draw FIFO only among items with the quantity at that location, a named item must have it there, a return gives back only that item's stock there; a transfer of consigned quantity stock moves one item's stock (the oldest with the quantity at the source); `saleable_stock` offers each item where it is | Accepted: build default, owner to confirm | `20261004003300_consignment.sql` (movement trigger, helper, replaced `transfer_stock`, return), `…3400` (`add_inventory_line`), `…3500` (`private.sell_line`), `…3700` (`saleable_stock`); `tests/db/consignment-locations.test.ts` |
+| D55 SALE-DATE | Any staff may date a sale in the past, never more than 5 minutes ahead and never before its stock was with the shop (a consigned item's `received_at`, a unit's latest restock: `sale_before_stock`); shop-owned stock has no other lower bound | Accepted: build default, owner to confirm; open question below | `private.sell_line` (`20261004003500_sales.sql`); `tests/db/sales.test.ts`; [RISKS R-027](../RISKS.md#r-027--a-sale-can-be-backdated-without-limit-by-any-staff-member) |
 
 Full text of each row: [PLAN §6](../PLAN.md#6-open-decisions-for-the-owner).
 Rationale stated in the rows:
@@ -74,6 +89,15 @@ Rationale stated in the rows:
   remaining quantity, which nothing could reconcile.
 - D51: D29 forbids stock whose bike a customer owns.
 - D52: an agreement photo shows terms and amounts (the D13/D19 pattern).
+- D54: the consignor ledger must charge the consignor whose goods left;
+  product-level on-hand cannot say whose stock is where once two
+  consignors' items of one product sit at different locations. Deriving
+  the item's stock per location from the ledger keeps it a fact of the
+  movements, like product on-hand, never a stored balance.
+- D55: a sale dated before its stock was with the shop is an impossible
+  timeline (the same reason `work_orders_completed_after_check_in`
+  exists); how far back staff may date a sale is a business policy, so it
+  is asked, not built.
 
 ## Alternatives actually considered
 
@@ -87,6 +111,10 @@ Rationale stated in the rows:
 | Recover an overpayment automatically from the next sale (D46) | Rejected: money already paid stays paid; staff decide |
 | Let `view_financial_reports` reveal sale costs or consignment money (D48) | Rejected: D30 already gates cost-derived figures by `view_costs` |
 | A database price floor at the agreed amount (D53) | Not chosen for the build default; asked as an open question |
+| One location per consigned quantity item, with transfers of consigned quantity stock refused (D54) | Rejected: it would take away D50's transfers; deriving the item's stock per location keeps them |
+| Split a transfer across several consignors' items FIFO (D54) | Rejected: a transfer writes one row per location under one request id (`inventory_movements_request_once`), so one transfer moves one item's stock; staff move a second consignor's stock as a second transfer ([RISKS R-025](../RISKS.md#r-025--a-transfer-of-consigned-stock-cannot-choose-whose-stock-moves)) |
+| A lower bound at a shop unit's registration (D55) | Rejected: shop stock is often registered after it arrived, so its registration says nothing about when it could have been sold |
+| A permission or a window for backdating (D55) | Not chosen for the build default (a new business policy); asked as an open question |
 
 ## Consequences
 
@@ -100,15 +128,26 @@ Rationale stated in the rows:
 - Phase 6 step 2 replaces `reporting.consignment_item_position`'s body
   (same columns) to add sale lines, and `consignors_enforce_rules` to add
   `consignor_has_balance`.
+- D54 replaces Phase 4's `transfer_stock` (same signature and grants) and
+  makes a consigned movement without its item `movement_invalid`; staff
+  cannot choose whose stock a transfer moves
+  ([RISKS R-025](../RISKS.md#r-025--a-transfer-of-consigned-stock-cannot-choose-whose-stock-moves)).
+- D47's archived state now holds after archiving: `restock_unit` takes the
+  consignor FOR SHARE (lock order 0b) and a job reopen takes its
+  consignors FOR SHARE before their items; both refuse
+  `consignor_archived`.
 
 ## Open question for the owner
 
 D53: should a price below the agreed amount plus shop charges on a consigned
 item need `manage_consignments`?
 
+D55: should dating a sale more than a few days back (for example 7) need
+a permission such as `view_financial_reports` or admin?
+
 ## Revisit trigger
 
-The owner confirms or changes any row; D53's open question is answered; the
+The owner confirms or changes any row; D53's or D55's open question is answered; the
 first consigned bike that comes back to be consigned again (D51); Phase 9's
 refund-reporting row (D49).
 

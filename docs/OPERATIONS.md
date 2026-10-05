@@ -133,6 +133,48 @@ customers. (`tests/e2e/appointment-settings.spec.ts`.)
 location (Name, Sort order). Switch a location off when it holds nothing;
 it is then no longer offered for stock. (`tests/e2e/inventory-publish.spec.ts`.)
 
+**Consignment access** (grant as for any permission above; D48,
+[ADR-016](decisions/ADR-016-consignment-and-sales.md)). Settings → Staff →
+the person → the Manage consignments switch. It lets them add and edit
+consignors, receive and return items, add and void charges, record and
+reverse payments, archive consignors and read consignors' payout details
+(Show payout details); with View costs instead they see consignment money
+but cannot change it or read payout details. Restocking a consigned unit
+needs Manage consignments as well as Adjust stock (D46). Verify: the
+consignor page shows Record payment and Show payout details. Without
+either permission a member sees counts only, never who is owed money.
+(Mechanic views: `tests/e2e/consignment.spec.ts`,
+`tests/e2e/consignment-journey.spec.ts`; the grants:
+`tests/db/consignment-access.test.ts`.)
+
+**Record a refund** (admin only; D49). Sales → the sale → Record refund;
+the Amount starts at what is left to refund; press "Record refund of
+$x…", give the reason, confirm "Refund $x". Expected: "Refund of $x
+recorded" and the sale reads Partly refunded or Refunded. A refund is money
+only: nothing goes back into stock; if the item came back, restock it from
+its unit page (Restock, with a reason). Refused with "That's more than is
+left to refund on this sale." above the remaining amount.
+(`tests/e2e/sales.spec.ts`.)
+
+**Reverse a consignor payment** (`manage_consignments`; D47). Consignment
+→ the consignor → Payments → Reverse… on the payment, give the reason,
+confirm "Reverse payment". Expected: "Payment reversed"; the payment stays
+listed as reversed and the balance goes back up. A payment is never edited
+or deleted: reverse it and record the right one. Not covered by an E2E
+spec; `reverse_settlement` is covered by `tests/db/settlements.test.ts`.
+
+**Archive a consignor** (`manage_consignments`; D47). Consignment → the
+consignor → Archive → "Archive consignor…" → "Archive consignor". Only a
+consignor with no item still with the shop and a balance of exactly 0 can
+be archived; otherwise the refusal says what is left (sell or return the
+items; pay what is owed; an overpayment clears with a later sale, by
+voiding a consignor-paid charge or by reversing a payment). An archived
+consignor takes in no new items, and their sold items are not restocked
+and their jobs not reopened until they are unarchived. Not covered by an
+E2E spec; the rules are covered by `tests/db/settlements.test.ts`,
+`tests/db/consignment.test.ts`, `tests/db/sales.test.ts` and
+`tests/db/consignment-job-parts.test.ts`.
+
 Escalation for any of these: the owner (George). A refusal message comes
 from the database's rules; quote it exactly.
 
@@ -142,7 +184,10 @@ reschedule (cancel and rebook;
 [R-017](RISKS.md#r-017--appointments-mvp-has-no-reschedule-and-no-customer-messages)),
 no customer data deletion
 ([R-016](RISKS.md#r-016--no-retention-or-deletion-policy-for-customer-personal-data)),
-and Consignment, Purchasing, Labels and Reports are placeholders
+no deletion of consignor data and no history of changes to a consignor's
+payout details
+([R-026](RISKS.md#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history)),
+and Purchasing, Labels and Reports are placeholders
 ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 
 ## Technical operation

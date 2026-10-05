@@ -83,7 +83,9 @@ export type ConsignorListItem = {
   phone: string | null;
   archived: boolean;
   activeItems: number;
-  awaitingItems: number;
+  soldItems: number;
+  /** Items with money still owed; null without consignment money access (D48). */
+  awaitingItems: number | null;
   returnedItems: number;
   /** Consignment money (D48): null without manage_consignments or view_costs. */
   owed: Money | null;
@@ -115,7 +117,8 @@ export async function listConsignors(
       phone: r.phone,
       archived: r.archived_at !== null,
       activeItems: r.active_items ?? 0,
-      awaitingItems: r.awaiting_settlement_items ?? 0,
+      soldItems: r.sold_items ?? 0,
+      awaitingItems: r.awaiting_settlement_items,
       returnedItems: r.returned_items ?? 0,
       owed: money(r.owed),
       paid: money(r.paid),
@@ -456,8 +459,9 @@ const CONSIGNOR_FIELDS: Record<string, string> = {
 
 /**
  * Creates a consignor with the id the form chose (its idempotency key): a
- * repeated submit finds the row it already made (as createCustomer does).
- * manage_consignments (RLS).
+ * repeated submit of the same details finds the row it already made; the
+ * same id with other details is refused (consignor_conflict), never
+ * silently kept. manage_consignments (RLS).
  */
 export async function createConsignor(
   supabase: ServerSupabase,
@@ -474,10 +478,51 @@ export async function createConsignor(
     payout_details: input.payoutDetails,
   });
   if (error) {
-    if (error.code === "23505" && constraintOf(error) === "consignors_pkey") return { id };
+    if (error.code === "23505" && constraintOf(error) === "consignors_pkey") {
+      const stored = unwrap(
+        await supabase
+          .from("consignors")
+          .select("display_name, phone, email, customer_id, internal_notes")
+          .eq("id", id)
+          .maybeSingle(),
+      );
+      if (
+        stored &&
+        sameConsignor(stored, input) &&
+        (await getConsignorPayoutDetails(supabase, id)) === blankToNull(input.payoutDetails)
+      ) {
+        return { id };
+      }
+      throw new DomainError(mapDbError({ code: "P0001", message: "consignor_conflict" }).message);
+    }
     rethrowFields(new DbError(error), CONSIGNOR_FIELDS);
   }
   return { id };
+}
+
+const blankToNull = (v: string | null | undefined) => {
+  const t = v?.trim() ?? "";
+  return t === "" ? null : t;
+};
+
+/** The stored row against a submit, as consignors_normalize stores it (email case-blind). */
+function sameConsignor(
+  stored: {
+    display_name: string;
+    phone: string | null;
+    email: string | null;
+    customer_id: string | null;
+    internal_notes: string | null;
+  },
+  input: ConsignorInput,
+): boolean {
+  return (
+    stored.display_name === input.displayName.trim() &&
+    stored.phone === blankToNull(input.phone) &&
+    (stored.email?.toLowerCase() ?? null) === (blankToNull(input.email)?.toLowerCase() ?? null) &&
+    stored.customer_id === input.customerId &&
+    stored.internal_notes === blankToNull(input.internalNotes)
+  );
 }
 
 /**
@@ -722,7 +767,7 @@ export type ConsignmentItemDetail = {
   statement: StatementRow;
   sales: ItemSaleLine[];
   jobs: ItemJobLine[];
-  /** Quantity items: on-hand of the product at each location (every active one). */
+  /** Quantity items: this item's on-hand at each location (every active one; D54). */
   stock: ItemLocation[];
   /** Consignment money users only (D48); null otherwise. */
   charges: ItemCharge[] | null;
@@ -797,12 +842,13 @@ export async function getConsignmentItem(
     canSeeMoney
       ? listPhotos(supabase, { entityType: "consignment_item", entityId: id })
       : Promise.resolve(null),
+    // D54: this item's own stock per location (every consigned movement
+    // names its item), not the product's, which other consignors share.
     quantityTracked
       ? supabase
-          .schema("reporting")
-          .from("stock_levels")
-          .select("location_id, on_hand")
-          .eq("product_id", row.product.id)
+          .from("inventory_movements")
+          .select("location_id, quantity_delta")
+          .eq("consignment_item_id", id)
       : Promise.resolve({ data: [], error: null }),
     quantityTracked ? listLocations(supabase) : Promise.resolve(null),
   ]);
@@ -820,11 +866,13 @@ export async function getConsignmentItem(
     if (b) bike = { id: b.id, shortId: b.short_id, title: bikeTitle(b) };
   }
 
-  const levels = new Map(
-    ((unwrap(levelsResult) ?? []) as { location_id: string | null; on_hand: number | null }[]).map(
-      (l) => [l.location_id, l.on_hand ?? 0],
-    ),
-  );
+  const levels = new Map<string, number>();
+  for (const m of (unwrap(levelsResult) ?? []) as {
+    location_id: string;
+    quantity_delta: number;
+  }[]) {
+    levels.set(m.location_id, (levels.get(m.location_id) ?? 0) + m.quantity_delta);
+  }
   const stock: ItemLocation[] = locations
     ? locations.locations
         .filter((l) => l.active || (levels.get(l.id) ?? 0) !== 0)
@@ -986,6 +1034,12 @@ export async function consignmentsForProduct(
 
 const INTAKE_FIELDS: Record<string, string> = {
   consignor_archived: "consignorId",
+  // The new consignor, created by the same call (its name field shows these).
+  consignor_conflict: "newConsignor",
+  consignors_display_name_check: "newConsignor",
+  consignors_email_check: "newConsignor",
+  consignors_phone_check: "newConsignor",
+  consignors_customer_id_key: "newConsignor",
   location_inactive: "locationId",
   location_required: "locationId",
   consignment_quantity_invalid: "quantity",
@@ -1020,7 +1074,7 @@ export type IntakeInput = {
   itemId: string;
   /** An existing consignor, or the new one's id (`newConsignor.id`). */
   consignorId: string;
-  /** Created first, in the same request; its id is client-made, so a retry is safe. */
+  /** Created by the intake RPC in the same transaction (its id is client-made). */
   newConsignor: NewConsignor | null;
   locationId: string;
   agreedAmountOwed: Money;
@@ -1053,22 +1107,23 @@ export async function receiveConsignmentItem(
   supabase: ServerSupabase,
   input: IntakeInput,
 ): Promise<{ id: string; shortId: string }> {
-  if (input.newConsignor) {
-    await createConsignor(supabase, input.newConsignor.id, {
-      displayName: input.newConsignor.displayName,
-      phone: input.newConsignor.phone,
-      email: input.newConsignor.email,
-      customerId: input.newConsignor.customerId,
-      internalNotes: null,
-      payoutDetails: null,
-    });
-  }
+  const nc = input.newConsignor;
   let result;
   try {
     result = unwrap(
       await supabase.rpc("create_consignment_item", {
         item_id: input.itemId,
-        consignor_id: input.newConsignor?.id ?? input.consignorId,
+        consignor_id: nc?.id ?? input.consignorId,
+        // A new consignor is created by the same call, so a refused intake
+        // leaves none behind and a retry stores the edited details.
+        new_consignor: nc
+          ? {
+              display_name: nc.displayName,
+              phone: nc.phone,
+              email: nc.email,
+              customer_id: nc.customerId,
+            }
+          : undefined,
         location_id: input.locationId,
         agreed_amount_owed: input.agreedAmountOwed,
         asking_price: input.askingPrice ?? undefined,

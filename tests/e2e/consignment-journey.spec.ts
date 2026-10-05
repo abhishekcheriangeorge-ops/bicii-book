@@ -19,7 +19,8 @@ import { readMoney, section, signIn, tagFor, toast } from "./helpers";
  * payout is the direct cost); the public listing turns sold (D26); the
  * consignor is owed $500 (D46); a member without consignment money or cost
  * access sees the sale total only (D48); paid $200 then $300 to Settled
- * (D47); Today's Consignment sales tile and the Sales list show the sale.
+ * (D47); Today's Consignment sales tile opens that day's Sales list, which
+ * shows the sale.
  * Every record carries tagFor(testInfo).
  */
 
@@ -182,6 +183,11 @@ test("journey 4: a consigned bike is listed, sold in store, its yield split and 
   await page.goto("/");
   const money = section(page, "Money");
   expect(Number(await readMoney(money, "Consignment sales"))).toBeGreaterThanOrEqual(1000);
-  await page.goto("/sales?range=today");
+  // The tile counts sales and jobs with consigned stock and opens that
+  // shop day's sales (?day=), today or any other day.
+  const tile = money.getByRole("link", { name: /^Consignment sales/ });
+  await expect(tile).toContainText(/sales? or jobs? with consigned items/);
+  await tile.click();
+  await expect(page).toHaveURL(/\/sales\?day=\d{4}-\d{2}-\d{2}$/);
   await expect(page.getByRole("link", { name: new RegExp(saleNumber) })).toContainText("$1,000.00");
 });

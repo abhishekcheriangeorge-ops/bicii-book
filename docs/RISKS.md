@@ -118,9 +118,10 @@ URLs, or customer data in this file.
   which OTP needs, is not configured anywhere.
 - Evidence and confidence: high for the current behaviour
   (`src/app/(staff)/settings/staff/new/invite-form.tsx` shows the
-  temporary password); no `feat/auth-email-otp` ref exists locally or on
-  origin on 2026-10-05, so the OTP work was not inspected. Whether OTP
-  removes the residual risk is unverified.
+  temporary password). The OTP work is on `feat/auth-email-otp` (4b3eadd,
+  local and on origin, equal; checked out in the second worktree
+  `bicii-book-wt`), not on this branch; it was not inspected or verified
+  here. Whether OTP removes the residual risk is unverified.
 - Why accepted: MVP default ([ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).
 - Workaround or containment: only admins and trusted `manage_staff` holders
   invite; the D11 ceiling limits what an inviter can grant.
@@ -129,8 +130,8 @@ URLs, or customer data in this file.
   stays; integrate the OTP work, revise RUNBOOK's hosted Auth steps, and
   configure SMTP for staging.
 - Revisit trigger: the OTP branch is integrated into this line.
-- Last checked: 2026-10-05, `git for-each-ref`, `git ls-remote --heads
-  origin`, the invite form.
+- Last checked: 2026-10-05 (Phase 6 review fixes), `git for-each-ref
+  refs/heads refs/remotes`, `git worktree list`, the invite form.
 
 ## R-005 — Cost-pending lines overstate yield and Cult Commons
 
@@ -243,16 +244,22 @@ URLs, or customer data in this file.
 - Status and owner: open; owner (merges), build agent (integration).
 - Trigger: merging the stack and integrating the parallel tracks.
 - Impact: PRs #1–#7 are open drafts stacked on each other; `main` holds only
-  the initial commit 1594c78. `feat/p7-purchasing` (local only, not on
-  origin) forks from PR #6's head d3e2101, so it has no appointments
-  (Phase 2). Expected conflict points: PLAN §6 (it adds D60–D66 after
-  D35), migration order (its `20261005…` files after this line's
-  `20261004…` files), `tests/fixtures/api-surface.ts`,
+  the initial commit 1594c78. `feat/p7-purchasing` (a0fc1d2, local and on
+  origin, equal: pushed) forks from PR #6's head d3e2101, so it has no
+  appointments (Phase 2). Expected conflict points: PLAN §6 (it adds
+  D60–D66 after D35), migration order (its `20261005…` files after this
+  line's `20261004…` files), `tests/fixtures/api-surface.ts`,
   `src/lib/database.types.ts` and `src/lib/db-errors.ts`. The email OTP
-  work is also not yet visible.
+  work is on `feat/auth-email-otp` (4b3eadd, local and on origin, equal),
+  checked out in the second worktree; neither track was verified here.
+  `feat/p6-consignment` has no origin branch; origin holds an
+  orchestrator auto-save of it, `wip/feat/p6-consignment`.
 - Evidence and confidence: high; GitHub REST pull list, `git branch -vv`,
   `git merge-base feat/p7-purchasing feat/p2-appointments` = d3e2101 and
-  `git show feat/p7-purchasing:docs/PLAN.md` on 2026-10-05.
+  `git show feat/p7-purchasing:docs/PLAN.md` on 2026-10-05; the heads and
+  pushed state re-read with `git for-each-ref refs/heads refs/remotes`
+  and `git worktree list` at the Phase 6 review fixes (the remote refs
+  are as last fetched; their reflogs record the pushes).
 - Workaround or containment: each PR head is green in CI (R-010).
 - Next action: owner reviews and merges the stack bottom-up; the build agent
   integrates purchasing and OTP afterwards, regenerating types and the
@@ -398,7 +405,8 @@ URLs, or customer data in this file.
 - Workaround or containment: none.
 - Next action: owner decides a retention and deletion policy; the build
   agent then designs a deletion or anonymisation path that keeps financial
-  snapshots intact.
+  snapshots intact. Consignors' personal and payout details have the same
+  gap ([R-026](#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history)).
 - Revisit trigger: before customers sign in (Phase 11).
 - Last checked: 2026-10-05.
 
@@ -596,4 +604,98 @@ URLs, or customer data in this file.
   migration adds the check to `private.sell_line` with a new P0001 code.
 - Revisit trigger: the owner's answer, or the first consigned sale at a
   loss.
+- Last checked: 2026-10-05.
+
+## R-025 — A transfer of consigned stock cannot choose whose stock moves
+
+- Category: known limitation.
+- Status and owner: open; owner (whether it matters), build agent.
+- Trigger: staff move consigned quantity stock between locations when two
+  or more consignors have the same product at the source location.
+- Impact: since D54 every consigned movement names its consignment item,
+  so each consignor's stock is known per location and a sale or job part
+  is charged to the consignor whose stock is there. `transfer_stock` kept
+  its signature (no item argument), so a transfer of consigned quantity
+  stock moves the oldest active item that has the whole quantity at the
+  source location; a quantity no single consignor has there is refused
+  (`consignment_quantity_unavailable`: move one consignor's stock at a
+  time). If staff physically move another consignor's goods, the books
+  attribute the move to the older consignor; sales then follow the books,
+  not the shelf, which matters only if the goods can be told apart.
+- Evidence and confidence: high;
+  `supabase/migrations/20261004003300_consignment.sql`
+  (`private.consignment_item_on_hand`, the replaced `transfer_stock`, the
+  D50 movement trigger), `tests/db/consignment-locations.test.ts`.
+- Workaround or containment: sell or return by naming the item (the sale
+  sheet lists each consignor at the location that holds their stock);
+  move consignors' stock one at a time in FIFO order.
+- Next action: if the owner wants staff to choose, add an optional item
+  argument to `transfer_stock` (a new signature, so a migration, types,
+  the API-surface fixture and the transfer sheet change).
+- Revisit trigger: the first complaint that a transfer moved the wrong
+  consignor's stock, or a second shop location.
+- Last checked: 2026-10-05.
+
+## R-026 — Consignor personal and payout details are kept indefinitely with no change history
+
+- Category: unverified assumption (owner question) / operational gap.
+- Status and owner: open; owner (retention decision), build agent.
+- Trigger: a consignor asks for their data to be deleted, a legal or
+  business retention limit applies, or someone needs to know who changed
+  a consignor's bank or PayNow details.
+- Impact: Phase 6 stores consignors' names, email, phone and
+  `payout_details` (bank or PayNow details). Consignors are archived,
+  never deleted (D47: there is no DELETE grant or policy), so this data is
+  kept indefinitely. `payout_details` has no change history: the
+  consignors table has triggers for `updated_at`, normalisation and the
+  archive rules, and no event table, so a changed bank detail leaves no
+  record of who changed it or what it was before. Read access is limited
+  (D48: `manage_consignments` only, through a column grant and
+  `consignor_payout_details`).
+- Evidence and confidence: high for the behaviour;
+  `supabase/migrations/20261004003300_consignment.sql` (the consignors
+  table and its comment "Archived, never deleted", the column comment on
+  `payout_details`, the grants without DELETE and the select/insert/update
+  policies, the three consignors triggers); whether any legal obligation
+  applies has not been checked.
+- Workaround or containment: only `manage_consignments` holders read or
+  write payout details; staff can blank them on an archived consignor.
+- Next action: the owner decides retention for consignor data together
+  with R-016; the build agent then adds an append-only consignor history
+  (at least who changed `payout_details` and when, without storing the
+  old value in clear) and a deletion or anonymisation path that keeps
+  sales and settlements intact.
+- Revisit trigger: before any hosted deployment with real consignors.
+- Last checked: 2026-10-05.
+
+## R-027 — A sale can be backdated without limit by any staff member
+
+- Category: unverified assumption (owner question, D55).
+- Status and owner: open; owner (D55's open question), build agent for
+  any change.
+- Trigger: a staff member records a sale with "Sold earlier?" dated days,
+  weeks or months back.
+- Impact: D55 refuses a date before the stock was with the shop
+  (`sale_before_stock`: a consigned item's intake, a unit's latest
+  restock) and after now + 5 minutes; otherwise any active staff member
+  may date an in-store sale in the past. The sale is recognised on that
+  shop day, so it changes that day's gross sales, yield and Cult Commons
+  in reports and on Today, with the rate in force then. There is no
+  period lock (the brief has none), no permission tier and no window, and
+  shop-owned stock has no lower bound, because its registration date is
+  when it was entered, not when it arrived.
+- Evidence and confidence: high; `record_retail_sale` and
+  `private.sell_line` in `supabase/migrations/20261004003500_sales.sql`;
+  `tests/db/sales.test.ts` ("when a sale may be dated (D55 SALE-DATE)");
+  the Phase 6 review reproduced a sale dated 400 days before its consigned
+  item was received, now refused.
+- Workaround or containment: the sale keeps who recorded it and when
+  (`created_by`, `created_at`) next to its `recognized_at`; reports
+  separate sale and recognition dates (SPEC §14, §22).
+- Next action: the owner answers D55's question (should backdating beyond
+  a window need `view_financial_reports` or admin?); if yes, a migration
+  adds the check to `record_retail_sale` with a new P0001 code and the
+  sheet hides "Sold earlier?" beyond it.
+- Revisit trigger: the owner's answer, Phase 9 reporting, or the first
+  closed-period request.
 - Last checked: 2026-10-05.

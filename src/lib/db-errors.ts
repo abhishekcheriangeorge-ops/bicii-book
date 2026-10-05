@@ -173,7 +173,9 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   consignment_return_quantity_invalid: "Return at least one, and no more than the shop still has.",
   consignment_return_conflict: "That return clashes with another stock change. Start again.",
   consignment_quantity_unavailable:
-    "No single consignment of this item has that many left. Add fewer, or one consignor's stock at a time.",
+    "No single consignor has that many of this item at that location. Use fewer, or one consignor's stock at a time.",
+  consignor_conflict:
+    "That consignor was already saved with other details. Close the form and start again.",
   consignment_quantity_negative: GENERIC_ERROR,
   consignment_unit_write_off_blocked:
     "A consigned unit isn't the shop's to write off. Return it to the consignor or sell it.",
@@ -203,6 +205,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   sale_too_many_lines: "A sale holds at most 50 lines. Record the rest as another sale.",
   sale_duplicate_unit: "The same item is on the sale twice.",
   sale_recognized_in_future: "A sale can't be dated in the future.",
+  sale_before_stock:
+    "A sale can't be dated before the item came into the shop. Check the date and time it was sold.",
   sale_price_required: "This item has no selling price. Enter one.",
   sale_cost_missing:
     "This item has no cost yet, so the sale's yield can't be worked out. Ask someone with cost access to enter it.",

@@ -486,6 +486,9 @@ const STALE_UNIT = new Set([
   "sale_lines_unit_sells_once",
 ]);
 
+/** Refusals about when the sale happened: the sheet marks Sold at (D55). */
+const SALE_DATE = new Set(["sale_recognized_in_future", "sale_before_stock"]);
+
 /**
  * Records an in-store sale (record_retail_sale). A replay of the same
  * request returns the sale it already recorded. When a unit has been sold
@@ -523,6 +526,9 @@ export async function recordRetailSale(
         }
       }
       throw new DomainError(mapped.message, fieldErrors);
+    }
+    if (mapped.reason && SALE_DATE.has(mapped.reason)) {
+      throw new DomainError(mapped.message, { recognizedAt: [mapped.message] });
     }
     throw new DbError(error);
   }

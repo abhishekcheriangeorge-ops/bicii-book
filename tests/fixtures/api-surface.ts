@@ -126,7 +126,7 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   // their terms and charges (D4, D45) and returns them (D50, D51); consigned
   // parts go through add_inventory_line above (D44)
   "public.add_consignment_charge(uuid, uuid, text, money_amount, charge_bearer, uuid)",
-  "public.create_consignment_item(uuid, uuid, uuid, money_amount, money_amount, uuid, text, text, text, uuid, tracking_type, integer, text, text, timestamp with time zone, text, text, uuid, uuid, uuid)",
+  "public.create_consignment_item(uuid, uuid, uuid, money_amount, money_amount, uuid, text, text, text, uuid, tracking_type, integer, text, text, timestamp with time zone, text, text, uuid, uuid, uuid, jsonb)",
   "public.return_consignment_item(uuid, uuid, text, integer, uuid)",
   "public.update_consignment_terms(uuid, money_amount, money_amount, text)",
   "public.void_consignment_charge(uuid, text)",

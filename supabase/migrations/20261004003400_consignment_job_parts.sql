@@ -13,8 +13,8 @@
 --     consignor_payout_snapshot as the agreed amount per unit, and names its
 --     consignment item. Both are immutable, like every other snapshot.
 --   * A consigned quantity part draws from exactly one item, FIFO: the oldest
---     active item of the product (received_at, then short_id) whose
---     remaining quantity covers the part (consignment_quantity_unavailable
+--     active item of the product (received_at, then short_id) whose stock at
+--     the part's location covers the part (D54; consignment_quantity_unavailable
 --     otherwise); its default price is that item's asking price, else the
 --     product default; any staff member may override it (D14). Consigned
 --     stock never goes below zero (insufficient_stock): D23 does not apply,
@@ -280,9 +280,9 @@ begin
     end if;
 
     if prod.ownership_type = 'consignment' then
-      -- D44/D45: lock the product's active items (lock order 6, id order),
-      -- then read their positions in a new statement and take the oldest
-      -- item whose remaining quantity covers the part.
+      -- D44/D45/D54: lock the product's active items (lock order 6, id
+      -- order), then read their positions in a new statement and take the
+      -- oldest item whose stock at the chosen location covers the part.
       perform 1 from public.consignment_items i
       where i.product_id = prod.id and i.status = 'active'
       order by i.id
@@ -292,13 +292,14 @@ begin
       join reporting.consignment_item_position pos on pos.consignment_item_id = i.id
       where i.product_id = prod.id and i.status = 'active'
         and pos.remaining_qty >= add_inventory_line.quantity
+        and private.consignment_item_on_hand(i.id, chosen_location) >= add_inventory_line.quantity
       order by i.received_at, i.short_id
       limit 1;
       if not found then
         raise exception using
           errcode = 'P0001',
           message = 'consignment_quantity_unavailable',
-          detail = 'No single consignment of this item has that many left; add fewer, or one consignor''s stock at a time.';
+          detail = 'No single consignment of this item has that many at that location; add fewer, or one consignor''s stock at a time.';
       end if;
       select i.* into item from public.consignment_items i where i.id = candidate.id;
       -- No negative consumption for consigned stock (D50, not D23).
@@ -489,7 +490,11 @@ comment on function public.add_inventory_line(uuid, uuid, uuid, integer, uuid, u
 -- function; the trigger is unchanged). It runs under the work-order row
 -- lock set_work_order_status holds (lock order 1) and takes the rest in
 -- order: the stock for the products of the job's live unit lines and live
--- consigned lines, ascending; the linked bikes (reopen); the units; the
+-- consigned lines, ascending; the linked bikes (reopen); the units; on a
+-- reopen, the consignors of the job's consigned lines FOR SHARE (D47:
+-- consignor_archived; taken after 1, which is safe because archiving locks
+-- only its consignor and then that consignor's items, and nothing that
+-- holds a consignor lock waits on a work order, stock, bike or unit); the
 -- consignment items of the job's live lines, ascending; then the unit
 -- statuses, the items' statuses (completion -> sold when nothing is left,
 -- reopen -> active; their status_changed events carry the job context) and
@@ -508,6 +513,7 @@ declare
   iid uuid;
   owned_bike text;
   owned_unit text;
+  archived_consignor text;
 begin
   if old.completed_at is null and new.completed_at is not null then
     cause := 'job_completed';
@@ -575,6 +581,43 @@ begin
   )
   order by u.id
   for update;
+
+  if cause = 'job_reopened' then
+    -- D47: a reopen makes a sold consigned item active again and removes
+    -- its liability, which an archived consignor (no stock with the shop,
+    -- a balance of 0) must not get. The consignors FOR SHARE, ascending id,
+    -- before their items: archiving (the consignor row, then its items)
+    -- waits for this reopen, or this reopen sees the archive.
+    perform 1
+    from public.consignors c
+    where c.id in (
+      select i.consignor_id
+      from public.consignment_items i
+      join public.work_order_line_items li on li.consignment_item_id = i.id
+      where li.work_order_id = new.id and li.voided_at is null
+    )
+    order by c.id
+    for share;
+    select c.display_name into archived_consignor
+    from public.consignors c
+    where c.archived_at is not null and c.id in (
+      select i.consignor_id
+      from public.consignment_items i
+      join public.work_order_line_items li on li.consignment_item_id = i.id
+      where li.work_order_id = new.id and li.voided_at is null
+    )
+    order by c.display_name
+    limit 1;
+    if found then
+      raise exception using
+        errcode = 'P0001',
+        message = 'consignor_archived',
+        detail = pg_catalog.format(
+          'A consigned part on this job belongs to %s, who is archived; unarchive them before reopening the job.',
+          archived_consignor
+        );
+    end if;
+  end if;
 
   -- Lock order step 6: the consignment items of the job's live lines.
   perform 1

@@ -156,9 +156,17 @@ async function ConsignorsView({
         ) : (
           <RowList label="Consignors">
             {consignors.map((c) => {
+              // Who is still owed money is consignment money (D48): staff
+              // without it see how many sold, as on the consignor page.
               const counts = [
                 c.activeItems > 0 ? `${c.activeItems} for sale` : null,
-                c.awaitingItems > 0 ? `${c.awaitingItems} awaiting payment` : null,
+                c.awaitingItems !== null
+                  ? c.awaitingItems > 0
+                    ? `${c.awaitingItems} awaiting payment`
+                    : null
+                  : c.soldItems > 0
+                    ? `${c.soldItems} sold`
+                    : null,
               ].filter(Boolean);
               return (
                 <RowLink key={c.id} href={`/consignment/consignors/${c.id}`}>
@@ -173,8 +181,8 @@ async function ConsignorsView({
                     </span>
                   </span>
                   {money && c.outstanding !== null ? (
-                    <StatusPill status={outstandingTone(c.outstanding)}>
-                      {outstandingLabel(c.outstanding)}
+                    <StatusPill status={outstandingTone(c.outstanding, c)}>
+                      {outstandingLabel(c.outstanding, undefined, c)}
                     </StatusPill>
                   ) : null}
                   <ChevronRightIcon className="size-5 shrink-0 text-dust-500" />

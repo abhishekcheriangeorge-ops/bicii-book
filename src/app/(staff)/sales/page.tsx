@@ -12,12 +12,14 @@ import { RowLink, RowList } from "@/components/ui/row-list";
 import { StatusPill } from "@/components/ui/status-pill";
 import { canViewSaleCosts } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
-import { formatDayShort, formatTime } from "@/lib/dates";
+import { formatDayShort, formatShopDay, formatTime } from "@/lib/dates";
 import { listSales } from "@/lib/domain/sales";
 import { formatMoney } from "@/lib/money";
 import {
   SALE_RANGES,
+  readSaleDay,
   readSaleRange,
+  saleDayRange,
   saleRange,
   saleStatusLabel,
   saleStatusTone,
@@ -29,7 +31,8 @@ export const metadata: Metadata = { title: "Sales" };
 
 /**
  * In-store sales (SPEC §13, §21; list_sales). A range as links (Today, 7
- * days, the default, and 30 days: shop days in Singapore time, D35) and a
+ * days, the default, and 30 days: shop days in Singapore time, D35; or one
+ * shop day with `?day=YYYY-MM-DD`, from Today's consignment tile) and a
  * search (S- number, customer, item words; a search looks across every
  * date). Each row: the S- number and time, the customer or "Walk-in", the
  * first item and how many more, the total, Refunded / Partly refunded and
@@ -41,8 +44,10 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
   const params = await searchParams;
   const q = readQuery(params.q);
   const range = readSaleRange(params.range);
+  // ?day=: one shop day, as Today's consignment tile links to it.
+  const day = readSaleDay(params.day);
   const costs = canViewSaleCosts(staff);
-  const bounds = q ? { from: null, to: null } : saleRange(range);
+  const bounds = q ? { from: null, to: null } : day ? saleDayRange(day) : saleRange(range);
   const { items, more } = await listSales(await createClient(), { ...bounds, q });
 
   return (
@@ -60,7 +65,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
             key: r.key,
             text: r.label,
             href: `/sales${withParam(r.key === "7d" ? "" : `range=${r.key}`, "q", q)}`,
-            current: !q && range === r.key,
+            current: !q && !day && range === r.key,
           }))}
         />
       </div>
@@ -68,7 +73,9 @@ export default async function SalesPage({ searchParams }: PageProps<"/sales">) {
         <h2 id="sale-results" className="eyebrow text-dust-500">
           {q
             ? `${items.length} ${items.length === 1 ? "match" : "matches"}, every date`
-            : (SALE_RANGES.find((r) => r.key === range)?.label ?? "Sales")}
+            : day
+              ? formatShopDay(day)
+              : (SALE_RANGES.find((r) => r.key === range)?.label ?? "Sales")}
         </h2>
         {more ? (
           <p className="text-sm text-dust-700">
