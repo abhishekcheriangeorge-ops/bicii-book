@@ -778,7 +778,13 @@ and `void_line` refuse with `bike_with_customer`, and
 `private.assert_unit_consistent` is the backstop. `bikes.inventory_unit_id`
 has its FK and a unique index; `private.register_unit` sets it.
 
-`supplier_products` moved to Phase 7 (`suppliers` does not exist before).
+`supplier_products` (Phase 7, §10): several suppliers per product, PK
+(supplier_id, product_id), `supplier_sku`, `lead_days` 0..365, at most one
+`preferred` per product (`supplier_products_one_preferred`), and the
+supplier's `last_unit_cost` / `last_received_at`, written only by
+`receive_purchase` (D63). `last_unit_cost` is a purchase cost (D60): no
+column grant; read through `supplier_products_staff`. Links are written by
+`set_supplier_product` / `remove_supplier_product` (manage_purchasing).
 
 Quantity products print one QR (`P-...`) any number of times. Unique units
 print their own (`U-...`). A bulk unit that becomes special is
@@ -791,7 +797,8 @@ unit id.
 ## 7. Inventory movement ledger
 
 ```
-inventory_movements  (append-only for every writer; inserted only through private.record_movement)
+inventory_movements  (append-only for every writer; inserted only through private.record_movement,
+                      or private.record_receipt_movement for purchase_received)
   id bigint identity PK
   product_id uuid not null -> products
   inventory_unit_id uuid null -> inventory_units
@@ -804,7 +811,7 @@ inventory_movements  (append-only for every writer; inserted only through privat
   work_order_id uuid null -> work_orders
   work_order_line_item_id uuid null -> work_order_line_items
   sale_line_id uuid null                   -- FK in Phase 6
-  purchase_receipt_line_id uuid null       -- FK in Phase 7
+  purchase_receipt_line_id uuid null -> purchase_receipt_lines (Phase 7)
   consignment_item_id uuid null            -- FK in Phase 6
   request_id uuid null                     -- the calling RPC's per-call key;
                                            -- a transfer's two rows share it
@@ -818,6 +825,8 @@ inventory_movements  (append-only for every writer; inserted only through privat
   check inventory_movements_reversal_shape: (type = reversal) = (reversal_of_id is not null)
   check inventory_movements_job_consumption_shape: job_consumption needs the job and line, delta < 0
   check inventory_movements_damaged_negative, inventory_movements_transfer_request
+  check inventory_movements_purchase_received_has_receipt_line (Phase 7):
+        movement_type <> 'purchase_received' or purchase_receipt_line_id is not null
 ```
 
 `request_id` replaces the original `transfer_group_id`: it is each call's
@@ -839,6 +848,17 @@ The partial unique indexes are the idempotency guarantees. Phases 6, 7 and
 
 Plus btree indexes on (product_id, location_id, id), (inventory_unit_id,
 id), work_order_id, work_order_line_item_id, created_by and (id desc).
+
+Phase 7 added only the foreign key
+`inventory_movements_purchase_receipt_line_id_fkey` (→
+`purchase_receipt_lines`, on delete restrict) and the check
+`inventory_movements_purchase_received_has_receipt_line`; uniqueness per
+receipt line is Phase 4's `inventory_movements_receipt_line_once`, and no
+second index was added. Movements keep record time in `created_at` (there
+is no effective-date column): a `purchase_received` movement's reason
+carries the delivery time in shop time (`'PO-000034 received 25 Sep 2026
+10:42'`), and purchasing reports and the last-cost order use
+`purchase_receipts.received_at` (D64 D-RECEIPT-TIME).
 
 `inventory_movements_enforce_rules` (BEFORE INSERT) requires a unit for a
 unique product and forbids one for a quantity product, checks the unit's
@@ -887,6 +907,7 @@ Private extension points (security definer, no grants):
 | Function | Contract |
 |---|---|
 | `private.record_movement(product, unit, location, delta, type, reason, unit_cost_snapshot, request_id, work_order_id, line_id, reversal_of_id)` | THE single insert path; currency from the product; refuses an inactive location except for a reversal |
+| `private.record_receipt_movement(product, location, quantity, unit_cost_snapshot, purchase_receipt_line_id, reason)` | Phase 7: the purchase twin of `record_movement` (which has no receipt-line parameter and is left alone because Phase 6 may redefine it). Same rules: currency from the product, P0002 for a missing product or location, `location_inactive`, check/not-null violations re-raised without the row; movement_type `purchase_received`. Called only by `receive_purchase` |
 | `private.register_unit(unit_id, product, location, ownership, serial, condition, sale_price, direct_cost, bike_id, consignment_item_id)` | THE single unit-creation path, plus the bike link; Phase 6 creates consigned units through it |
 | `private.selling_price(product_id, unit_id)` | THE single selling-price source: unit.sale_price, else product.default_sale_price. Phase 6 replaces it to return the consignment asking price; Phase 8 labels and Phase 10 Shopify use it unchanged. EXECUTE for authenticated and anon, because the cost views and `reporting.public_items` call it as the caller (`create or replace` keeps the grants) |
 | `private.lock_stock(product_id)` | the per-product stock lock |
@@ -1010,48 +1031,201 @@ writes the movement. It does not create a settlement. Those are separate facts.
 
 ## 10. Suppliers and purchasing
 
+Built in Phase 7 (migrations `20261005000100_suppliers`,
+`20261005000200_purchase_orders`, `20261005000300_purchase_receiving`;
+PLAN D5, D9, D24 as amended, D60–D65). Every table is staff-readable
+(RLS `private.is_staff()`), has no DELETE grant, and is written only
+through the §16 RPCs, except `suppliers` (column grants, manage_purchasing
+policies).
+
 ```
-suppliers
-  id, name, contact_name, email, phone, website, account_reference, notes,
-  active, created_at, updated_at, archived_at
+suppliers                                   -- soft delete only; no `active` column
+  id uuid PK (client-supplied on create, like customers)
+  name text not null                        -- trimmed, non-blank, ≤ 200; unique among
+                                            -- active rows: suppliers_name_active_key on lower(name)
+  contact_name ≤ 200, email citext (customers' shape check), phone ≤ 40,
+  website ≤ 300 matching ^https?://\S+$, account_reference ≤ 100
+  (BICII's account number at the supplier), notes ≤ 10000   -- blanks stored as NULL
+  search_text (generated: lower name, contact, email, account ref),
+  phone_digits (generated, as customers)    -- both trigram GIN
+  created_at, updated_at, archived_at
+  BEFORE UPDATE suppliers_guard_open_orders: archiving with a draft, submitted or
+  partially_received PO raises supplier_has_open_orders
+
+supplier_products                           -- §6; several suppliers per product
+  PK (supplier_id, product_id), both on delete restrict; index (product_id)
+  supplier_sku ≤ 100, lead_days 0..365, preferred boolean (unique index
+  supplier_products_one_preferred on (product_id) where preferred)
+  last_unit_cost money_amount ≥ 0 null      -- D60: no column grant; supplier_products_staff
+  currency char(3) not null (no default)    -- the product's on link, the PO's on receipt
+  last_received_at timestamptz null, created_at, updated_at
 
 purchase_orders
-  id uuid PK
-  po_number text not null unique           -- PO-000034
-  supplier_id uuid -> suppliers
-  status po_status not null default 'draft'
-     -- enum: draft | submitted | partially_received | received | cancelled
-  expected_at date null
-  currency char(3), notes text
-  created_by, created_at, updated_at
+  id uuid PK (client-supplied; create is replay-safe by id)
+  po_number text unique, ^PO-[0-9]{6}$       -- always assigned by the BEFORE INSERT
+                                            -- trigger from private.next_short_id('PO'),
+                                            -- immutable (purchase_order_number_immutable)
+  supplier_id -> suppliers (changes only while draft: purchase_order_supplier_locked;
+                            an archived supplier is refused: supplier_archived)
+  status purchase_order_status default 'draft'
+     -- draft | submitted | partially_received | received | cancelled
+  expected_at date, supplier_reference ≤ 100 (the supplier's order/quote no.),
+  currency char(3) not null                 -- private.shop_currency() at creation (D62)
+  notes ≤ 2000, created_by/at, updated_at
+  submitted_at/by, received_at (when fully received), cancelled_at/by,
+  cancellation_reason (non-blank, ≤ 500)
+  checks: (status = draft) = (submitted_at is null) or cancelled;
+          (status = received) = (received_at is not null);
+          (status = cancelled) = (cancelled_at and cancellation_reason are set)
+  indexes (supplier_id, created_at desc), (status, expected_at)
 
 purchase_order_lines
-  id, purchase_order_id, product_id, quantity_ordered integer check (> 0),
-  unit_cost money_amount not null, expected_at date null, notes
-  -- quantity_received is derived from receipt lines
+  id uuid PK, purchase_order_id, product_id (restrict)
+  quantity_ordered integer 1..100000
+  unit_cost money_amount 0..99999.99        -- D60: no column grant; 0 is valid (D24 amended)
+  currency char(3)                          -- copied from the PO
+  ordered_total generated round(quantity_ordered × unit_cost, 2)   -- no column grant
+  expected_at date (overrides the PO's), notes ≤ 500, created_by/at, updated_at
+  unique purchase_order_lines_product_once (purchase_order_id, product_id)
+  -- quantity received is derived from purchase_receipt_lines
 
-purchase_receipts
-  id uuid PK
-  purchase_order_id uuid -> purchase_orders
-  idempotency_key text not null unique     -- client-generated uuid per submit
-  reference text null                      -- supplier delivery note
-  received_at timestamptz not null
-  received_by uuid -> staff
-  notes, created_at
+purchase_order_events                       -- append-only (purchase_order_history_append_only)
+  id, purchase_order_id, event_type purchase_order_event_type
+     -- created | details_changed | line_added | line_changed | line_removed |
+     -- submitted | received | status_changed | cancelled
+  purchase_order_line_id uuid (no FK: removed lines keep their events),
+  purchase_receipt_id -> purchase_receipts, payload jsonb object (may carry costs),
+  reason ≤ 500, actor_staff_id, correlation_id, created_at clock_timestamp()
 
-purchase_receipt_lines
-  id, purchase_receipt_id, purchase_order_line_id, location_id,
-  quantity_received integer check (> 0),
-  unit_cost_actual money_amount not null
+purchase_receipts                           -- immutable (purchase_receipt_immutable)
+  id uuid PK, purchase_order_id
+  idempotency_key uuid not null, unique purchase_receipts_idempotency_key_key
+  reference ≤ 100 (delivery note; NOT unique: suppliers reuse it for split deliveries)
+  received_at timestamptz not null (D64), received_by -> staff, notes ≤ 2000,
+  correlation_id, created_at clock_timestamp(); index (purchase_order_id, received_at)
+
+purchase_receipt_lines                      -- immutable
+  id uuid PK, purchase_receipt_id, purchase_order_line_id, product_id (copied
+  from the PO line), location_id, line_number smallint (1-based input order,
+  unique per receipt), quantity_received 1..100000,
+  unit_cost_actual money_amount 0..99999.99 not null   -- D60; never NULL
+  currency (the PO's), received_total generated round(qty × cost, 2)  -- D60
 ```
 
-`receive_purchase(po_id, idempotency_key, lines[])` locks the PO row, checks
-each line's `quantity_received <= ordered − already received`, inserts the
-receipt and lines, writes one `purchase_received` movement per line with
-`unit_cost_snapshot = unit_cost_actual`, updates `products.default_direct_cost`
-per decision D5, and moves the PO to `partially_received` or `received`. A
-second call with the same `idempotency_key` returns the original receipt and
-writes nothing.
+**History.** Triggers write `purchase_order_events` through
+`private.record_purchase_order_event` (actor `private.current_staff_id()`,
+correlation `private.current_correlation_id()`): INSERT on a PO →
+`created {supplier_id, expected_at}`; UPDATE → `details_changed
+{field: {from, to}}` for supplier_id, expected_at, supplier_reference and
+notes (nothing changed → no event), draft→submitted → `submitted`, any move
+to cancelled → `cancelled` with the cancellation reason, any other status
+change → `status_changed {from, to}`; changes to created_at, submitted_at or
+received_at alone write nothing. Lines: `line_added {product_id,
+quantity_ordered, unit_cost, expected_at}`, `line_changed {field: {from,
+to}}` (quantity_ordered, unit_cost, expected_at, notes) with
+`private.change_reason()`, `line_removed` with the deleted row and the
+reason. `receive_purchase` writes `received` itself.
+
+**Receiving** (`receive_purchase(purchase_order_id, idempotency_key, lines
+jsonb, reference, received_at, notes)`), in this order:
+
+1. `manage_purchasing`; nulls 22004; `lines` must be a JSON array of at most
+   200 objects (22023); empty → `purchase_receipt_empty`.
+2. Fast path: a receipt with this key on this PO whose lines match
+   (`private.purchase_receipt_matches`: same element count, same set of
+   (purchase_order_line_id, location_id) keys with the same quantities; a
+   supplied `unit_cost_actual` must equal the stored cost, an omitted one
+   matches on the rest; never the PO line's current cost) is returned and
+   NOTHING is written. Any other receipt with the key →
+   `purchase_receipt_key_reused`.
+3. Lock the PO FOR UPDATE (P0002), then repeat step 2.
+4. draft → `purchase_order_not_submitted`; received or cancelled →
+   `purchase_order_closed` (D65).
+5. Parse each element: quantity a whole number 1..100000
+   (`purchase_receipt_quantity_invalid`); the line on this PO
+   (`purchase_receipt_line_foreign`); cost 0..99999.99
+   (`purchase_receipt_cost_invalid`), absent or null → the PO line's
+   `unit_cost` (0 is valid); the location exists (P0002) and is active
+   (`location_inactive`); a (line, location) pair once
+   (`purchase_receipt_line_duplicate`; one line split across locations is
+   fine). The product's active/archived state is not re-checked (the goods
+   arrived; SPEC §23).
+6. Over-receipt per PO line under the PO lock: received + this call ≤
+   ordered, else `purchase_over_receipt` (DETAIL names the product and the
+   ordered, received and attempted quantities); nothing is written.
+7. `effective = coalesce(received_at, now())`: > now() + 5 min →
+   `purchase_receipt_in_future`; < now() − 30 days → `purchase_receipt_too_old`;
+   < the PO's submitted_at → `purchase_receipt_before_submission` (D64).
+8. Insert the receipt; a `unique_violation` on the key (a concurrent call on
+   another PO) gives step 2's answer.
+9. `private.lock_stock(product)` for each product, ascending, before any
+   receipt line or movement.
+10. Receipt lines in input order, then one `purchase_received` movement per
+    receipt line through `private.record_receipt_movement` (ordered by
+    product, location, line_number): quantity, `unit_cost_snapshot =
+    unit_cost_actual`, `purchase_receipt_line_id`, reason `'PO-000034
+    received 25 Sep 2026 10:42'` (effective, in `private.shop_timezone()`).
+    No stock check (receiving only adds).
+11. Last cost (D5 as refined by D63): with the change reason `'Received on
+    PO-000034 (delivery note DN-5531)'` set, for each product in ascending id
+    the candidate is the cost of its highest line_number line in this
+    receipt (0 included). `products.default_direct_cost` takes it when it
+    differs and no receipt line of that product belongs to another receipt
+    that is later by (received_at, created_at, id); Phase 4's
+    `products_record_history` writes the `cost_changed` event with the
+    reason. Then `supplier_products (po.supplier_id, product)` is upserted:
+    `last_unit_cost` by the same rule restricted to that supplier's POs (a new
+    link takes the candidate), `last_received_at = greatest(existing,
+    effective)`, currency = the PO's. No snapshot (`work_order_line_items`,
+    existing movements) is touched.
+12. The `received` event `{reference, received_at, units, lines:
+    [{purchase_order_line_id, product_id, quantity_received, location_id}]}`.
+13. `private.refresh_purchase_order_status(po, effective)`: acts only on
+    submitted / partially_received; every line received in full → `received`
+    with `received_at = effective`; else any receipt → `partially_received`;
+    else `submitted`. Its `status_changed` event therefore follows `received`.
+14. Return the receipt. `purchase_receipt_by_key(key)` finds it after a lost
+    response.
+
+Interaction with Phase 4: the movement insert fires
+`inventory_movements_enforce_rules` (fills created_by = the caller's staff
+id and the correlation id; a quantity product never names a unit); the
+products update fires `products_enforce_rules` and `products_record_history`;
+`products_cost_write_guard` is SECURITY INVOKER and does not fire inside the
+definer RPC (current_user is the owner), which is intended: the RPC's own
+guard is manage_purchasing (D60). `inventory_movements_receipt_line_once` is
+the ledger backstop for "one movement per receipt line".
+
+**Global purchasing lock order** (extends §7's): (1) the purchase_orders row
+FOR UPDATE; (2) that PO's lines, read or changed only under the PO lock;
+(3) `private.lock_stock(product_id)` for every product a receipt touches,
+ascending, before any receipt line or movement (§7 step 3); (4) products
+rows, updated in ascending id (§7 step 6, the last inventory lock); (5)
+supplier_products rows in ascending product id. `set_supplier_product`
+holds no PO: it locks the products row FOR NO KEY UPDATE, then
+supplier_products (4 then 5), which serialises concurrent preference changes
+even before a link exists. Purchasing RPCs never lock work orders, bikes or
+units.
+
+**D60 D-PO-COSTS (cost gating).** `private.can_view_purchase_costs()` =
+view_costs OR manage_purchasing (security definer, EXECUTE to authenticated
+for policies and views). authenticated has no column grant on
+`supplier_products.last_unit_cost`, `purchase_order_lines.unit_cost` /
+`ordered_total` or `purchase_receipt_lines.unit_cost_actual` /
+`received_total`; they are read through the definer, security_barrier views
+`supplier_products_staff`, `purchase_order_lines_staff` (+ received_value),
+`purchase_receipt_lines_staff` and `purchase_order_totals_staff` (ordered,
+received and outstanding value; outstanding only while submitted or
+partially received), each filtered by that function. `purchase_order_events`
+rows are visible to staff who pass it (payloads carry costs). manage_purchasing
+opens no Phase 3/4/5 cost, yield or financial surface.
+
+**Currency (D62).** A PO's currency is `private.shop_currency()` at
+creation; lines and receipt lines copy it; a line's product must have the
+same currency (`purchase_currency_mismatch`). A PO orders quantity-tracked
+(`purchase_line_unique_product`), shop-owned (`purchase_line_not_shop_owned`),
+active, non-archived (`purchase_line_product_inactive`) products, once per
+PO (`purchase_line_duplicate_product`).
 
 ## 11. QR identity and publication
 
@@ -1242,7 +1416,8 @@ never exposed.
 | `stock_reconciliation` | Ledger-derived vs cached balance when the cache exists. |
 | `low_stock` | Built (Phase 4): active, non-archived quantity products AT OR BELOW their reorder point (`on_hand <= reorder_point`), or below zero in total or at any location regardless of reorder point (D23); `shortfall = coalesce(reorder_point, 0) - on_hand`, largest first. security_invoker. |
 | `consignor_ledger` / `consignor_item_ledger` | Owed, paid, outstanding. |
-| `purchase_order_progress` | Ordered vs received per line. |
+| `purchase_order_progress` | Built (Phase 7). One row per PO line: `purchase_order_id`, `po_number`, `supplier_id`, `po_status`, `purchase_order_line_id`, `product_id`, `quantity_ordered`, `quantity_received` (sum of receipt lines, 0 when none), `quantity_outstanding` (ordered − received, ≥ 0, for draft/submitted/partially_received, else 0), `quantity_cancelled` (the same remainder when cancelled, D61), `expected_at` (the line's, else the PO's), `last_received_at` (latest receipt `received_at`), `is_overdue` (submitted/partially_received, outstanding > 0 and expected_at < `private.purchasing_shop_today()`). security_invoker, SELECT to authenticated, no cost column. `private.purchasing_shop_today()` is a security definer wrapper of Phase 5's `private.shop_today()` (EXECUTE to authenticated), not a competing calendar helper: authenticated has no EXECUTE on the Phase 5 helpers. |
+| `product_on_order` | Built (Phase 7). Per product with something outstanding on submitted or partially received POs (never drafts, D66): `product_id`, `quantity_on_order`, `open_purchase_orders`, `next_expected_at`. security_invoker, SELECT to authenticated. |
 | `shopify_sync_status` | Per published product. |
 | `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at`; price from `private.selling_price`; public photos only. Definer view, security_barrier, SELECT for anon and authenticated. Rules in §11. |
 
@@ -1320,8 +1495,15 @@ security-definer function. Blank = no access.
 | sales, sale_lines, sale_refunds | P(view_financial_reports) or P(view_costs) | RPC | RPC | — |
 | consignors, consignment_items, charges | S; values gated | P(manage_consignments) | same | — |
 | consignment_settlements, settlement_lines | P(manage_consignments) | RPC | — | — |
-| suppliers, purchase_orders, lines | S | P(manage_purchasing) | same | — |
-| purchase_receipts, receipt_lines | S | RPC | — | — |
+| suppliers | S | P(manage_purchasing) (id, name, contact_name, email, phone, website, account_reference, notes) | P(manage_purchasing) (same columns + archived_at; `supplier_has_open_orders`) | — (archive) |
+| supplier_products | S, every column except `last_unit_cost` | RPC `set_supplier_product` (P(manage_purchasing)); `receive_purchase` | same | RPC `remove_supplier_product` |
+| purchase_orders | S | RPC `create_purchase_order` (P(manage_purchasing)) | RPCs (`update_purchase_order`, `submit_purchase_order`, `cancel_purchase_order`, `receive_purchase`) | never |
+| purchase_order_lines | S, every column except `unit_cost`, `ordered_total` | RPC `set_purchase_order_line` (P(manage_purchasing)) | same | RPC `remove_purchase_order_line` |
+| purchase_order_events | S with P(view_costs) or P(manage_purchasing) (D60: payloads carry costs) | triggers only | never | never |
+| purchase_receipts | S | RPC `receive_purchase` (P(manage_purchasing)) | never (`purchase_receipt_immutable`) | never |
+| purchase_receipt_lines | S, every column except `unit_cost_actual`, `received_total` | RPC `receive_purchase` | never | never |
+| supplier_products_staff, purchase_order_lines_staff, purchase_receipt_lines_staff, purchase_order_totals_staff (definer views) | P(view_costs) or P(manage_purchasing) (D60 cost set: last, line, actual costs and totals) | — | — | — |
+| reporting.purchase_order_progress, product_on_order | S (security_invoker over staff-only RLS; no cost columns) | — | — | — |
 | label_templates, printer_profiles | S | A | A | A |
 | print_jobs | S | S | S | — |
 | integration_events, retry queue, sync | A | service role only | service role / RPC | — |
@@ -1433,7 +1615,17 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `create_consignment_item(...)` | P(manage_consignments) | Item + unit + movement. |
 | `return_consignment_item(item_id, reason)` | P(manage_consignments) | `consignment_returned` movement; unit → returned. |
 | `record_settlement(consignor_id, amount, paid_at, allocations[], reference)` | P(manage_consignments) | Settlement + lines; overallocation check. |
-| `receive_purchase(po_id, idempotency_key, lines[])` | P(manage_purchasing) | §10. |
+| `create_purchase_order(id, supplier_id, expected_at = null, supplier_reference = null, notes = null)` → `purchase_orders` | P(manage_purchasing) | Built (Phase 7). 22004 for null ids; replay by id first, FOR UPDATE (same supplier → the row unchanged, no event; another → `purchase_order_conflict`); P0002 / `supplier_archived`; insert in the shop currency (D62) catching a `purchase_orders_pkey` race. Never ON CONFLICT (the number trigger would burn a PO number per replay). |
+| `update_purchase_order(purchase_order_id, supplier_id, expected_at, supplier_reference, notes)` → `purchase_orders` | P(manage_purchasing) | Sets all four exactly (null clears); locks the PO; `purchase_order_closed`; `purchase_order_supplier_locked` outside draft; identical → no update, no event. |
+| `submit_purchase_order(purchase_order_id)` → `purchase_orders` | P(manage_purchasing) | Already submitted or further → unchanged; cancelled → `purchase_order_closed`; `purchase_order_needs_lines`; `supplier_archived`; else submitted_at/by. |
+| `cancel_purchase_order(purchase_order_id, reason)` → `purchase_orders` | P(manage_purchasing) | D61. `reason_required` / `reason_too_long`; cancelled → unchanged; received → `purchase_order_closed`; receipts, movements and stock stay. |
+| `set_purchase_order_line(id, purchase_order_id, product_id, quantity_ordered, unit_cost, expected_at = null, notes = null, reason = null)` → `purchase_order_lines` | P(manage_purchasing) | Upsert by id under the PO lock. Closed → `purchase_order_closed` (D65); existing: `purchase_line_conflict`, `purchase_line_below_received`, identical → unchanged; new: P0002, `purchase_line_unique_product`, `purchase_line_not_shop_owned`, `purchase_line_product_inactive`, `purchase_currency_mismatch`, `purchase_line_duplicate_product` (D62). 0 is a valid cost. Refreshes the status (a cut to the received total completes the PO). |
+| `remove_purchase_order_line(line_id, reason = null)` → setof `purchase_order_lines` | P(manage_purchasing) | Unknown → no row. Locks the PO; `purchase_order_closed`; `purchase_line_has_receipts`; after submission `reason_required` and never the last line (`purchase_order_needs_lines`). Refreshes the status. |
+| `receive_purchase(purchase_order_id, idempotency_key, lines jsonb, reference = null, received_at = null, notes = null)` → `purchase_receipts` | P(manage_purchasing) | Built (Phase 7); the 14 steps in §10 (replay, over-receipt, D64 dating, lock_stock, one movement per receipt line, D63 last cost, `received` event, status). |
+| `purchase_receipt_by_key(idempotency_key)` → setof `purchase_receipts` | P(manage_purchasing) | Zero or one row, after a lost response. |
+| `purchase_cost_defaults(supplier_id, product_ids uuid[])` → `table(product_id, unit_cost, source)` | P(manage_purchasing) | ≤ 200 ids (22023); per known product the supplier's last cost (`supplier_last`), else the product's (`product`, 0 included), else 0 (`none`). The PO line sheet's prefill (D60, D66). |
+| `set_supplier_product(supplier_id, product_id, supplier_sku = null, lead_days = null, preferred = false)` → `supplier_products` | P(manage_purchasing) | Locks the product row, then upserts the link (never the last cost; a new link takes the product's currency); `preferred` clears the product's other preferred row. P0002 / `supplier_archived`. |
+| `remove_supplier_product(supplier_id, product_id)` → setof `supplier_products` | P(manage_purchasing) | Deletes the link; no row on a replay. |
 | `process_shopify_order_paid(event_id)` | service role | §13. |
 | `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) within the D11 ceiling | Permission rows (`granted_by` = caller); replay-safe (no row change, no event). One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
