@@ -47,6 +47,19 @@
 -- opening stock 30 days back, and three stock adjustments (one significant,
 -- D33). Today and the daily summary reproduce tests/fixtures/reporting.ts
 -- exactly.
+--
+-- Phase 7 contents: three suppliers (one archived), supplier links on six
+-- Phase 4 products, and five purchase orders PO-000001 .. PO-000005 in
+-- insert order: one received in full 9 days ago, SPEC §14's partial
+-- receipt (ordered 20, received 18, 2 outstanding; overdue), one awaiting
+-- delivery, one draft holding two low-stock products, and one cancelled.
+-- Built through the purchasing RPCs as the admin, so the ledger, PO
+-- history and last costs are real; created_at / submitted_at are
+-- back-dated before receiving (D64 D-RECEIPT-TIME: the receipts carry
+-- their back-dated received_at, their movements seed time). No products,
+-- units, bikes or customers are created, every receipt cost equals the
+-- product's current cost, and no receipt touches a low-stock product, so
+-- the Phase 4 and 5 figures are unchanged (see the Phase 7 block).
 
 -- ---------------------------------------------------------------------------
 -- Auth users (shape matches Supabase Auth v2.178). GoTrue scans the token
@@ -1652,5 +1665,158 @@ values
    5.00, 'd5400000-0000-4000-8000-000000000012', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(1, '16:30')),
   ('d5300000-0000-4000-8000-000000000006', null, '1c000000-0000-4000-8000-000000000001', 2, 'stock_adjustment', 'Recount found two in the workshop drawer',
    3.00, 'd5400000-0000-4000-8000-000000000013', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(0, '08:30'));
+
+select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 7: purchasing (DATA-MODEL.md §18 "Phase 7 part"; ids in
+-- tests/fixtures/ids.ts SUPPLIER, PURCHASE_ORDER, PURCHASE_ORDER_LINE,
+-- RECEIPT_KEY). Everything goes through the purchasing RPCs as Asha Admin
+-- (request.jwt.claims), so PO history, the purchase_received movements and
+-- the supplier last costs are what the app writes. Suppliers have no create
+-- RPC (the app inserts them under RLS): they are inserted directly, dated
+-- 20 days back. POs are created in this order, so they get PO-000001 ..
+-- PO-000005 on a fresh build.
+--
+-- Chronology (D64 D-RECEIPT-TIME): after a PO is created and submitted
+-- through the RPCs, and BEFORE it is received, its created_at and
+-- submitted_at are back-dated with a plain UPDATE as the owner (those
+-- columns write no PO event); receive_purchase then records the receipt
+-- with its past received_at. The purchase_received movements keep seed
+-- time (Phase 4's ledger is append-only and has no effective date; their
+-- reason carries the delivery date), and the PO history rows keep record
+-- time.
+--
+-- Fences on the earlier phases:
+--   (1) every receipt's actual cost equals the product's current
+--       default_direct_cost, so D63 D-LASTCOST changes no product cost and
+--       writes no cost_changed event;
+--   (2) receipts touch only cassette (P-000007), chainX11 (P-000006) and
+--       chainLube (P-000010): not the low-stock cableKit, hydraulicHose and
+--       sealant, and none of the products whose on-hand a test pins
+--       (brakePads, gp5000Tyre, roadTube, bromptonTube, marathonRacer,
+--       barTape); each stays above its reorder point, so reporting.low_stock,
+--       Today's low-stock tile and tests/fixtures/reporting.ts are
+--       unchanged;
+--   (3) the draft PO-000004 holds cableKit and hydraulicHose, which no
+--       receipt touches;
+--   (4) Phase 5's daily summary and Today count only job_consumption,
+--       reversal, stock_adjustment and damaged movements, never
+--       purchase_received.
+-- ===========================================================================
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Suppliers.
+insert into public.suppliers
+  (id, name, contact_name, email, phone, website, account_reference, notes, created_at)
+values
+  ('d7000000-0000-4000-8000-000000000001', 'Velo Parts Asia Pte Ltd', 'Kenneth Lim',
+   'sales@veloparts.test', '+65 6123 4501', 'https://veloparts.test', 'BICII-0042',
+   'Order by Thursday noon for Monday delivery.', pg_temp.seed_at(20, '09:00')),
+  ('d7000000-0000-4000-8000-000000000002', 'Tropic Tyre & Tube Co', 'Siti Rahman',
+   'orders@tropictyre.test', '+65 6234 5502', null, 'TT-1187',
+   null, pg_temp.seed_at(20, '09:05')),
+  ('d7000000-0000-4000-8000-000000000003', 'Old Spoke Trading', null,
+   null, null, null, null,
+   null, pg_temp.seed_at(20, '09:10'));
+-- Old Spoke stopped trading: archived, with no POs.
+update public.suppliers set archived_at = pg_temp.seed_at(15, '10:00')
+where id = 'd7000000-0000-4000-8000-000000000003';
+
+-- Supplier links (set_supplier_product). The GP5000 tyre comes from both,
+-- preferred at Tropic Tyre; the low-stock sealant has no supplier yet.
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000007', 'VPA-CSR7000-1134', 5, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000006', 'VPA-KMC-X11', 5, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000010', 'VPA-FL-DRY120', 5, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000008', 'VPA-JAG-PRO', 7, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000009', 'VPA-BH90-1000', 7, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000002', 'VPA-GP5K-25', 5, false);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000002',
+  '9a000000-0000-4000-8000-000000000002', 'TT-GP5000-25', 3, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000002',
+  '9a000000-0000-4000-8000-000000000003', 'TT-SV20-60', 3, true);
+
+-- PO-000001 (Velo Parts): 4 x cassette at its cost 68.00. Created 12 days
+-- ago, submitted 11, received in full at the Shop floor 9 days ago
+-- (cassette 3 -> 7 on hand).
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000001',
+  'd7000000-0000-4000-8000-000000000001', private.shop_today() - 9, 'SO-7702', null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000001',
+  'd7100000-0000-4000-8000-000000000001', '9a000000-0000-4000-8000-000000000007', 4, 68.00);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000001');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(12, '10:00'), submitted_at = pg_temp.seed_at(11, '09:30')
+where id = 'd7100000-0000-4000-8000-000000000001';
+select public.receive_purchase('d7100000-0000-4000-8000-000000000001',
+  'd7300000-0000-4000-8000-000000000001',
+  '[{"purchase_order_line_id":"d7200000-0000-4000-8000-000000000001",
+     "location_id":"1c000000-0000-4000-8000-000000000001","quantity_received":4}]'::jsonb,
+  'DN-5402', pg_temp.seed_at(9, '14:00'), null);
+
+-- PO-000002 (Velo Parts), SPEC §14's partial receipt: 20 x chainX11 at
+-- 24.00 and 10 x chainLube at 7.00, expected yesterday. Created 6 days ago,
+-- submitted 5; one delivery 3 days ago (delivery note DN-5531) brought 18
+-- chains and 10 lubes. Partially received, 2 chains outstanding, overdue
+-- (chainX11 8 -> 26, chainLube 18 -> 28 on hand).
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000002',
+  'd7000000-0000-4000-8000-000000000001', private.shop_today() - 1, 'SO-7781', null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000002',
+  'd7100000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000006', 20, 24.00);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000003',
+  'd7100000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000010', 10, 7.00);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000002');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(6, '10:00'), submitted_at = pg_temp.seed_at(5, '09:30')
+where id = 'd7100000-0000-4000-8000-000000000002';
+select public.receive_purchase('d7100000-0000-4000-8000-000000000002',
+  'd7300000-0000-4000-8000-000000000002',
+  '[{"purchase_order_line_id":"d7200000-0000-4000-8000-000000000002",
+     "location_id":"1c000000-0000-4000-8000-000000000001","quantity_received":18},
+    {"purchase_order_line_id":"d7200000-0000-4000-8000-000000000003",
+     "location_id":"1c000000-0000-4000-8000-000000000001","quantity_received":10}]'::jsonb,
+  'DN-5531', pg_temp.seed_at(3, '11:30'), null);
+
+-- PO-000003 (Tropic Tyre): 6 x gp5000Tyre at 52.00, created and submitted
+-- 2 days ago, nothing received, expected in 3 days.
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000003',
+  'd7000000-0000-4000-8000-000000000002', private.shop_today() + 3, null, null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000004',
+  'd7100000-0000-4000-8000-000000000003', '9a000000-0000-4000-8000-000000000002', 6, 52.00);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000003');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(2, '10:00'), submitted_at = pg_temp.seed_at(2, '10:20')
+where id = 'd7100000-0000-4000-8000-000000000003';
+
+-- PO-000004 (Velo Parts): a draft for two low-stock products, 6 x cableKit
+-- at 16.00 and 9 x hydraulicHose at 12.00 (their D66 suggestions), so the
+-- reorder screen shows them "In draft PO-000004". Created yesterday.
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000004',
+  'd7000000-0000-4000-8000-000000000001', null, null, null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000005',
+  'd7100000-0000-4000-8000-000000000004', '9a000000-0000-4000-8000-000000000008', 6, 16.00);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000006',
+  'd7100000-0000-4000-8000-000000000004', '9a000000-0000-4000-8000-000000000009', 9, 12.00);
+update public.purchase_orders set created_at = pg_temp.seed_at(1, '09:00')
+where id = 'd7100000-0000-4000-8000-000000000004';
+
+-- PO-000005 (Tropic Tyre): 20 x roadTube at 3.80, created and submitted
+-- yesterday, cancelled today (at seed time).
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000005',
+  'd7000000-0000-4000-8000-000000000002', null, null, null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000007',
+  'd7100000-0000-4000-8000-000000000005', '9a000000-0000-4000-8000-000000000003', 20, 3.80);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000005');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(1, '15:00'), submitted_at = pg_temp.seed_at(1, '15:10')
+where id = 'd7100000-0000-4000-8000-000000000005';
+select public.cancel_purchase_order('d7100000-0000-4000-8000-000000000005',
+  'Supplier out of stock until next quarter');
 
 select set_config('request.jwt.claims', '', false);
