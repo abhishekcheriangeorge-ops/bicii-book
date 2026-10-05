@@ -3,9 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { HistoryList, MovementList } from "@/components/domain/movement-list";
-import { CopyText } from "@/components/domain/copy-text";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { PublicPreviewPanel } from "@/components/domain/public-preview";
+import { QrLabelUrl } from "@/components/domain/qr-label-url";
 import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
 import { RestockControl } from "@/components/domain/sale-controls";
 import { ShortId } from "@/components/domain/short-id";
@@ -297,10 +297,7 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
             </Link>
             .
           </p>
-          <div className="flex flex-col gap-1">
-            <h3 className="font-display text-xs font-bold tracking-wide uppercase">QR label URL</h3>
-            <CopyText value={qr} label="QR label URL" />
-          </div>
+          <QrLabelUrl value={qr} isAdmin={staff.role === "admin"} />
           <PublicPreviewPanel preview={unit.publicPreview} />
         </div>
       </Card>

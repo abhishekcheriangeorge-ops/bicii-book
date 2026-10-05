@@ -358,6 +358,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
           availableUnits={product.availableUnits}
           requirements={product.requirements}
           qrUrl={qr}
+          isAdmin={staff.role === "admin"}
           preview={product.publicPreview}
           canManage={manage}
         />

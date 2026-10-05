@@ -16,7 +16,11 @@ const nonEmpty = z.string().trim().min(1, { error: "must not be empty" });
 export const publicEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: url,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: nonEmpty,
-  /** Base of every QR payload: `{base}/q/{shortId}` (PLAN D9). */
+  /**
+   * An extra QR base the scanner accepts (scanBases, src/lib/qr.ts). Not
+   * the printed or displayed base: that is shop_settings.public_site_url
+   * (PLAN D9, ADR-017).
+   */
   NEXT_PUBLIC_PUBLIC_SITE_URL: url.transform((v) => v.replace(/\/+$/, "")),
 });
 

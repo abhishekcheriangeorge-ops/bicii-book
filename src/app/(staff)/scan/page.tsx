@@ -10,8 +10,8 @@ export const metadata: Metadata = { title: "Scan" };
 /**
  * QR scanning (SPEC §20, PLAN D9): the camera reads a BICII label and
  * opens its record through /q/{shortId}; the code printed under the QR can
- * be typed instead. The accepted label bases come from src/lib/qr.ts, the
- * one place Phase 8 changes.
+ * be typed instead. The accepted label bases come from src/lib/qr.ts
+ * (scanBases: the database QR base and the environment's public site URL).
  */
 export default async function ScanPage() {
   await requireStaff();
