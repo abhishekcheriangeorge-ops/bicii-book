@@ -154,6 +154,47 @@ Journey 3 (`tests/e2e/inventory.spec.ts`) drives steps 1–5 through the PDF
 printer and journey 4 (`tests/e2e/consignment-journey.spec.ts`) through
 the browser printer.
 
+## Shopify inbound flow
+
+Built in Phase 10 step 1 as database functions; the webhook route, the cron
+and the Shopify client are step 3 (`src/lib/integrations/shopify/`), the
+screens step 4 ([ADR-020](decisions/ADR-020-shopify.md), D80–D89).
+
+1. **Store first.** The webhook route will verify the HMAC and call
+   `record_shopify_webhook` with the service-role key. Every delivery is
+   stored before anything else happens: a verified one in
+   `integration_events` (deduplicated on X-Shopify-Webhook-Id; a repeat only
+   counts the delivery), a rejected one as evidence without its body (D88).
+   A new order or refund gets a queued job in `integration_retry_queue`;
+   test, POS and unhandled deliveries are stored as skipped (D89).
+2. **Queue.** `claim_integration_jobs` hands due jobs to a worker (the
+   cron, or the route after it responds) with `FOR UPDATE SKIP LOCKED`, so
+   two workers never run one job; a run stalled for 10 minutes is
+   reclaimed (D87).
+3. **Process in one subtransaction.** `process_shopify_event` locks the
+   event row (a processed event is a replay with no effect), then runs
+   every business write inside one plpgsql `begin … exception … end`
+   block: validate the payload, take the order's advisory lock, find an
+   existing sale (`duplicate_order`), map every line by variant, insert the
+   sale header, lock stock, units and consignment items in the global lock
+   order, write each line through Phase 6's `private.sell_line` with
+   `online_sale` (the one sale-line writer, so online and in-store
+   economics are identical), refresh publication last. Any refusal rolls
+   the whole block back: the event becomes `failed` with a human message
+   and its job `needs_attention` (or queued with backoff when transient).
+   A refund is one `sale_refunds` row and nothing else (D85).
+4. **People act.** Admins see each `needs_attention` job as an
+   `integration_failed` operational exception (Today's Needs attention,
+   D86), then link the variant (`link_shopify_variant`) and retry, or
+   refund in Shopify and dismiss with a reason. Dismissing an order closes
+   the refunds waiting for it.
+
+Failure path: business failures never raise out of the processors; they
+are stored on the event and job. Unexpected errors are retried
+automatically and keep their SQLSTATE in `last_error_detail` (admin only).
+`tests/db/shopify-webhooks.test.ts` proves each step, including concurrent
+deliveries.
+
 ## Component map
 
 | Responsibility | Location | Dependency | Failure consequence |

@@ -92,6 +92,13 @@ the app; never exercised on a hosted project). After
    ([RUNBOOK "Label printers"](RUNBOOK.md#label-printers)).
 4. Invite staff (below).
 
+**Shopify data retention** (owner, by hand; D88): webhook bodies keep
+customer details until purged with `private.purge_integration_events`
+([RUNBOOK](RUNBOOK.md#shopify-purging-old-webhook-data)); no retention
+period is set yet ([R-040](RISKS.md#r-040--shopify-webhook-payloads-hold-customer-personal-data-until-purged-by-hand)).
+The Shopify administration screens (queue, links, settings) come in Phase
+10 step 4; until then nothing in the app changes the integration.
+
 **Invite staff** (admin, or `manage_staff` within the D11 ceiling:
 non-admins invite role Staff only;
 [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).

@@ -299,21 +299,29 @@ URLs, or customer data in this file.
 ## R-011 — Shopify is not built and will be fixture-tested only
 
 - Category: validation gap.
-- Status and owner: open; build agent, Phase 10.
-- Trigger: Phase 10.
-- Impact: no Shopify integration exists on this branch (only the reserved
-  id columns `customers.shopify_customer_id`, `products.shopify_product_id`
-  and `products.shopify_variant_id`). When built, its webhook
-  and sync code will be tested against signed fixture payloads only until a
-  real or development store is connected, so API and payload drift would not
-  be caught.
-- Evidence and confidence: high; no `src/lib/integrations/` directory and no
-  Shopify tables on this branch; PLAN Phase 10 plans fixture payloads.
-- Workaround or containment: none needed yet.
-- Next action: at Phase 10, the owner provides a development store, and a
-  test against it is added before go-live.
-- Revisit trigger: Phase 10 starts.
-- Last checked: 2026-10-05, repository tree.
+- Status and owner: open; build agent (Phase 10), owner (a development
+  store).
+- Trigger: Phase 10 and go-live of the online channel.
+- Impact: Phase 10 step 1 built the inbound database side (webhook
+  recording, the queue, order and refund processing, D80–D89); the
+  outbound sync, the service layer and the screens follow in steps 2–4.
+  Everything is tested against payloads written from Shopify's documented
+  REST shapes (`tests/fixtures/shopify.ts`), never against a real store,
+  so payload and API drift would not be caught: in particular whether a
+  tax-inclusive store's refund line `subtotal` includes tax
+  (`private.shopify_refund_line_amount`), whether refund transactions
+  carry shop money, and the order-edit case of
+  [R-044](#r-044--an-edited-order-with-a-discounted-line-records-a-lower-price).
+- Evidence and confidence: high; `tests/db/shopify-webhooks.test.ts` uses
+  only fixture payloads; no store credentials exist.
+- Workaround or containment: unknown or malformed payloads fail safe:
+  nothing is recorded and the event waits for an admin
+  (`shopify_payload_invalid`, D82).
+- Next action: the owner provides a development store; step 3 adds the
+  RUNBOOK's verify-before-go-live list and a test against it.
+- Revisit trigger: a development store is connected; Shopify's pinned API
+  version changes.
+- Last checked: 2026-10-06, Phase 10 step 1.
 
 ## R-012 — Label printer hardware is unknown
 
@@ -528,10 +536,12 @@ URLs, or customer data in this file.
 ## R-021 — Reports overstate net sales after a refund or restock
 
 - Category: deliberate shortcut.
-- Status and owner: accepted (D49, build default, owner to confirm);
-  owner, with Phase 9's refund-reporting row (working name DR5).
-- Trigger: an admin records a refund on a sale (`record_sale_refund`), or
-  staff restock a sold unit (`restock_unit`).
+- Status and owner: accepted (D49, build default, owner to confirm; D85
+  applies it to online refunds); owner, with Phase 9's refund-reporting
+  row (in D100–D119).
+- Trigger: an admin records a refund on a sale (`record_sale_refund`), a
+  Shopify refund is recorded (`process_shopify_refund`, Phase 10), or staff
+  restock a sold unit (`restock_unit`).
 - Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
   Today and the financial reports) keep every sale line at its snapshot:
   a refunded or restocked sale still counts in gross sales, yield and Cult
@@ -552,8 +562,10 @@ URLs, or customer data in this file.
   not change these figures yet", the Sales list marks Partly refunded /
   Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
   refund on the sale and in the list.
-- Next action: Phase 9 decides the refund-reporting row (DR5) for retail
-  and online refunds together.
+- Next action: Phase 9 decides the refund-reporting row (in D100–D119) for
+  retail and online refunds together; Phase 10's online refunds net
+  nothing either (`tests/db/shopify-webhooks.test.ts` proves
+  `financial_lines` unchanged by an online refund).
 - Revisit trigger: the first real refund, or Phase 9's reports.
 - Last checked: 2026-10-05, the migration and tests above.
 
@@ -873,3 +885,111 @@ URLs, or customer data in this file.
   does not stop on a red, undocumented commit.
 - Revisit trigger: the Phase 8 pull request.
 - Last checked: 2026-10-05.
+
+## R-040 — Shopify webhook payloads hold customer personal data until purged by hand
+
+- Category: data protection gap.
+- Status and owner: open; owner (retention), build agent.
+- Trigger: any Shopify order or refund webhook.
+- Impact: `integration_events.payload` keeps each order's body as
+  received, with the buyer's name, email, addresses and phone, for as long
+  as the row exists. Only admins can read it (D86, RLS), but nothing
+  removes it automatically: the owner-only
+  `private.purge_integration_events(older_than)` (at least 30 days) must be
+  run by hand, and failed or pending events are never purged (D88). This
+  adds to [R-016](#r-016--no-retention-or-deletion-policy-for-customer-personal-data).
+- Evidence and confidence: high;
+  `supabase/migrations/20261004003900_shopify_integration.sql` (no cron);
+  `tests/db/shopify-webhooks.test.ts` "Webhook evidence is immutable".
+- Workaround or containment: admin-only access; the purge function;
+  rejected deliveries never store a body.
+- Next action: the owner decides a retention period (owner question 4);
+  OPERATIONS then schedules the purge.
+- Revisit trigger: go-live of the online channel; a deletion request.
+- Last checked: 2026-10-06.
+
+## R-041 — An online order for more consigned stock than one consignment holds fails
+
+- Category: deliberate limitation (D45).
+- Status and owner: accepted; owner.
+- Trigger: an online order line for a consignment-owned quantity product
+  whose quantity is more than any single active consignment has at the
+  online location, although several consignments together would cover it.
+- Impact: a sale line draws from exactly one consignment item (D45/D54),
+  so `private.sell_line` refuses the line and the whole order is not
+  recorded; it waits as `shopify_insufficient_stock` or
+  `shopify_sale_refused` for an admin, who records it by hand as two sales
+  lines or refunds it in Shopify (D82).
+- Evidence and confidence: high; `tests/db/shopify-webhooks.test.ts`
+  "Consignment sale creates correct liability and yield" (the second order
+  of two jerseys when one is left).
+- Workaround or containment: keep consigned quantity stock online only
+  from one consignment at a time, or sell it in store.
+- Next action: none unless it happens; revisit with D45.
+- Revisit trigger: the first such order.
+- Last checked: 2026-10-06.
+
+## R-042 — Earlier online sales keep no customer after a Shopify customer is linked
+
+- Category: deliberate limitation (D86).
+- Status and owner: accepted; build agent (screens, step 4).
+- Trigger: an admin links a BICII customer to a Shopify customer who
+  already has online sales.
+- Impact: a recorded sale is immutable except its status (Phase 6,
+  `sales_enforce_rules`), so the link applies only to orders recorded after
+  it; earlier online sales keep `customer_id` null and carry only
+  `sales.shopify_customer_id`. Any list or report keyed on
+  `sales.customer_id` misses them until the screens join through
+  `customers.shopify_customer_id` (step 4).
+- Evidence and confidence: high; `link_shopify_customer` returns
+  `earlier_online_sales`; `tests/db/shopify-webhooks.test.ts` "Customer
+  linking is explicit".
+- Workaround or containment: the link's result says how many earlier sales
+  exist.
+- Next action: step 4's customer and sale screens show the link through
+  `shopify_customer_id`; Phase 9 reports join the same way.
+- Revisit trigger: step 4; Phase 9 customer reports.
+- Last checked: 2026-10-06.
+
+## R-043 — Phase 9 must widen the integration exceptions function
+
+- Category: integration debt.
+- Status and owner: open; the build agent of Phase 9.
+- Trigger: Phase 9 appends its columns (`issue, short_id, title, detail,
+  amount, currency`) to `reporting.operational_exceptions`.
+- Impact: Phase 10 built `private.integration_exceptions()` in Phase 5's
+  nine-column shape and added it to the view with `union all`; a Phase 9
+  replacement of the view that widens only the other branches fails to
+  create, or drops the integration rows if the branch is forgotten.
+- Evidence and confidence: high;
+  `supabase/migrations/20261004004000_shopify_order_processing.sql`,
+  DATA-MODEL §14; Phase 9 is not built on this branch.
+- Workaround or containment: none needed until Phase 9.
+- Next action: Phase 9 replaces `private.integration_exceptions()` with
+  the wider columns in the same migration that widens the view, and keeps
+  `tests/db/shopify-webhooks.test.ts` "Integration failures are
+  operational exceptions" green.
+- Revisit trigger: Phase 9 or the integration step.
+- Last checked: 2026-10-06.
+
+## R-044 — An edited order with a discounted line records a lower price
+
+- Category: shortcut (D80), unverified against Shopify.
+- Status and owner: open; build agent (step 3, with a development store).
+- Trigger: an order edited in Shopify after payment so that a discounted
+  line's `current_quantity` is below its `quantity`.
+- Impact: BICII records `price × current_quantity − Σ the line's discount
+  allocations`. If Shopify keeps the allocations of the original quantity,
+  the recorded line total is lower than what the remaining items were
+  charged, understating sales, yield and Cult Commons for that order (a
+  fully removed line is ignored and correct).
+- Evidence and confidence: medium; the rule is in
+  `process_shopify_order_paid`; no real edited-order payload has been
+  inspected (R-011).
+- Workaround or containment: order edits after payment are rare; the sale
+  shows Shopify's order name, so staff can compare with Shopify.
+- Next action: inspect an edited order on a development store; if
+  allocations are not adjusted, prorate them by `current_quantity /
+  quantity` in the one place the line total is computed.
+- Revisit trigger: a development store is connected.
+- Last checked: 2026-10-06.

@@ -384,6 +384,26 @@ Hosted projects: the public side of a label (an anonymous scan) reads
 schemas ([step 4 above](#hosted-supabase-projects-staging-and-production),
 required since Phase 4). Phase 8 adds no other anonymous surface.
 
+## Shopify: purging old webhook data
+
+Shopify webhook bodies hold customer names, emails and addresses
+(`integration_events.payload`, admins only). Nothing removes them
+automatically (D88, [R-040](RISKS.md#r-040--shopify-webhook-payloads-hold-customer-personal-data-until-purged-by-hand)).
+The owner runs, by hand, as the database owner (SQL editor of the hosted
+project, or `psql` locally):
+
+```sql
+select * from private.purge_integration_events(interval '90 days');
+```
+
+It deletes rejected deliveries last seen more than that long ago and
+clears the payload of processed or skipped events processed before then
+(the row, its outcome and its result stay); it refuses anything under 30
+days and never touches failed or pending events or events with an open
+job. No API role can run it and there is no cron. The rest of the Shopify
+runbook (secrets, webhook subscriptions, the cron, the verify-before-go-live
+list) is written with the webhook route in Phase 10 step 3.
+
 ## Label printers
 
 Phase 8 prints through the browser or a PDF; there is no printer driver

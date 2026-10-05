@@ -701,6 +701,10 @@ Built in four steps: (1) the inbound database (webhook recording, queue,
 order and refund processing through `private.sell_line`), (2) the outbound
 product-sync database, (3) the service layer, (4) the screens.
 
+Shipped so far: step 1 (`feat/p10-shopify`): `20261004003900_shopify_integration.sql`
+and `20261004004000_shopify_order_processing.sql`, the Phase 10 seed,
+`tests/db/shopify-webhooks.test.ts` and `tests/fixtures/shopify.ts`.
+
 - Migrations: integration_events, shopify_product_sync,
   integration_retry_queue; RPCs `process_shopify_order_paid`,
   `process_shopify_refund`.

@@ -904,3 +904,116 @@ export const PRINT_JOB = {
   bikeUnconfirmed: "a9000000-0000-4000-8000-000000000004",
   productQueued: "a9000000-0000-4000-8000-000000000005",
 } as const;
+
+// ---------------------------------------------------------------------------
+// Phase 10: Shopify (supabase/seed.sql "Phase 10"). Products, their stock
+// movements and the photo have fixed d1 ids; the integration events, jobs
+// and the online sale are created by the real RPCs, so tests find them by
+// SHOPIFY_WEBHOOK_ID and the order gids below.
+// ---------------------------------------------------------------------------
+
+/**
+ * public.products.id (P-000027 .. P-000033 on a fresh build), shop-owned,
+ * quantity-tracked, opening stock at the Shop floor 30 days back:
+ *   syncedTyre     12 (11 after #1001), PUBLIC, linked to SHOPIFY_GID's
+ *                  product and variant, its sync row published and synced;
+ *                  95.00 / 55.00.
+ *   e2ePhone, e2eTablet          20 each, not published (journey 5, one
+ *                                per Playwright project); 25.00 / 10.00.
+ *   e2eLinkPhone, e2eLinkTablet  20 each, no Shopify ids (the unmapped-
+ *                                variant journey); 18.00 / 7.00.
+ *   stack          50, not published (Phase 10 step 3's live-stack test).
+ *   stackExternal  50, no ids (linked to a Shopify-made product by that
+ *                  test); 12.00 / 5.00 both.
+ */
+export const SHOPIFY_PRODUCT = {
+  syncedTyre: "d1000000-0000-4000-8000-000000000001",
+  e2ePhone: "d1000000-0000-4000-8000-000000000002",
+  e2eTablet: "d1000000-0000-4000-8000-000000000003",
+  e2eLinkPhone: "d1000000-0000-4000-8000-000000000004",
+  e2eLinkTablet: "d1000000-0000-4000-8000-000000000005",
+  stack: "d1000000-0000-4000-8000-000000000006",
+  stackExternal: "d1000000-0000-4000-8000-000000000007",
+} as const;
+
+export const SHOPIFY_PRODUCT_SHORT_ID: Record<keyof typeof SHOPIFY_PRODUCT, string> = {
+  syncedTyre: "P-000027",
+  e2ePhone: "P-000028",
+  e2eTablet: "P-000029",
+  e2eLinkPhone: "P-000030",
+  e2eLinkTablet: "P-000031",
+  stack: "P-000032",
+  stackExternal: "P-000033",
+};
+
+/** The seed's one public photo (syncedTyre; no Storage object behind it). */
+export const SHOPIFY_PHOTO = { syncedTyre: "d1000000-0000-4000-8000-000000000201" } as const;
+
+/**
+ * The products the seed publishes (D26): only syncedTyre. Tests that list
+ * reporting.public_items expect these rows besides their own.
+ */
+export const SEEDED_PUBLIC_PRODUCT_SHORT_IDS: readonly string[] = [
+  SHOPIFY_PRODUCT_SHORT_ID.syncedTyre,
+];
+
+/**
+ * Shopify ids in the seed. syncedTyre's are 9000000000 / 9100000000 /
+ * 9200000000 + its short id number (27), equal to Phase 10 step 3's fake
+ * adapter ids. unmappedVariant is #1002's "BICII cotton cap", linked to
+ * nothing.
+ */
+export const SHOPIFY_GID = {
+  syncedTyreProduct: "gid://shopify/Product/9000000027",
+  syncedTyreVariant: "gid://shopify/ProductVariant/9100000027",
+  syncedTyreInventoryItem: "gid://shopify/InventoryItem/9200000027",
+  syncedTyreHandle: "bicii-p-000027",
+  location: "gid://shopify/Location/9300000001",
+  unmappedVariant: "gid://shopify/ProductVariant/9199999999",
+  onlineCustomer: "gid://shopify/Customer/7200000001",
+} as const;
+
+/** public.shopify_settings (seeded; accept_test_orders true in dev/E2E only, D89). */
+export const SHOPIFY_SETTINGS = {
+  onlineLocationId: LOCATION.shopFloor,
+  shopifyLocationId: "gid://shopify/Location/9300000001",
+  storefrontUrl: "https://shop.bicii.example",
+  acceptTestOrders: true,
+} as const;
+
+/**
+ * X-Shopify-Webhook-Id of the seeded deliveries:
+ *   orderPaid      #1001, 1 x syncedTyre at 95.00, processed 8 shop days
+ *                  back -> processed, sale_recorded, S-000005.
+ *   refund         refund 7300000001 of 5.00 on #1001 -> refund_recorded
+ *                  (S-000005 partially_refunded), no movement.
+ *   unmappedOrder  #1002, "BICII cotton cap" (SHOPIFY_GID.unmappedVariant)
+ *                  -> failed shopify_variant_unmapped, its job
+ *                  needs_attention (one admin-only integration_failed).
+ *   rejected       hmac_invalid, no payload.
+ */
+export const SHOPIFY_WEBHOOK_ID = {
+  orderPaid: "seed-webhook-0001",
+  refund: "seed-webhook-0002",
+  unmappedOrder: "seed-webhook-0003",
+  rejected: "seed-webhook-0004",
+} as const;
+
+/** The seeded Shopify orders. */
+export const SHOPIFY_ORDER = {
+  synced: {
+    gid: "gid://shopify/Order/7000001001",
+    name: "#1001",
+    lineItemGid: "gid://shopify/LineItem/7100001001",
+    /** Shop days before the seed's anchor (processed_at 14:20 shop time). */
+    processedDaysAgo: 8,
+    saleNumber: "S-000005",
+    total: "95.00",
+    refundGid: "gid://shopify/Refund/7300000001",
+    refunded: "5.00",
+  },
+  unmapped: {
+    gid: "gid://shopify/Order/7000001002",
+    name: "#1002",
+  },
+} as const;

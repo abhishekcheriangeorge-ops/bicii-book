@@ -305,6 +305,19 @@ export const BUSINESS_ERRORS: Record<string, string> = {
     "That is more than the shop takes in one slot. Raise the shop's capacity first, or use fewer units.",
   shop_timezone_invalid: "That is not a time zone the database knows.",
   shop_settings_required: "The shop settings cannot be deleted, only changed.",
+  // Shopify (Phase 10, D84-D88). The codes stored on an integration event
+  // (shopify_variant_unmapped, ...) carry their own human message and are
+  // never returned as an error, so they are not listed here.
+  shopify_ids_conflict: "This product is already linked to a different Shopify product.",
+  shopify_customer_already_linked:
+    "That customer is already linked to a different Shopify customer.",
+  shopify_gid_invalid: "That is not a valid Shopify ID.",
+  shopify_settings_missing:
+    "Shopify settings are missing. Ask an admin to set the online location.",
+  integration_job_closed: "That item was already resolved.",
+  integration_job_running: "That item is being retried right now. Try again in a moment.",
+  integration_event_immutable: "Received webhooks cannot be changed.",
+  integration_history_append_only: "Integration history cannot be changed.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -337,8 +350,8 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   products_short_id_key: "That product ID is already taken. Try again.",
   products_sku_key_unique: "Another product already uses that SKU.",
   products_public_slug_key: "Another product already uses that public address.",
-  products_shopify_product_id_key: "That Shopify product is already linked to another product.",
-  products_shopify_variant_id_key: "That Shopify variant is already linked to another product.",
+  products_shopify_variant_id_key:
+    "That Shopify variant is already linked to another BICII product.",
   inventory_units_pkey: "That unit has already been saved.",
   inventory_units_short_id_key: "That unit ID is already taken. Try again.",
   inventory_units_bike_id_key: "That bike is already in stock as another unit.",
@@ -364,7 +377,7 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   sales_shopify_order_id_key: "That Shopify order is already recorded.",
   sale_lines_pkey: "That sale line has already been recorded.",
   sale_lines_sale_line_number_key: "That sale line has already been recorded.",
-  sale_lines_shopify_line_item_id_key: "That Shopify line is already recorded.",
+  sale_lines_shopify_line_part_key: "That Shopify line is already recorded.",
   sale_lines_unit_sells_once: "That item has already been sold.",
   sale_refunds_pkey: "That refund has already been recorded.",
   sale_refunds_shopify_refund_id_key: "That Shopify refund is already recorded.",
@@ -391,6 +404,20 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   appointment_types_pkey: "That appointment type has already been saved.",
   closure_overrides_pkey: "That closure has already been saved.",
   shop_hours_weekday_opens_at_key: "Two opening intervals of that day start at the same time.",
+  // Shopify (Phase 10)
+  shopify_settings_pkey: "There is only one Shopify settings row.",
+  shopify_product_sync_pkey: "That product already has its Shopify sync record.",
+  shopify_product_sync_shopify_inventory_item_id_key:
+    "That Shopify inventory item is already linked to another product.",
+  integration_events_pkey: "That webhook has already been recorded.",
+  integration_events_external_id_key: "That webhook has already been recorded.",
+  integration_events_rejected_body_key: "That rejected delivery has already been recorded.",
+  integration_retry_queue_pkey: "That item is already in the queue.",
+  integration_retry_queue_event_open_key: "That Shopify event is already in the queue.",
+  integration_retry_queue_product_queued_key: "That product is already waiting to sync.",
+  integration_retry_queue_product_running_key:
+    "That product is syncing right now. Try again in a moment.",
+  integration_audit_events_pkey: "That integration history entry has already been recorded.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -626,6 +653,68 @@ export const CHECK_ERRORS: Record<string, string> = {
     "The appointment's cancellation doesn't match its status. Refresh and try again.",
   appointment_events_payload_object: "That appointment history entry is not consistent.",
   appointment_events_reason_check: "Keep the reason under 500 characters.",
+  // Shopify (Phase 10)
+  shopify_settings_single_row: "There is only one Shopify settings row.",
+  shopify_settings_shopify_location_id_format: "That is not a valid Shopify location ID.",
+  shopify_settings_storefront_url_check:
+    "Enter the online store's address, starting with https://, under 200 characters.",
+  shopify_product_sync_origin_check: "That Shopify link is not consistent. Refresh and try again.",
+  shopify_product_sync_inventory_item_format: "That is not a valid Shopify inventory item ID.",
+  shopify_product_sync_handle_check: "That Shopify handle is not valid.",
+  shopify_product_sync_external_no_handle:
+    "A product made in Shopify keeps its own handle; BICII does not set one.",
+  shopify_product_sync_last_pushed_quantity_check: "A pushed quantity can't be negative.",
+  shopify_product_sync_last_pushed_price_check: "A pushed price can't be negative.",
+  shopify_product_sync_desired_hash_check: "That sync record is not consistent. Sync again.",
+  shopify_product_sync_api_version_check: "That Shopify API version is not valid.",
+  shopify_product_sync_last_error_code_check: "That sync error is too long.",
+  shopify_product_sync_last_error_check: "That sync error is too long.",
+  shopify_product_sync_publish_changed_shape:
+    "That sync record is not consistent. Refresh and try again.",
+  integration_events_provider_check: "Only Shopify webhooks are recorded.",
+  integration_events_topic_check: "That webhook has no topic.",
+  integration_events_external_event_id_check: "That webhook has no id.",
+  integration_events_shopify_event_id_check: "That webhook's event id is too long.",
+  integration_events_shop_domain_check: "That shop domain is too long.",
+  integration_events_api_version_check: "That API version is too long.",
+  integration_events_subject_check: "That webhook's subject is too long.",
+  integration_events_shopify_order_gid_check: "That is not a valid Shopify order ID.",
+  integration_events_payload_object: "That webhook body is not a JSON object.",
+  integration_events_headers_object: "That webhook's headers are not consistent.",
+  integration_events_result_object: "That webhook's result is not consistent.",
+  integration_events_body_sha256_check: "That webhook's checksum is not valid.",
+  integration_events_body_bytes_check: "That webhook's size is not valid.",
+  integration_events_delivery_count_check: "That webhook's delivery count is not valid.",
+  integration_events_attempts_check: "That webhook's attempt count is not valid.",
+  integration_events_outcome_check: "That webhook's outcome is not valid.",
+  integration_events_last_error_code_check: "That webhook's error is too long.",
+  integration_events_last_error_check: "That webhook's error is too long.",
+  integration_events_last_error_detail_check: "That webhook's error is too long.",
+  integration_events_correlation_id_check: "That correlation id is too long.",
+  integration_events_rejected_shape: "A rejected webhook keeps no body.",
+  integration_events_payload_present: "A received webhook keeps its body.",
+  integration_events_processed_shape: "That webhook's processing state is not consistent.",
+  integration_retry_queue_kind_shape: "That queue item is not consistent.",
+  integration_retry_queue_resolved_shape:
+    "That queue item is not consistent. Refresh and try again.",
+  integration_retry_queue_dismiss_reason: "Give a reason to dismiss this.",
+  integration_retry_queue_attempts_check: "That queue item's attempt count is not valid.",
+  integration_retry_queue_max_attempts_check: "Allow between 1 and 50 attempts.",
+  integration_retry_queue_last_error_code_check: "That queue item's error is too long.",
+  integration_retry_queue_last_error_check: "That queue item's error is too long.",
+  integration_retry_queue_resolution_reason_check: "Give a reason, under 500 characters.",
+  integration_audit_events_reason_check: "Give a reason, under 500 characters.",
+  integration_audit_events_payload_object: "That integration history entry is not consistent.",
+  integration_audit_events_correlation_id_check: "That correlation id is too long.",
+  products_shopify_product_id_format: "That is not a valid Shopify product ID.",
+  products_shopify_variant_id_format: "That is not a valid Shopify variant ID.",
+  customers_shopify_customer_id_format: "That is not a valid Shopify customer ID.",
+  sales_shopify_order_id_format: "That is not a valid Shopify order ID.",
+  sales_shopify_customer_id_format: "That is not a valid Shopify customer ID.",
+  sales_shopify_shape: "Only an online sale carries Shopify references.",
+  sale_lines_shopify_line_item_id_format: "That is not a valid Shopify line ID.",
+  sale_lines_shopify_line_part_check: "Only a split Shopify line has a part.",
+  sale_refunds_shopify_refund_id_format: "That is not a valid Shopify refund ID.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */

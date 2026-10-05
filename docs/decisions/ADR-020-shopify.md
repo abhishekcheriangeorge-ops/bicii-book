@@ -11,8 +11,15 @@ the brief's fifteen working labels are merged into these ten rows
 D88, TAX and TEST into D89). Applies D7 to online refunds
 ([ADR-014](ADR-014-defaults-for-unbuilt-phases.md)).
 
-Status update 2026-10-06: recorded before Phase 10's code; the column
-"Implemented in" names where each row is built.
+Status update 2026-10-06 (Phase 10 step 1): the inbound database side of
+D80, D82, D85–D89 is built and tested
+(`supabase/migrations/20261004003900_shopify_integration.sql`,
+`20261004004000_shopify_order_processing.sql`,
+`tests/db/shopify-webhooks.test.ts`): webhook recording, the queue, order
+and refund processing through Phase 6's `private.sell_line`, the
+retry/dismiss/link RPCs and the admin-only `integration_failed` exception.
+The outbound sync (D81's sync side, D83, D84's push and `buy_online_url`)
+is step 2; the service layer step 3; the screens step 4.
 
 ## Context
 
@@ -106,13 +113,19 @@ Rationale:
 - An online order BICII cannot fulfil records nothing and appears to admins
   as an `integration_failed` operational exception until someone acts.
 - Earlier online sales stay without `customer_id` after a customer link;
-  the screens show the link through `sales.shopify_customer_id`.
+  the screens show the link through `sales.shopify_customer_id`
+  ([RISKS R-042](../RISKS.md#r-042--earlier-online-sales-keep-no-customer-after-a-shopify-customer-is-linked)).
 - Webhook payloads hold customer personal data until the owner purges them
-  by hand.
+  by hand ([RISKS R-040](../RISKS.md#r-040--shopify-webhook-payloads-hold-customer-personal-data-until-purged-by-hand)).
 - A consigned quantity line larger than any single consignment at the
-  online location fails (D45's one item per line).
+  online location fails (D45's one item per line)
+  ([RISKS R-041](../RISKS.md#r-041--an-online-order-for-more-consigned-stock-than-one-consignment-holds-fails)).
 - Phase 9 must widen `private.integration_exceptions()` when it appends its
-  columns to `reporting.operational_exceptions`.
+  columns to `reporting.operational_exceptions`
+  ([RISKS R-043](../RISKS.md#r-043--phase-9-must-widen-the-integration-exceptions-function)).
+- An order edited after payment with a discounted line may be recorded
+  below what Shopify charged until verified on a development store
+  ([RISKS R-044](../RISKS.md#r-044--an-edited-order-with-a-discounted-line-records-a-lower-price)).
 - `products.shopify_product_id` is no longer unique (DATA-MODEL §6
   deviation).
 
@@ -126,5 +139,10 @@ Shopify changes its webhook payloads or API version.
 
 - [PLAN Phase 10](../PLAN.md#phase-10--shopify), [PLAN §6](../PLAN.md#6-open-decisions-for-the-owner) rows D7, D80–D89.
 - [DATA-MODEL §13](../DATA-MODEL.md#13-shopify-integration), §6, §8, §14–§16, §18.
-- Risks [R-011](../RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only),
-  [R-021](../RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock).
+- `supabase/migrations/20261004003900_shopify_integration.sql`,
+  `supabase/migrations/20261004004000_shopify_order_processing.sql`,
+  `tests/db/shopify-webhooks.test.ts`, `tests/fixtures/shopify.ts`.
+- [ARCHITECTURE "Shopify inbound flow"](../ARCHITECTURE.md#shopify-inbound-flow);
+  risks [R-011](../RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only),
+  [R-021](../RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock),
+  R-040 to R-044.

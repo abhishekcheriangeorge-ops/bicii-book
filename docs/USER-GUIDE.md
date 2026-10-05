@@ -484,6 +484,27 @@ Settings → Your profile.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
   at 0. Refunds and restocks are not taken off yet (Phase 9).
 
+### Online orders from Shopify
+
+Phase 10 is being built: online orders and refunds are recorded by the
+database, and the Shopify screens (the queue, the event inspector, Publish
+online) come in a later step.
+
+- What happens: a paid Shopify order becomes a sale with source **Online**
+  in Sales, at Shopify's prices after discounts (a 3 × $40 line with $20
+  off is recorded as 2 × $33.33 and 1 × $33.34), dated when Shopify took
+  the order. The stock comes from the online location (the Shop floor).
+- When an order cannot be recorded (a product BICII cannot match, a unit
+  that already sold in the shop, too little stock, an order charged tax on
+  top), nothing is recorded. Admins see it under **Needs attention** on
+  Today, with a message saying what to do: link the product and retry, or
+  refund the order in Shopify and dismiss it with a reason.
+- A refund made in Shopify marks the sale Partly refunded or Refunded, like
+  an in-store refund: the stock and the item's status do not change; use
+  **Restock…** if the item came back.
+- A Shopify customer becomes a BICII customer only when an admin links
+  them; a matching email is never enough.
+
 ## Roles and limits
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
@@ -494,7 +515,7 @@ sale totals are visible to all; costs are not.
 
 | You have | What changes for you |
 |---|---|
-| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate, **Record refund** on a sale (D49) and Settings → **Labels and printers** (the QR address, printers, label templates) |
+| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate, **Record refund** on a sale (D49), Settings → **Labels and printers** (the QR address, printers, label templates) and online orders that need attention (Shopify, D86) |
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |

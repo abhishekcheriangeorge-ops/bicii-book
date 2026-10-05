@@ -1050,6 +1050,306 @@ export type Database = {
         };
         Relationships: [];
       };
+      integration_audit_events: {
+        Row: {
+          actor_staff_id: string | null;
+          correlation_id: string | null;
+          created_at: string;
+          customer_id: string | null;
+          event_type: Database["public"]["Enums"]["integration_audit_type"];
+          id: string;
+          integration_event_id: string | null;
+          job_id: string | null;
+          payload: NonNullable<Json>;
+          product_id: string | null;
+          reason: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          event_type: Database["public"]["Enums"]["integration_audit_type"];
+          id?: string;
+          integration_event_id?: string | null;
+          job_id?: string | null;
+          payload?: NonNullable<Json>;
+          product_id?: string | null;
+          reason?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          customer_id?: string | null;
+          event_type?: Database["public"]["Enums"]["integration_audit_type"];
+          id?: string;
+          integration_event_id?: string | null;
+          job_id?: string | null;
+          payload?: NonNullable<Json>;
+          product_id?: string | null;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "integration_audit_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "integration_audit_events_customer_id_fkey";
+            columns: ["customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "integration_audit_events_integration_event_id_fkey";
+            columns: ["integration_event_id"];
+            isOneToOne: false;
+            referencedRelation: "integration_events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "integration_audit_events_job_id_fkey";
+            columns: ["job_id"];
+            isOneToOne: false;
+            referencedRelation: "integration_retry_queue";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "integration_audit_events_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "integration_audit_events_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      integration_events: {
+        Row: {
+          api_version: string | null;
+          attempts: number;
+          body_bytes: number;
+          body_sha256: string;
+          correlation_id: string | null;
+          created_at: string;
+          delivery_count: number;
+          external_event_id: string;
+          headers: NonNullable<Json>;
+          hmac_valid: boolean;
+          id: string;
+          last_delivered_at: string;
+          last_error: string | null;
+          last_error_code: string | null;
+          last_error_detail: string | null;
+          outcome: string | null;
+          payload: Json | null;
+          payload_purged_at: string | null;
+          processed_at: string | null;
+          provider: string;
+          received_at: string;
+          rejection_reason: Database["public"]["Enums"]["integration_rejection_reason"] | null;
+          result: NonNullable<Json>;
+          sale_id: string | null;
+          shop_domain: string | null;
+          shopify_event_id: string | null;
+          shopify_order_gid: string | null;
+          status: Database["public"]["Enums"]["integration_event_status"];
+          subject: string | null;
+          test_delivery: boolean;
+          topic: string;
+          triggered_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          api_version?: string | null;
+          attempts?: number;
+          body_bytes: number;
+          body_sha256: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          delivery_count?: number;
+          external_event_id: string;
+          headers?: NonNullable<Json>;
+          hmac_valid: boolean;
+          id?: string;
+          last_delivered_at?: string;
+          last_error?: string | null;
+          last_error_code?: string | null;
+          last_error_detail?: string | null;
+          outcome?: string | null;
+          payload?: Json | null;
+          payload_purged_at?: string | null;
+          processed_at?: string | null;
+          provider?: string;
+          received_at?: string;
+          rejection_reason?: Database["public"]["Enums"]["integration_rejection_reason"] | null;
+          result?: NonNullable<Json>;
+          sale_id?: string | null;
+          shop_domain?: string | null;
+          shopify_event_id?: string | null;
+          shopify_order_gid?: string | null;
+          status?: Database["public"]["Enums"]["integration_event_status"];
+          subject?: string | null;
+          test_delivery?: boolean;
+          topic: string;
+          triggered_at?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          api_version?: string | null;
+          attempts?: number;
+          body_bytes?: number;
+          body_sha256?: string;
+          correlation_id?: string | null;
+          created_at?: string;
+          delivery_count?: number;
+          external_event_id?: string;
+          headers?: NonNullable<Json>;
+          hmac_valid?: boolean;
+          id?: string;
+          last_delivered_at?: string;
+          last_error?: string | null;
+          last_error_code?: string | null;
+          last_error_detail?: string | null;
+          outcome?: string | null;
+          payload?: Json | null;
+          payload_purged_at?: string | null;
+          processed_at?: string | null;
+          provider?: string;
+          received_at?: string;
+          rejection_reason?: Database["public"]["Enums"]["integration_rejection_reason"] | null;
+          result?: NonNullable<Json>;
+          sale_id?: string | null;
+          shop_domain?: string | null;
+          shopify_event_id?: string | null;
+          shopify_order_gid?: string | null;
+          status?: Database["public"]["Enums"]["integration_event_status"];
+          subject?: string | null;
+          test_delivery?: boolean;
+          topic?: string;
+          triggered_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "integration_events_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "sales";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      integration_retry_queue: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          id: string;
+          integration_event_id: string | null;
+          kind: Database["public"]["Enums"]["integration_job_kind"];
+          last_error: string | null;
+          last_error_code: string | null;
+          last_retried_at: string | null;
+          last_retried_by: string | null;
+          locked_at: string | null;
+          max_attempts: number;
+          next_attempt_at: string;
+          product_id: string | null;
+          resolution_reason: string | null;
+          resolved_at: string | null;
+          resolved_by: string | null;
+          status: Database["public"]["Enums"]["integration_job_status"];
+          updated_at: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          id?: string;
+          integration_event_id?: string | null;
+          kind: Database["public"]["Enums"]["integration_job_kind"];
+          last_error?: string | null;
+          last_error_code?: string | null;
+          last_retried_at?: string | null;
+          last_retried_by?: string | null;
+          locked_at?: string | null;
+          max_attempts?: number;
+          next_attempt_at?: string;
+          product_id?: string | null;
+          resolution_reason?: string | null;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+          status?: Database["public"]["Enums"]["integration_job_status"];
+          updated_at?: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          id?: string;
+          integration_event_id?: string | null;
+          kind?: Database["public"]["Enums"]["integration_job_kind"];
+          last_error?: string | null;
+          last_error_code?: string | null;
+          last_retried_at?: string | null;
+          last_retried_by?: string | null;
+          locked_at?: string | null;
+          max_attempts?: number;
+          next_attempt_at?: string;
+          product_id?: string | null;
+          resolution_reason?: string | null;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+          status?: Database["public"]["Enums"]["integration_job_status"];
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "integration_retry_queue_integration_event_id_fkey";
+            columns: ["integration_event_id"];
+            isOneToOne: false;
+            referencedRelation: "integration_events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "integration_retry_queue_last_retried_by_fkey";
+            columns: ["last_retried_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "integration_retry_queue_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "integration_retry_queue_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "integration_retry_queue_resolved_by_fkey";
+            columns: ["resolved_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       inventory_movements: {
         Row: {
           consignment_item_id: string | null;
@@ -1846,6 +2146,7 @@ export type Database = {
           sale_id: string;
           sale_total: number | null;
           shopify_line_item_id: string | null;
+          shopify_line_part: number | null;
           unit_direct_cost_snapshot: number;
           unit_sale_price_snapshot: number;
           yield_total: number | null;
@@ -1869,6 +2170,7 @@ export type Database = {
           sale_id: string;
           sale_total?: never;
           shopify_line_item_id?: string | null;
+          shopify_line_part?: number | null;
           unit_direct_cost_snapshot: number;
           unit_sale_price_snapshot: number;
           yield_total?: never;
@@ -1892,6 +2194,7 @@ export type Database = {
           sale_id?: string;
           sale_total?: never;
           shopify_line_item_id?: string | null;
+          shopify_line_part?: number | null;
           unit_direct_cost_snapshot?: number;
           unit_sale_price_snapshot?: number;
           yield_total?: never;
@@ -1954,6 +2257,7 @@ export type Database = {
           created_at: string;
           currency: string;
           id: string;
+          integration_event_id: string | null;
           reason: string;
           recorded_by: string | null;
           restocked: boolean;
@@ -1965,6 +2269,7 @@ export type Database = {
           created_at?: string;
           currency: string;
           id: string;
+          integration_event_id?: string | null;
           reason: string;
           recorded_by?: string | null;
           restocked?: boolean;
@@ -1976,6 +2281,7 @@ export type Database = {
           created_at?: string;
           currency?: string;
           id?: string;
+          integration_event_id?: string | null;
           reason?: string;
           recorded_by?: string | null;
           restocked?: boolean;
@@ -1983,6 +2289,13 @@ export type Database = {
           shopify_refund_id?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: "sale_refunds_integration_event_id_fkey";
+            columns: ["integration_event_id"];
+            isOneToOne: false;
+            referencedRelation: "integration_events";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "sale_refunds_recorded_by_fkey";
             columns: ["recorded_by"];
@@ -2006,10 +2319,12 @@ export type Database = {
           currency: string;
           customer_id: string | null;
           id: string;
+          integration_event_id: string | null;
           notes: string | null;
           recognized_at: string;
           request_fingerprint: string | null;
           sale_number: string;
+          shopify_customer_id: string | null;
           shopify_order_id: string | null;
           shopify_order_name: string | null;
           source: Database["public"]["Enums"]["sale_source"];
@@ -2023,10 +2338,12 @@ export type Database = {
           currency: string;
           customer_id?: string | null;
           id: string;
+          integration_event_id?: string | null;
           notes?: string | null;
           recognized_at: string;
           request_fingerprint?: string | null;
           sale_number?: string;
+          shopify_customer_id?: string | null;
           shopify_order_id?: string | null;
           shopify_order_name?: string | null;
           source?: Database["public"]["Enums"]["sale_source"];
@@ -2040,10 +2357,12 @@ export type Database = {
           currency?: string;
           customer_id?: string | null;
           id?: string;
+          integration_event_id?: string | null;
           notes?: string | null;
           recognized_at?: string;
           request_fingerprint?: string | null;
           sale_number?: string;
+          shopify_customer_id?: string | null;
           shopify_order_id?: string | null;
           shopify_order_name?: string | null;
           source?: Database["public"]["Enums"]["sale_source"];
@@ -2064,6 +2383,13 @@ export type Database = {
             columns: ["customer_id"];
             isOneToOne: false;
             referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sales_integration_event_id_fkey";
+            columns: ["integration_event_id"];
+            isOneToOne: false;
+            referencedRelation: "integration_events";
             referencedColumns: ["id"];
           },
           {
@@ -2310,6 +2636,136 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "shop_settings_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      shopify_product_sync: {
+        Row: {
+          api_version: string | null;
+          created_at: string;
+          desired_hash: string | null;
+          last_checked_at: string | null;
+          last_error: string | null;
+          last_error_code: string | null;
+          last_pushed_at: string | null;
+          last_pushed_price: number | null;
+          last_pushed_quantity: number | null;
+          product_id: string;
+          publish_changed_at: string | null;
+          publish_changed_by: string | null;
+          publish_online: boolean;
+          shopify_handle: string | null;
+          shopify_inventory_item_id: string | null;
+          shopify_origin: string | null;
+          sync_status: Database["public"]["Enums"]["shopify_sync_status"];
+          updated_at: string;
+        };
+        Insert: {
+          api_version?: string | null;
+          created_at?: string;
+          desired_hash?: string | null;
+          last_checked_at?: string | null;
+          last_error?: string | null;
+          last_error_code?: string | null;
+          last_pushed_at?: string | null;
+          last_pushed_price?: number | null;
+          last_pushed_quantity?: number | null;
+          product_id: string;
+          publish_changed_at?: string | null;
+          publish_changed_by?: string | null;
+          publish_online?: boolean;
+          shopify_handle?: string | null;
+          shopify_inventory_item_id?: string | null;
+          shopify_origin?: string | null;
+          sync_status?: Database["public"]["Enums"]["shopify_sync_status"];
+          updated_at?: string;
+        };
+        Update: {
+          api_version?: string | null;
+          created_at?: string;
+          desired_hash?: string | null;
+          last_checked_at?: string | null;
+          last_error?: string | null;
+          last_error_code?: string | null;
+          last_pushed_at?: string | null;
+          last_pushed_price?: number | null;
+          last_pushed_quantity?: number | null;
+          product_id?: string;
+          publish_changed_at?: string | null;
+          publish_changed_by?: string | null;
+          publish_online?: boolean;
+          shopify_handle?: string | null;
+          shopify_inventory_item_id?: string | null;
+          shopify_origin?: string | null;
+          sync_status?: Database["public"]["Enums"]["shopify_sync_status"];
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "shopify_product_sync_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "shopify_product_sync_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "shopify_product_sync_publish_changed_by_fkey";
+            columns: ["publish_changed_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      shopify_settings: {
+        Row: {
+          accept_test_orders: boolean;
+          id: number;
+          online_location_id: string;
+          shopify_location_id: string | null;
+          storefront_url: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          accept_test_orders?: boolean;
+          id?: number;
+          online_location_id: string;
+          shopify_location_id?: string | null;
+          storefront_url?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          accept_test_orders?: boolean;
+          id?: number;
+          online_location_id?: string;
+          shopify_location_id?: string | null;
+          storefront_url?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "shopify_settings_online_location_id_fkey";
+            columns: ["online_location_id"];
+            isOneToOne: false;
+            referencedRelation: "locations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "shopify_settings_updated_by_fkey";
             columns: ["updated_by"];
             isOneToOne: false;
             referencedRelation: "staff";
@@ -3456,6 +3912,35 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      claim_integration_jobs: {
+        Args: { max_jobs: number; only_job_id?: string };
+        Returns: {
+          attempts: number;
+          created_at: string;
+          id: string;
+          integration_event_id: string | null;
+          kind: Database["public"]["Enums"]["integration_job_kind"];
+          last_error: string | null;
+          last_error_code: string | null;
+          last_retried_at: string | null;
+          last_retried_by: string | null;
+          locked_at: string | null;
+          max_attempts: number;
+          next_attempt_at: string;
+          product_id: string | null;
+          resolution_reason: string | null;
+          resolved_at: string | null;
+          resolved_by: string | null;
+          status: Database["public"]["Enums"]["integration_job_status"];
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "integration_retry_queue";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       consignor_payout_details: { Args: { consignor_id: string }; Returns: string };
       consignor_statement: {
         Args: { target_consignor_id?: string; target_item_id?: string };
@@ -3751,6 +4236,35 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      dismiss_integration_job: {
+        Args: { job_id: string; reason: string };
+        Returns: {
+          attempts: number;
+          created_at: string;
+          id: string;
+          integration_event_id: string | null;
+          kind: Database["public"]["Enums"]["integration_job_kind"];
+          last_error: string | null;
+          last_error_code: string | null;
+          last_retried_at: string | null;
+          last_retried_by: string | null;
+          locked_at: string | null;
+          max_attempts: number;
+          next_attempt_at: string;
+          product_id: string | null;
+          resolution_reason: string | null;
+          resolved_at: string | null;
+          resolved_by: string | null;
+          status: Database["public"]["Enums"]["integration_job_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "integration_retry_queue";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       financial_lines: {
         Args: { from_day: string; to_day: string };
         Returns: {
@@ -3809,6 +4323,50 @@ export type Database = {
       label_preview: {
         Args: { entity_id: string; kind: Database["public"]["Enums"]["label_kind"] };
         Returns: Json;
+      };
+      link_shopify_customer: {
+        Args: { customer_id: string; reason: string; shopify_customer_id: string };
+        Returns: Database["public"]["CompositeTypes"]["shopify_customer_link_result"];
+        SetofOptions: {
+          from: "*";
+          to: "shopify_customer_link_result";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      link_shopify_variant: {
+        Args: {
+          product_id: string;
+          reason: string;
+          shopify_product_id: string;
+          shopify_variant_id: string;
+        };
+        Returns: {
+          api_version: string | null;
+          created_at: string;
+          desired_hash: string | null;
+          last_checked_at: string | null;
+          last_error: string | null;
+          last_error_code: string | null;
+          last_pushed_at: string | null;
+          last_pushed_price: number | null;
+          last_pushed_quantity: number | null;
+          product_id: string;
+          publish_changed_at: string | null;
+          publish_changed_by: string | null;
+          publish_online: boolean;
+          shopify_handle: string | null;
+          shopify_inventory_item_id: string | null;
+          shopify_origin: string | null;
+          sync_status: Database["public"]["Enums"]["shopify_sync_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "shopify_product_sync";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       list_consignors: {
         Args: { include_archived?: boolean; max_rows?: number; q?: string };
@@ -4017,6 +4575,36 @@ export type Database = {
           subject_label: string;
         }[];
       };
+      process_shopify_event: {
+        Args: { event_id: string };
+        Returns: {
+          error_code: string;
+          error_message: string;
+          event_status: Database["public"]["Enums"]["integration_event_status"];
+          outcome: string;
+          sale_id: string;
+        }[];
+      };
+      process_shopify_order_paid: {
+        Args: { event_id: string };
+        Returns: {
+          error_code: string;
+          error_message: string;
+          event_status: Database["public"]["Enums"]["integration_event_status"];
+          outcome: string;
+          sale_id: string;
+        }[];
+      };
+      process_shopify_refund: {
+        Args: { event_id: string };
+        Returns: {
+          error_code: string;
+          error_message: string;
+          event_status: Database["public"]["Enums"]["integration_event_status"];
+          outcome: string;
+          sale_id: string;
+        }[];
+      };
       public_appointment_types: {
         Args: Record<PropertyKey, never>;
         Returns: {
@@ -4094,6 +4682,7 @@ export type Database = {
           created_at: string;
           currency: string;
           id: string;
+          integration_event_id: string | null;
           reason: string;
           recorded_by: string | null;
           restocked: boolean;
@@ -4125,12 +4714,64 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      record_shopify_webhook: {
+        Args: {
+          api_version: string;
+          body_bytes: number;
+          body_sha256: string;
+          correlation_id: string;
+          headers: Json;
+          hmac_valid: boolean;
+          payload: Json;
+          rejection_reason: Database["public"]["Enums"]["integration_rejection_reason"];
+          shop_domain: string;
+          shopify_event_id: string;
+          topic: string;
+          triggered_at: string;
+          webhook_id: string;
+        };
+        Returns: {
+          duplicate: boolean;
+          event_id: string;
+          event_status: Database["public"]["Enums"]["integration_event_status"];
+          job_id: string;
+        }[];
+      };
       restock_unit: {
         Args: { location_id?: string; reason?: string; sale_line_id: string; unit_id: string };
         Returns: Database["public"]["CompositeTypes"]["unit_status_result"];
         SetofOptions: {
           from: "*";
           to: "unit_status_result";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      retry_integration_job: {
+        Args: { job_id: string };
+        Returns: {
+          attempts: number;
+          created_at: string;
+          id: string;
+          integration_event_id: string | null;
+          kind: Database["public"]["Enums"]["integration_job_kind"];
+          last_error: string | null;
+          last_error_code: string | null;
+          last_retried_at: string | null;
+          last_retried_by: string | null;
+          locked_at: string | null;
+          max_attempts: number;
+          next_attempt_at: string;
+          product_id: string | null;
+          resolution_reason: string | null;
+          resolved_at: string | null;
+          resolved_by: string | null;
+          status: Database["public"]["Enums"]["integration_job_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "integration_retry_queue";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -5066,6 +5707,24 @@ export type Database = {
         | "completed"
         | "ready_for_collection"
         | "collected";
+      integration_audit_type:
+        | "publish_online_changed"
+        | "sync_requested"
+        | "variant_linked"
+        | "customer_linked"
+        | "job_retried"
+        | "job_dismissed"
+        | "settings_changed";
+      integration_event_status: "pending" | "processed" | "skipped" | "failed" | "rejected";
+      integration_job_kind: "shopify_event" | "product_sync";
+      integration_job_status: "queued" | "running" | "done" | "needs_attention" | "dismissed";
+      integration_rejection_reason:
+        | "hmac_invalid"
+        | "webhook_secret_missing"
+        | "shop_not_configured"
+        | "shop_domain_mismatch"
+        | "missing_headers"
+        | "body_not_json";
       inventory_unit_event_type:
         | "created"
         | "status_changed"
@@ -5114,6 +5773,7 @@ export type Database = {
       sale_status: "recorded" | "partially_refunded" | "refunded" | "voided";
       schedule_entity: "shop_settings" | "shop_hours" | "closure_override" | "appointment_type";
       schedule_event_type: "created" | "updated" | "deleted";
+      shopify_sync_status: "not_synced" | "pending" | "synced" | "error" | "unpublished";
       staff_event_type:
         | "created"
         | "details_changed"
@@ -5230,6 +5890,11 @@ export type Database = {
         amount: number | null;
         paid_at: string | null;
         replayed: boolean | null;
+      };
+      shopify_customer_link_result: {
+        customer_id: string | null;
+        shopify_customer_id: string | null;
+        earlier_online_sales: number | null;
       };
       split_unit_result: {
         product_id: string | null;
@@ -5746,6 +6411,26 @@ export const Constants = {
         "ready_for_collection",
         "collected",
       ],
+      integration_audit_type: [
+        "publish_online_changed",
+        "sync_requested",
+        "variant_linked",
+        "customer_linked",
+        "job_retried",
+        "job_dismissed",
+        "settings_changed",
+      ],
+      integration_event_status: ["pending", "processed", "skipped", "failed", "rejected"],
+      integration_job_kind: ["shopify_event", "product_sync"],
+      integration_job_status: ["queued", "running", "done", "needs_attention", "dismissed"],
+      integration_rejection_reason: [
+        "hmac_invalid",
+        "webhook_secret_missing",
+        "shop_not_configured",
+        "shop_domain_mismatch",
+        "missing_headers",
+        "body_not_json",
+      ],
       inventory_unit_event_type: [
         "created",
         "status_changed",
@@ -5798,6 +6483,7 @@ export const Constants = {
       sale_status: ["recorded", "partially_refunded", "refunded", "voided"],
       schedule_entity: ["shop_settings", "shop_hours", "closure_override", "appointment_type"],
       schedule_event_type: ["created", "updated", "deleted"],
+      shopify_sync_status: ["not_synced", "pending", "synced", "error", "unpublished"],
       staff_event_type: [
         "created",
         "details_changed",
