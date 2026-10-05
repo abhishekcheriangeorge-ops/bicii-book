@@ -463,6 +463,41 @@ consignment yield; unit sold once; E2E journey 4.
 Tests: partial receipt; duplicate receipt idempotent; over-receipt raises;
 cost update per decision D5; E2E journey 3 receiving step.
 
+Shipped (Phase 7 as a whole): migrations `20261005000100_suppliers`,
+`…0200_purchase_orders`, `…0300_purchase_receiving`,
+`…0400_purchasing_search` and `…0500_purchasing_reorder` (no Phase 1-5
+table or function changed except `staff_search`, replaced with every
+existing branch plus `supplier` and `purchase_order`; see the merge note
+in that file). Tables `suppliers`, `supplier_products`, `purchase_orders`,
+`purchase_order_lines`, `purchase_order_events` (append-only),
+`purchase_receipts` and `purchase_receipt_lines` (immutable), all with RLS
+in their migration; cost-gated definer views `supplier_products_staff`,
+`purchase_order_lines_staff`, `purchase_receipt_lines_staff` and
+`purchase_order_totals_staff`; reporting views
+`reporting.purchase_order_progress` and `reporting.product_on_order`.
+RPCs: `set_supplier_product`, `remove_supplier_product`,
+`create_purchase_order`, `update_purchase_order`, `set_purchase_order_line`,
+`remove_purchase_order_line`, `submit_purchase_order`,
+`cancel_purchase_order`, `purchase_cost_defaults`, `receive_purchase`
+(replay-safe by idempotency key; stock through Phase 4's ledger under
+`private.lock_stock`; last cost per D63), `purchase_receipt_by_key`,
+`reorder_suggestions` and `create_purchase_order_from_low_stock`. App:
+`src/lib/purchasing.ts`, `purchasing-forms.ts`, `receive-form.ts` (the
+Receive screen's idempotency state machine) and the domain modules
+`suppliers.ts` and `purchasing.ts`; routes `/purchasing` (orders),
+`/purchasing/orders/[id]`, `/purchasing/suppliers`,
+`/purchasing/suppliers/[id]` (the `(browse)` group with its loading
+skeletons), and, manage_purchasing only with a real 403,
+`/purchasing/receive/[id]` and `/purchasing/reorder`; the product page's
+"Suppliers & orders" card; Reorder links on the Inventory low-stock filter
+and Today's low-stock tile. Decisions D60-D66 (§6; D60 for the owner to
+confirm). Tests: database files `purchasing`, `purchasing-access`,
+`purchasing-concurrency`, `purchasing-reorder` and `purchasing-seed`; unit
+tests for the pure modules, the forms and `receive-form.ts`; E2E
+`purchasing.spec.ts` (suppliers and orders, journey 3's receiving step with
+a double tap, a lost response and a lost request, the closed receive page,
+reorder, and the permission boundary, on phone and iPad).
+
 ### Phase 8 — QR and labels
 
 - Migrations: label_templates, printer_profiles, print_jobs; seed a default
