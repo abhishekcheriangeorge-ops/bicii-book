@@ -130,6 +130,24 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.return_consignment_item(uuid, uuid, text, integer, uuid)",
   "public.update_consignment_terms(uuid, money_amount, money_amount, text)",
   "public.void_consignment_charge(uuid, text)",
+  // Sales and settlements (Phase 6): any active staff member records an
+  // in-store sale (D48); restocks need adjust_stock (a consigned unit also
+  // manage_consignments, D46); refunds are admin only (D49); settlements
+  // and their reversals manage_consignments (D47)
+  "public.record_retail_sale(uuid, jsonb, uuid, timestamp with time zone, text)",
+  "public.record_sale_refund(uuid, uuid, money_amount, text)",
+  "public.record_settlement(uuid, uuid, money_amount, jsonb, timestamp with time zone, text, text)",
+  "public.restock_unit(uuid, uuid, uuid, text)",
+  "public.reverse_settlement(uuid, uuid, text)",
+  // Phase 6 reads: active staff; sale costs NULL without view_costs,
+  // consignment money NULL without manage_consignments or view_costs (D48);
+  // payout details manage_consignments only
+  "public.consignor_payout_details(uuid)",
+  "public.consignor_statement(uuid, uuid)",
+  "public.list_consignors(text, boolean, integer)",
+  "public.list_sales(timestamp with time zone, timestamp with time zone, text, integer)",
+  "public.sale_lines_detail(uuid)",
+  "public.saleable_stock(text, integer)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -219,6 +237,16 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "public.consignment_item_events": ["SELECT"],
   "public.consignment_items": ["SELECT", "UPDATE"],
   "public.consignors": ["INSERT", "SELECT", "UPDATE"],
+  // Sales (Phase 6, D48): staff read headers (no request fingerprint),
+  // lines (no cost, yield, Cult Commons, rate or payout: column grants) and
+  // refunds; every write is an RPC. Settlements, their lines and reversals
+  // are row-gated by consignment money access and written only by RPCs.
+  "public.consignment_settlement_reversals": ["SELECT"],
+  "public.consignment_settlements": ["SELECT"],
+  "public.sale_lines": ["SELECT"],
+  "public.sale_refunds": ["SELECT"],
+  "public.sales": ["SELECT"],
+  "public.settlement_lines": ["SELECT"],
 };
 
 /**

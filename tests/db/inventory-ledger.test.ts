@@ -548,7 +548,8 @@ describe("current stock is derivable from the ledger", () => {
       );
       expect(Object.fromEntries(stock.rows.map((r) => [r.product_id, r.on_hand]))).toEqual({
         [PRODUCT.roadTube]: 60,
-        [PRODUCT.bromptonTube]: 14,
+        // 15 opening, one on J-000010, two sold on Phase 6's S-000002.
+        [PRODUCT.bromptonTube]: 12,
         [PRODUCT.marathonRacer]: 6,
         [PRODUCT.colnago]: 1,
       });

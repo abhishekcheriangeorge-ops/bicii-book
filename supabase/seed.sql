@@ -1929,3 +1929,149 @@ where a.id = 'e2000000-0000-4000-8000-000000000001'
   and w.id = 'd5000000-0000-4000-8000-000000000004';
 
 select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 6: consignment and sales (DATA-MODEL.md §18 "Phase 6 part";
+-- fixtures in tests/fixtures/ids.ts EXPECTED_CONSIGNOR_LEDGER and
+-- EXPECTED_SALE, and the consignment columns of tests/fixtures/reporting.ts).
+-- Three consignors are inserted directly as the owner (like customers);
+-- everything else goes through the real RPCs as the admin, so every rule
+-- and trigger runs: four consignment items C-000001 .. C-000004 (products
+-- P-000023 .. P-000026, units U-000004 .. U-000006 on a fresh build), two
+-- charges with explicit bearers (D4), four retail sales S-000001 ..
+-- S-000004 dated on the Phase 5 fixture days with
+-- pg_temp.seed_at(days_ago, local_time), one return to the consignor, a
+-- settlement that was reversed and the one that replaced it, and a refund.
+-- Intake dates, sale recognised_at and settlement paid_at carry those
+-- dates; ledger movements, charges, events and the refund carry seed time
+-- (as the Phase 4 job does). Fixed-UUID prefixes: 6a consignors, 6b items,
+-- 6c intake products, 6d intake units, 6e charges, 6f sales, 7a refunds,
+-- 7b settlements, 7c reversals, 7e returns.
+-- ===========================================================================
+insert into public.consignors
+  (id, customer_id, display_name, email, phone, payout_details, internal_notes, created_by)
+values
+  ('6a000000-0000-4000-8000-000000000001', null, 'Kelvin Yeo', null, '+65 9876 5432',
+   'PayNow +65 9876 5432', null, '5a000000-0000-4000-8000-000000000001'),
+  ('6a000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000005', 'Daniel Ong',
+   'daniel.ong@example.com', '+65 9567 8901', 'PayNow +65 9567 8901', null,
+   '5a000000-0000-4000-8000-000000000001'),
+  ('6a000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000004', 'Chloe Lim',
+   'chloe.lim@example.com', '+65 8456 7890', 'Bank transfer, details on the signed agreement',
+   'Consigns kit after each season.', '5a000000-0000-4000-8000-000000000001');
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Intake (create_consignment_item), in C- order. C-000001 Kelvin's Colnago
+-- and C-000002 Daniel's Cervélo are unique (a new draft consignment product
+-- and unit each); C-000003 is six of Chloe's jerseys on a new quantity
+-- product; C-000004 Kelvin's crankset is unique.
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000001',
+  consignor_id => '6a000000-0000-4000-8000-000000000001',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 2400.00, asking_price => 4200.00,
+  product_name => 'Colnago C64 Disc (2019), 54 cm', brand => 'Colnago',
+  category_id => 'ca000000-0000-4000-8000-000000000012', tracking_type => 'unique',
+  serial_number => 'C64D-19-0412', condition => 'Very good; light wear on the drive-side chainstay',
+  received_at => pg_temp.seed_at(20, '11:00'),
+  new_product_id => '6c000000-0000-4000-8000-000000000001',
+  new_unit_id => '6d000000-0000-4000-8000-000000000001');
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000002',
+  consignor_id => '6a000000-0000-4000-8000-000000000002',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 500.00, asking_price => 1000.00,
+  product_name => 'Cervélo R3 (2017), 56 cm', brand => 'Cervélo',
+  category_id => 'ca000000-0000-4000-8000-000000000012', tracking_type => 'unique',
+  serial_number => 'CV-R3-17-5521', received_at => pg_temp.seed_at(18, '14:30'),
+  new_product_id => '6c000000-0000-4000-8000-000000000002',
+  new_unit_id => '6d000000-0000-4000-8000-000000000002');
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000003',
+  consignor_id => '6a000000-0000-4000-8000-000000000003',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 35.00, asking_price => 70.00,
+  product_name => 'Rapha Pro Team jersey, size M (as new)', brand => 'Rapha',
+  tracking_type => 'quantity', quantity => 6, received_at => pg_temp.seed_at(15, '10:15'),
+  new_product_id => '6c000000-0000-4000-8000-000000000003');
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000004',
+  consignor_id => '6a000000-0000-4000-8000-000000000001',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 300.00, asking_price => 520.00,
+  product_name => 'Shimano Dura-Ace R9100 crankset, 172.5 mm', brand => 'Shimano',
+  category_id => 'ca000000-0000-4000-8000-000000000008', tracking_type => 'unique',
+  received_at => pg_temp.seed_at(12, '16:00'),
+  new_product_id => '6c000000-0000-4000-8000-000000000004',
+  new_unit_id => '6d000000-0000-4000-8000-000000000004');
+
+-- Charges with an explicit bearer (D4): the shop pays for the Colnago's
+-- service (its cost becomes 2520.00); Daniel pays for his tubeless
+-- conversion (deducted from what he is owed).
+select public.add_consignment_charge(
+  '6e000000-0000-4000-8000-000000000001', '6b000000-0000-4000-8000-000000000001',
+  'Full service and new bar tape before listing', 120.00, 'shop');
+select public.add_consignment_charge(
+  '6e000000-0000-4000-8000-000000000002', '6b000000-0000-4000-8000-000000000002',
+  'Tubeless conversion requested by the consignor', 45.00, 'consignor');
+
+-- Retail sales (record_retail_sale), in S- order:
+--   S-000001 day 5, Priya: 2 jerseys from C-000003 at its asking price
+--            (140.00 / cost 70.00 / yield 70.00 / Cult Commons 21.00).
+--   S-000002 day 4, walk-in: 2 Brompton 16in tubes (P-000005, shop-owned,
+--            14.00 / 6.00): 28.00 / 12.00 / 16.00 / 4.80.
+--   S-000003 day 3, Hafiz: Daniel's Cervélo at its selling price, SPEC §10's
+--            consignment example: 1000.00 / 500.00 / 500.00 / 150.00.
+--   S-000004 today, walk-in: 1 jersey, FIFO from C-000003:
+--            70.00 / 35.00 / 35.00 / 10.50.
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000001',
+  '[{"product_id": "6c000000-0000-4000-8000-000000000003",
+     "location_id": "1c000000-0000-4000-8000-000000000001", "quantity": 2,
+     "consignment_item_id": "6b000000-0000-4000-8000-000000000003"}]'::jsonb,
+  'c1000000-0000-4000-8000-000000000002', pg_temp.seed_at(5, '11:20'));
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000002',
+  '[{"product_id": "9a000000-0000-4000-8000-000000000005",
+     "location_id": "1c000000-0000-4000-8000-000000000001", "quantity": 2}]'::jsonb,
+  null, pg_temp.seed_at(4, '15:05'));
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000003',
+  '[{"inventory_unit_id": "6d000000-0000-4000-8000-000000000002"}]'::jsonb,
+  'c1000000-0000-4000-8000-000000000003', pg_temp.seed_at(3, '16:40'));
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000004',
+  '[{"product_id": "6c000000-0000-4000-8000-000000000003",
+     "location_id": "1c000000-0000-4000-8000-000000000001", "quantity": 1}]'::jsonb,
+  null, pg_temp.seed_at(0, '10:30'));
+
+-- Kelvin takes his crankset back (C-000004 returned; its unit
+-- returned_to_consignor and its product archived).
+select public.return_consignment_item(
+  '7e000000-0000-4000-8000-000000000001', '6b000000-0000-4000-8000-000000000004',
+  'Consignor took it back for his own build.');
+
+-- Chloe's settlements (D47): 30.00 recorded by mistake and reversed, then
+-- the 40.00 actually transferred. Her ledger: liability 105.00 (3 jerseys
+-- sold), paid 40.00, outstanding 65.00.
+select public.record_settlement(
+  '7b000000-0000-4000-8000-000000000001', '6a000000-0000-4000-8000-000000000003', 30.00,
+  '[{"consignment_item_id": "6b000000-0000-4000-8000-000000000003", "amount": "30.00"}]'::jsonb,
+  pg_temp.seed_at(3, '18:00'), 'PayNow 2991');
+select public.reverse_settlement(
+  '7c000000-0000-4000-8000-000000000001', '7b000000-0000-4000-8000-000000000001',
+  'Wrong amount; the transfer was $40.');
+select public.record_settlement(
+  '7b000000-0000-4000-8000-000000000002', '6a000000-0000-4000-8000-000000000003', 40.00,
+  '[{"consignment_item_id": "6b000000-0000-4000-8000-000000000003", "amount": "40.00"}]'::jsonb,
+  pg_temp.seed_at(2, '12:00'), 'PayNow 3002');
+
+-- A refund on S-000002 for one tube (financial only, D7/D49: S-000002 is
+-- partially_refunded, its stock and lines unchanged).
+select public.record_sale_refund(
+  '7a000000-0000-4000-8000-000000000001', '6f000000-0000-4000-8000-000000000002', 14.00,
+  'One tube had the wrong valve; refunded, customer kept it.');
+
+select set_config('request.jwt.claims', '', false);

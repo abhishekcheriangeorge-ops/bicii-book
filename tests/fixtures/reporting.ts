@@ -8,26 +8,39 @@
  * ran (Asia/Singapore, D35), read from REPORT_JOB.todayReceived's check-in
  * (tests/db/reporting-fixtures.ts seedToday(); E2E_SEED_ANCHOR in E2E).
  * Day 0 is the anchor. Money is a fixed-2 string (compare with money()),
- * counts are numbers, Phase 6 placeholders are null.
+ * counts are numbers.
  *
  * Recognition (D32): a non-voided line counts on the shop day of its job's
  * current completed_at; open and cancelled jobs never count. Cult Commons
  * is per line, max(yield, 0) x 0.3000 rounded half up to cents (D1), and a
  * day's or job's share is the sum of its lines' shares.
  *
+ * Sales (Phase 6) are recognised at their recognized_at (DATA-MODEL §14),
+ * every line at its snapshot: refunds are not netted and restocked lines
+ * stay (D49). The consignment columns count the entries that sold
+ * consigned stock (sales and completed jobs): consignment_sales = distinct
+ * documents, consignment_sales_total = their sale total,
+ * new_consignor_liability = Σ quantity x payout snapshot (D44, D46); 0 on
+ * days without any.
+ *
  * The contributions behind each day (H = Phase 5 cases, J = Phase 3 jobs,
- * T = Phase 5 jobs today, A = Phase 5 stock adjustments):
+ * T = Phase 5 jobs today, A = Phase 5 stock adjustments, S = Phase 6 sales):
  *
  *   day 6  checked in H1, J-000005; started H1; completed, ready H1;
  *          collected J-000001. Money H1: 200.00 / 0.00 / 200.00 / 60.00.
  *   day 5  checked in H2, J-000002; started H2; collected H1. H2's wheelset
- *          consumed (1 line, qty 1). No money.
+ *          consumed (1 line, qty 1). Money S-000001 (2 consigned jerseys):
+ *          140.00 / 70.00 / 70.00 / 21.00. Consignment 1 / 140.00 / 70.00.
  *   day 4  checked in H3, J-000008; started H3, J-000002; completed, ready
  *          H2; cancelled J-000008. H3's wheelset consumed. Money H2:
- *          800.00 / 400.00 / 400.00 / 120.00.
+ *          800.00 / 400.00 / 400.00 / 120.00, S-000002 (2 shop-owned tubes;
+ *          its 14.00 refund is not netted, D49) 28.00 / 12.00 / 16.00 /
+ *          4.80.
  *   day 3  checked in H4, J-000004; started H4; completed, ready H3;
  *          collected H2. H4's tyre consumed. Money H3 (2 lines):
- *          1000.00 / 400.00 / 600.00 / 180.00.
+ *          1000.00 / 400.00 / 600.00 / 180.00, S-000003 (Daniel's consigned
+ *          Cervélo, SPEC §10's consignment example) 1000.00 / 500.00 /
+ *          500.00 / 150.00. Consignment 1 / 1000.00 / 500.00.
  *   day 2  checked in H5, H8, J-000003; started H5; completed, ready H4;
  *          collected H3; cancelled H8. A1. Money H4 (2 lines): 60.00 /
  *          35.00 / 25.00 / 12.00 (the tyre line yields -15.00 with share
@@ -40,7 +53,12 @@
  *   day 0  checked in T1, T3, J-000007, J-000010; started T1, T2;
  *          completed, ready, collected T2. T2's chain and J-000010's tube
  *          and tyre consumed, the tyre returned (voided). A3. Money T2
- *          (2 lines): 165.00 / 22.00 / 143.00 / 42.90 (36.00 + 6.90).
+ *          (2 lines): 165.00 / 22.00 / 143.00 / 42.90 (36.00 + 6.90),
+ *          S-000004 (1 consigned jersey) 70.00 / 35.00 / 35.00 / 10.50.
+ *          Consignment 1 / 70.00 / 35.00.
+ *   Sale movements, intakes and the return are written at seed time, but
+ *   none is a job consumption or a stock adjustment, so the parts and
+ *   adjustment columns are unchanged.
  *
  * Appointments (Phase 2, D41: by scheduled shop day and CURRENT status;
  * scheduled = not cancelled, arrived = arrived/checked_in/completed):
@@ -83,9 +101,9 @@ export type DayExpectation = {
   appointments_scheduled: number;
   appointments_arrived: number;
   appointments_no_show: number;
-  consignment_sales: null;
-  consignment_sales_total: null;
-  new_consignor_liability: null;
+  consignment_sales: number;
+  consignment_sales_total: string;
+  new_consignor_liability: string;
 };
 
 /** The money columns of DayExpectation (fixed-2 strings). */
@@ -96,13 +114,15 @@ export const DAY_MONEY_COLUMNS = [
   "cult_commons_share",
   "bicii_yield_after_cc",
   "loss_total",
+  "consignment_sales_total",
+  "new_consignor_liability",
 ] as const;
 
-/** Phase 6's columns, still NULL. */
-const PLACEHOLDERS = {
-  consignment_sales: null,
-  consignment_sales_total: null,
-  new_consignor_liability: null,
+/** Phase 6's columns on a day without consigned sales. */
+const NO_CONSIGNMENT = {
+  consignment_sales: 0,
+  consignment_sales_total: "0.00",
+  new_consignor_liability: "0.00",
 } as const;
 
 /** D41 appointment counts of a day with no appointments. */
@@ -110,17 +130,6 @@ const NO_APPOINTMENTS = {
   appointments_scheduled: 0,
   appointments_arrived: 0,
   appointments_no_show: 0,
-} as const;
-
-const NO_MONEY = {
-  lines_recognised: 0,
-  gross_sales: "0.00",
-  cogs: "0.00",
-  yield_total: "0.00",
-  cult_commons_share: "0.00",
-  bicii_yield_after_cc: "0.00",
-  loss_lines: 0,
-  loss_total: "0.00",
 } as const;
 
 export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
@@ -132,12 +141,12 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     jobs_collected: 1,
     jobs_cancelled: 0,
     currency: "SGD",
-    lines_recognised: 2,
-    gross_sales: "165.00",
-    cogs: "22.00",
-    yield_total: "143.00",
-    cult_commons_share: "42.90",
-    bicii_yield_after_cc: "100.10",
+    lines_recognised: 3,
+    gross_sales: "235.00",
+    cogs: "57.00",
+    yield_total: "178.00",
+    cult_commons_share: "53.40",
+    bicii_yield_after_cc: "124.60",
     loss_lines: 0,
     loss_total: "0.00",
     parts_consumed_qty: 3,
@@ -148,7 +157,9 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     appointments_scheduled: 4,
     appointments_arrived: 1,
     appointments_no_show: 0,
-    ...PLACEHOLDERS,
+    consignment_sales: 1,
+    consignment_sales_total: "70.00",
+    new_consignor_liability: "35.00",
   },
   1: {
     jobs_checked_in: 2,
@@ -174,7 +185,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     appointments_scheduled: 1,
     appointments_arrived: 0,
     appointments_no_show: 1,
-    ...PLACEHOLDERS,
+    ...NO_CONSIGNMENT,
   },
   2: {
     jobs_checked_in: 3,
@@ -198,7 +209,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     stock_adjustments: 1,
     significant_stock_adjustments: 0,
     ...NO_APPOINTMENTS,
-    ...PLACEHOLDERS,
+    ...NO_CONSIGNMENT,
   },
   3: {
     jobs_checked_in: 2,
@@ -208,12 +219,12 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     jobs_collected: 1,
     jobs_cancelled: 0,
     currency: "SGD",
-    lines_recognised: 2,
-    gross_sales: "1000.00",
-    cogs: "400.00",
-    yield_total: "600.00",
-    cult_commons_share: "180.00",
-    bicii_yield_after_cc: "420.00",
+    lines_recognised: 3,
+    gross_sales: "2000.00",
+    cogs: "900.00",
+    yield_total: "1100.00",
+    cult_commons_share: "330.00",
+    bicii_yield_after_cc: "770.00",
     loss_lines: 0,
     loss_total: "0.00",
     parts_consumed_qty: 1,
@@ -224,7 +235,9 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     appointments_scheduled: 1,
     appointments_arrived: 1,
     appointments_no_show: 0,
-    ...PLACEHOLDERS,
+    consignment_sales: 1,
+    consignment_sales_total: "1000.00",
+    new_consignor_liability: "500.00",
   },
   4: {
     jobs_checked_in: 2,
@@ -234,12 +247,12 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     jobs_collected: 0,
     jobs_cancelled: 1,
     currency: "SGD",
-    lines_recognised: 1,
-    gross_sales: "800.00",
-    cogs: "400.00",
-    yield_total: "400.00",
-    cult_commons_share: "120.00",
-    bicii_yield_after_cc: "280.00",
+    lines_recognised: 2,
+    gross_sales: "828.00",
+    cogs: "412.00",
+    yield_total: "416.00",
+    cult_commons_share: "124.80",
+    bicii_yield_after_cc: "291.20",
     loss_lines: 0,
     loss_total: "0.00",
     parts_consumed_qty: 1,
@@ -248,7 +261,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     stock_adjustments: 0,
     significant_stock_adjustments: 0,
     ...NO_APPOINTMENTS,
-    ...PLACEHOLDERS,
+    ...NO_CONSIGNMENT,
   },
   5: {
     jobs_checked_in: 2,
@@ -258,14 +271,23 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     jobs_collected: 1,
     jobs_cancelled: 0,
     currency: "SGD",
-    ...NO_MONEY,
+    lines_recognised: 1,
+    gross_sales: "140.00",
+    cogs: "70.00",
+    yield_total: "70.00",
+    cult_commons_share: "21.00",
+    bicii_yield_after_cc: "49.00",
+    loss_lines: 0,
+    loss_total: "0.00",
     parts_consumed_qty: 1,
     parts_consumed_lines: 1,
     parts_returned_qty: 0,
     stock_adjustments: 0,
     significant_stock_adjustments: 0,
     ...NO_APPOINTMENTS,
-    ...PLACEHOLDERS,
+    consignment_sales: 1,
+    consignment_sales_total: "140.00",
+    new_consignor_liability: "70.00",
   },
   6: {
     jobs_checked_in: 2,
@@ -289,7 +311,7 @@ export const SEED_DAYS: Record<SeedDay, DayExpectation> = {
     stock_adjustments: 0,
     significant_stock_adjustments: 0,
     ...NO_APPOINTMENTS,
-    ...PLACEHOLDERS,
+    ...NO_CONSIGNMENT,
   },
 };
 
