@@ -23,6 +23,7 @@ import { REASON_MAX_LENGTH } from "@/lib/reasons";
  */
 export function ReasonConfirm({
   startLabel,
+  startAccessibleName,
   startVariant = "outline",
   startSize = "md",
   question,
@@ -39,6 +40,13 @@ export function ReasonConfirm({
   children,
 }: {
   startLabel: string;
+  /**
+   * The first button's accessible name when the visible label alone is
+   * ambiguous (one per row in a list), e.g. "Delete the Tue 13 Oct
+   * closure…". It starts with the visible label so voice control still
+   * matches it.
+   */
+  startAccessibleName?: string;
   startVariant?: ButtonVariant;
   startSize?: ButtonSize;
   /** The reason field's label, e.g. "Why are you voiding this line?" */
@@ -122,6 +130,7 @@ export function ReasonConfirm({
           variant={startVariant}
           size={startSize}
           disabled={disabled}
+          aria-label={startAccessibleName}
           onClick={open}
         >
           {startLabel}

@@ -12,8 +12,8 @@
 --   mechanic1@bicii.test  role staff, view_costs
 --   mechanic2@bicii.test  role staff, no permissions
 --
--- Phase 1 contents: six customers (none has a login yet; customer sign-up
--- is Phase 11) and ten bikes, one of them a shop bike without an owner, so
+-- Phase 1 contents: six customers (only Chloe Lim has a login, added in
+-- Phase 2; customer sign-up is Phase 11) and ten bikes, one of them a shop bike without an owner, so
 -- bikes get the short IDs B-000001 .. B-000010 in insert order. One bike
 -- changed hands, so its ownership history has two events. No attachments.
 --
@@ -48,6 +48,39 @@
 -- opening stock 30 days back, and three stock adjustments (one significant,
 -- D33). Today and the daily summary reproduce tests/fixtures/reporting.ts
 -- exactly.
+--
+-- Phase 2 contents: the shop's schedule (settings with D37's defaults and
+-- public_site_url http://localhost:4000; Tuesday-Friday 10:00-19:00, a split
+-- Saturday, a short Sunday, Mondays closed), four appointment types (one
+-- staff-only), two closures within the next 14 days, Chloe Lim's customer
+-- login (chloe.lim@example.com, no usable password either) and nine
+-- appointments from 3 days ago to at most 14 days ahead, one in each
+-- interesting status; Tan's is linked to J-000014 (D40) and completed with
+-- it (D36). Today and the daily summary count them by D41.
+--
+-- Phase 6 contents (after Phase 5): three consignors (Kelvin Yeo, Daniel Ong,
+-- Chloe Lim), four consignment items C-000001 .. C-000004 (two consigned
+-- bikes, six jerseys and a crankset, on new products P-000023 .. P-000026
+-- and units U-000004 .. U-000006), two charges with explicit bearers (D4),
+-- four in-store sales S-000001 .. S-000004 on the Phase 5 fixture days
+-- (one is SPEC §10's consignment example), one return to the consignor, a
+-- reversed settlement and its replacement, and a refund. Written through
+-- the RPCs; the ledgers reproduce tests/fixtures/ids.ts
+-- EXPECTED_CONSIGNOR_LEDGER and EXPECTED_SALE.
+--
+-- Phase 7 contents (at the end): three suppliers (one archived), supplier
+-- links on six Phase 4 products, and five purchase orders PO-000001 ..
+-- PO-000005 in insert order: one received in full 9 days ago, SPEC §14's partial
+-- receipt (ordered 20, received 18, 2 outstanding; overdue), one awaiting
+-- delivery, one draft holding two low-stock products, and one cancelled.
+-- Built through the purchasing RPCs as the admin, so the ledger, PO
+-- history and last costs are real; created_at / submitted_at are
+-- back-dated before receiving (D64 D-RECEIPT-TIME: the receipts carry
+-- their back-dated received_at, their movements seed time). No products,
+-- units, bikes or customers are created, every receipt cost equals the
+-- product's current cost, and no receipt touches a low-stock product or a
+-- product Phase 6 sells, so the Phase 4, 5 and 6 figures are unchanged
+-- (see the Phase 7 block).
 
 -- ---------------------------------------------------------------------------
 -- Auth users (shape matches Supabase Auth v2.178). GoTrue scans the token
@@ -1657,5 +1690,613 @@ values
    5.00, 'd5400000-0000-4000-8000-000000000012', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(1, '16:30')),
   ('d5300000-0000-4000-8000-000000000006', null, '1c000000-0000-4000-8000-000000000001', 2, 'stock_adjustment', 'Recount found two in the workshop drawer',
    3.00, 'd5400000-0000-4000-8000-000000000013', 'SGD', '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(0, '08:30'));
+
+select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 2: the shop's schedule and appointments (DATA-MODEL.md §18 "Phase 2
+-- part"; ids in tests/fixtures/ids.ts). Written as the owner after every
+-- job exists. The owner may bypass the booking rules (notice, horizon, the
+-- customer limit, hours, closures and capacity are RPC rules, D37, D38);
+-- the appointments triggers still enforce the status machine, the stamps,
+-- bike ownership and the history, and the work-order link triggers still
+-- check the link (D40). Each appointment is inserted `booked` at its
+-- created_at (a day or more before it starts), then walks its statuses one
+-- UPDATE at a time with explicit stamps, so every history reads true.
+-- request.jwt.claims names whoever acts (Asha, Marcus for J-000014's
+-- completion, Chloe for her own online bookings).
+--
+-- Past rows use pg_temp.seed_at(days_ago, local time); today's and future
+-- rows start at fixed shop-local times, ((shop_today() + n) + time) at
+-- time zone shop_timezone(). Today's and yesterday's rows deliberately
+-- ignore the weekly hours when that day is a Monday (closed) or Sunday.
+-- Future rows fall on Tuesday-Friday, never on a seeded closure or short
+-- day, and nothing is more than 14 days ahead (tests book on clear days at
+-- least 21 days ahead). Daniel has no upcoming booked or confirmed
+-- appointment; Chloe has at most two upcoming online bookings; today has
+-- at most three expected (booked or confirmed) arrivals.
+-- ===========================================================================
+
+-- Shop-local instant at `local_time` on the shop day `days_ahead` from today.
+create function pg_temp.seed_ahead(days_ahead integer, local_time time)
+returns timestamptz
+language sql
+stable
+as $$
+  select ((private.shop_today() + days_ahead) + local_time) at time zone private.shop_timezone();
+$$;
+
+-- The first shop day at least `days_ahead` from today whose weekday
+-- (0 = Sunday, as extract(dow)) is in `weekdays`.
+create function pg_temp.seed_first_day(days_ahead integer, weekdays integer[])
+returns date
+language sql
+stable
+as $$
+  select min(d)::date
+  from generate_series(private.shop_today() + days_ahead, private.shop_today() + days_ahead + 6, interval '1 day') g(d)
+  where extract(dow from d)::integer = any (weekdays);
+$$;
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Settings: D37's defaults, and the local public site (3000 is the Admin).
+update public.shop_settings
+set intake_slot_minutes = 30,
+    intake_capacity_units = 2,
+    booking_min_notice_minutes = 120,
+    booking_horizon_days = 60,
+    customer_max_active_bookings = 3,
+    customer_cancel_cutoff_minutes = 120,
+    public_site_url = 'http://localhost:4000',
+    updated_by = '5a000000-0000-4000-8000-000000000001'
+where id = 1;
+
+-- Weekly hours (0 = Sunday): Tuesday-Friday 10:00-19:00, a split Saturday,
+-- a short Sunday, and Monday closed with its usual hours remembered.
+insert into public.shop_hours (id, weekday, opens_at, closes_at, active) values
+  ('e3000000-0000-4000-8000-000000000001', 1, '10:00', '19:00', false),
+  ('e3000000-0000-4000-8000-000000000002', 2, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000003', 3, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000004', 4, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000005', 5, '10:00', '19:00', true),
+  ('e3000000-0000-4000-8000-000000000006', 6, '09:00', '12:30', true),
+  ('e3000000-0000-4000-8000-000000000007', 6, '13:30', '18:00', true),
+  ('e3000000-0000-4000-8000-000000000008', 0, '09:00', '13:00', true);
+
+-- Appointment types: three bookable online, one staff-only.
+insert into public.appointment_types
+  (id, name, description, duration_minutes, capacity_units, public, active, sort_order)
+values
+  ('e1000000-0000-4000-8000-000000000001', 'Service drop-off',
+   'Leave your bike with us for a service; we confirm the work and price before starting.', 30, 1, true, true, 1),
+  ('e1000000-0000-4000-8000-000000000002', 'Repair assessment',
+   'A mechanic looks at the problem with you and quotes the repair.', 30, 1, true, true, 2),
+  ('e1000000-0000-4000-8000-000000000003', 'Custom build consultation',
+   'An hour with a builder to plan a new bike or a rebuild: fit, parts and budget.', 60, 2, true, true, 3),
+  ('e1000000-0000-4000-8000-000000000004', 'Warranty inspection',
+   'Manufacturer warranty claims; booked by the shop only.', 30, 1, false, true, 4);
+
+-- Closures, with the whole-day rules save_closure_override uses: the shop
+-- closed all day on the first Wednesday at least 7 days ahead, and short
+-- hours on the first Thursday at least 8 days ahead (both within 14 days).
+insert into public.closure_overrides
+  (id, kind, starts_at, ends_at, opens_at, closes_at, reason, created_by, created_at)
+values
+  ('e4000000-0000-4000-8000-000000000001', 'closed',
+   private.shop_day_start(pg_temp.seed_first_day(7, array[3])),
+   private.shop_day_start(pg_temp.seed_first_day(7, array[3]) + 1),
+   null, null, 'Team at the Taipei Cycle show', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(6, '18:30')),
+  ('e4000000-0000-4000-8000-000000000002', 'custom_hours',
+   private.shop_day_start(pg_temp.seed_first_day(8, array[4])),
+   private.shop_day_start(pg_temp.seed_first_day(8, array[4]) + 1),
+   '12:00', '16:00', 'Short day for stocktake', '5a000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(6, '18:35'));
+
+-- Chloe Lim's customer login (the staff logins' shape, so no usable
+-- password: PLAN D10; E2E journey 2 and the customer-access tests sign in as
+-- her with an email code).
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, last_sign_in_at,
+  raw_app_meta_data, raw_user_meta_data,
+  created_at, updated_at,
+  confirmation_token, recovery_token, email_change_token_new, email_change,
+  email_change_token_current, phone_change, phone_change_token, reauthentication_token,
+  is_super_admin, is_sso_user, is_anonymous
+) values (
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  'a0000000-0000-4000-8000-000000000101'::uuid,
+  'authenticated',
+  'authenticated',
+  'chloe.lim@example.com',
+  -- The bcrypt hash of a random secret nobody knows, as for the staff.
+  extensions.crypt(
+    encode(extensions.gen_random_bytes(48), 'base64'), extensions.gen_salt('bf', 10)
+  ),
+  now(), null,
+  '{"provider": "email", "providers": ["email"]}'::jsonb,
+  jsonb_build_object('display_name', 'Chloe Lim'),
+  now(), now(),
+  '', '', '', '',
+  '', '', '', '',
+  false, false, false
+);
+
+insert into auth.identities (
+  id, provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+) values (
+  'a1000000-0000-4000-8000-000000000101'::uuid,
+  'a0000000-0000-4000-8000-000000000101',
+  'a0000000-0000-4000-8000-000000000101'::uuid,
+  jsonb_build_object(
+    'sub', 'a0000000-0000-4000-8000-000000000101',
+    'email', 'chloe.lim@example.com',
+    'email_verified', true,
+    'phone_verified', false
+  ),
+  'email',
+  null, now(), now()
+);
+
+update public.customers
+set auth_user_id = 'a0000000-0000-4000-8000-000000000101'
+where id = 'c1000000-0000-4000-8000-000000000004';
+
+-- Appointments booked by staff (Asha), each `booked` at its created_at;
+-- ends_at and capacity_units are the type's snapshot (D38).
+insert into public.appointments
+  (id, customer_id, bike_id, appointment_type_id, starts_at, ends_at, capacity_units, status, source,
+   customer_note, internal_note, created_by_staff_id, created_at)
+select r.id, r.customer_id, r.bike_id, r.type_id, r.starts_at,
+       r.starts_at + make_interval(mins => t.duration_minutes), t.capacity_units, 'booked', 'staff',
+       r.customer_note, r.internal_note, '5a000000-0000-4000-8000-000000000001', r.created_at
+from (values
+  -- Tan's Tarmac, 3 days ago 10:00: checked in as J-000014, completed with it.
+  ('e2000000-0000-4000-8000-000000000001'::uuid, 'c1000000-0000-4000-8000-000000000001'::uuid,
+   'b1000000-0000-4000-8000-000000000001'::uuid, 'e1000000-0000-4000-8000-000000000002'::uuid,
+   pg_temp.seed_at(3, '10:00'), 'Rear wheel wobbles and the tyre has a cut.',
+   'Booked by phone.', pg_temp.seed_at(5, '17:40')),
+  -- Daniel's Cannondale, yesterday 11:00: a no-show.
+  ('e2000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000005',
+   'b1000000-0000-4000-8000-000000000008', 'e1000000-0000-4000-8000-000000000001',
+   pg_temp.seed_at(1, '11:00'), 'Pre-race check before the weekend crit.',
+   null, pg_temp.seed_at(4, '15:10')),
+  -- Priya's Domane, today 10:00: arrived, not checked in yet.
+  ('e2000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000002',
+   'b1000000-0000-4000-8000-000000000003', 'e1000000-0000-4000-8000-000000000001',
+   pg_temp.seed_ahead(0, '10:00'), 'Full service before a trip to Bintan.',
+   null, pg_temp.seed_at(3, '12:00')),
+  -- Hafiz's Brompton, today 10:30: confirmed (J-000010 is open on this bike).
+  ('e2000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000003',
+   'b1000000-0000-4000-8000-000000000005', 'e1000000-0000-4000-8000-000000000002',
+   pg_temp.seed_ahead(0, '10:30'), 'Rear hub clicks when freewheeling.',
+   'Confirmed by WhatsApp.', pg_temp.seed_at(2, '09:40')),
+  -- Nurul's Bianchi, today 16:00: booked.
+  ('e2000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000006',
+   'b1000000-0000-4000-8000-000000000009', 'e1000000-0000-4000-8000-000000000002',
+   pg_temp.seed_ahead(0, '16:00'), 'Brake levers feel spongy.',
+   'No email on file; call to remind.', pg_temp.seed_at(1, '10:05')),
+  -- Tan's Brompton, the first Tuesday-Friday from tomorrow, 11:00: confirmed.
+  ('e2000000-0000-4000-8000-000000000007', 'c1000000-0000-4000-8000-000000000001',
+   'b1000000-0000-4000-8000-000000000002', 'e1000000-0000-4000-8000-000000000001',
+   (pg_temp.seed_first_day(1, array[2, 3, 4, 5]) + time '11:00') at time zone private.shop_timezone(),
+   'Annual service.', null, pg_temp.seed_at(2, '16:00')),
+  -- Priya's Tern, the first Tuesday-Friday at least 3 days ahead, 10:00:
+  -- cancelled by the shop.
+  ('e2000000-0000-4000-8000-000000000008', 'c1000000-0000-4000-8000-000000000002',
+   'b1000000-0000-4000-8000-000000000004', 'e1000000-0000-4000-8000-000000000002',
+   (pg_temp.seed_first_day(3, array[2, 3, 4, 5]) + time '10:00') at time zone private.shop_timezone(),
+   'Folding hinge is loose.', null, pg_temp.seed_at(4, '11:00'))
+) as r (id, customer_id, bike_id, type_id, starts_at, customer_note, internal_note, created_at)
+join public.appointment_types t on t.id = r.type_id;
+
+-- Chloe's own online bookings (source customer, created by her login).
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000101","role":"authenticated"}', false);
+
+insert into public.appointments
+  (id, customer_id, bike_id, appointment_type_id, starts_at, ends_at, capacity_units, status, source,
+   customer_note, created_by_user_id, created_at)
+select r.id, 'c1000000-0000-4000-8000-000000000004', r.bike_id, r.type_id, r.starts_at,
+       r.starts_at + make_interval(mins => t.duration_minutes), t.capacity_units, 'booked', 'customer',
+       r.customer_note, 'a0000000-0000-4000-8000-000000000101', r.created_at
+from (values
+  -- Chloe's Giant, today 15:00.
+  ('e2000000-0000-4000-8000-000000000005'::uuid, 'b1000000-0000-4000-8000-000000000006'::uuid,
+   'e1000000-0000-4000-8000-000000000001'::uuid, pg_temp.seed_ahead(0, '15:00'),
+   'Gears slip on the biggest cog; please check the chain too.', pg_temp.seed_at(1, '21:15')),
+  -- Chloe's Surly, the first Tuesday-Friday at least 5 days ahead, 14:00.
+  ('e2000000-0000-4000-8000-000000000009', 'b1000000-0000-4000-8000-000000000007',
+   'e1000000-0000-4000-8000-000000000003',
+   (pg_temp.seed_first_day(5, array[2, 3, 4, 5]) + time '14:00') at time zone private.shop_timezone(),
+   'Planning a touring rebuild with dynamo lights.', pg_temp.seed_at(1, '21:30'))
+) as r (id, bike_id, type_id, starts_at, customer_note, created_at)
+join public.appointment_types t on t.id = r.type_id;
+
+-- Status changes, one UPDATE each with its own stamp (the history event of
+-- a status change is dated by that stamp).
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+update public.appointments set status = 'no_show', no_show_at = pg_temp.seed_at(1, '11:20')
+where id = 'e2000000-0000-4000-8000-000000000002';
+update public.appointments set status = 'arrived', arrived_at = pg_temp.seed_at(0, '09:55')
+where id = 'e2000000-0000-4000-8000-000000000003';
+update public.appointments set status = 'confirmed', confirmed_at = pg_temp.seed_at(1, '17:30')
+where id = 'e2000000-0000-4000-8000-000000000004';
+update public.appointments set status = 'confirmed', confirmed_at = pg_temp.seed_at(1, '09:30')
+where id = 'e2000000-0000-4000-8000-000000000007';
+select private.set_change_reason('Customer travelling');
+update public.appointments set status = 'cancelled', cancelled_via = 'staff', cancelled_at = pg_temp.seed_at(1, '14:00')
+where id = 'e2000000-0000-4000-8000-000000000008';
+select private.set_change_reason(null);
+
+-- Tan's appointment and J-000014 (D40, D36): checked in when J-000014 was
+-- (Asha, 10:30 three days ago), then linked: the triggers check the link and
+-- write the appointment's work_order_linked and the job's
+-- appointment_linked events, dated at that check-in, so J-000014's timeline
+-- reads checked_in, appointment_linked, ... as before. J-000014 was
+-- completed (Marcus) before the link existed, so the D36 trigger never saw
+-- it: the appointment completes here at the job's completed_at.
+update public.appointments a
+set status = 'checked_in',
+    arrived_at = w.checked_in_at,
+    checked_in_at = w.checked_in_at
+from public.work_orders w
+where a.id = 'e2000000-0000-4000-8000-000000000001'
+  and w.id = 'd5000000-0000-4000-8000-000000000004';
+
+update public.work_orders
+set appointment_id = 'e2000000-0000-4000-8000-000000000001'
+where id = 'd5000000-0000-4000-8000-000000000004';
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+update public.appointments a
+set status = 'completed', completed_at = w.completed_at
+from public.work_orders w
+where a.id = 'e2000000-0000-4000-8000-000000000001'
+  and w.id = 'd5000000-0000-4000-8000-000000000004';
+
+select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 6: consignment and sales (DATA-MODEL.md §18 "Phase 6 part";
+-- fixtures in tests/fixtures/ids.ts EXPECTED_CONSIGNOR_LEDGER and
+-- EXPECTED_SALE, and the consignment columns of tests/fixtures/reporting.ts).
+-- Three consignors are inserted directly as the owner (like customers);
+-- everything else goes through the real RPCs as the admin, so every rule
+-- and trigger runs: four consignment items C-000001 .. C-000004 (products
+-- P-000023 .. P-000026, units U-000004 .. U-000006 on a fresh build), two
+-- charges with explicit bearers (D4), four retail sales S-000001 ..
+-- S-000004 dated on the Phase 5 fixture days with
+-- pg_temp.seed_at(days_ago, local_time), one return to the consignor, a
+-- settlement that was reversed and the one that replaced it, and a refund.
+-- Intake dates, sale recognised_at and settlement paid_at carry those
+-- dates; ledger movements, charges, events and the refund carry seed time
+-- (as the Phase 4 job does). Fixed-UUID prefixes: 6a consignors, 6b items,
+-- 6c intake products, 6d intake units, 6e charges, 6f sales, 7a refunds,
+-- 7b settlements, 7c reversals, 7e returns.
+-- ===========================================================================
+insert into public.consignors
+  (id, customer_id, display_name, email, phone, payout_details, internal_notes, created_by)
+values
+  ('6a000000-0000-4000-8000-000000000001', null, 'Kelvin Yeo', null, '+65 9876 5432',
+   'PayNow +65 9876 5432', null, '5a000000-0000-4000-8000-000000000001'),
+  ('6a000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000005', 'Daniel Ong',
+   'daniel.ong@example.com', '+65 9567 8901', 'PayNow +65 9567 8901', null,
+   '5a000000-0000-4000-8000-000000000001'),
+  ('6a000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000004', 'Chloe Lim',
+   'chloe.lim@example.com', '+65 8456 7890', 'Bank transfer, details on the signed agreement',
+   'Consigns kit after each season.', '5a000000-0000-4000-8000-000000000001');
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Intake (create_consignment_item), in C- order. C-000001 Kelvin's Colnago
+-- and C-000002 Daniel's Cervélo are unique (a new draft consignment product
+-- and unit each); C-000003 is six of Chloe's jerseys on a new quantity
+-- product; C-000004 Kelvin's crankset is unique.
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000001',
+  consignor_id => '6a000000-0000-4000-8000-000000000001',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 2400.00, asking_price => 4200.00,
+  product_name => 'Colnago C64 Disc (2019), 54 cm', brand => 'Colnago',
+  category_id => 'ca000000-0000-4000-8000-000000000012', tracking_type => 'unique',
+  serial_number => 'C64D-19-0412', condition => 'Very good; light wear on the drive-side chainstay',
+  received_at => pg_temp.seed_at(20, '11:00'),
+  new_product_id => '6c000000-0000-4000-8000-000000000001',
+  new_unit_id => '6d000000-0000-4000-8000-000000000001');
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000002',
+  consignor_id => '6a000000-0000-4000-8000-000000000002',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 500.00, asking_price => 1000.00,
+  product_name => 'Cervélo R3 (2017), 56 cm', brand => 'Cervélo',
+  category_id => 'ca000000-0000-4000-8000-000000000012', tracking_type => 'unique',
+  serial_number => 'CV-R3-17-5521', received_at => pg_temp.seed_at(18, '14:30'),
+  new_product_id => '6c000000-0000-4000-8000-000000000002',
+  new_unit_id => '6d000000-0000-4000-8000-000000000002');
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000003',
+  consignor_id => '6a000000-0000-4000-8000-000000000003',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 35.00, asking_price => 70.00,
+  product_name => 'Rapha Pro Team jersey, size M (as new)', brand => 'Rapha',
+  tracking_type => 'quantity', quantity => 6, received_at => pg_temp.seed_at(15, '10:15'),
+  new_product_id => '6c000000-0000-4000-8000-000000000003');
+select public.create_consignment_item(
+  item_id => '6b000000-0000-4000-8000-000000000004',
+  consignor_id => '6a000000-0000-4000-8000-000000000001',
+  location_id => '1c000000-0000-4000-8000-000000000001',
+  agreed_amount_owed => 300.00, asking_price => 520.00,
+  product_name => 'Shimano Dura-Ace R9100 crankset, 172.5 mm', brand => 'Shimano',
+  category_id => 'ca000000-0000-4000-8000-000000000008', tracking_type => 'unique',
+  received_at => pg_temp.seed_at(12, '16:00'),
+  new_product_id => '6c000000-0000-4000-8000-000000000004',
+  new_unit_id => '6d000000-0000-4000-8000-000000000004');
+
+-- Charges with an explicit bearer (D4): the shop pays for the Colnago's
+-- service (its cost becomes 2520.00); Daniel pays for his tubeless
+-- conversion (deducted from what he is owed).
+select public.add_consignment_charge(
+  '6e000000-0000-4000-8000-000000000001', '6b000000-0000-4000-8000-000000000001',
+  'Full service and new bar tape before listing', 120.00, 'shop');
+select public.add_consignment_charge(
+  '6e000000-0000-4000-8000-000000000002', '6b000000-0000-4000-8000-000000000002',
+  'Tubeless conversion requested by the consignor', 45.00, 'consignor');
+
+-- Retail sales (record_retail_sale), in S- order:
+--   S-000001 day 5, Priya: 2 jerseys from C-000003 at its asking price
+--            (140.00 / cost 70.00 / yield 70.00 / Cult Commons 21.00).
+--   S-000002 day 4, walk-in: 2 Brompton 16in tubes (P-000005, shop-owned,
+--            14.00 / 6.00): 28.00 / 12.00 / 16.00 / 4.80.
+--   S-000003 day 3, Hafiz: Daniel's Cervélo at its selling price, SPEC §10's
+--            consignment example: 1000.00 / 500.00 / 500.00 / 150.00.
+--   S-000004 today, walk-in: 1 jersey, FIFO from C-000003:
+--            70.00 / 35.00 / 35.00 / 10.50.
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000001',
+  '[{"product_id": "6c000000-0000-4000-8000-000000000003",
+     "location_id": "1c000000-0000-4000-8000-000000000001", "quantity": 2,
+     "consignment_item_id": "6b000000-0000-4000-8000-000000000003"}]'::jsonb,
+  'c1000000-0000-4000-8000-000000000002', pg_temp.seed_at(5, '11:20'));
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000002',
+  '[{"product_id": "9a000000-0000-4000-8000-000000000005",
+     "location_id": "1c000000-0000-4000-8000-000000000001", "quantity": 2}]'::jsonb,
+  null, pg_temp.seed_at(4, '15:05'));
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000003',
+  '[{"inventory_unit_id": "6d000000-0000-4000-8000-000000000002"}]'::jsonb,
+  'c1000000-0000-4000-8000-000000000003', pg_temp.seed_at(3, '16:40'));
+select public.record_retail_sale(
+  '6f000000-0000-4000-8000-000000000004',
+  '[{"product_id": "6c000000-0000-4000-8000-000000000003",
+     "location_id": "1c000000-0000-4000-8000-000000000001", "quantity": 1}]'::jsonb,
+  null, pg_temp.seed_at(0, '10:30'));
+
+-- Kelvin takes his crankset back (C-000004 returned; its unit
+-- returned_to_consignor and its product archived).
+select public.return_consignment_item(
+  '7e000000-0000-4000-8000-000000000001', '6b000000-0000-4000-8000-000000000004',
+  'Consignor took it back for his own build.');
+
+-- Chloe's settlements (D47): 30.00 recorded by mistake and reversed, then
+-- the 40.00 actually transferred. Her ledger: liability 105.00 (3 jerseys
+-- sold), paid 40.00, outstanding 65.00.
+select public.record_settlement(
+  '7b000000-0000-4000-8000-000000000001', '6a000000-0000-4000-8000-000000000003', 30.00,
+  '[{"consignment_item_id": "6b000000-0000-4000-8000-000000000003", "amount": "30.00"}]'::jsonb,
+  pg_temp.seed_at(3, '18:00'), 'PayNow 2991');
+select public.reverse_settlement(
+  '7c000000-0000-4000-8000-000000000001', '7b000000-0000-4000-8000-000000000001',
+  'Wrong amount; the transfer was $40.');
+select public.record_settlement(
+  '7b000000-0000-4000-8000-000000000002', '6a000000-0000-4000-8000-000000000003', 40.00,
+  '[{"consignment_item_id": "6b000000-0000-4000-8000-000000000003", "amount": "40.00"}]'::jsonb,
+  pg_temp.seed_at(2, '12:00'), 'PayNow 3002');
+
+-- A refund on S-000002 for one tube (financial only, D7/D49: S-000002 is
+-- partially_refunded, its stock and lines unchanged).
+select public.record_sale_refund(
+  '7a000000-0000-4000-8000-000000000001', '6f000000-0000-4000-8000-000000000002', 14.00,
+  'One tube had the wrong valve; refunded, customer kept it.');
+
+select set_config('request.jwt.claims', '', false);
+
+-- ===========================================================================
+-- Phase 7: purchasing (DATA-MODEL.md §18 "Phase 7 part"; ids in
+-- tests/fixtures/ids.ts SUPPLIER, PURCHASE_ORDER, PURCHASE_ORDER_LINE,
+-- RECEIPT_KEY). Everything goes through the purchasing RPCs as Asha Admin
+-- (request.jwt.claims), so PO history, the purchase_received movements and
+-- the supplier last costs are what the app writes. Suppliers have no create
+-- RPC (the app inserts them under RLS): they are inserted directly, dated
+-- 20 days back. POs are created in this order, so they get PO-000001 ..
+-- PO-000005 on a fresh build.
+--
+-- Chronology (D64 D-RECEIPT-TIME): after a PO is created and submitted
+-- through the RPCs, and BEFORE it is received, its created_at and
+-- submitted_at are back-dated with a plain UPDATE as the owner (those
+-- columns write no PO event); receive_purchase then records the receipt
+-- with its past received_at. The purchase_received movements keep seed
+-- time (Phase 4's ledger is append-only and has no effective date; their
+-- reason carries the delivery date), and the PO history rows keep record
+-- time.
+--
+-- Fences on the earlier phases:
+--   (1) every receipt's actual cost equals the product's current
+--       default_direct_cost, so D63 D-LASTCOST changes no product cost and
+--       writes no cost_changed event;
+--   (2) receipts touch only cassette (P-000007), chainX11 (P-000006) and
+--       chainLube (P-000010): not the low-stock cableKit, hydraulicHose and
+--       sealant, and none of the products whose on-hand a test pins
+--       (brakePads, gp5000Tyre, roadTube, bromptonTube, marathonRacer,
+--       barTape); each stays above its reorder point, so reporting.low_stock,
+--       Today's low-stock tile and tests/fixtures/reporting.ts are
+--       unchanged;
+--   (3) the draft PO-000004 holds cableKit and hydraulicHose, which no
+--       receipt touches;
+--   (4) Phase 5's daily summary and Today count only job_consumption,
+--       reversal, stock_adjustment and damaged movements, never
+--       purchase_received.
+-- ===========================================================================
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- Suppliers.
+insert into public.suppliers
+  (id, name, contact_name, email, phone, website, account_reference, notes, created_at)
+values
+  ('d7000000-0000-4000-8000-000000000001', 'Velo Parts Asia Pte Ltd', 'Kenneth Lim',
+   'sales@veloparts.test', '+65 6123 4501', 'https://veloparts.test', 'BICII-0042',
+   'Order by Thursday noon for Monday delivery.', pg_temp.seed_at(20, '09:00')),
+  ('d7000000-0000-4000-8000-000000000002', 'Tropic Tyre & Tube Co', 'Siti Rahman',
+   'orders@tropictyre.test', '+65 6234 5502', null, 'TT-1187',
+   null, pg_temp.seed_at(20, '09:05')),
+  ('d7000000-0000-4000-8000-000000000003', 'Old Spoke Trading', null,
+   null, null, null, null,
+   null, pg_temp.seed_at(20, '09:10'));
+-- Old Spoke stopped trading: archived, with no POs.
+update public.suppliers set archived_at = pg_temp.seed_at(15, '10:00')
+where id = 'd7000000-0000-4000-8000-000000000003';
+
+-- Supplier links (set_supplier_product). The GP5000 tyre comes from both,
+-- preferred at Tropic Tyre; the low-stock sealant has no supplier yet.
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000007', 'VPA-CSR7000-1134', 5, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000006', 'VPA-KMC-X11', 5, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000010', 'VPA-FL-DRY120', 5, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000008', 'VPA-JAG-PRO', 7, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000009', 'VPA-BH90-1000', 7, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000001',
+  '9a000000-0000-4000-8000-000000000002', 'VPA-GP5K-25', 5, false);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000002',
+  '9a000000-0000-4000-8000-000000000002', 'TT-GP5000-25', 3, true);
+select public.set_supplier_product('d7000000-0000-4000-8000-000000000002',
+  '9a000000-0000-4000-8000-000000000003', 'TT-SV20-60', 3, true);
+
+-- PO-000001 (Velo Parts): 4 x cassette at its cost 68.00. Created 12 days
+-- ago, submitted 11, received in full at the Shop floor 9 days ago
+-- (cassette 3 -> 7 on hand).
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000001',
+  'd7000000-0000-4000-8000-000000000001', private.shop_today() - 9, 'SO-7702', null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000001',
+  'd7100000-0000-4000-8000-000000000001', '9a000000-0000-4000-8000-000000000007', 4, 68.00);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000001');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(12, '10:00'), submitted_at = pg_temp.seed_at(11, '09:30')
+where id = 'd7100000-0000-4000-8000-000000000001';
+select public.receive_purchase('d7100000-0000-4000-8000-000000000001',
+  'd7300000-0000-4000-8000-000000000001',
+  '[{"purchase_order_line_id":"d7200000-0000-4000-8000-000000000001",
+     "location_id":"1c000000-0000-4000-8000-000000000001","quantity_received":4}]'::jsonb,
+  'DN-5402', pg_temp.seed_at(9, '14:00'), null);
+
+-- PO-000002 (Velo Parts), SPEC §14's partial receipt: 20 x chainX11 at
+-- 24.00 and 10 x chainLube at 7.00, expected yesterday. Created 6 days ago,
+-- submitted 5; one delivery 3 days ago (delivery note DN-5531) brought 18
+-- chains and 10 lubes. Partially received, 2 chains outstanding, overdue
+-- (chainX11 8 -> 26, chainLube 18 -> 28 on hand).
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000002',
+  'd7000000-0000-4000-8000-000000000001', private.shop_today() - 1, 'SO-7781', null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000002',
+  'd7100000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000006', 20, 24.00);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000003',
+  'd7100000-0000-4000-8000-000000000002', '9a000000-0000-4000-8000-000000000010', 10, 7.00);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000002');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(6, '10:00'), submitted_at = pg_temp.seed_at(5, '09:30')
+where id = 'd7100000-0000-4000-8000-000000000002';
+select public.receive_purchase('d7100000-0000-4000-8000-000000000002',
+  'd7300000-0000-4000-8000-000000000002',
+  '[{"purchase_order_line_id":"d7200000-0000-4000-8000-000000000002",
+     "location_id":"1c000000-0000-4000-8000-000000000001","quantity_received":18},
+    {"purchase_order_line_id":"d7200000-0000-4000-8000-000000000003",
+     "location_id":"1c000000-0000-4000-8000-000000000001","quantity_received":10}]'::jsonb,
+  'DN-5531', pg_temp.seed_at(3, '11:30'), null);
+
+-- PO-000003 (Tropic Tyre): 6 x gp5000Tyre at 52.00, created and submitted
+-- 2 days ago, nothing received, expected in 3 days.
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000003',
+  'd7000000-0000-4000-8000-000000000002', private.shop_today() + 3, null, null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000004',
+  'd7100000-0000-4000-8000-000000000003', '9a000000-0000-4000-8000-000000000002', 6, 52.00);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000003');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(2, '10:00'), submitted_at = pg_temp.seed_at(2, '10:20')
+where id = 'd7100000-0000-4000-8000-000000000003';
+
+-- PO-000004 (Velo Parts): a draft for two low-stock products, 6 x cableKit
+-- at 16.00 and 9 x hydraulicHose at 12.00 (their D66 suggestions), so the
+-- reorder screen shows them "In draft PO-000004". Created yesterday.
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000004',
+  'd7000000-0000-4000-8000-000000000001', null, null, null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000005',
+  'd7100000-0000-4000-8000-000000000004', '9a000000-0000-4000-8000-000000000008', 6, 16.00);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000006',
+  'd7100000-0000-4000-8000-000000000004', '9a000000-0000-4000-8000-000000000009', 9, 12.00);
+update public.purchase_orders set created_at = pg_temp.seed_at(1, '09:00')
+where id = 'd7100000-0000-4000-8000-000000000004';
+
+-- PO-000005 (Tropic Tyre): 20 x roadTube at 3.80, created and submitted
+-- yesterday, cancelled today (at seed time).
+select public.create_purchase_order('d7100000-0000-4000-8000-000000000005',
+  'd7000000-0000-4000-8000-000000000002', null, null, null);
+select public.set_purchase_order_line('d7200000-0000-4000-8000-000000000007',
+  'd7100000-0000-4000-8000-000000000005', '9a000000-0000-4000-8000-000000000003', 20, 3.80);
+select public.submit_purchase_order('d7100000-0000-4000-8000-000000000005');
+update public.purchase_orders
+set created_at = pg_temp.seed_at(1, '15:00'), submitted_at = pg_temp.seed_at(1, '15:10')
+where id = 'd7100000-0000-4000-8000-000000000005';
+select public.cancel_purchase_order('d7100000-0000-4000-8000-000000000005',
+  'Supplier out of stock until next quarter');
+
+-- So that every seeded PO's History reads true next to its Details and
+-- Receipts (as the workshop seed does for job timelines): the RPCs above
+-- stamped each event at seed time, so move it to the moment it stands for.
+-- created -> the PO's created_at; line_added -> a minute apart after it;
+-- submitted -> submitted_at; received -> its receipt's received_at; the
+-- status_changed that a receipt caused -> a second after that receipt; the
+-- cancellation stays at seed time ("cancelled today"). The append-only
+-- trigger is lifted for this one seed-only UPDATE and restored at once;
+-- no app path can do this.
+alter table public.purchase_order_events disable trigger purchase_order_events_append_only;
+update public.purchase_order_events e
+set created_at = t.at
+from (
+  select ev.id,
+         case ev.event_type
+           when 'created' then o.created_at
+           when 'line_added' then o.created_at + pg_catalog.make_interval(mins => (
+             pg_catalog.row_number() over (
+               partition by ev.purchase_order_id, ev.event_type order by ev.created_at, ev.id))::int)
+           when 'submitted' then o.submitted_at
+           when 'received' then r.received_at
+           when 'status_changed' then (
+             select rr.received_at + interval '1 second'
+             from public.purchase_order_events prev
+             join public.purchase_receipts rr on rr.id = prev.purchase_receipt_id
+             where prev.purchase_order_id = ev.purchase_order_id
+               and prev.event_type = 'received'
+               and prev.created_at <= ev.created_at
+             order by prev.created_at desc
+             limit 1)
+         end as at
+  from public.purchase_order_events ev
+  join public.purchase_orders o on o.id = ev.purchase_order_id
+  left join public.purchase_receipts r on r.id = ev.purchase_receipt_id
+  where ev.purchase_order_id::text like 'd7100000-%'
+) t
+where e.id = t.id and t.at is not null;
+alter table public.purchase_order_events enable trigger purchase_order_events_append_only;
 
 select set_config('request.jwt.claims', '', false);

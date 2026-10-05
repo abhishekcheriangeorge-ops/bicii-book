@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { bikeDetails, bikeSubtitle, bikeTitle } from "@/lib/bikes";
-import { groupHits, hrefForHit, isSearchKind, shortIdJump, type SearchHit } from "@/lib/search";
+import {
+  groupHits,
+  hrefForHit,
+  isSearchKind,
+  SEARCH_KIND_LABELS,
+  SEARCH_KINDS,
+  shortIdJump,
+  type SearchHit,
+} from "@/lib/search";
 
 const hit = (kind: SearchHit["kind"], id: string, rank: number): SearchHit => ({
   kind,
@@ -63,7 +71,46 @@ describe("hrefForHit", () => {
     expect(isSearchKind("work_order")).toBe(true);
     expect(isSearchKind("product")).toBe(true);
     expect(isSearchKind("inventory_unit")).toBe(true);
-    expect(isSearchKind("supplier")).toBe(false);
+    expect(isSearchKind("appointment")).toBe(false);
+  });
+
+  it("opens suppliers and purchase orders in Purchasing (Phase 7)", () => {
+    expect(hrefForHit({ kind: "supplier", id: "s" })).toBe("/purchasing/suppliers/s");
+    expect(hrefForHit({ kind: "purchase_order", id: "o" })).toBe("/purchasing/orders/o");
+    expect(isSearchKind("supplier")).toBe(true);
+    expect(isSearchKind("purchase_order")).toBe(true);
+    expect(SEARCH_KINDS.slice(-2)).toEqual(["supplier", "purchase_order"]);
+    expect(SEARCH_KIND_LABELS.supplier).toBe("Suppliers");
+    expect(SEARCH_KIND_LABELS.purchase_order).toBe("Purchase orders");
+  });
+
+  it("puts an exact PO number's group first", () => {
+    const groups = groupHits([
+      hit("supplier", "s1", 0.9),
+      hit("purchase_order", "o1", 1),
+      hit("customer", "c1", 0.5),
+    ]);
+    expect(groups.map((g) => g.kind)).toEqual(["purchase_order", "supplier", "customer"]);
+    expect(groups[0].label).toBe("Purchase orders");
+  });
+
+  it("opens consignors and consignment items in Consignment (Phase 6)", () => {
+    expect(hrefForHit({ kind: "consignor", id: "k" })).toBe("/consignment/consignors/k");
+    expect(hrefForHit({ kind: "consignment_item", id: "c" })).toBe("/consignment/items/c");
+    expect(isSearchKind("consignor")).toBe(true);
+    expect(isSearchKind("consignment_item")).toBe(true);
+  });
+
+  it("opens sales on their page and labels the group Sales (Phase 6)", () => {
+    expect(isSearchKind("sale")).toBe(true);
+    expect(hrefForHit({ kind: "sale", id: "s" })).toBe("/sales/s");
+    const groups = groupHits([hit("sale", "s1", 1), hit("customer", "k1", 0.6)]);
+    expect(groups.map((g) => g.label)).toEqual(["Sales", "Customers"]);
+  });
+
+  it("labels the consignment groups", () => {
+    const groups = groupHits([hit("consignor", "k1", 0.6), hit("consignment_item", "c1", 1)]);
+    expect(groups.map((g) => g.label)).toEqual(["Consignment items", "Consignors"]);
   });
 });
 

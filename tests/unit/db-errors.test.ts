@@ -178,12 +178,152 @@ describe("mapDbError", () => {
     ).toBe("Stock photos have no customer; choose Internal or Public.");
   });
 
+  it("maps the consignment errors, keys and checks (Phase 6: D4, D44-D52)", () => {
+    expect(mapDbError(pgrst("P0001", "charge_bearer_required"))).toEqual({
+      message: "Choose who bears the charge: the consignor or the shop.",
+      kind: "business",
+      code: "P0001",
+      reason: "charge_bearer_required",
+    });
+    expect(mapDbError(pgrst("P0001", "consignment_stock_adjust_blocked")).message).toBe(
+      "Consigned stock can't be adjusted, damaged, split or received by hand. Return it to the consignor or sell it.",
+    );
+    expect(mapDbError(pgrst("P0001", "consignment_quantity_unavailable")).message).toBe(
+      "No single consignor has that many of this item at that location. Use fewer, or one consignor's stock at a time.",
+    );
+    // D55: a sale dated before its stock came in; an intake's new consignor
+    // whose id is already someone else's.
+    expect(mapDbError(pgrst("P0001", "sale_before_stock")).message).toMatch(
+      /before the item came into the shop/,
+    );
+    expect(mapDbError(pgrst("P0001", "consignor_conflict")).message).toMatch(
+      /already saved with other details/,
+    );
+    // An internal guard: never explained to the user.
+    expect(mapDbError(pgrst("P0001", "consignment_quantity_negative")).message).toBe(GENERIC_ERROR);
+    // Since D27 changed, only customer-owned stock (and splits of
+    // non-shop stock) reach this code.
+    expect(mapDbError(pgrst("P0001", "ownership_not_saleable")).message).toMatch(
+      /belongs to a customer/,
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "consignors_customer_id_key" })
+        .message,
+    ).toBe("That customer is already a consignor.");
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "attachments_consignment_item_internal_only",
+      }).message,
+    ).toBe(
+      "Photos on a consignment item stay internal. Put listing photos on the product or unit.",
+    );
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "work_order_line_items_consignment_shape",
+      }).message,
+    ).toBe("A consigned part needs both its consignment and what the consignor is owed.");
+  });
+
   it("maps the reporting range error (Phase 5)", () => {
     expect(mapDbError(pgrst("P0001", "report_range_invalid"))).toMatchObject({
       kind: "business",
       reason: "report_range_invalid",
       message: "Pick a start day on or before the end day, within the allowed range.",
     });
+  });
+
+  it("maps the appointment, check-in (D40) and schedule errors, keys, checks and the exclusion backstop (Phase 2)", () => {
+    expect(mapDbError(pgrst("P0001", "appointment_capacity_exceeded"))).toEqual({
+      message: "That time has just filled up. Pick another time.",
+      kind: "business",
+      code: "P0001",
+      reason: "appointment_capacity_exceeded",
+    });
+    expect(mapDbError(pgrst("P0001", "appointment_customer_limit")).message).toBe(
+      "You already have the most upcoming online bookings allowed. Cancel one or contact the shop.",
+    );
+    expect(mapDbError(pgrst("P0001", "appointment_not_cancellable")).message).toBe(
+      "This appointment can no longer be cancelled online. Please contact the shop.",
+    );
+    expect(mapDbError(pgrst("P0001", "appointment_not_checked_in"))).toEqual({
+      message: "Check the appointment in before linking a job.",
+      kind: "business",
+      code: "P0001",
+      reason: "appointment_not_checked_in",
+    });
+    expect(mapDbError(pgrst("P0001", "appointment_work_order_mismatch")).message).toBe(
+      "That job is not an open job for this customer and bike, or it already has an appointment.",
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "work_orders_appointment_id_key" })
+        .message,
+    ).toBe("That appointment already has a job.");
+    expect(mapDbError(pgrst("P0001", "closure_conflict")).message).toBe(
+      "Someone changed this closure in the meantime. Reload and try again.",
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "appointment_types_name_key" })
+        .message,
+    ).toBe("An appointment type with that name already exists.");
+    expect(
+      mapDbError(
+        pgrst(
+          "23514",
+          'new row for relation "shop_settings" violates check constraint "shop_settings_slot_minutes_check"',
+        ),
+      ).message,
+    ).toBe("The slot length must divide the day evenly (5 to 240 minutes).");
+    expect(
+      mapDbError(
+        pgrst(
+          "23P01",
+          'conflicting key value violates exclusion constraint "closure_overrides_custom_hours_no_overlap"',
+        ),
+      ),
+    ).toEqual({ message: "That overlaps with another entry.", kind: "conflict", code: "23P01" });
+  });
+
+  it("maps the purchasing business errors, unique keys and checks (Phase 7)", () => {
+    expect(mapDbError(pgrst("P0001", "purchase_over_receipt"))).toMatchObject({
+      kind: "business",
+      reason: "purchase_over_receipt",
+      message:
+        "That is more than is still to come on this order. Check the counts, or raise the ordered quantity first.",
+    });
+    expect(mapDbError(pgrst("P0001", "purchase_receipt_key_reused")).message).toBe(
+      "This submission was already recorded. Check the order before receiving again.",
+    );
+    expect(mapDbError(pgrst("P0001", "purchase_order_closed")).message).toBe(
+      "This order is closed: it has been fully received or cancelled. Extra units go on a new order.",
+    );
+    expect(mapDbError(pgrst("P0001", "supplier_has_open_orders")).message).toBe(
+      "This supplier still has open orders. Receive or cancel them first.",
+    );
+    expect(mapDbError(pgrst("P0001", "purchase_receipt_before_submission")).message).toBe(
+      "The delivery date is before the order was submitted.",
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "suppliers_name_active_key" }),
+    ).toMatchObject({ kind: "duplicate", message: "A supplier with that name already exists." });
+    expect(
+      mapDbError(
+        pgrst(
+          "23514",
+          'new row for relation "purchase_order_lines" violates check constraint "purchase_order_lines_unit_cost_check"',
+        ),
+      ).message,
+    ).toMatch(/^Unit cost must be between \S*0\.00 and \S*99,999\.99\.$/);
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "inventory_movements_purchase_received_has_receipt_line",
+      }).message,
+    ).toBe("Stock from a supplier is received through its purchase order.");
   });
 
   it("maps numeric overflow (22003) to a plain message", () => {

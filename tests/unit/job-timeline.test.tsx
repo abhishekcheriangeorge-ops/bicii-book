@@ -34,6 +34,30 @@ describe("Timeline", () => {
     );
   });
 
+  it("links an entry's title when it has an href (the appointment a job came from)", () => {
+    render(
+      <Timeline
+        entries={[
+          {
+            ...entry(4),
+            type: "appointment_linked",
+            title: "Opened from the appointment on Tue 6 Oct 10:00 (Service drop-off)",
+            detail: null,
+            tone: "info",
+            href: "/appointments/e2000000-0000-4000-8000-000000000003",
+          },
+          entry(3),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByRole("link", {
+        name: "Opened from the appointment on Tue 6 Oct 10:00 (Service drop-off)",
+      }),
+    ).toHaveAttribute("href", "/appointments/e2000000-0000-4000-8000-000000000003");
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+  });
+
   it("still says so when there is no further page", () => {
     render(<Timeline entries={[entry(1)]} truncated moreHref={null} />);
     expect(screen.getByRole("note")).toHaveTextContent("Showing the newest 1 events.");

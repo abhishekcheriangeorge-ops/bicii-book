@@ -23,8 +23,13 @@ framework code and heed deprecation notices.
 
 ## Before writing code
 
-Read, in order: `docs/SPEC.md`, `docs/PLAN.md`, `docs/ADR-001-architecture.md`,
-`docs/DATA-MODEL.md`, `docs/TESTING.md`.
+Read [NOW.md](NOW.md) first and inspect the git state: the branch, the
+worktrees (`git worktree list`) and what is pushed versus local only. Then
+read, in order: `docs/SPEC.md`, `docs/PLAN.md`, `docs/ADR-001-architecture.md`,
+`docs/DATA-MODEL.md`, `docs/TESTING.md`, plus the canonical doc the task
+touches ([README.md](README.md#where-each-fact-lives) lists them).
+Conventions and commands are in
+[docs/ENGINEERING.md](docs/ENGINEERING.md).
 
 ## Rules that are not negotiable
 
@@ -41,3 +46,46 @@ Read, in order: `docs/SPEC.md`, `docs/PLAN.md`, `docs/ADR-001-architecture.md`,
 - Never commit secrets. `.env.local` is ignored; `.env.example` documents
   every variable.
 - Each phase ends runnable and green (`npm run check`, `npm test`).
+
+## Documentation maintenance contract
+
+The repository follows
+[Vibe Code Docs Stack v0.2.0](https://github.com/abhishekcheriangeorge-ops/vibe-code-docs-stack)
+([ADR-015](docs/decisions/ADR-015-documentation-stack.md)).
+
+1. Orient: read NOW.md and the docs the task touches; inspect git (branch,
+   worktrees, pushed versus local) before trusting any document.
+2. Update the canonical docs with every meaningful change, in the same
+   commit as the code:
+   - behaviour or scope: `docs/PRODUCT.md` and `docs/USER-GUIDE.md`;
+   - design: `docs/ARCHITECTURE.md` and a record in `docs/decisions/`;
+   - schema, access, contracts: `docs/DATA-MODEL.md`;
+   - setup, commands, tests: `docs/ENGINEERING.md`, `docs/TESTING.md`;
+   - administration, hosting, release, recovery: `docs/OPERATIONS.md`,
+     `docs/RUNBOOK.md`;
+   - a new business decision: a row in
+     [PLAN §6](docs/PLAN.md#6-open-decisions-for-the-owner) plus a record,
+     numbered from the track's allocated range, never "the next free":
+     D43–D59 main line (labels D56–D59), D60–D69 purchasing, D70–D79 staff
+     email sign-in, D80–D89 Shopify, D90–D99 staff roles, D100–D119
+     reporting, D120–D139 public site, D140+ later. Records: ADR-017
+     labels, ADR-018 purchasing, ADR-019 email sign-in, ADR-020 Shopify,
+     ADR-021 staff roles, ADR-022 reporting, ADR-023 public site. RISKS:
+     R-028–R-029 labels, R-030–R-034 purchasing, R-035–R-039 email sign-in,
+     R-040–R-049 Shopify, R-050–R-054 roles, R-055–R-064 reporting,
+     R-065–R-074 public site.
+3. Record problems, shortcuts and uncertainty with evidence in
+   `docs/RISKS.md`. There is one backlog: the PLAN phases, the RISKS next
+   actions and NOW.md.
+4. Update NOW.md at checkpoints and at the end of each phase: what is built,
+   how it was verified, the branch, what is committed and pushed versus
+   local only, and the first next action.
+5. Before running a documented command, inspect its script and target:
+   `npm run db:reset` drops and rebuilds `bicii_dev`, `npm run test:e2e`
+   resets it, and nothing may target a hosted project without the owner's
+   authorization. Record pass, fail or not run; a date is not verification.
+6. Secrets and audience: the repository is public. No secrets, hosted
+   values or keys, no customer data; security issues only as
+   non-exploitable summaries; name configuration, never its values. Every
+   pull request answers the documentation-impact question in
+   [.github/pull_request_template.md](.github/pull_request_template.md).

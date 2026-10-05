@@ -6,6 +6,7 @@
  *
  * Pure (no server imports) so it is unit-tested directly.
  */
+import { formatMoney } from "./money";
 
 /** The shape PostgREST (supabase-js PostgrestError) and node-postgres share. */
 export type DbErrorLike = {
@@ -139,8 +140,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   part_cost_missing:
     "This part has no cost yet, so its yield cannot be worked out. Ask someone with cost access to set it.",
   ownership_not_saleable:
-    "This item is not shop stock, so it can't be used on a job or split into a unique item.",
-  currency_mismatch: "That item is priced in another currency than the job.",
+    "This item belongs to a customer, or is not shop stock that can be split, so it can't be used here.",
+  currency_mismatch: "That item is priced in another currency than the job or sale.",
   publication_transition_invalid:
     "The item can't move to that publication status from where it is now.",
   publication_requires_photo: "Add a public photo before publishing.",
@@ -157,8 +158,166 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   product_events_append_only: "Product history can't be changed.",
   inventory_unit_events_append_only: "Unit history can't be changed.",
   attachment_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
+  // Consignment (Phase 6: D4, D44-D52)
+  consignment_item_conflict:
+    "That consignment clashes with another intake. Start the intake again.",
+  consignor_archived: "That consignor is archived. Unarchive them first.",
+  consignor_has_open_items:
+    "This consignor still has items with the shop. Sell or return them before archiving.",
+  consignment_product_required: "Choose a consignment product or name a new one.",
+  product_not_consignment: "Consigned stock goes on a consignment product, never on shop stock.",
+  consignment_tracking_mismatch: "That product is tracked differently (unique or by quantity).",
+  consignment_unique_quantity_one: "A unique item is taken in one at a time.",
+  consignment_quantity_invalid: "Take in between 1 and 9,999.",
+  consignment_received_in_future: "The intake date can't be in the future.",
+  consignment_item_not_active: "That consigned item is no longer with the shop.",
+  consignment_return_quantity_invalid: "Return at least one, and no more than the shop still has.",
+  consignment_return_conflict: "That return clashes with another stock change. Start again.",
+  consignment_quantity_unavailable:
+    "No single consignor has that many of this item at that location. Use fewer, or one consignor's stock at a time.",
+  consignor_conflict:
+    "That consignor was already saved with other details. Close the form and start again.",
+  consignment_quantity_negative: GENERIC_ERROR,
+  consignment_unit_write_off_blocked:
+    "A consigned unit isn't the shop's to write off. Return it to the consignor or sell it.",
+  consignment_stock_adjust_blocked:
+    "Consigned stock can't be adjusted, damaged, split or received by hand. Return it to the consignor or sell it.",
+  consignment_bike_requires_unique: "Only a unique item can be a bike.",
+  consignment_item_immutable:
+    "A consignment keeps its consignor, product, unit, quantity and intake date.",
+  consignment_item_short_id_immutable: "A consignment item keeps its ID for life.",
+  consignment_history_append_only: "Consignment history can't be changed.",
+  consignment_charges_immutable: "A charge can't be edited or deleted, only voided with a reason.",
+  consignment_charge_conflict: "That charge clashes with another one. Add it again.",
+  charge_bearer_required: "Choose who bears the charge: the consignor or the shop.",
+  shop_charge_unique_only: "A shop-borne charge goes on a unique item only.",
+  shop_charge_unit_not_available:
+    "That unit's cost is already fixed on a job or a sale. Change shop charges only while it is available.",
+  product_ownership_immutable:
+    "A product with stock history keeps its owner. Consigned stock lives on its own products.",
+  line_consignment_mismatch:
+    "That consigned part doesn't match its consignment. Refresh and try again.",
+  attachment_consignment_internal_only:
+    "Photos on a consignment item stay internal. Put listing photos on the product or unit.",
+  // Sales, restocks and refunds (Phase 6)
+  sale_conflict: "That sale clashes with another one already recorded. Start the sale again.",
+  sale_line_invalid: "One of the items on the sale isn't valid. Remove it and add it again.",
+  sale_lines_required: "Add at least one item to the sale.",
+  sale_too_many_lines: "A sale holds at most 50 lines. Record the rest as another sale.",
+  sale_duplicate_unit: "The same item is on the sale twice.",
+  sale_recognized_in_future: "A sale can't be dated in the future.",
+  sale_before_stock:
+    "A sale can't be dated before the item came into the shop. Check the date and time it was sold.",
+  sale_price_required: "This item has no selling price. Enter one.",
+  sale_cost_missing:
+    "This item has no cost yet, so the sale's yield can't be worked out. Ask someone with cost access to enter it.",
+  sale_quantity_invalid: "Sell between 1 and 999.",
+  sale_product_is_unique: "That product is sold item by item. Choose the item.",
+  unit_already_sold: "That item has already been sold.",
+  unit_not_sold: "That item isn't sold, so it can't be restocked.",
+  restock_line_mismatch: "That sale line is for another item, or the item was sold elsewhere.",
+  sale_immutable: "A recorded sale can't be changed or deleted. Record a refund instead.",
+  sale_number_immutable: "A sale keeps its number for life.",
+  sale_lines_immutable: "A sale line can't be changed or deleted.",
+  sale_refund_immutable: "A refund can't be changed or deleted.",
+  sale_refund_conflict: "That refund clashes with another one already recorded. Start again.",
+  sale_voided: "That sale was voided.",
+  refund_exceeds_sale: "That's more than is left to refund on this sale.",
+  // Settlements (Phase 6, D47)
+  consignor_has_balance:
+    "This consignor's balance isn't zero. Pay what is owed first. An overpayment clears with a later sale, by voiding a consignor-paid charge or by reversing a payment.",
+  settlement_conflict: "That settlement clashes with another one already recorded. Start again.",
+  settlement_paid_in_future: "A settlement can't be dated in the future.",
+  settlement_allocations_required:
+    "Allocate the payment to the consignor's items, each with an amount above zero.",
+  settlement_duplicate_item: "Each item takes one allocation per settlement.",
+  settlement_item_wrong_consignor: "Every allocated item must be this consignor's.",
+  settlement_allocation_mismatch: "The allocations must add up to the amount paid.",
+  settlement_exceeds_outstanding:
+    "That's more than is outstanding on the item. Give an override reason to pay more.",
+  settlement_immutable:
+    "A settlement can't be changed or deleted. Reverse it with a reason instead.",
+  settlement_reversal_conflict: "That reversal clashes with another one. Start again.",
+  settlement_already_reversed: "That settlement has already been reversed.",
   // Reporting (Phase 5; Phase 9 reuses it)
   report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
+  // Appointments and schedule (Phase 2)
+  appointment_slot_misaligned: "Pick one of the listed times.",
+  appointment_outside_hours: "The shop is not open for the whole of that time.",
+  appointment_closed: "The shop is closed then.",
+  appointment_capacity_exceeded: "That time has just filled up. Pick another time.",
+  appointment_in_past: "That appointment would already be over. Pick a later time.",
+  appointment_too_soon: "That is too soon to book online. Pick a later time.",
+  appointment_too_far_ahead: "That is too far ahead to book online.",
+  appointment_customer_limit:
+    "You already have the most upcoming online bookings allowed. Cancel one or contact the shop.",
+  appointment_type_unavailable: "That appointment type is not available.",
+  appointment_conflict: "That booking clashes with another one. Start again.",
+  appointment_bike_not_owned:
+    "That bike belongs to someone else. Transfer it first or pick another bike.",
+  appointment_bike_archived: "That bike is archived. Unarchive it or pick another bike.",
+  appointment_immutable: "That part of the appointment can no longer be changed.",
+  appointment_transition_invalid: "That appointment cannot move to that status.",
+  appointment_use_check_in: "Use Check in to check this appointment in.",
+  appointment_use_cancel: "Use Cancel appointment, with a reason.",
+  appointment_not_started: "Mark a no-show only after the appointment has started.",
+  appointment_not_cancellable:
+    "This appointment can no longer be cancelled online. Please contact the shop.",
+  appointment_history_append_only: "Appointment history cannot be changed.",
+  appointment_not_checked_in: "Check the appointment in before linking a job.",
+  appointment_work_order_mismatch:
+    "That job is not an open job for this customer and bike, or it already has an appointment.",
+  schedule_history_append_only: "Schedule history cannot be changed.",
+  shop_hours_overlap: "Those opening hours overlap.",
+  closure_invalid_range: "Check the closure's days and times.",
+  closure_custom_hours_overlap: "Another short day already covers those days.",
+  closure_conflict: "Someone changed this closure in the meantime. Reload and try again.",
+  appointment_type_conflict: "Someone changed this type in the meantime. Reload and try again.",
+  shop_capacity_below_type:
+    "An active appointment type needs more capacity than that. Change the type first.",
+  appointment_type_capacity_too_large:
+    "That is more than the shop takes in one slot. Raise the shop's capacity first, or use fewer units.",
+  shop_timezone_invalid: "That is not a time zone the database knows.",
+  shop_settings_required: "The shop settings cannot be deleted, only changed.",
+  // Purchasing (Phase 7)
+  supplier_archived: "That supplier is archived. Unarchive it first.",
+  supplier_has_open_orders: "This supplier still has open orders. Receive or cancel them first.",
+  purchase_order_conflict: "That order clashes with another one. Start the order again.",
+  purchase_order_number_immutable: "An order keeps its number for life.",
+  purchase_order_supplier_locked: "The supplier can only change while the order is a draft.",
+  purchase_order_closed:
+    "This order is closed: it has been fully received or cancelled. Extra units go on a new order.",
+  purchase_order_not_submitted: "Submit the order before receiving against it.",
+  purchase_order_needs_lines: "An order needs at least one line. Add one, or cancel the order.",
+  purchase_line_conflict: "That line clashes with another one. Refresh the order and try again.",
+  purchase_line_below_received:
+    "More than that has already been received. The ordered quantity can't go below it.",
+  purchase_line_unique_product:
+    "Unique items are registered one by one in Stock, not ordered on a purchase order.",
+  purchase_line_not_shop_owned: "Only shop-owned products can be ordered from a supplier.",
+  purchase_line_product_inactive: "That product is inactive or archived. Reactivate it first.",
+  purchase_line_duplicate_product:
+    "That product is already on this order. Change its line instead.",
+  purchase_line_has_receipts:
+    "Part of this line has been received, so it can't be removed. Lower its quantity instead.",
+  purchase_currency_mismatch: "That product is priced in another currency than this order.",
+  purchase_receipt_key_reused:
+    "This submission was already recorded. Check the order before receiving again.",
+  purchase_receipt_empty: "Enter at least one received line.",
+  purchase_receipt_quantity_invalid: "Enter a whole number of units received, at least 1.",
+  purchase_receipt_cost_invalid: `Enter a unit cost between ${formatMoney("0")} and ${formatMoney("99999.99")}.`,
+  purchase_receipt_line_foreign: "That line is not on this order. Refresh the order and try again.",
+  purchase_receipt_line_duplicate:
+    "The same order line appears twice for one location. Combine them into one.",
+  purchase_over_receipt:
+    "That is more than is still to come on this order. Check the counts, or raise the ordered quantity first.",
+  purchase_receipt_in_future: "The delivery date can't be in the future.",
+  purchase_receipt_too_old: "A delivery can be back-dated by at most 30 days.",
+  purchase_receipt_before_submission: "The delivery date is before the order was submitted.",
+  purchase_receipt_immutable:
+    "A recorded delivery can't be changed. Correct the stock with an adjustment.",
+  purchase_order_history_append_only: "Purchase order history can't be changed.",
+  reorder_nothing_selected: "Choose at least one product to order.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -206,6 +365,52 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   inventory_movements_sale_line_once: "That sale has already taken its stock.",
   inventory_movements_receipt_line_once: "That delivery has already been received.",
   inventory_movements_reversal_of_id_key: "That stock change has already been reversed.",
+  // Consignment (Phase 6)
+  consignors_pkey: "That consignor has already been saved.",
+  consignors_customer_id_key: "That customer is already a consignor.",
+  consignment_items_pkey: "That consignment has already been taken in.",
+  consignment_items_short_id_key: "That consignment ID is already taken. Try again.",
+  consignment_items_inventory_unit_id_key: "That unit already belongs to another consignment.",
+  consignment_item_charges_pkey: "That charge has already been added.",
+  sales_pkey: "That sale has already been recorded.",
+  sales_sale_number_key: "That sale number is already taken. Try again.",
+  sales_shopify_order_id_key: "That Shopify order is already recorded.",
+  sale_lines_pkey: "That sale line has already been recorded.",
+  sale_lines_sale_line_number_key: "That sale line has already been recorded.",
+  sale_lines_shopify_line_item_id_key: "That Shopify line is already recorded.",
+  sale_lines_unit_sells_once: "That item has already been sold.",
+  sale_refunds_pkey: "That refund has already been recorded.",
+  sale_refunds_shopify_refund_id_key: "That Shopify refund is already recorded.",
+  inventory_movements_restock_once: "That item has already been restocked.",
+  consignment_settlements_pkey: "That settlement has already been recorded.",
+  settlement_lines_pkey: "That allocation has already been recorded.",
+  settlement_lines_settlement_item_key: "Each item takes one allocation per settlement.",
+  consignment_settlement_reversals_pkey: "That reversal has already been recorded.",
+  consignment_settlement_reversals_settlement_id_key: "That settlement has already been reversed.",
+  // Appointments and schedule (Phase 2)
+  appointments_pkey: "That appointment has already been booked.",
+  work_orders_appointment_id_key: "That appointment already has a job.",
+  appointment_types_name_key: "An appointment type with that name already exists.",
+  appointment_types_pkey: "That appointment type has already been saved.",
+  closure_overrides_pkey: "That closure has already been saved.",
+  shop_hours_weekday_opens_at_key: "Two opening intervals of that day start at the same time.",
+  // Purchasing (Phase 7)
+  suppliers_pkey: "That supplier has already been saved.",
+  suppliers_name_active_key: "A supplier with that name already exists.",
+  supplier_products_pkey: "That supplier is already linked to this product.",
+  supplier_products_one_preferred:
+    "Someone else changed the preferred supplier at the same time. Try again.",
+  purchase_orders_pkey: "That order has already been saved.",
+  purchase_orders_po_number_key: "That order number is already taken. Try again.",
+  purchase_order_lines_pkey: "That line has already been saved.",
+  purchase_order_lines_product_once:
+    "That product is already on this order. Change its line instead.",
+  purchase_receipts_pkey: "That delivery has already been recorded.",
+  purchase_receipts_idempotency_key_key:
+    "This submission was already recorded. Check the order before receiving again.",
+  purchase_receipt_lines_pkey: "That delivery line has already been recorded.",
+  purchase_receipt_lines_purchase_receipt_id_line_number_key:
+    "That delivery line has already been recorded.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -328,6 +533,137 @@ export const CHECK_ERRORS: Record<string, string> = {
   product_events_payload_object: "That product history entry is not consistent.",
   inventory_unit_events_payload_object: "That unit history entry is not consistent.",
   attachments_stock_never_customer: "Stock photos have no customer; choose Internal or Public.",
+  // Consignment (Phase 6)
+  consignors_display_name_check: "Enter the consignor's name, under 200 characters.",
+  consignors_email_check: "Enter a valid email address.",
+  consignors_phone_check: "Keep the phone number under 40 characters.",
+  consignors_payout_details_check: "Keep the payout details under 2,000 characters.",
+  consignors_internal_notes_check: "Keep the notes under 10,000 characters.",
+  consignment_items_short_id_format: "A consignment ID looks like C-000123.",
+  consignment_items_quantity_check: "Take in between 1 and 9,999.",
+  consignment_items_agreed_amount_owed_check: "The amount owed can't be negative.",
+  consignment_items_asking_price_check: "Prices can't be negative.",
+  consignment_items_currency_check: "Use a three-letter currency code.",
+  consignment_items_return_reason_check: "Keep the reason under 500 characters.",
+  consignment_items_agreement_notes_check: "Keep the agreement notes under 2,000 characters.",
+  consignment_items_internal_notes_check: "Keep the notes under 10,000 characters.",
+  consignment_items_unit_quantity_one: "A unique item is taken in one at a time.",
+  consignment_items_returned_has_date: "A returned item needs its return date.",
+  consignment_items_sold_has_date:
+    "The consignment's sale date doesn't match its status. Refresh and try again.",
+  consignment_item_charges_description_check: "Describe the charge in under 200 characters.",
+  consignment_item_charges_amount_check: "A charge must be more than 0.",
+  consignment_item_charges_currency_check: "Use a three-letter currency code.",
+  consignment_item_charges_void_reason_check: "Keep the reason under 500 characters.",
+  consignment_charges_void_has_reason: "A voided charge needs a reason.",
+  consignment_item_events_payload_object: "That consignment history entry is not consistent.",
+  consignment_item_events_reason_check: "Keep the reason under 500 characters.",
+  sales_sale_number_format: "A sale number looks like S-000123.",
+  sales_currency_check: "Use a three-letter currency code.",
+  sales_notes_check: "Keep the notes under 2,000 characters.",
+  sales_shopify_order_id_check: "That Shopify order reference is too long.",
+  sales_shopify_order_name_check: "That Shopify order name is too long.",
+  sale_lines_line_number_check: "That sale line is out of order. Start the sale again.",
+  sale_lines_description_check: "Describe the line in under 300 characters.",
+  sale_lines_quantity_check: "Sell a whole number of at least 1.",
+  sale_lines_unit_sale_price_check: "Prices can't be negative.",
+  sale_lines_unit_direct_cost_check: "Costs can't be negative.",
+  sale_lines_consignor_payout_check: "The amount owed can't be negative.",
+  sale_lines_rate_check: "The Cult Commons rate must be between 0% and 100%.",
+  sale_lines_currency_check: "Use a three-letter currency code.",
+  sale_lines_shopify_line_item_id_check: "That Shopify line reference is too long.",
+  sale_lines_unit_quantity_one: "A unique item is sold one at a time.",
+  sale_lines_consignment_payout: "A consigned line needs what the consignor is owed.",
+  sale_lines_restock_unit_only: "Only a unique item is restocked.",
+  sale_lines_restock_shape: "A restock needs its date.",
+  sale_refunds_amount_check: "A refund must be more than 0.",
+  sale_refunds_currency_check: "Use a three-letter currency code.",
+  sale_refunds_reason_check: "Give a reason, under 500 characters.",
+  sale_refunds_shopify_refund_id_check: "That Shopify refund reference is too long.",
+  consignment_settlements_amount_check: "A settlement must be more than 0.",
+  consignment_settlements_currency_check: "Use a three-letter currency code.",
+  consignment_settlements_reference_check: "Keep the reference under 200 characters.",
+  consignment_settlements_notes_check: "Keep the notes under 2,000 characters.",
+  settlement_lines_amount_applied_check: "Each allocation must be more than 0.",
+  settlement_lines_override_reason_check: "Keep the override reason under 500 characters.",
+  consignment_settlement_reversals_reason_check: "Give a reason, under 500 characters.",
+  inventory_units_consignment_item_ownership: "Only a consigned unit has a consignment record.",
+  work_order_line_items_consignment_shape:
+    "A consigned part needs both its consignment and what the consignor is owed.",
+  work_order_line_items_consignment_inventory_only: "Only a part can come from a consignment.",
+  work_order_line_items_consignor_payout_check: "The amount owed can't be negative.",
+  attachments_consignment_item_internal_only:
+    "Photos on a consignment item stay internal. Put listing photos on the product or unit.",
+  // Appointments and schedule (Phase 2)
+  shop_settings_singleton: "There is only one settings row.",
+  shop_settings_currency_check: "Use a three-letter currency code.",
+  shop_settings_slot_minutes_check:
+    "The slot length must divide the day evenly (5 to 240 minutes).",
+  shop_settings_capacity_check: "Capacity per slot must be between 1 and 50.",
+  shop_settings_notice_check: "Minimum notice must be between 0 minutes and 7 days.",
+  shop_settings_horizon_check: "Customers can book between 1 and 365 days ahead.",
+  shop_settings_customer_limit_check: "Allow between 1 and 20 upcoming online bookings.",
+  shop_settings_cancel_cutoff_check:
+    "The online cancellation cutoff must be between 0 minutes and 7 days.",
+  shop_settings_public_site_url_check: "Enter the public site's address, starting with https://.",
+  shop_hours_interval_check: "Opening time must be before closing time.",
+  shop_hours_weekday_check: "Pick a day of the week.",
+  closure_overrides_range_check: "A closure ends after it starts and lasts at most 366 days.",
+  closure_overrides_hours_shape: "Different opening hours need an opening and a closing time.",
+  closure_overrides_reason_check: "Give a reason, under 200 characters.",
+  appointment_types_name_check: "Enter a name under 80 characters.",
+  appointment_types_description_check: "Keep the description under 500 characters.",
+  appointment_types_duration_check: "Duration must be 5 to 480 minutes, in steps of 5.",
+  appointment_types_capacity_check: "Capacity units must be between 1 and 50.",
+  schedule_events_payload_object: "That schedule history entry is not consistent.",
+  schedule_events_reason_check: "Keep the reason under 500 characters.",
+  appointments_range_check: "An appointment ends after it starts.",
+  appointments_capacity_units_check: "Capacity units must be between 1 and 50.",
+  appointments_customer_note_check: "Keep the note under 1,000 characters.",
+  appointments_internal_note_check: "Keep the internal note under 5,000 characters.",
+  appointments_cancellation_reason_check: "Keep the reason under 500 characters.",
+  appointments_status_stamps:
+    "The appointment's times don't match its status. Refresh and try again.",
+  appointments_cancelled_via_check:
+    "The appointment's cancellation doesn't match its status. Refresh and try again.",
+  appointment_events_payload_object: "That appointment history entry is not consistent.",
+  appointment_events_reason_check: "Keep the reason under 500 characters.",
+  // Purchasing (Phase 7)
+  suppliers_name_check: "Enter a supplier name under 200 characters.",
+  suppliers_contact_name_check: "Keep the contact name under 200 characters.",
+  suppliers_email_check: "Enter a valid email address.",
+  suppliers_phone_check: "Keep the phone number under 40 characters.",
+  suppliers_website_check:
+    "Enter a website starting with http:// or https://, under 300 characters.",
+  suppliers_account_reference_check: "Keep the account number under 100 characters.",
+  suppliers_notes_check: "Keep the notes under 10,000 characters.",
+  supplier_products_supplier_sku_check: "Keep the supplier's SKU under 100 characters.",
+  supplier_products_lead_days_check: "Lead time must be between 0 and 365 days.",
+  supplier_products_last_unit_cost_check: "Costs can't be negative.",
+  supplier_products_currency_check: "Use a three-letter currency code.",
+  purchase_orders_po_number_format: "An order number looks like PO-000123.",
+  purchase_orders_supplier_reference_check: "Keep the supplier's reference under 100 characters.",
+  purchase_orders_currency_check: "Use a three-letter currency code.",
+  purchase_orders_notes_check: "Keep the notes under 2,000 characters.",
+  purchase_orders_cancellation_reason_check: "Keep the reason under 500 characters.",
+  purchase_orders_submitted_shape:
+    "The order's dates don't match its status. Refresh and try again.",
+  purchase_orders_received_shape:
+    "The order's dates don't match its status. Refresh and try again.",
+  purchase_orders_cancelled_shape: "A cancelled order needs the time and the reason.",
+  purchase_order_lines_quantity_ordered_check: "Order between 1 and 100,000 units.",
+  purchase_order_lines_unit_cost_check: `Unit cost must be between ${formatMoney("0")} and ${formatMoney("99999.99")}.`,
+  purchase_order_lines_currency_check: "Use a three-letter currency code.",
+  purchase_order_lines_notes_check: "Keep the line notes under 500 characters.",
+  purchase_order_events_payload_object: "That order history entry is not consistent.",
+  purchase_order_events_reason_check: "Keep the reason under 500 characters.",
+  purchase_receipts_reference_check: "Keep the delivery note reference under 100 characters.",
+  purchase_receipts_notes_check: "Keep the notes under 2,000 characters.",
+  purchase_receipt_lines_quantity_received_check: "Receive between 1 and 100,000 units.",
+  purchase_receipt_lines_unit_cost_actual_check: `Unit cost must be between ${formatMoney("0")} and ${formatMoney("99999.99")}.`,
+  purchase_receipt_lines_currency_check: "Use a three-letter currency code.",
+  inventory_movements_purchase_received_has_receipt_line:
+    "Stock from a supplier is received through its purchase order.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */
@@ -345,6 +681,9 @@ const SQLSTATE_ERRORS: Record<string, Pick<MappedError, "message" | "kind">> = {
   "22023": { message: "Some values are not allowed.", kind: "invalid" },
   "22P02": { message: "Some values are not in the right format.", kind: "invalid" },
   "22003": { message: "That amount is too large.", kind: "invalid" },
+  // Exclusion constraints (Phase 2: closure_overrides_custom_hours_no_overlap,
+  // the backstop of closure_custom_hours_overlap).
+  "23P01": { message: "That overlaps with another entry.", kind: "conflict" },
 };
 
 /** Constraint name from the error, or parsed from Postgres's message. */

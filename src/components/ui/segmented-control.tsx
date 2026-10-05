@@ -16,7 +16,12 @@ export type SegmentedControlProps<V extends string = string> = {
   /** Accessible name for the group, e.g. "Status filter". */
   label: string;
   options: readonly SegmentOption<V>[];
-  value?: V;
+  /**
+   * The chosen value. `null` is controlled with nothing chosen yet (a
+   * choice that has no default, e.g. who bears a charge, D4): no option is
+   * checked and Tab enters at the first enabled one.
+   */
+  value?: V | null;
   defaultValue?: V;
   onValueChange?: (value: V) => void;
   /** Submits the chosen value under this name inside a form. */
@@ -79,10 +84,11 @@ export function SegmentedControl<V extends string = string>({
     select(next);
   };
 
-  const checkedIndex = Math.max(
-    0,
-    options.findIndex((o) => o.value === current),
-  );
+  const found = options.findIndex((o) => o.value === current);
+  // Nothing chosen (value null): none is checked; the first enabled option
+  // takes the roving tab stop.
+  const checkedIndex = found >= 0 ? found : current === null ? -1 : 0;
+  const tabStop = checkedIndex >= 0 ? checkedIndex : (enabledFrom(0, 1) ?? 0);
 
   return (
     <div
@@ -105,7 +111,7 @@ export function SegmentedControl<V extends string = string>({
             role="radio"
             aria-checked={checked}
             aria-disabled={option.disabled || undefined}
-            tabIndex={checked ? 0 : -1}
+            tabIndex={i === tabStop ? 0 : -1}
             onClick={() => select(i)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(

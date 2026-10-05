@@ -14,9 +14,9 @@ import type { ServerSupabase } from "@/lib/supabase/server";
  *   J  work_orders.job_number     -> /jobs/[id]
  *   P  products.short_id          -> /products/[id]
  *   U  inventory_units.short_id   -> /units/[id]
- *   C  consignment items: Phase 6 adds the table and its case here
- *   S  sales: Phase 6 (the POS ledger) adds its case here
- *   PO purchase orders: Phase 7 adds its case here
+ *   C  consignment_items.short_id -> /consignment/items/[id] (Phase 6)
+ *   S  sales.sale_number          -> /sales/[id] (Phase 6)
+ *   PO purchase_orders.po_number  -> /purchasing/orders/[id] (Phase 7)
  *
  * This is the only Admin resolver and /q/[shortId] the only Admin /q
  * route: later phases extend this function rather than adding routes, and
@@ -54,10 +54,31 @@ export async function resolveShortId(
           await supabase.from("inventory_units").select("id").eq("short_id", shortId).maybeSingle(),
         )?.id ?? null;
       break;
-    case "consignment_item": // Phase 6
-    case "sale": // Phase 6
+    case "consignment_item":
+      id =
+        unwrap(
+          await supabase
+            .from("consignment_items")
+            .select("id")
+            .eq("short_id", shortId)
+            .maybeSingle(),
+        )?.id ?? null;
+      break;
+    case "sale":
+      id =
+        unwrap(await supabase.from("sales").select("id").eq("sale_number", shortId).maybeSingle())
+          ?.id ?? null;
+      break;
     case "purchase_order": // Phase 7
-      return null;
+      id =
+        unwrap(
+          await supabase
+            .from("purchase_orders")
+            .select("id")
+            .eq("po_number", shortId)
+            .maybeSingle(),
+        )?.id ?? null;
+      break;
   }
   if (!id) return null;
   const href = hrefForRecord(kind, id);

@@ -30,17 +30,26 @@ export function buttonClasses({
   variant = "solid",
   size = "md",
   fullWidth = false,
+  wrap = false,
   className,
 }: {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  /**
+   * Let a long label wrap onto a second line instead of holding its full
+   * width (a phone-width footer or card); the default never wraps.
+   */
+  wrap?: boolean;
   className?: string;
 } = {}): string {
   return cn(
     // Compresses on press and springs back on release, as on the public site.
     // Pure CSS: `:active` fires on touch as well as mouse.
-    "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full font-display font-bold tracking-wide whitespace-nowrap uppercase select-none",
+    "inline-flex cursor-pointer items-center justify-center gap-2 rounded-full font-display font-bold tracking-wide uppercase select-none",
+    wrap
+      ? "min-w-0 py-2 text-center whitespace-normal [&>svg]:shrink-0"
+      : "shrink-0 whitespace-nowrap",
     "transition-[transform,background-color,color,filter] duration-200 ease-[var(--ease-spring)] active:scale-[0.94] motion-reduce:active:scale-100",
     "disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
     variants[variant],
@@ -54,6 +63,8 @@ type CommonProps = {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  /** Let a long label wrap (see buttonClasses). */
+  wrap?: boolean;
   /** Leading icon; hidden while pending so the spinner takes its place. */
   icon?: ReactNode;
   children: ReactNode;
@@ -77,6 +88,7 @@ export function Button({
   variant,
   size,
   fullWidth,
+  wrap,
   icon,
   children,
   className,
@@ -91,7 +103,7 @@ export function Button({
       type={type}
       disabled={disabled || pending}
       aria-busy={pending || undefined}
-      className={buttonClasses({ variant, size, fullWidth, className })}
+      className={buttonClasses({ variant, size, fullWidth, wrap, className })}
       {...props}
     >
       {pending ? <Spinner className="size-4" /> : icon}
@@ -108,13 +120,14 @@ export function ButtonLink({
   variant,
   size,
   fullWidth,
+  wrap,
   icon,
   children,
   className,
   href,
   ...props
 }: ButtonLinkProps) {
-  const classes = buttonClasses({ variant, size, fullWidth, className });
+  const classes = buttonClasses({ variant, size, fullWidth, wrap, className });
   const external = typeof href === "string" && /^(https?:|mailto:|tel:)/.test(href);
   if (external) {
     return (

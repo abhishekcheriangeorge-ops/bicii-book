@@ -121,3 +121,33 @@ export function accessChangeBlocker(actor: Actor, target: Target): string | null
   }
   return null;
 }
+
+type AccessSubject = Pick<StaffDTO, "role" | "active" | "permissions">;
+
+/**
+ * Consignment money (agreed amounts, charges, item history, liability,
+ * the ledger, settlements, a job line's payout snapshot): PLAN D48
+ * SALES-ACCESS, mirroring private.can_view_consignment_money(). Active
+ * staff with manage_consignments or view_costs; view_financial_reports
+ * alone is not enough.
+ */
+export function canViewConsignmentMoney(staff: AccessSubject): boolean {
+  return hasPermission(staff, "manage_consignments") || hasPermission(staff, "view_costs");
+}
+
+/**
+ * Sale cost, yield, Cult Commons, rate and payout snapshots: D48 (follows
+ * D30), mirroring private.can_view_sale_costs(). Active staff with
+ * view_costs.
+ */
+export function canViewSaleCosts(staff: AccessSubject): boolean {
+  return hasPermission(staff, "view_costs");
+}
+
+/**
+ * Recording a retail refund (money going out): D49 RETAIL-REFUND, admins
+ * only. view_financial_reports is a read permission and never enough.
+ */
+export function canRecordRefund(staff: Pick<StaffDTO, "role" | "active">): boolean {
+  return staff.active && staff.role === "admin";
+}

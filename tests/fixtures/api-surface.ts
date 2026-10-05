@@ -11,8 +11,17 @@
  * which is the moment to check its RLS policies and guard.
  */
 
-/** Functions anonymous visitors may call. Phase 2+ adds the public booking RPCs. */
-export const ANON_FUNCTIONS: readonly string[] = [];
+/**
+ * Functions anonymous visitors may call: the public booking reads (Phase 2,
+ * D37): bookable times, the online-bookable appointment types (no capacity
+ * units) and the weekly hours. Phase 11's public site consumes them and
+ * must not revoke anon.
+ */
+export const ANON_FUNCTIONS: readonly string[] = [
+  "public.available_slots(date, uuid)",
+  "public.public_appointment_types()",
+  "public.public_shop_hours()",
+];
 
 /**
  * Relations (tables, views, sequences) anonymous visitors may touch, with
@@ -95,6 +104,50 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.today_dashboard(date)",
   "public.work_order_activity_on(date)",
   "public.work_order_yield(uuid)",
+  // Appointments (Phase 2): active staff; schedule settings admin only.
+  // The three public booking reads are callable by everyone (D37).
+  "public.available_slots(date, uuid)",
+  "public.book_appointment(uuid, uuid, uuid, timestamp with time zone, uuid, text, text)",
+  "public.cancel_appointment(uuid, text)",
+  "public.delete_closure_override(uuid, text)",
+  "public.mark_appointment_status(uuid, appointment_status, text)",
+  "public.public_appointment_types()",
+  "public.public_shop_hours()",
+  "public.save_appointment_type(uuid, boolean, text, text, integer, integer, boolean, boolean, integer)",
+  "public.save_closure_override(uuid, boolean, closure_kind, date, date, text, time without time zone, time without time zone)",
+  "public.set_shop_hours(smallint, jsonb, boolean)",
+  "public.update_appointment(uuid, uuid, boolean, text, text)",
+  "public.update_shop_settings(integer, integer, integer, integer, integer, integer, text)",
+  // Check-in (D40) creates or links the appointment's one work order; the
+  // appointment counts (D41) are operational, every active staff member (D30)
+  "public.appointment_daily(date, date)",
+  "public.check_in_appointment(uuid, uuid, uuid, boolean, text, text, uuid)",
+  // Consignment (Phase 6): manage_consignments takes items in, changes
+  // their terms and charges (D4, D45) and returns them (D50, D51); consigned
+  // parts go through add_inventory_line above (D44)
+  "public.add_consignment_charge(uuid, uuid, text, money_amount, charge_bearer, uuid)",
+  "public.create_consignment_item(uuid, uuid, uuid, money_amount, money_amount, uuid, text, text, text, uuid, tracking_type, integer, text, text, timestamp with time zone, text, text, uuid, uuid, uuid, jsonb)",
+  "public.return_consignment_item(uuid, uuid, text, integer, uuid)",
+  "public.update_consignment_terms(uuid, money_amount, money_amount, text)",
+  "public.void_consignment_charge(uuid, text)",
+  // Sales and settlements (Phase 6): any active staff member records an
+  // in-store sale (D48); restocks need adjust_stock (a consigned unit also
+  // manage_consignments, D46); refunds are admin only (D49); settlements
+  // and their reversals manage_consignments (D47)
+  "public.record_retail_sale(uuid, jsonb, uuid, timestamp with time zone, text)",
+  "public.record_sale_refund(uuid, uuid, money_amount, text)",
+  "public.record_settlement(uuid, uuid, money_amount, jsonb, timestamp with time zone, text, text)",
+  "public.restock_unit(uuid, uuid, uuid, text)",
+  "public.reverse_settlement(uuid, uuid, text)",
+  // Phase 6 reads: active staff; sale costs NULL without view_costs,
+  // consignment money NULL without manage_consignments or view_costs (D48);
+  // payout details manage_consignments only
+  "public.consignor_payout_details(uuid)",
+  "public.consignor_statement(uuid, uuid)",
+  "public.list_consignors(text, boolean, integer)",
+  "public.list_sales(timestamp with time zone, timestamp with time zone, text, integer)",
+  "public.sale_lines_detail(uuid)",
+  "public.saleable_stock(text, integer)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -106,6 +159,28 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.my_work_order_lines(uuid)",
   "public.my_work_order_timeline(uuid)",
   "public.my_work_orders()",
+  // Customer appointments (Phase 2, consumed by Phase 11): own rows only,
+  // the D42 projection; booking and cancelling under D37
+  "public.book_my_appointment(uuid, uuid, timestamp with time zone, uuid, text)",
+  "public.cancel_my_appointment(uuid, text)",
+  "public.my_appointments(boolean)",
+  // Purchasing (Phase 7): every write, the cost defaults and the receipt
+  // lookup need manage_purchasing (D60 D-PO-COSTS)
+  "public.cancel_purchase_order(uuid, text)",
+  "public.create_purchase_order(uuid, uuid, date, text, text)",
+  "public.purchase_cost_defaults(uuid, uuid[])",
+  "public.purchase_receipt_by_key(uuid)",
+  "public.receive_purchase(uuid, uuid, jsonb, text, timestamp with time zone, text)",
+  "public.remove_purchase_order_line(uuid, text)",
+  "public.remove_supplier_product(uuid, uuid)",
+  "public.set_purchase_order_line(uuid, uuid, uuid, integer, money_amount, date, text, text)",
+  "public.set_supplier_product(uuid, uuid, text, integer, boolean)",
+  "public.submit_purchase_order(uuid)",
+  "public.update_purchase_order(uuid, uuid, date, text, text)",
+  // Purchasing (Phase 7) reorder (D66 D-REORDER): suggestions for active
+  // staff (no costs); the one-tap draft needs manage_purchasing
+  "public.create_purchase_order_from_low_stock(uuid, uuid, uuid[])",
+  "public.reorder_suggestions(uuid)",
 ];
 
 /**
@@ -160,6 +235,54 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   // The anonymous projection, readable by signed-in users (customers) too
   "reporting.public_items": ["SELECT"],
   "reporting.stock_levels": ["SELECT"],
+  // Appointments (Phase 2): staff read (RLS is_staff); every write is an
+  // RPC; customers read none of them (zero rows), only the my_* RPCs
+  "public.appointment_events": ["SELECT"],
+  "public.appointment_types": ["SELECT"],
+  "public.appointments": ["SELECT"],
+  "public.closure_overrides": ["SELECT"],
+  "public.schedule_events": ["SELECT"],
+  "public.shop_hours": ["SELECT"],
+  "public.shop_settings": ["SELECT"],
+  // Consignment (Phase 6, D48): staff read consignors and items (no payout
+  // details, agreed amount or request fingerprint: column grants);
+  // manage_consignments inserts and updates consignors and edits item
+  // notes; charges and item history are row-gated by consignment money
+  // access (manage_consignments or view_costs) and written only by RPCs
+  // and triggers. reporting.consignment_item_position has no API grant.
+  "public.consignment_item_charges": ["SELECT"],
+  "public.consignment_item_events": ["SELECT"],
+  "public.consignment_items": ["SELECT", "UPDATE"],
+  "public.consignors": ["INSERT", "SELECT", "UPDATE"],
+  // Sales (Phase 6, D48): staff read headers (no request fingerprint),
+  // lines (no cost, yield, Cult Commons, rate or payout: column grants) and
+  // refunds; every write is an RPC. Settlements, their lines and reversals
+  // are row-gated by consignment money access and written only by RPCs.
+  "public.consignment_settlement_reversals": ["SELECT"],
+  "public.consignment_settlements": ["SELECT"],
+  "public.sale_lines": ["SELECT"],
+  "public.sale_refunds": ["SELECT"],
+  "public.sales": ["SELECT"],
+  "public.settlement_lines": ["SELECT"],
+  // Purchasing (Phase 7): staff read suppliers, POs, lines, receipts and
+  // progress; manage_purchasing writes suppliers (column grants) and
+  // everything else through RPCs. SELECT on supplier_products,
+  // purchase_order_lines and purchase_receipt_lines excludes the purchase
+  // cost columns, which only the *_staff views return; PO history rows are
+  // visible to view_costs or manage_purchasing (D60 D-PO-COSTS)
+  "public.purchase_order_events": ["SELECT"],
+  "public.purchase_order_lines": ["SELECT"],
+  "public.purchase_order_lines_staff": ["SELECT"],
+  "public.purchase_order_totals_staff": ["SELECT"],
+  "public.purchase_orders": ["SELECT"],
+  "public.purchase_receipt_lines": ["SELECT"],
+  "public.purchase_receipt_lines_staff": ["SELECT"],
+  "public.purchase_receipts": ["SELECT"],
+  "public.supplier_products": ["SELECT"],
+  "public.supplier_products_staff": ["SELECT"],
+  "public.suppliers": ["INSERT", "SELECT", "UPDATE"],
+  "reporting.product_on_order": ["SELECT"],
+  "reporting.purchase_order_progress": ["SELECT"],
 };
 
 /**
@@ -184,4 +307,10 @@ export const DEFINER_VIEWS: readonly string[] = [
   "public.work_order_totals_staff",
   // Inventory (Phase 4): the anonymous /q projection
   "reporting.public_items",
+  // Purchasing (Phase 7): purchase costs for view_costs or
+  // manage_purchasing only (private.can_view_purchase_costs(), D60)
+  "public.purchase_order_lines_staff",
+  "public.purchase_order_totals_staff",
+  "public.purchase_receipt_lines_staff",
+  "public.supplier_products_staff",
 ];

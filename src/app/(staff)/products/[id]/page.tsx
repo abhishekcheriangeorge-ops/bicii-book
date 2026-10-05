@@ -7,8 +7,11 @@ import { ArchiveControl } from "@/components/domain/archive-control";
 import { HistoryList, MovementList } from "@/components/domain/movement-list";
 import { NoActiveLocation } from "@/components/domain/no-active-location";
 import { PhotoGrid } from "@/components/domain/photo-grid";
+import { ConsignmentItemRow } from "@/components/domain/consignment-item-row";
 import { EditProductButton } from "@/components/domain/product-sheet";
 import { PublicationControls } from "@/components/domain/publication-card";
+import { ProductPurchasingCard } from "@/components/domain/purchasing/product-purchasing-card";
+import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
 import { ShortId } from "@/components/domain/short-id";
 import { SplitToUniqueButton } from "@/components/domain/split-to-unique-sheet";
 import { StockBadge } from "@/components/domain/stock-badge";
@@ -17,10 +20,14 @@ import { AddUnitButton } from "@/components/domain/unit-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ChevronRightIcon } from "@/components/ui/icons";
+import { RowList } from "@/components/ui/row-list";
 import { StatusPill } from "@/components/ui/status-pill";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
+import { CONSIGNED_STOCK_NOTE, consignmentStatusPill } from "@/lib/consignment";
+import { consignmentsForProduct } from "@/lib/domain/consignment";
 import { getProduct, listLocations, listProductCategories } from "@/lib/domain/inventory";
+import { getProductPurchasing } from "@/lib/domain/purchasing";
 import {
   publicationLabel,
   publicationTone,
@@ -51,6 +58,8 @@ const plain = (n: number) => signedQuantity(n).replace(/^\+/, "");
  * manual moves (manage_inventory), what publishing needs, the QR URL and
  * what the public sees; "Split off as unique item" (D28) needs both
  * adjust_stock and manage_inventory and is offered on counted products.
+ * Phase 6: Sell (any staff, D48) on an active counted product with stock,
+ * shop-owned or consigned (its oldest consignment with stock first, D45).
  */
 export default async function ProductPage({ params }: PageProps<"/products/[id]">) {
   const staff = await requireStaff();
@@ -60,16 +69,30 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
   const manage = hasPermission(staff, "manage_inventory");
   const canAdjust = hasPermission(staff, "adjust_stock");
   const supabase = await createClient();
-  const [product, locations, categories] = await Promise.all([
+  const [product, locations, categories, purchasing] = await Promise.all([
     getProduct(supabase, id, { viewCosts }),
     listLocations(supabase),
     manage ? listProductCategories(supabase) : Promise.resolve([]),
+    // Purchasing (Phase 7): suppliers and orders for this product.
+    getProductPurchasing(supabase, id, staff),
   ]);
   if (!product) notFound();
-  const qr = await qrUrl(product.shortId);
+  // D50: consigned stock moves only through intake, sale, restock, a job,
+  // return to the consignor and transfers.
+  const consigned = product.ownershipType === "consignment";
+  const [qr, consignments] = await Promise.all([
+    qrUrl(product.shortId),
+    consigned ? consignmentsForProduct(supabase, product.id) : Promise.resolve([]),
+  ]);
 
   const archived = product.archivedAt !== null;
   const counted = product.trackingType === "quantity";
+  const sellable =
+    counted &&
+    !archived &&
+    product.active &&
+    product.ownershipType !== "customer_owned" &&
+    product.stock.some((s) => s.onHand > 0);
   const sheetStock = product.stock.map((s) => ({
     locationId: s.locationId,
     name: s.name,
@@ -106,25 +129,34 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
             {counted ? "Counted by quantity" : "Unique: each item has its own U- number"}
           </p>
         </div>
-        {manage ? (
+        {manage || sellable ? (
           <div className="flex flex-wrap items-center gap-2">
-            <EditProductButton
-              product={{
-                id: product.id,
-                name: product.name,
-                sku: product.sku,
-                brand: product.brand,
-                categoryId: product.category?.id ?? null,
-                description: product.description,
-                defaultSalePrice: product.defaultSalePrice,
-                ...(viewCosts ? { cost: product.cost ?? null } : {}),
-                reorderPoint: product.reorderPoint,
-                active: product.active,
-                trackingType: product.trackingType,
-              }}
-              categories={categories}
-              viewCosts={viewCosts}
-            />
+            {sellable ? (
+              <RecordSaleButton
+                label="Sell"
+                viewCosts={viewCosts}
+                preset={{ q: product.shortId, productId: product.id }}
+              />
+            ) : null}
+            {manage ? (
+              <EditProductButton
+                product={{
+                  id: product.id,
+                  name: product.name,
+                  sku: product.sku,
+                  brand: product.brand,
+                  categoryId: product.category?.id ?? null,
+                  description: product.description,
+                  defaultSalePrice: product.defaultSalePrice,
+                  ...(viewCosts ? { cost: product.cost ?? null } : {}),
+                  reorderPoint: product.reorderPoint,
+                  active: product.active,
+                  trackingType: product.trackingType,
+                }}
+                categories={categories}
+                viewCosts={viewCosts}
+              />
+            ) : null}
           </div>
         ) : null}
       </header>
@@ -135,7 +167,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
           actions={
             counted && !archived && (canAdjust || manage) ? (
               <>
-                {canAdjust && manage ? (
+                {canAdjust && manage && !consigned ? (
                   <SplitToUniqueButton
                     sourceProductId={product.id}
                     productName={product.name}
@@ -143,7 +175,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
                     stock={sheetStock}
                   />
                 ) : null}
-                {canAdjust ? (
+                {canAdjust && !consigned ? (
                   <AdjustStockButton
                     productId={product.id}
                     productName={product.name}
@@ -214,6 +246,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
               Low stock: at or below the reorder point of {product.reorderPoint}.
             </p>
           ) : null}
+          {consigned ? <p className="mt-3 text-sm text-dust-700">{CONSIGNED_STOCK_NOTE}</p> : null}
           {counted && locations.defaultLocationId === null ? (
             <p className="mt-3 text-sm text-dust-700">
               <NoActiveLocation />
@@ -242,7 +275,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
                 <dt>Cult Commons share</dt>
                 <dd className="text-right">{money(product.expectedCultCommons)}</dd>
               </dl>
-              {product.cost === null ? (
+              {product.cost === null && !consigned ? (
                 <p className="text-sm text-waiting-deep">
                   No cost yet: this product can&apos;t go on a job until it has one.
                 </p>
@@ -256,7 +289,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
         <Card
           title="Units"
           actions={
-            manage && !archived ? (
+            manage && !archived && !consigned ? (
               <AddUnitButton
                 productId={product.id}
                 locations={locations.locations}
@@ -268,7 +301,7 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
         >
           {product.units.length === 0 ? (
             <p className="text-dust-700">
-              No units yet.{manage ? " Add the item itself with Add unit." : ""}
+              No units yet.{manage && !consigned ? " Add the item itself with Add unit." : ""}
             </p>
           ) : (
             <ul aria-label="Units" className="-mx-2 flex flex-col">
@@ -298,6 +331,36 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
             </ul>
           )}
         </Card>
+      ) : null}
+
+      {consigned ? (
+        <Card title="Consignments" eyebrow="Consigned stock">
+          {consignments.length === 0 ? (
+            <p className="text-dust-700">No consignment on this product.</p>
+          ) : (
+            <RowList label="Consignments">
+              {consignments.map((c) => (
+                <ConsignmentItemRow
+                  key={c.id}
+                  href={`/consignment/items/${c.id}`}
+                  shortId={c.shortId}
+                  name={c.consignorName}
+                  pill={consignmentStatusPill(c.status, null)}
+                  details={[]}
+                />
+              ))}
+            </RowList>
+          )}
+        </Card>
+      ) : null}
+
+      {/* Purchasing (Phase 7): shop-owned counted products are bought on purchase orders (D62). */}
+      {counted && product.ownershipType === "shop_owned" ? (
+        <ProductPurchasingCard
+          product={{ id: product.id, name: product.name, shortId: product.shortId }}
+          purchasing={purchasing}
+          canManage={hasPermission(staff, "manage_purchasing") && !archived}
+        />
       ) : null}
 
       <Card title="Publication">

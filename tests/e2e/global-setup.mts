@@ -12,13 +12,17 @@
  *      my_staff_profile with the session's JWT. The mail catcher must
  *      answer too (GET <MAIL_URL>/health): the tests read sign-in codes
  *      from it.
- *   4. Read the seed's anchor day once (the shop day `db:reset` ran, from
+ *   4. Hand the gateway URL and keys to the workers (E2E_GATEWAY_URL,
+ *      E2E_ANON_KEY, E2E_SERVICE_ROLE_KEY) for tests/e2e/api.ts:
+ *      Playwright loads specs as CommonJS, which cannot import
+ *      scripts/devstack/config.mjs.
+ *   5. Read the seed's anchor day once (the shop day `db:reset` ran, from
  *      REPORT_JOB.todayReceived's check-in) into E2E_SEED_ANCHOR, which the
  *      Playwright workers inherit (helpers.ts seedAnchor(), anchorDay()).
  *
  * Needs Postgres 16 and the devstack cache (`npm run devstack:setup`, once).
  * E2E_EXTERNAL_STACK=1 skips steps 1 and 2 for a stack this script does not
- * manage (`supabase start`, already reset and seeded); steps 3 and 4 still
+ * manage (`supabase start`, already reset and seeded); steps 3 to 5 still
  * run (same DATABASE_URL), and the mail check runs only when BICII_MAIL_KIND
  * says which mail API to read (mailpit: Mailpit's on :54324,
  * scripts/devstack/mail-client.mjs). With E2E_RESET=0 or an external stack the anchor
@@ -149,6 +153,9 @@ export default async function globalSetup() {
   }
   console.info("[e2e] devstack ready");
 
+  process.env.E2E_GATEWAY_URL = GATEWAY_URL;
+  process.env.E2E_ANON_KEY = ANON_KEY;
+  process.env.E2E_SERVICE_ROLE_KEY = SERVICE_ROLE_KEY;
   process.env.E2E_SEED_ANCHOR = await readSeedAnchor(env.DATABASE_URL);
   console.info(`[e2e] seed anchor (day 0): ${process.env.E2E_SEED_ANCHOR}`);
 }

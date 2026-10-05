@@ -1,7 +1,30 @@
 # BICII Admin — Runbook
 
+Owner: Abhishek Cherian George. Audience: technical operator. Last
+exercised, per section (as of 2026-10-05):
+
+- Hosted sections (hosted projects, migrations, first admin, key rotation,
+  Vercel): never; no hosted project exists.
+- Local Supabase with Docker (Supabase CLI): never exercised here; the
+  build environment has no Docker.
+- The camera scanner on phones and iPads: not exercised (no LAN device
+  test, no HTTPS dev server, no flag); `tests/e2e/scan.spec.ts` covers
+  scanning on localhost with a stubbed camera and manual entry.
+- Appointments: schedule before go-live: not run as a go-live procedure;
+  its screens are exercised by `tests/e2e/appointment-settings.spec.ts`.
+- Purchasing: suppliers and reorder points before go-live: not run as a
+  go-live procedure; its screens are exercised by
+  `tests/e2e/purchasing.spec.ts`.
+- CI: the `e2e` label exists, and PRs #2–#7 carry it, each with a
+  successful `e2e` workflow run (e.g.
+  [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521));
+  branch protection is unverified
+  ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)).
+
+Environment overview, administration and recovery: [OPERATIONS.md](OPERATIONS.md).
+
 Operational how-tos that are not part of day-to-day development. For the
-everyday local setup (the Docker-free devstack) see the README quickstart.
+everyday local setup (the Docker-free devstack) see [ENGINEERING.md](ENGINEERING.md).
 
 - [Local Supabase with Docker (Supabase CLI)](#local-supabase-with-docker-supabase-cli)
 - [Hosted Supabase projects: staging and production](#hosted-supabase-projects-staging-and-production)
@@ -9,6 +32,8 @@ everyday local setup (the Docker-free devstack) see the README quickstart.
 - [Creating the first admin in a hosted project](#creating-the-first-admin-in-a-hosted-project)
 - [Rotating keys and passwords](#rotating-keys-and-passwords)
 - [Vercel environment setup](#vercel-environment-setup)
+- [Appointments: schedule before go-live](#appointments-schedule-before-go-live)
+- [Purchasing: suppliers and reorder points before go-live](#purchasing-suppliers-and-reorder-points-before-go-live)
 - [CI](#ci)
 
 The demo data is relative to the shop day (Singapore) the database was
@@ -389,6 +414,71 @@ and shows anything else as "Not a BICII label" without opening it. A label
 printed for another environment's public site URL is therefore foreign on
 this one (Phase 8 adds the database QR base to the accepted list,
 `src/lib/qr.ts`).
+
+## Appointments: schedule before go-live
+
+The seed's schedule is demo data. Before the shop takes real bookings
+(staff or online), an admin sets, in the app under Settings:
+
+1. **Shop hours and closures → Weekly hours.** Tap each weekday: switch
+   "Open on <day>" and enter up to four stretches (a lunch break is two).
+   A closing time of 00:00 means midnight.
+2. **Booking capacity → Edit.** The slot length (5 to 240 minutes and
+   dividing the day evenly, e.g. 15, 20, 30, 45 or 60; bookings start on
+   that grid from midnight)
+   and how many bikes the shop takes in per slot (one shared pool, PLAN
+   D2). The online booking rules (D37): minimum notice (default 120
+   minutes), how far ahead customers may book (60 days), how many upcoming
+   online bookings one customer may hold (3; staff bookings never count)
+   and the online cancellation cutoff (120 minutes before the start; after
+   it the customer calls the shop). Staff bookings ignore the online rules
+   but never the hours, closures or capacity.
+3. **Appointment types.** Name, description, duration (steps of 5
+   minutes), capacity units (at most the shop's capacity), "Public"
+   (customers can book it on the website) and Active. Types are never
+   deleted: switch one off to stop new bookings.
+
+**Closures and short days.** Settings → Shop hours and closures → Add
+closure. "Closed" closes whole days (first to last day) or, with "Only part
+of the day", a few hours of one day; "Short day" opens only the hours
+given on those days, instead of the weekly hours. A reason is required
+(staff see it; customers only see that no times are free). Deleting a
+closure asks for a reason too and is kept in the schedule history.
+
+**Existing bookings never move** (D38). Changing hours, closures, the slot
+length, the capacity or a type's length or units leaves every appointment
+already booked as it is. After a save the toast says how many upcoming
+appointments no longer fit, with a link to the first such day; each
+closure shows "N appointments affected"; the appointments day view marks
+them "Outside opening hours" or "Shop closed" and its capacity bars turn
+red over capacity. Call those customers and cancel and rebook (there is no
+reschedule and no automatic customer message in the MVP).
+
+**Fixed settings.** The shop's time zone is Singapore and its currency SGD
+(D35): no screen or RPC changes them. `shop_settings.public_site_url` is
+stored but not used yet: the QR base stays `NEXT_PUBLIC_PUBLIC_SITE_URL`
+until Phase 8 decides (D9).
+
+## Purchasing: suppliers and reorder points before go-live
+
+The seed's suppliers and purchase orders (Velo Parts, Tropic Tyre, Old
+Spoke; PO-000001 to PO-000005) are demo data and never reach a hosted
+project. Before the shop orders through the Admin:
+
+1. **Who buys.** Give the people who order and receive Manage purchasing
+   (Settings → Staff); it shows them purchase costs on purchasing screens
+   (D60; [OPERATIONS](OPERATIONS.md#product-administration)).
+2. **Suppliers.** Purchasing → Suppliers → New supplier for each real
+   supplier: name, contact, phone, email, website and BICII's account
+   number with them.
+3. **Links and reorder points.** On each counted, shop-owned product the
+   shop buys: Suppliers & orders → Add supplier (supplier SKU, lead days,
+   Preferred), and a reorder point on the product (Edit), so Reorder can
+   suggest quantities (D66). Consigned products are never linked or
+   ordered.
+4. **Opening costs.** A product's cost becomes the actual cost of its
+   latest delivery (D5, D63); check the costs entered before go-live,
+   because the first deliveries overwrite them.
 
 ## CI
 

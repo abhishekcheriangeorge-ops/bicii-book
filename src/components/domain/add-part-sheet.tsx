@@ -4,6 +4,7 @@ import { useActionState, useId, useState } from "react";
 
 import { addPartToJob } from "@/app/(staff)/jobs/actions";
 import { searchParts } from "@/app/(staff)/inventory/actions";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
@@ -40,6 +41,15 @@ function stockSummary(part: PartOption, locationId: string | null): string {
   const here = at ? `${signedQuantity(at.onHand).replace(/^\+/, "")} at ${at.name}` : null;
   const total = `${signedQuantity(part.onHandTotal).replace(/^\+/, "")} total`;
   return here ? `${here} · ${total}` : total;
+}
+
+/** "Consigned · Kelvin Yeo" (and the C- number for counted stock, D44). */
+function consignedLabel(part: PartOption): string {
+  if (!part.consigned) return "";
+  const who = part.consigned.consignorName || "a consignor";
+  return part.kind === "product"
+    ? `Consigned · ${who} · ${part.consigned.itemShortId}`
+    : `Consigned · ${who}`;
 }
 
 /** "−1" for a negative count, "37" otherwise. */
@@ -86,7 +96,10 @@ export function AddPartButton({
 }
 
 /**
- * Add a part from stock to a job (SPEC §9, §12; D23, D24, D25, D27): a
+ * Add a part from stock to a job (SPEC §9, §12; D23, D24, D25, D27 as
+ * changed by the owner, D44): consigned stock is offered, marked
+ * "Consigned · <consignor>", and never goes below zero; customer-owned
+ * stock never is. A
  * SearchPicker over saleable stock (each option with its P- or U- number,
  * SKU and a live StockBadge), then for a counted part a quantity and the
  * location it comes from (each segment shows its count; the default
@@ -144,7 +157,12 @@ function AddPartSheet({
     return result.data.map((p) => ({
       id: `${p.kind}:${p.unitId ?? p.productId}`,
       label: p.title,
-      description: [p.shortId, p.sku, p.serialNumber ? `S/N ${p.serialNumber}` : null]
+      description: [
+        p.shortId,
+        p.sku,
+        p.serialNumber ? `S/N ${p.serialNumber}` : null,
+        p.consigned ? consignedLabel(p) : null,
+      ]
         .filter(Boolean)
         .join(" · "),
       meta: p.salePrice !== null ? formatMoney(p.salePrice, p.currency) : "No price",
@@ -155,9 +173,16 @@ function AddPartSheet({
   const qty = Number.parseInt(quantity, 10);
   const validQty = Number.isFinite(qty) && qty >= 1 ? qty : null;
   const chosenLocation = part?.byLocation.find((l) => l.locationId === locationId) ?? null;
+  // D23 lets shop stock go below zero with a warning; consigned stock never
+  // may (D44: on-hand equals what the consignors have left), so the
+  // database refuses it and the sheet says so instead.
   const warning =
     part?.kind === "product" && validQty !== null && chosenLocation
-      ? overdrawWarning(validQty, chosenLocation.onHand, chosenLocation.name)
+      ? part.consigned
+        ? validQty > chosenLocation.onHand
+          ? `Only ${plain(Math.max(chosenLocation.onHand, 0))} of this consigned item at ${chosenLocation.name}. Consigned stock can't go below zero.`
+          : null
+        : overdrawWarning(validQty, chosenLocation.onHand, chosenLocation.name)
       : null;
   const effectivePrice = price.trim()
     ? parseMoney(price)
@@ -231,7 +256,7 @@ function AddPartSheet({
                 setLocationId(option?.part.defaultLocationId ?? null);
               }}
               placeholder="Name, SKU, P- or U- number"
-              emptyMessage="No part in stock matches. Archived, inactive and consigned items are not offered."
+              emptyMessage="No part in stock matches. Archived, inactive and customer-owned items are not offered."
               renderOption={(o) => (
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                   <span className="flex items-center justify-between gap-2">
@@ -241,6 +266,7 @@ function AddPartSheet({
                   <span className="flex flex-wrap items-center gap-2 text-sm text-dust-500">
                     <ShortId value={o.part.shortId} />
                     {o.part.sku ? <span>{o.part.sku}</span> : null}
+                    {o.part.consigned ? <Badge tone="info">{consignedLabel(o.part)}</Badge> : null}
                     <StockBadge
                       onHand={o.part.kind === "unit" ? 1 : o.part.onHandAtDefault}
                       label={stockSummary(o.part, o.part.defaultLocationId)}
@@ -253,6 +279,15 @@ function AddPartSheet({
 
           {part ? (
             <>
+              {part.consigned ? (
+                <p className="rounded-xl bg-info-soft p-3 text-sm text-info-deep">
+                  {consignedLabel(part)}
+                  {part.kind === "product"
+                    ? ` (${part.consigned.itemShortId}): taken from that consignment, at its asking price unless you change it.`
+                    : "."}{" "}
+                  The consignor is owed their agreed amount once the job is completed.
+                </p>
+              ) : null}
               <p className="flex flex-wrap items-center gap-2 text-sm text-dust-700">
                 <ShortId value={part.shortId} />
                 <StockBadge
