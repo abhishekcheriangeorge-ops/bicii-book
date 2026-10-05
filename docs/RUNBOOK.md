@@ -342,7 +342,7 @@ everywhere it is used, verify, then revoke the old one.
 
 | Secret | Used by | How to rotate |
 |---|---|---|
-| Service-role / secret API key | Vercel (server only), never CI | Project Settings → API Keys: create a new secret key (or, on legacy JWT keys, rotate the JWT secret, see below). Update `SUPABASE_SERVICE_ROLE_KEY` in Vercel for that environment, redeploy, check Settings → Staff → Invite works, then delete the old key. |
+| Service-role / secret API key | Vercel (server only), never CI | Project Settings → API Keys: create a new secret key (or, on legacy JWT keys, rotate the JWT secret, see below). Update `SUPABASE_SERVICE_ROLE_KEY` in Vercel for that environment, redeploy, then from a fresh private browser window sign in with an email code (every sign-in needs this key, D72: a missing or wrong key locks everyone out) and check Settings → Staff → Invite works; only then delete the old key. |
 | Anon / publishable key | Vercel (public), the public site | New publishable key in API Keys; update `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel **and** the public site's env; redeploy both (the value is inlined at build time); then delete the old key. |
 | JWT secret (legacy keys) | signs every session and the legacy anon/service keys | Rotating it invalidates the legacy anon and service-role keys and signs every user out. Prefer moving to asymmetric JWT signing keys and publishable/secret keys, which rotate one at a time. If you must, do it in a quiet hour and update both keys everywhere straight after. |
 | Database password | `supabase link` / `db push` on admins' machines | Project Settings → Database → Reset database password. Store the new one; re-run `supabase link`. The app does not use it. |
@@ -368,7 +368,7 @@ One Vercel project for the Admin, connected to this repository.
    | `NEXT_PUBLIC_SUPABASE_URL` | prod project URL | staging project URL | public |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | prod anon/publishable key | staging key | public |
    | `NEXT_PUBLIC_PUBLIC_SITE_URL` | public site production URL | public site URL | QR base (PLAN D9) |
-   | `SUPABASE_SERVICE_ROLE_KEY` | prod service/secret key | staging key | Sensitive; server only |
+   | `SUPABASE_SERVICE_ROLE_KEY` | prod service/secret key | staging key | Sensitive; server only; required: without it nobody can sign in (D72) |
    | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | own value | own value | Sensitive; `openssl rand -base64 32` |
    | `LOG_LEVEL` | `info` | `debug` | optional |
    | `SHOPIFY_*` | Phase 10 | Phase 10 | Sensitive |
@@ -383,6 +383,11 @@ One Vercel project for the Admin, connected to this repository.
 5. Deploy order for a change with a migration: `supabase db push` to
    staging → preview check → `db push` to production → promote or merge to
    `main`.
+6. After every deploy and every change to a server-only variable: from a
+   fresh private browser window, sign in with an email code. Every sign-in
+   counts its attempt with `SUPABASE_SERVICE_ROLE_KEY` first (PLAN D72), so
+   a missing or wrong key shows "Sign-in is unavailable right now" to
+   everyone ([OPERATIONS](OPERATIONS.md) incident table).
 
 ## The camera scanner on phones and iPads
 

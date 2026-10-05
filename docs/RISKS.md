@@ -942,7 +942,12 @@ URLs, or customer data in this file.
   accepts an access token already issued for up to `jwt_expiry` after
   deactivation (the guards refuse it). The Docker CLI path
   (`BICII_MAIL_KIND=mailpit`, Mailpit) was written from Mailpit's API
-  documentation and has never run (no Docker here).
+  documentation and has never run (no Docker here). Every sign-in also
+  needs `SUPABASE_SERVICE_ROLE_KEY` (the D72 counters run first), so a
+  missing or wrong key in Vercel locks everyone out while Auth's own log
+  looks healthy; the login actions log the cause (`limit: "admin"`,
+  `cause`), and RUNBOOK's deploy and rotation steps now end with a code
+  sign-in from a fresh browser (2026-10-06 review).
 - Evidence and confidence: high for absence (R-001); the devstack path is
   covered by `tests/db/stack.smoke.test.ts` and `tests/e2e/auth.spec.ts`
   through the mail catcher.

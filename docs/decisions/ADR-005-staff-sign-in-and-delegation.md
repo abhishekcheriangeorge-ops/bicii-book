@@ -1,8 +1,10 @@
 # ADR-005: Staff sign-in method and the staff-management delegation ceiling
 
 Date: D10 2026-10-04 (PR #1); D11 2026-10-04 (PR #2); D10 changed by the
-owner 2026-10-05. Status: D10 changed by the owner (replacement not on this
-branch); D11 accepted (build default, not individually confirmed).
+owner 2026-10-05. Status: D10 changed by the owner 2026-10-05 and
+superseded by [ADR-019](ADR-019-staff-email-sign-in.md) (email codes,
+integrated 2026-10-06); D11 accepted (build default, not individually
+confirmed).
 Decision owner: Abhishek Cherian George (owner) for business meaning;
 defaults proposed by the build agent.
 

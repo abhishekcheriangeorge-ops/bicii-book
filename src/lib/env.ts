@@ -31,7 +31,13 @@ export const serverEnvSchema = z.object({
     .string()
     .regex(/^postgres(ql)?:\/\//, { error: "must be a postgres:// connection string" })
     .optional(),
-  /** Integrations only (src/lib/integrations/**); never in a client bundle. */
+  /**
+   * Service role (bypasses RLS): src/lib/admin/** and src/lib/integrations/**
+   * only; never in a client bundle. Optional so tooling and the build run
+   * without it, but every deployment needs it: every staff sign-in counts
+   * its attempt with it first (PLAN D72), so without it, or with a wrong
+   * one, nobody can sign in; inviting staff needs it too.
+   */
   SUPABASE_SERVICE_ROLE_KEY: nonEmpty.optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   /**

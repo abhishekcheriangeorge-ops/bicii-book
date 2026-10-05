@@ -7,7 +7,8 @@
 --
 -- Phase 0 contents: three staff with working Supabase Auth logins. They have
 -- no usable password (PLAN D10): sign in with a code emailed to the address,
--- which the devstack's mail catcher shows (README):
+-- which the devstack's mail catcher shows (docs/ENGINEERING.md, "Clean
+-- checkout to running application", says how to read a code). The logins:
 --   admin@bicii.test      role admin (implies every permission)
 --   mechanic1@bicii.test  role staff, view_costs
 --   mechanic2@bicii.test  role staff, no permissions

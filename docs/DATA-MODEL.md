@@ -2500,7 +2500,8 @@ J-000014's completion, Chloe for her own bookings). IDs in
   stocktake"); both within 14 days, whole shop-local days as
   `save_closure_override` stores them.
 - Chloe Lim's customer login: Auth user
-  `a0000000-…-000000000101` (chloe.lim@example.com, the local password),
+  `a0000000-…-000000000101` (chloe.lim@example.com, no usable password: the bcrypt hash of a random
+  secret, as for the seeded staff; D10, R-035),
   identity `a1000000-…-000000000101`, linked to `CUSTOMER.chloe`.
 - Appointments `e2000000-…-00000000000N`, each inserted `booked` a day or
   more before its start and walked one update at a time with explicit

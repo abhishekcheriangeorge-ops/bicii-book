@@ -11,7 +11,9 @@
  *     a refusal reveals nothing about the account);
  *   * requests and verifications are counted apart;
  *   * only the service role can count: the anon key and a staff session
- *     get permission denied.
+ *     get permission denied, and the module answers "unavailable" with the
+ *     cause it logs (a wrong key in SUPABASE_SERVICE_ROLE_KEY locks every
+ *     sign-in out, so the log must say why).
  *
  * Needs `npm run db:reset && npm run devstack:start`; skips like the other
  * stack tests unless BICII_REQUIRE_STACK=1. Buckets are unique per run
@@ -21,7 +23,7 @@ import { randomInt, randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { countSignInAttempt } from "@/lib/admin/sign-in-throttle";
+import { checkSignInAttempt, countSignInAttempt } from "@/lib/admin/sign-in-throttle";
 import { SIGN_IN_LIMITS } from "@/lib/auth/sign-in-limits";
 
 import { STAFF_EMAIL } from "../fixtures/ids";
@@ -90,5 +92,12 @@ describe.skipIf(!reachable)("the Admin's sign-in limits on the live stack (D72)"
     expect(anon.error?.code).toBe("42501");
     const staff = await (await staffClient("mechanic1")).rpc("note_sign_in_attempt", args);
     expect(staff.error?.code).toBe("42501");
+    // The anon key where the service-role key belongs: every attempt is
+    // unavailable, with a cause that names the refusal and not the email.
+    const email = unknownEmail();
+    const wrongKey = await checkSignInAttempt(anonClient(), "request", client(), email);
+    expect(wrongKey.throttle).toBe("unavailable");
+    expect(wrongKey.cause).toMatchObject({ reason: "rpc_error", code: "42501" });
+    expect(JSON.stringify(wrongKey.cause)).not.toContain(email);
   });
 });

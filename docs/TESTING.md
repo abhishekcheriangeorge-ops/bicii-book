@@ -111,7 +111,9 @@ PostgREST with the real limits: an email past its limit is refused from
 any client while other emails and its verifications are not; a client
 past its limit is refused for any email while other clients are not; a
 staff email reaches its limit no later than an unknown one; the anon key
-and a staff session get 42501. `tests/db/photo-moves.stack.test.ts` runs the app's own
+and a staff session get 42501, and the anon key in the service role's
+place makes `checkSignInAttempt` answer "unavailable" with the cause the
+login actions log (`rpc_error`, 42501, never the email). `tests/db/photo-moves.stack.test.ts` runs the app's own
 photo domain code (`src/lib/domain/attachments.ts`, loaded with
 `server-only` aliased to its empty module in the db project) as mechanic2
 against real Storage: moves between buckets, deletes, refused moves and
@@ -362,6 +364,16 @@ worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
   before `seed-logins.test.ts` and the documentation were added; neither
   touches the app or the specs).
 - Docs link check: **pass** (counts in [NOW.md](../NOW.md)).
+- After the integration review fixes (the sign-in throttle's logged
+  `cause`, the stack test's wrong-key case, docs): `npm run check`
+  **pass**, `npm run check:types` **pass** (no diff),
+  `BICII_REQUIRE_STACK=1 npm test` 111 files / 1585 tests **pass**,
+  `npm run build` **pass**, `npm run test:e2e` 152 passed in 15.7 min
+  **pass** (the first run, while the other worktree's E2E suite shared the
+  CPUs, had 151 passed and 1 failed: the phone run of
+  `consignment.spec.ts` "a consigned bike is received…" timed out because
+  the click on "Void… the charge" right after "Charge added" did not open
+  the reason field; the rerun passed unchanged), docs link check **pass**.
 
 ## What is tested where
 

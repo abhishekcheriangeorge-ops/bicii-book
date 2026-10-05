@@ -98,13 +98,13 @@ export async function requestCode(prev: LoginState, formData: FormData): Promise
   // Never the email: who asked for a code is not the log's business.
   const log = child(await getCorrelationId(), { action: "auth.request_code" });
 
-  const throttle = await noteSignInAttempt("request", email);
+  const { throttle, cause } = await noteSignInAttempt("request", email);
   let outcome: "sent" | "rate_limited" | "unavailable";
   if (throttle !== "ok") {
     outcome = throttle === "limited" ? "rate_limited" : "unavailable";
     after(() =>
       log[throttle === "limited" ? "warn" : "error"](
-        { outcome, limit: "admin" },
+        { outcome, limit: "admin", cause },
         "sign-in code request refused by the Admin",
       ),
     );
@@ -173,12 +173,12 @@ export async function verifyCode(prev: LoginState, formData: FormData): Promise<
   }
 
   const log = child(await getCorrelationId(), { action: "auth.verify_code" });
-  const throttle = await noteSignInAttempt("verify", email);
+  const { throttle, cause } = await noteSignInAttempt("verify", email);
   if (throttle !== "ok") {
     const failure = throttle === "limited" ? "rate_limited" : "unavailable";
     after(() =>
       log[throttle === "limited" ? "warn" : "error"](
-        { outcome: "failed", failure, limit: "admin" },
+        { outcome: "failed", failure, limit: "admin", cause },
         "sign-in code refused by the Admin",
       ),
     );

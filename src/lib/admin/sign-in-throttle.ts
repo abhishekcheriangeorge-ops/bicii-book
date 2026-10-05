@@ -29,6 +29,46 @@ import { createServiceClient } from "@/lib/supabase/service";
  */
 export type SignInThrottle = "ok" | "limited" | "unavailable";
 
+/**
+ * Why a count could not be taken, for the login actions' error log so an
+ * operator can tell a missing or wrong service-role key from an Auth outage
+ * (OPERATIONS "Sign-in is unavailable"). Never the email or the address:
+ * the bucket keys are digests and the RPC's messages name no argument.
+ */
+export type SignInUnavailableCause =
+  | { reason: "no_service_role_key" }
+  | { reason: "rpc_error"; code?: string; message?: string }
+  | { reason: "request_failed"; error: string };
+
+export type SignInThrottleResult = {
+  throttle: SignInThrottle;
+  /** Set only when `throttle` is "unavailable". */
+  cause?: SignInUnavailableCause;
+};
+
+/** Counts one attempt with an explicit client address and says why a count failed. */
+export async function checkSignInAttempt(
+  service: SupabaseClient<Database>,
+  attempt: SignInAttempt,
+  client: string | null,
+  email: string,
+  multiplier = 1,
+): Promise<SignInThrottleResult> {
+  const buckets = signInBuckets(attempt, client, email, multiplier);
+  const { data, error } = await service.rpc("note_sign_in_attempt", {
+    buckets: buckets.map((b) => b.key),
+    window_seconds: SIGN_IN_WINDOW_SECONDS,
+  });
+  if (error || !data) {
+    return {
+      throttle: "unavailable",
+      cause: { reason: "rpc_error", code: error?.code, message: error?.message },
+    };
+  }
+  const hits = new Map(data.map((row) => [row.bucket_key, row.hit_count]));
+  return { throttle: overSignInLimit(buckets, hits) ? "limited" : "ok" };
+}
+
 /** Counts one attempt with an explicit client address (the stack test calls this). */
 export async function countSignInAttempt(
   service: SupabaseClient<Database>,
@@ -37,33 +77,38 @@ export async function countSignInAttempt(
   email: string,
   multiplier = 1,
 ): Promise<SignInThrottle> {
-  const buckets = signInBuckets(attempt, client, email, multiplier);
-  const { data, error } = await service.rpc("note_sign_in_attempt", {
-    buckets: buckets.map((b) => b.key),
-    window_seconds: SIGN_IN_WINDOW_SECONDS,
-  });
-  if (error || !data) return "unavailable";
-  const hits = new Map(data.map((row) => [row.bucket_key, row.hit_count]));
-  return overSignInLimit(buckets, hits) ? "limited" : "ok";
+  return (await checkSignInAttempt(service, attempt, client, email, multiplier)).throttle;
 }
 
-/** Counts one attempt by the client of the current request (a login Server Action). */
+/**
+ * Counts one attempt by the client of the current request (a login Server
+ * Action). Without SUPABASE_SERVICE_ROLE_KEY, or with a wrong one, every
+ * attempt is "unavailable": nobody can sign in (ARCHITECTURE "Service-role
+ * use", RUNBOOK key rotation).
+ */
 export async function noteSignInAttempt(
   attempt: SignInAttempt,
   email: string,
-): Promise<SignInThrottle> {
+): Promise<SignInThrottleResult> {
   try {
     const client = clientAddress(await headers());
-    const { SIGN_IN_LIMIT_MULTIPLIER } = getServerEnv();
-    return await countSignInAttempt(
+    const { SIGN_IN_LIMIT_MULTIPLIER, SUPABASE_SERVICE_ROLE_KEY } = getServerEnv();
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return { throttle: "unavailable", cause: { reason: "no_service_role_key" } };
+    }
+    return await checkSignInAttempt(
       createServiceClient(),
       attempt,
       client,
       email,
       SIGN_IN_LIMIT_MULTIPLIER,
     );
-  } catch {
-    // No service-role key, or the request failed before an answer.
-    return "unavailable";
+  } catch (error) {
+    // The environment, the headers or the request failed before an answer.
+    // Only the error's class: a message could carry configuration.
+    return {
+      throttle: "unavailable",
+      cause: { reason: "request_failed", error: error instanceof Error ? error.name : "unknown" },
+    };
   }
 }
