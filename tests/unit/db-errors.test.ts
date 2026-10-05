@@ -186,6 +186,44 @@ describe("mapDbError", () => {
     });
   });
 
+  it("maps the appointment and schedule errors, keys, checks and the exclusion backstop (Phase 2)", () => {
+    expect(mapDbError(pgrst("P0001", "appointment_capacity_exceeded"))).toEqual({
+      message: "That time has just filled up. Pick another time.",
+      kind: "business",
+      code: "P0001",
+      reason: "appointment_capacity_exceeded",
+    });
+    expect(mapDbError(pgrst("P0001", "appointment_customer_limit")).message).toBe(
+      "You already have the most upcoming online bookings allowed. Cancel one or contact the shop.",
+    );
+    expect(mapDbError(pgrst("P0001", "appointment_not_cancellable")).message).toBe(
+      "This appointment can no longer be cancelled online. Please contact the shop.",
+    );
+    expect(mapDbError(pgrst("P0001", "closure_conflict")).message).toBe(
+      "Someone changed this closure in the meantime. Reload and try again.",
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "appointment_types_name_key" })
+        .message,
+    ).toBe("An appointment type with that name already exists.");
+    expect(
+      mapDbError(
+        pgrst(
+          "23514",
+          'new row for relation "shop_settings" violates check constraint "shop_settings_slot_minutes_check"',
+        ),
+      ).message,
+    ).toBe("The slot length must divide the day evenly (5 to 240 minutes).");
+    expect(
+      mapDbError(
+        pgrst(
+          "23P01",
+          'conflicting key value violates exclusion constraint "closure_overrides_custom_hours_no_overlap"',
+        ),
+      ),
+    ).toEqual({ message: "That overlaps with another entry.", kind: "conflict", code: "23P01" });
+  });
+
   it("maps numeric overflow (22003) to a plain message", () => {
     expect(mapDbError(pgrst("22003", "numeric field overflow"))).toEqual({
       message: "That amount is too large.",

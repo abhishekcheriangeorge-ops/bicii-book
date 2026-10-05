@@ -129,6 +129,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.my_work_order_lines(uuid)",
   "public.my_work_order_timeline(uuid)",
   "public.my_work_orders()",
+  // Customer appointments (Phase 2, consumed by Phase 11): own rows only,
+  // the D42 projection; booking and cancelling under D37
+  "public.book_my_appointment(uuid, uuid, timestamp with time zone, uuid, text)",
+  "public.cancel_my_appointment(uuid, text)",
+  "public.my_appointments(boolean)",
 ];
 
 /**

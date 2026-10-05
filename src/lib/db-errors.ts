@@ -179,6 +179,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   appointment_use_check_in: "Use Check in to check this appointment in.",
   appointment_use_cancel: "Use Cancel appointment, with a reason.",
   appointment_not_started: "Mark a no-show only after the appointment has started.",
+  appointment_not_cancellable:
+    "This appointment can no longer be cancelled online. Please contact the shop.",
   appointment_history_append_only: "Appointment history cannot be changed.",
   schedule_history_append_only: "Schedule history cannot be changed.",
   shop_hours_overlap: "Those opening hours overlap.",

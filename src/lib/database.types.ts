@@ -2299,6 +2299,22 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      book_my_appointment: {
+        Args: {
+          appointment_id: string;
+          appointment_type_id: string;
+          bike_id?: string;
+          customer_note?: string;
+          starts_at: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["my_appointment"];
+        SetofOptions: {
+          from: "*";
+          to: "my_appointment";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       cancel_appointment: {
         Args: { appointment_id: string; reason: string };
         Returns: {
@@ -2347,6 +2363,16 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "cult_commons_rates";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      cancel_my_appointment: {
+        Args: { appointment_id: string; reason?: string };
+        Returns: Database["public"]["CompositeTypes"]["my_appointment"];
+        SetofOptions: {
+          from: "*";
+          to: "my_appointment";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -2622,6 +2648,16 @@ export type Database = {
           to: "appointments";
           isOneToOne: true;
           isSetofReturn: false;
+        };
+      };
+      my_appointments: {
+        Args: { include_past?: boolean };
+        Returns: Database["public"]["CompositeTypes"]["my_appointment"][];
+        SetofOptions: {
+          from: "*";
+          to: "my_appointment";
+          isOneToOne: false;
+          isSetofReturn: true;
         };
       };
       my_bike_attachments: {
@@ -3622,6 +3658,22 @@ export type Database = {
         location_id: string | null;
         on_hand_after: number | null;
         replayed: boolean | null;
+      };
+      my_appointment: {
+        id: string | null;
+        appointment_type_id: string | null;
+        appointment_type_name: string | null;
+        starts_at: string | null;
+        ends_at: string | null;
+        status: Database["public"]["Enums"]["appointment_status"] | null;
+        bike_id: string | null;
+        bike_short_id: string | null;
+        bike_title: string | null;
+        customer_note: string | null;
+        cancelled_at: string | null;
+        cancelled_via: Database["public"]["Enums"]["appointment_source"] | null;
+        created_at: string | null;
+        can_cancel: boolean | null;
       };
       publication_result: {
         product_id: string | null;
