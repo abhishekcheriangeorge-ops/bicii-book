@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useState, useTransition } from "react";
 
-import { listCustomerBikes, updateAppointment } from "@/app/(staff)/appointments/actions";
+import { updateAppointment } from "@/app/(staff)/appointments/actions";
+import { listIntakeBikes } from "@/app/(staff)/jobs/actions";
 import { ShortId } from "@/components/domain/short-id";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -212,7 +213,7 @@ function BikeSheet({
 
   useEffect(() => {
     let live = true;
-    listCustomerBikes({ customerId }).then(
+    listIntakeBikes({ customerId }).then(
       (r) => live && setBikes(r.ok ? { bikes: r.data } : { error: r.error }),
       () => live && setBikes({ error: "Couldn't load the bikes." }),
     );

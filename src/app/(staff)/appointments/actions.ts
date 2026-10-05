@@ -9,7 +9,6 @@ import {
   bookAppointment as book,
   cancel,
   checkIn,
-  customerBikes,
   loadSchedule as load,
   markStatus,
   update,
@@ -144,11 +143,4 @@ export const loadSchedule = staffAction(
   }),
   { name: "appointments.load_schedule" },
   async (input, { supabase }) => load(supabase, input),
-);
-
-/** A customer's active bikes, for the booking sheet and Change bike. */
-export const listCustomerBikes = staffAction(
-  z.object({ customerId: z.uuid({ error: "Choose the customer." }) }),
-  { name: "appointments.customer_bikes" },
-  async ({ customerId }, { supabase }) => customerBikes(supabase, customerId),
 );

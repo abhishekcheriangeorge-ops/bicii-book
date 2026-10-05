@@ -2,8 +2,8 @@
 
 import { refresh } from "next/cache";
 
-import { ActionError, staffAction } from "@/lib/actions";
-import { getShopSettings, saveAppointmentType as storeType } from "@/lib/domain/schedule";
+import { staffAction } from "@/lib/actions";
+import { saveAppointmentType as storeType } from "@/lib/domain/schedule";
 import { appointmentTypeSchema } from "@/lib/schedule";
 
 /**
@@ -18,13 +18,8 @@ export const saveAppointmentType = staffAction(
   appointmentTypeSchema,
   { name: "appointment_types.save", admin: true },
   async (input, { supabase }) => {
-    if (input.active) {
-      const settings = await getShopSettings(supabase);
-      if (input.capacityUnits > settings.capacityUnits) {
-        const message = `The shop takes ${settings.capacityUnits} ${settings.capacityUnits === 1 ? "unit" : "units"} per slot. Raise the capacity first, or use fewer units.`;
-        throw new ActionError(message, { capacityUnits: [message] });
-      }
-    }
+    // More units than the shop's capacity (on an active type) is the RPC's
+    // appointment_type_capacity_too_large, mapped to capacityUnits.
     const saved = await storeType(supabase, input);
     refresh();
     return saved;

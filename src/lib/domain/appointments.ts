@@ -30,12 +30,12 @@ import type { Database } from "@/lib/database.types";
 import { shiftShopDay, shopDayStart, shopDayToDate, shopToday } from "@/lib/dates";
 import { unwrap } from "@/lib/db-errors";
 import { customerLabel } from "@/lib/people";
+import { weekdayName } from "@/lib/schedule";
 import type { ServerSupabase } from "@/lib/supabase/server";
-import type { WorkOrderStatus } from "@/lib/workshop";
+import { isOpenStatus, WORK_ORDER_STATUSES, type WorkOrderStatus } from "@/lib/workshop";
 
 import { DomainError } from "./errors";
 import { rethrowOnField } from "./lines";
-import { customerBikesForIntake, type IntakeBike } from "./workshop";
 
 /**
  * Appointments for staff (SPEC §6, §21; DATA-MODEL §3, §16; PLAN D2,
@@ -186,16 +186,6 @@ const labelOf = (c: NameColumns) =>
 /** The instant a shop day starts (Singapore midnight; D35). */
 const dayStart = (day: string): Date => shopDayStart(shopDayToDate(day));
 
-const WEEKDAY_NAMES = [
-  "Sundays",
-  "Mondays",
-  "Tuesdays",
-  "Wednesdays",
-  "Thursdays",
-  "Fridays",
-  "Saturdays",
-];
-
 // ---------------------------------------------------------------------------
 // Schedule configuration (every active staff member reads it)
 // ---------------------------------------------------------------------------
@@ -297,7 +287,7 @@ function dayHours(day: string, config: ScheduleConfig): DayHours {
         ? closure.reason
         : customHours
           ? customHours.reason
-          : `Not open on ${WEEKDAY_NAMES[shopDayToDate(day).getUTCDay()]}`;
+          : `Not open on ${weekdayName(shopDayToDate(day).getUTCDay())}s`;
   }
   return {
     day,
@@ -922,11 +912,6 @@ export async function checkIn(
   }
 }
 
-/** The customer's active bikes for the pickers, oldest first, each with its open job if any. */
-export function customerBikes(supabase: ServerSupabase, customerId: string): Promise<IntakeBike[]> {
-  return customerBikesForIntake(supabase, customerId);
-}
-
 export type LinkableJob = {
   id: string;
   jobNumber: string;
@@ -935,6 +920,8 @@ export type LinkableJob = {
   checkedInAt: string;
   requestedWork: string;
 };
+
+const OPEN_JOB_STATUSES = WORK_ORDER_STATUSES.filter(isOpenStatus);
 
 /**
  * Work orders check-in may link (D40): open (before completed), of this
@@ -950,7 +937,8 @@ export async function openUnlinkedJobs(
     .select("id, job_number, bike_id, status, checked_in_at, requested_work")
     .eq("customer_id", customerId)
     .is("appointment_id", null)
-    .not("status", "in", "(completed,ready_for_collection,collected,cancelled)")
+    // D40: "open" is exactly P3's open (src/lib/workshop.ts isOpenStatus).
+    .in("status", OPEN_JOB_STATUSES)
     .order("checked_in_at", { ascending: false })
     .limit(50);
   if (bikeId) query = query.eq("bike_id", bikeId);

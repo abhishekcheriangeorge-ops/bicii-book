@@ -4,11 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, useTransition, type ReactNode } from "react";
 
-import {
-  bookAppointment,
-  listCustomerBikes,
-  loadSchedule,
-} from "@/app/(staff)/appointments/actions";
+import { bookAppointment, loadSchedule } from "@/app/(staff)/appointments/actions";
+import { listIntakeBikes } from "@/app/(staff)/jobs/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button, type ButtonSize, type ButtonVariant } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -130,7 +127,7 @@ function BookAppointmentBody({
   useEffect(() => {
     if (!customerId) return;
     let live = true;
-    listCustomerBikes({ customerId }).then(
+    listIntakeBikes({ customerId }).then(
       (result) => {
         if (!live) return;
         setBikes(

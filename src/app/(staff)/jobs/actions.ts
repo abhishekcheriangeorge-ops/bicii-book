@@ -224,7 +224,10 @@ export const searchIntakeOptions = staffAction(
   async ({ q }, { supabase }) => (q ? searchIntake(supabase, q) : []),
 );
 
-/** Intake step 2: the customer's active bikes, with any job each is already in for. */
+/**
+ * The customer's active bikes, with any job each is already in for: intake
+ * step 2, the booking sheet and an appointment's Change bike share it.
+ */
 export const listIntakeBikes = staffAction(
   z.object({ customerId: z.uuid({ error: "Unknown customer." }) }),
   { name: "jobs.intake_bikes" },

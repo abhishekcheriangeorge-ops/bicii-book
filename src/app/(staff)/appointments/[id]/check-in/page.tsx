@@ -9,8 +9,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { formatAppointmentWhen } from "@/lib/appointments/format";
 import { APPOINTMENT_STATUS_LABELS, availableActions } from "@/lib/appointments/status";
 import { requireStaff } from "@/lib/auth/session";
-import { customerBikes, getAppointment, openUnlinkedJobs } from "@/lib/domain/appointments";
-import { listActiveStaff } from "@/lib/domain/workshop";
+import { getAppointment, openUnlinkedJobs } from "@/lib/domain/appointments";
+import { customerBikesForIntake, listActiveStaff } from "@/lib/domain/workshop";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -69,7 +69,7 @@ export default async function CheckInPage({ params }: PageProps<"/appointments/[
   }
 
   const [bikes, openJobs, people] = await Promise.all([
-    customerBikes(supabase, appt.customer.id),
+    customerBikesForIntake(supabase, appt.customer.id),
     openUnlinkedJobs(supabase, appt.customer.id),
     listActiveStaff(supabase),
   ]);

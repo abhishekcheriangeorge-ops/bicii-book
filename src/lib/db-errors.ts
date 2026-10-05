@@ -193,7 +193,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   appointment_type_conflict: "Someone changed this type in the meantime. Reload and try again.",
   shop_capacity_below_type:
     "An active appointment type needs more capacity than that. Change the type first.",
-  appointment_type_capacity_too_large: "That is more than the shop can take in one slot.",
+  appointment_type_capacity_too_large:
+    "That is more than the shop takes in one slot. Raise the shop's capacity first, or use fewer units.",
   shop_timezone_invalid: "That is not a time zone the database knows.",
   shop_settings_required: "The shop settings cannot be deleted, only changed.",
 };

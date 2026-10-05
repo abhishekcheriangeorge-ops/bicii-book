@@ -8,7 +8,7 @@ import {
   type ScheduleHours,
   type ScheduleSettings,
 } from "@/lib/appointments/slots";
-import type { AppointmentStatus } from "@/lib/appointments/status";
+import { isActiveStatus, type AppointmentStatus } from "@/lib/appointments/status";
 import { formatHHMM, localDay, parseHHMM, zonedInstant } from "@/lib/appointments/time";
 import { shiftShopDay, shopToday } from "@/lib/dates";
 import { mapDbError, unwrap } from "@/lib/db-errors";
@@ -106,9 +106,6 @@ export type AffectedSummary = {
 
 /** Past closures the settings screen keeps under "Past". */
 export const PAST_CLOSURES = 10;
-
-const ACTIVE = ["booked", "confirmed", "arrived"] as const;
-const isActive = (s: AppointmentStatus) => (ACTIVE as readonly string[]).includes(s);
 
 const hhmm = (t: string) => formatHHMM(parseHHMM(t));
 
@@ -238,7 +235,7 @@ function toClosureItem(
   const wholeDays =
     zonedInstant(firstDay, 0, tz).getTime() === startsAt.getTime() &&
     zonedInstant(shiftShopDay(lastDay, 1), 0, tz).getTime() === endsAt.getTime();
-  const hit = appointments.filter((a) => isActive(a.status) && hitByClosure(a, c, tz));
+  const hit = appointments.filter((a) => isActiveStatus(a.status) && hitByClosure(a, c, tz));
   const local = (d: Date) => {
     const day = localDay(d, tz);
     return formatHHMM(Math.round((d.getTime() - zonedInstant(day, 0, tz).getTime()) / 60_000));
@@ -367,7 +364,7 @@ export async function affectedBySchedule(supabase: ServerSupabase): Promise<Affe
     hoursRows(supabase),
     holdingBetween(supabase, now, null),
   ]);
-  const active = holding.filter((a) => isActive(a.status));
+  const active = holding.filter((a) => isActiveStatus(a.status));
   if (active.length === 0) return { total: 0, days: [] };
   const lastEnd = holding.reduce((max, a) => (a.ends_at > max ? a.ends_at : max), now);
   const closures: ScheduleClosure[] = (

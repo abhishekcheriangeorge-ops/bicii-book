@@ -202,8 +202,8 @@ Shipped (app core, step 3): the pure mirror `src/lib/appointments/`
 exactly, proven on the shared fixtures; `status.ts` actions = the status
 machine; `history.ts`, `time.ts`, `format.ts`), `src/lib/domain/appointments.ts`
 (`listDay`, `listWeek`, `loadSchedule`, `getAppointment`, `bookAppointment`,
-`markStatus`, `cancel`, `update`, `checkIn`, `customerBikes`,
-`openUnlinkedJobs`), the Server Actions, `/appointments` (day/week),
+`markStatus`, `cancel`, `update`, `checkIn`, `openUnlinkedJobs`;
+the bike pickers reuse P3's `listIntakeBikes`), the Server Actions, `/appointments` (day/week),
 `BookAppointmentSheet`, `/appointments/[id]` and its check-in, the shared
 `LeadPicker`, and `appointments.spec.ts` (journey 2 and the no-show
 reinstatement).
