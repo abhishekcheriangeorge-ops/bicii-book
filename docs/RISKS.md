@@ -187,7 +187,11 @@ URLs, or customer data in this file.
   change and stays never saleable.
 - Evidence and confidence: high; the refusal is in
   `20261004001900_inventory_jobs.sql` and its backstop in
-  `20261004002100_inventory_publication.sql`.
+  `20261004002100_inventory_publication.sql`. The comment above that
+  refusal and the D27 rule text in PLAN §6 still say Phase 6 keeps the
+  refusal and does not replace `add_inventory_line`: they describe the rule
+  before the owner's change (found 2026-10-05 while writing
+  ARCHITECTURE.md), so Phase 6 must not follow them.
 - Workaround or containment: none; consignment is not built.
 - Next action: Phase 6 builds the consigned-part path with consignor
   liability intact, plus its database tests, and updates PLAN D27.
@@ -402,7 +406,9 @@ URLs, or customer data in this file.
   not built). ADR-001 is kept as the historical record.
 - Evidence and confidence: high; `package.json` on 2026-10-05.
 - Workaround or containment: `package.json` is authoritative for versions;
-  ADR-001's status line points to the later decision records.
+  [ARCHITECTURE.md](ARCHITECTURE.md#current-system) states the installed
+  versions, and ADR-001's status lines point to it and to the later
+  decision records.
 - Next action: none; a later decision record supersedes ADR-001 A1 only if
   the stack choice itself changes.
 - Revisit trigger: a QR rendering library is chosen (Phase 8).

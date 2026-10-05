@@ -1,4 +1,5 @@
 <!-- Source: BICII_Definitive_Agent_Build_Specification.docx, v1.0, 3 October 2026. Converted verbatim; this is the authoritative brief. -->
+> Historical record: the original brief (v1.0, 3 October 2026), kept verbatim. It remains the requirement; decisions taken since are in [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) and [decisions/](decisions/README.md), current intent in [PRODUCT.md](PRODUCT.md).
 
 BICII
 Workshop, Inventory, Consignment, Appointments & Operations System
