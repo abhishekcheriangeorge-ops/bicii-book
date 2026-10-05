@@ -92,8 +92,8 @@ the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
 | §8 Sales | Implemented | `sales`, `sale_lines`, `sale_refunds`, `private.sell_line`, `record_retail_sale`, `restock_unit`, `record_sale_refund` (`003500_sales`; the partial unique index `sale_lines_unit_sells_once` replaces this section's plain `unique`, D46). Screens: Phase 6 step 4 (`src/app/(staff)/sales/`, `src/lib/domain/sales.ts`). Shopify orders reuse `private.sell_line` in Phase 10 |
 | §9 Consignment | Implemented | Phase 6 step 1: consignors, items, charges, item history, returns, `reporting.consignment_item_position`, consigned job parts (`003300_consignment`, `003400_consignment_job_parts`; D44–D52); step 2: settlements, reversals, the ledgers and the balance rule (`003600_consignment_settlements`; D46, D47). Screens: step 3 (`src/app/(staff)/consignment/`, `src/lib/domain/consignment.ts`); selling a consigned item in store: step 4 (Sell on the item page, `/sales`) |
 | §10 Suppliers and purchasing | Planned | Phase 7; built only on the parallel branch `feat/p7-purchasing`, not on this line |
-| §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`); the database QR base and payload (`private.qr_payload`, `003800_labels`, D9). Missing: the Admin's QR display and scan bases on the database base (`src/lib/qr.ts`, Phase 8 step 2), PO- resolution (Phase 7; `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4), the public `/q` route (Phase 11) |
-| §12 Label printing | Partly | Database built (`003800_labels`, Phase 8 step 1: templates, printer profiles, print jobs, label content, RPCs, built-in rows); `src/lib/printing/` and the screens are Phase 8 steps 2–4; hardware adapters Phase 12 |
+| §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`); the database QR base and payload (`private.qr_payload`, `003800_labels`, D9); the Admin's QR display and scan bases on the database base (`src/lib/qr.ts`, Phase 8 step 2). Missing: PO- resolution (Phase 7; `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4), the public `/q` route (Phase 11) |
+| §12 Label printing | Partly | Database built (`003800_labels`, Phase 8 step 1: templates, printer profiles, print jobs, label content, RPCs, built-in rows); `src/lib/printing/`, `src/lib/domain/labels.ts`, the print view, the PDF route and the print history (step 2); the record pages' Labels card and the settings screens are steps 3–4; hardware adapters Phase 12 |
 | §13 Shopify integration | Planned | Phase 10; only reserved columns exist (`customers.shopify_customer_id`, the product Shopify ids) |
 | §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. Missing: `stock_reconciliation` (Phase 9), `purchase_order_progress` (Phase 7), `shopify_sync_status` (Phase 10) |
 | §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48) and labels (Phase 8 step 1); rows for purchasing and integrations are design |
@@ -1570,8 +1570,22 @@ writes nothing.
     `public_site_url ~ '^https?://[^/?#[:space:]]+(/[^?#[:space:]]*)?$'`
     and at most 200 characters (http or https, a host, an optional path,
     no query, no fragment, no whitespace); the cases are
-    `tests/fixtures/qr-bases.ts`, shared with the TypeScript validator in
-    `src/lib/qr.ts` (Phase 8 step 2). The column has no default.
+    `tests/fixtures/qr-bases.ts`, shared with the TypeScript validator
+    (`isValidQrBase` / `QR_BASE_PATTERN` in `src/lib/ids.ts`,
+    `tests/unit/qr-base.test.ts`). The column has no default.
+  - The app side (Phase 8 step 2, `src/lib/qr.ts`, server only): the app
+    never builds a payload for printing (the job carries the database's
+    `qr_payload`). What it DISPLAYS comes from the same column:
+    `getQrBase()` reads `shop_settings.public_site_url` (row 1) with the
+    request's RLS client once per render and returns it without trailing
+    slashes when `isValidQrBase`, else null, with no environment fallback;
+    `qrUrl(shortId)` is `{base}/q/{shortId}` or null, shown as "QR address
+    not set" (`QrLabelUrl`, `src/components/domain/qr-label-url.tsx`) on
+    the product and unit pages. `NEXT_PUBLIC_PUBLIC_SITE_URL` is read only
+    in `src/lib/env.ts` and `src/lib/qr.ts` (`tests/unit/qr-base-sources.test.ts`)
+    and is only an extra accepted scan base: `scanBases()` =
+    `mergeScanBases(database base, environment base)` (`src/lib/scan.ts`),
+    so labels printed against it keep scanning.
   - Labels of published products and units resolve publicly: a unit's
     label is its U- ID, and `reporting.public_items` has a row per
     published unit (D57). A bike tag (B-) resolves to "not found"
@@ -1636,8 +1650,8 @@ writes nothing.
   function, never add routes.
 - The Admin scanner (`interpretScan`, `src/lib/scan.ts`) recognises the QR
   URL on every accepted public base (`scanBases()` in `src/lib/qr.ts`:
-  today the environment's `NEXT_PUBLIC_PUBLIC_SITE_URL`, from Phase 8 also
-  the database QR base), a `/q/{shortId}` URL on the Admin's own origin,
+  the database QR base when usable, then the environment's
+  `NEXT_PUBLIC_PUBLIC_SITE_URL`), a `/q/{shortId}` URL on the Admin's own origin,
   or a bare short ID in any case, and opens `/q/{shortId}`. Anything else
   is shown as "Not a BICII label" and never followed.
 - Publication state machine on `products.publication_status` (D26,
@@ -1670,9 +1684,8 @@ writes nothing.
 
 Built by `20261004003800_labels.sql` (Phase 8 step 1; decisions D9, D56–D59
 in [ADR-017](decisions/ADR-017-labels-and-qr-base.md)). The TypeScript side
-(`src/lib/printing/`: the template renderer, the `PrinterAdapter`
-interface, the `browser` and `pdf` adapters) and the screens are Phase 8
-steps 2–4; a hardware adapter is Phase 12.
+is Phase 8 step 2 (below, "The app side"); the record pages' Labels card
+and the settings screens are steps 3–4; a hardware adapter is Phase 12.
 
 Types: `label_kind` (`product`, `unit`, `bike`); `printer_adapter`
 (`browser`, `pdf`, `network_raw`, `bluetooth`; the last two exist for
@@ -1814,7 +1827,7 @@ when the current price differs from the last printed label's (step 3).
 rendered, printed, failed; rendered → printed, failed; printed and failed
 are final; nothing returns to queued (cases:
 `tests/fixtures/print-transitions.ts`). `rendered` is set when the labels
-were rendered for printing (the print view or PDF route, step 2), `printed`
+were sent for printing (the print view's Print or Open PDF, step 2), `printed`
 or `failed` (with what went wrong) when staff confirm. Checks keep the
 stamps consistent: `print_jobs_error_check` (error exactly when failed),
 `print_jobs_completed_check` (completed_at exactly when printed or failed),
@@ -1826,6 +1839,41 @@ stamps consistent: `print_jobs_error_check` (error exactly when failed),
 `print_job_immutable` for every role. "Print again" is a new job with
 `reprint_of_id` (same kind and record: `print_job_reprint_mismatch`).
 Archived records keep their jobs readable (SPEC §23).
+
+**The app side (Phase 8 step 2).**
+
+- `src/lib/printing/` (pure, no Supabase): `types.ts` (camelCase DTOs:
+  `LabelContent`, `LabelLayout`, `LabelTemplate`, `PrinterProfile`,
+  `PrintJob`); `schemas.ts` (zod: `labelContentSchema` strict, so an
+  unknown key such as `cost` fails before it can reach a label;
+  `labelLayoutSchema`, `printerConfigSchema`; `labelLayoutProblem` mirrors
+  `private.label_layout_problem` sentence for sentence and
+  `labelTemplateInputSchema` applies it with the table's size checks,
+  tested on `tests/fixtures/label-layouts.ts`); `compose.ts`
+  (`composeLabel`, the ONE layout engine for SVG and PDF, from standard-font
+  metrics in `metrics.ts`; a 0.00 price prints `$0.00`, a null price
+  nothing; the short ID and price are never cut); `label-svg.tsx`;
+  `document.ts` (`buildLabelDocument(job)`: the job's template, content and
+  printer config snapshots only); `job.ts` (the status machine mirror,
+  `isPrintable`, D56's `maxLabelQuantity`); `availability.ts`
+  (`labelUnavailable` for the four "printing unavailable" codes);
+  `links.ts`; `adapters/` (`browser` → `LabelSheet`, `pdf` → pdf-lib,
+  server only; `network_raw` / `bluetooth` throw `AdapterUnavailableError`).
+- `src/lib/domain/labels.ts` (server only): `getPrintJob` (the DTO, every
+  jsonb parsed; `entityArchived` from the record and, for a unit, its
+  product), `listPrintJobs` (all, open = queued + rendered, failed; a short
+  ID matched exactly, else part of `content->>name`; newest first with a
+  `(created_at, id)` cursor), `listJobsFor`, `getLabelContext` (never
+  throws for the four unavailable codes; a unique product's P- label is
+  refused without calling `label_preview`), `getReprintPreset`,
+  `createPrintJob`, `setPrintJobStatus`, and the admin writes
+  (`saveTemplate` / `saveProfile` with the client id, `setDefaultTemplate`,
+  `setDefaultProfile`, `setPublicSiteUrl` through `update_shop_settings`).
+- Rendering a job is allowed only while it is open (D59): the print view
+  shows the controls and prints the sheet only for queued and rendered
+  jobs, and `GET /api/labels/{id}/pdf` answers 409 for a printed or failed
+  job. "Print again" is always a link to the record
+  (`?print=1&qty={n}&reprint={id}`), which makes a new job.
 
 ## 13. Shopify integration
 

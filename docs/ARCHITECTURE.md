@@ -28,7 +28,7 @@ flowchart LR
   end
   public["Public site, repo bicii<br/>(not integrated yet, Phase 11)"] -.-> rest
   shopify["Shopify<br/>(planned, Phase 10)"] -.-> app
-  printer["Label printer<br/>(planned, Phases 8 and 12)"] -.- app
+  printer["Label printer<br/>(browser print / PDF since Phase 8;<br/>hardware adapter Phase 12)"] --- app
 ```
 
 Dashed lines are planned, not built. Nothing is deployed: there is no
@@ -42,8 +42,12 @@ Installed versions (from `package.json` and `node_modules`, 2026-10-05):
 `next` 16.3.8, `react` / `react-dom` 19.2.8, `@supabase/ssr` 0.12.7,
 `@supabase/supabase-js` 2.117.2, `zod` 4.6.5, `decimal.js` 10.6.0, `pino`
 10.4.0, `@zxing/browser` 0.2.1 (the Scan screen imports it dynamically, only
-when the browser has no `BarcodeDetector` for QR codes). No QR-drawing package is installed yet (labels
-are Phase 8; [R-019](RISKS.md#r-019--adr-001-names-versions-the-code-does-not-use)).
+when the browser has no `BarcodeDetector` for QR codes), and for labels
+(Phase 8 step 2) `qrcode` 1.5.4 (the QR matrix), `pdf-lib` 1.17.1 (the
+PDF adapter, server only) and `@pdf-lib/standard-fonts` 1.0.0 (text
+metrics shared by the SVG and the PDF), all MIT, bundled by Turbopack with
+no webpack configuration; no printer SDK
+([R-019](RISKS.md#r-019--adr-001-names-versions-the-code-does-not-use)).
 
 ## Main workflow: add a part to a job
 
@@ -118,7 +122,7 @@ replay, never a second movement.
 | Consignment (Phase 6) | [src/lib/domain/consignment.ts](../src/lib/domain/consignment.ts) (consignors, items, intake, terms, charges, returns, settlements over `list_consignors`, `consignor_statement`, `consignor_payout_details` and the step 1–2 RPCs); screens `src/app/(staff)/consignment/` (`page.tsx` with `?view=consignors\|items`, `consignors/[id]`, `items/[id]`, `actions.ts`); sheets in `src/components/domain/` (consignor, intake, charge, settlement, item controls); pure rules in [src/lib/consignment.ts](../src/lib/consignment.ts) (labels, `autoAllocate`, `allocationProblems`, `paidAtFromDate`) and [consignment-forms.ts](../src/lib/consignment-forms.ts); access mirrors `canViewConsignmentMoney` / `canViewSaleCosts` / `canRecordRefund` in [permissions.ts](../src/lib/auth/permissions.ts) (D48, D49) | RLS-scoped client; the consignment RPCs and the ledger views behind them | consignors cannot be paid or items received; owed, paid and outstanding stay correct because they are derived in SQL (D46). A consignor's totals are summed in the domain module from the item rows, which is how `reporting.consignor_ledger` defines them |
 | Sales (Phase 6) | [src/lib/domain/sales.ts](../src/lib/domain/sales.ts) (`listSales`, `getSale`, `saleForUnit`, `searchSaleable`, `recordRetailSale`, `restockUnit`, `recordSaleRefund` over `list_sales`, `sale_lines_detail`, `saleable_stock`, `record_retail_sale`, `restock_unit`, `record_sale_refund`); screens `src/app/(staff)/sales/` (`page.tsx`, `[id]/page.tsx`, `actions.ts`); `RecordSaleSheet` / `SaleablePicker` and `RefundSheet` / `RestockControl` in `src/components/domain/`; pure rules in [src/lib/sales.ts](../src/lib/sales.ts) (`previewSale` over `lineEconomics`, `priceWarnings`, `saleRange`, `refundableAmount`, status words) and [sales-forms.ts](../src/lib/sales-forms.ts); Sell on the consignment item, unit and product pages | RLS-scoped client; the sale RPCs; `private.sell_line` in the database is the single sale-line writer that Phase 10 reuses with `online_sale` | no sale can be recorded; stock, units, consignment and the reports stay consistent because every effect is inside `record_retail_sale` |
 | Consigned job parts (D44) | `searchParts` in [inventory.ts](../src/lib/domain/inventory.ts) (consigned units and the FIFO-head consignment of quantity stock, D45), `loadParts` in [lines.ts](../src/lib/domain/lines.ts) (a line's consignment) | `consignor_statement` for the FIFO head and the cost preview | the part sheet does not offer consigned stock; `add_inventory_line` still applies D44 |
-| Labels and the QR base (Phase 8; D9, D56–D59, [ADR-017](decisions/ADR-017-labels-and-qr-base.md)) | Database only so far (step 1): `20261004003800_labels.sql` — `private.qr_payload` (the only payload source, from `shop_settings.public_site_url`, no fallback), `private.label_content` (the only label text, price through `private.selling_price`), `label_templates`, `printer_profiles`, `print_jobs` and the five label RPCs. Steps 2–4 add `src/lib/qr.ts` on the database base, `src/lib/printing/` (renderer, `PrinterAdapter`, browser and PDF adapters), the domain module and the screens | Postgres; `shop_settings.public_site_url` | nothing prints while the address is unset (`public_site_url_invalid`); printed labels keep their address ([R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address)) |
+| Labels and the QR base (Phase 8; D9, D56–D59, [ADR-017](decisions/ADR-017-labels-and-qr-base.md)) | Database (step 1): `20261004003800_labels.sql` — `private.qr_payload` (the only payload source, from `shop_settings.public_site_url`, no fallback), `private.label_content` (the only label text, price through `private.selling_price`), `label_templates`, `printer_profiles`, `print_jobs` and the five label RPCs. App (step 2): [src/lib/qr.ts](../src/lib/qr.ts) (`getQrBase`, `qrUrl`, `scanBases`: every DISPLAYED QR URL from the same column, "QR address not set" when unusable); [src/lib/printing/](../src/lib/printing/) (pure: zod schemas with the database's layout rule, `composeLabel` — the one layout engine — `LabelSvg`, the status machine, links; `adapters/`: `browser` → `LabelSheet`, `pdf` → pdf-lib, server only); [src/lib/domain/labels.ts](../src/lib/domain/labels.ts) (print job DTO from the snapshots, history, `getLabelContext`, reprint preset, admin template, printer and address writes); actions in `src/app/(staff)/labels/actions.ts` and `settings/labels/actions.ts`; the print view `src/app/(print)/print/labels/[jobId]` (outside the shell), the PDF Route Handler `src/app/api/labels/[jobId]/pdf/route.ts`, and the print history `/labels`, `/labels/[jobId]`. Steps 3–4: the record pages' Labels card, the settings screens, journeys | Postgres; `shop_settings.public_site_url` | nothing prints while the address is unset (`public_site_url_invalid`), and record pages say "QR address not set"; printed labels keep their address ([R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address)) |
 | Supabase clients | [server.ts](../src/lib/supabase/server.ts), [browser.ts](../src/lib/supabase/browser.ts), [service.ts](../src/lib/supabase/service.ts) | anon key + session; service-role key (server only) | no data access |
 | Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API) | `SUPABASE_SERVICE_ROLE_KEY` | staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
 | Error mapping | [src/lib/db-errors.ts](../src/lib/db-errors.ts) | P0001 codes, constraint names | users see the generic error |
@@ -204,6 +208,26 @@ All records: [decisions/README.md](decisions/README.md).
   transfers and `saleable_stock` read it under the product's stock lock,
   so a consignor is charged only for stock that was where it was sold
   ([ADR-016](decisions/ADR-016-consignment-and-sales.md)).
+- Labels (Phase 8, [ADR-017](decisions/ADR-017-labels-and-qr-base.md)):
+  the QR base is `shop_settings.public_site_url` only. The database
+  computes every printed payload (`private.qr_payload` into
+  `print_jobs.qr_payload`); the app never builds one for printing, and
+  every QR URL it displays comes from the same column through
+  `src/lib/qr.ts`. `NEXT_PUBLIC_PUBLIC_SITE_URL` is read only in
+  `src/lib/env.ts` and `src/lib/qr.ts`, as an extra accepted SCAN base
+  (`tests/unit/qr-base-sources.test.ts` enforces it). Label text comes only
+  from `print_jobs.content` or `label_preview`, parsed by a strict schema;
+  rendering a job (sheet, PDF, history preview) uses only its content,
+  template and printer snapshots (`buildLabelDocument`), and only an open
+  job (queued, rendered) is rendered for printing (D59): the PDF route
+  answers 409 for a finished job, whose print view shows the outcome and
+  "Print again" instead. The print view lives in the `(print)` route group,
+  outside the staff shell, so `window.print()` prints labels only (the
+  toast region is `print:hidden`); its layout calls `requireStaff()` and so
+  does the page. The PDF Route Handler calls `authorizeStaff`, whose
+  `redirect()` / `forbidden()` become a 307 to /login and an empty 403 in a
+  Route Handler (verified in `next/dist/server/route-modules/app-route`
+  and the `forbidden` API reference).
 - Errors: `P0001` with a stable code, `42501` for authorization, `P0002` for
   missing rows; mapped in [src/lib/db-errors.ts](../src/lib/db-errors.ts)
   ([DATA-MODEL §16](DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public)).

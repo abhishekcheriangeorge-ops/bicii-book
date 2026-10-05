@@ -324,7 +324,9 @@ Settings → Your profile.
   product starts as Draft). Add a photo with **Choose photos**, open it and
   choose **Public** in the viewer ("Photo is now public"). Then
   **Publish**. **What the public sees** previews the public listing and the
-  QR label URL is shown.
+  QR label URL is shown (the shop's public website address + `/q/` + the
+  short ID; "QR address not set" until an admin sets that address, and
+  then no label can be printed either).
 - Success looks like: toast "Published" and "Public" in the header.
   **Unpublish** makes it internal again ("Listing is internal only").
 - If it fails: Publish stays disabled and the card says what is missing,
@@ -345,7 +347,33 @@ Settings → Your profile.
   over a secure connection. Open the app over HTTPS (or on localhost)."
   (type the code instead; [RUNBOOK](RUNBOOK.md#the-camera-scanner-on-phones-and-ipads)).
   "Camera access is blocked. On iPhone: Settings → Safari → Camera → Allow,
-  then reload this page." Labels cannot be printed yet (Phase 8).
+  then reload this page." Labels printed against the shop's current public
+  address, or against the earlier one the app is configured to accept,
+  both scan.
+
+### Print labels and confirm them
+
+- Before you start: any staff member. A print job (a number of identical
+  labels of one product, unit or bike) is started from the record (its
+  Labels card arrives with the next build step); each job opens its print
+  view.
+- Steps: in the print view the bar says "10 labels · <printer> · 58 × 40
+  mm". With the browser printer press **Print**, pick the label printer,
+  paper 58 × 40 mm, scale 100%, no margins. With the PDF printer press
+  **Open PDF**, then Share → Print with the same paper and scale. Then
+  answer "Did all 10 labels print correctly?": **Yes, all printed**, or
+  **Something went wrong…**, say what went wrong and **Mark as failed**.
+- Success looks like: "Marked as printed" (or "Marked as failed") and
+  links **Back to P-…** and **Print history**. **Labels** (More) lists every
+  print newest first; **To confirm** shows jobs sent but not confirmed,
+  **Failed** the failed ones with their reason; search by short ID or name.
+  A job's page shows the label exactly as it printed and its details.
+- If it fails: a printed or failed job cannot be printed again as it was:
+  its print view shows what happened and **Print again**, which goes back to
+  the record to start a new job with today's label (disabled with "That
+  record is archived. Unarchive it before printing labels." for an archived
+  record). Its PDF link answers "This print job is finished. Print again
+  from the record to make a new job."
 
 ### Book and run an appointment
 
@@ -425,8 +453,7 @@ consignments or View costs (D48). Anyone may record an in-store sale and
 see its total; its cost, yield and Cult Commons need View costs, and only
 an admin records a refund (D48, D49).
 
-Not available yet: **Purchasing**, **Labels** and **Reports** show
-"Arrives in Phase 7 (Purchasing)", "Phase 8 (QR and labels)" and "Phase 9
-(Reporting)" ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
+Not available yet: **Purchasing** and **Reports** show
+"Arrives in Phase 7 (Purchasing)" and "Phase 9 (Reporting)" ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 There is no reschedule, no customer messaging and no data export. Help:
 ask the owner or an admin.

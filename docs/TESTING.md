@@ -177,7 +177,8 @@ are described in one place:
   function mirrored from the SQL, tested against the same fixtures).
 - Publication state machine transitions.
 - Permission resolution (`admin` implies all; inactive staff has none).
-- Label template rendering (QR payload is exactly the public URL).
+- Label rendering (Phase 8 step 2, below): the QR decodes to exactly the
+  job's database payload.
 - Shopify payload mapping (variant → product; unmapped → structured error).
 - Short ID formatting and scanner URL parsing.
 - Phase 1 (M1.2): photo downscale sizing (`fitWithin`: longest edge 2048,
@@ -392,6 +393,50 @@ are described in one place:
   nothing, submits nothing and keeps one Tab stop on the first enabled
   segment.
 
+Phase 8 step 2 (labels and the QR base; `tests/unit/printing/`, the
+files that run sharp, ZXing or pdf-lib declare `// @vitest-environment
+node`):
+`schemas.test.ts`: every case of `tests/fixtures/label-layouts.ts` gets the
+database's verdict and sentence from `labelLayoutProblem`;
+`labelTemplateInputSchema` keeps the canonical field order, reports the
+layout sentence and the table's size checks; `printerConfigSchema` is
+strict; `labelContentSchema` keeps a `0.00` price and refuses `cost` and
+`consignor` keys and a payload for another short ID.
+`compose.test.ts`: the three built-in layouts × sample, short, 120-character
+name, three identity lines, null price, price `0.00`, null SKU and
+everything-long contents: QR and every text inside the label before
+offsets, no text over the QR, the short ID always drawn, the price drawn
+exactly when not null (`$0.00` for 0.00, D24 amended; nothing for null,
+D58), only layout fields; the drop order and the 1.8 mm floor; offsets
+carried. `label-svg.test.tsx`: `renderToStaticMarkup(<LabelSvg pxPerMm={12}>)`
+rasterised with sharp and decoded with ZXing (`QRCodeReader` over
+`HybridBinarizer`, no `jsqr` needed) equals the payload exactly for P-, U-
+and B- payloads, a path base (`https://bicii.sg/shop/q/P-000123`) and with
+an offset; the clip path wraps the translate group; unique clip ids; one QR
+path; the accessible name. `browser-adapter.test.tsx`: a 10-copy
+`LabelSheet` has 10 `[data-label]` boxes of 58 × 40 mm with the same
+`data-qr-payload` and page breaks between them; above 20 copies the rest are
+hidden on screen with "+ 5 more identical labels". `pdf-adapter.test.ts`:
+the bytes start `%PDF-`; 10 pages of 58 × 40 mm (±0.01 pt), MediaBox =
+CropBox; each page's link URI is the payload; title "Labels P-000011 × 10",
+creator "BICII Admin", no producer; "Café 自転車 🚲" does not throw;
+`getAdapter` refuses `network_raw` and `bluetooth`. `job.test.ts`: the
+status machine for all 16 pairs of `tests/fixtures/print-transitions.ts`,
+labels and tones, D56's caps, `labelUnavailable`'s four codes, the links.
+`metrics.test.ts`: WinAnsi replacement, Courier widths, word wrap,
+ellipsis and cutting an over-long word. `qr-base.test.ts`: `isValidQrBase`
+agrees with every case of `tests/fixtures/qr-bases.ts` (and the payload
+base), counts characters like Postgres; `mergeScanBases` order and
+de-duplication. `qr-base-sources.test.ts`: `NEXT_PUBLIC_PUBLIC_SITE_URL`
+appears in code (comments stripped) only in `src/lib/env.ts` and
+`src/lib/qr.ts`. `print-job-controls.test.tsx` (jsdom): Print calls
+`window.print` before the "rendered" action resolves, a rendered job is not
+marked again and asks at once, Open PDF links the PDF in a new tab, failed
+needs a reason (the 400 ms guard first), "Yes, all printed" is armed after
+400 ms and then links back to the record and the history; a printed job
+(`PrintJobOutcome`) has no Print or Open PDF and links Print again to
+`reprintPath`, disabled with the archived sentence for an archived record.
+
 ### Database (SPEC §27.2 and §23)
 
 Each invariant from SPEC §23 has at least one test, named after it:
@@ -502,6 +547,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Templates and printers: staff read, admins write (Phase 8) | `labels.test.ts`: mechanic2 reads the three built-in templates and two profiles, insert → 42501, update affects 0 rows, `set_default_*` → 42501; the admin inserts and renames (trimmed, `created_by` set); `is_default` and delete → 42501; switching off a default → `*_default_required`; `set_default_*` leaves one default per kind / one printer and refuses an inactive target; inactive printer or template and a template of another kind refused by `create_print_job`; no default for a kind → `label_template_missing`; kind / adapter changes → `*_immutable`; `bluetooth` and `network_raw` → 23514 `printer_profiles_adapter_available`; config v1; width / height checks; `label_mm` rejects NaN. Layout v1 from `tests/fixtures/label-layouts.ts` (shared with step 2's zod schema): every case through `private.label_layout_problem`, and every invalid one through an admin insert → `label_layout_invalid` with the sentence as DETAIL. |
 | Customers and anonymous visitors read nothing about labels (Phase 8; SPEC §4.2) | `labels.test.ts`: a linked customer reads 0 rows from `label_templates`, `printer_profiles`, `print_jobs` and gets 42501 from the five label RPCs; anon has no privilege on the tables and cannot execute the functions (also `meta.test.ts`'s allow-lists). |
 | Labels under concurrency (Phase 8; SPEC §25) | `labels-concurrency.test.ts` (committed, real connections; each case proves the second call waits on a lock): the same print job from two devices → one job, the second returns the first's row; another quantity → `print_job_conflict`, one row; two admins making different templates (and printers) default → exactly one default, the second's target, no 23505; printed and failed at once → one wins, the other `print_job_transition_invalid`. |
+| The labels domain module against the devstack (Phase 8 step 2) | `labels-domain.stack.test.ts` (skips without the devstack unless `BICII_REQUIRE_STACK=1`): `getPrintJob` maps the seeded queued job from its snapshots (payload `${SHOP.publicSiteUrl}/q/P-000011`, PDF printer, 58 × 40 template, requester), keeps the failed job's reason and the reprint link; `listPrintJobs` filters To confirm, Failed, a short ID (any case) and a name, and pages by `(created_at, id)` without gaps; `getLabelContext` offers the counted product (default template and printer first, last printed price), and returns `unique_product` and `archived` without throwing, and `publication: null` for a bike; `getReprintPreset` only for the same record; one job created replay-safely as mechanic2, marked rendered then printed, and refused failed afterwards. |
 
 ### End-to-end (SPEC §27.3)
 
@@ -653,8 +699,9 @@ really plays and `requestVideoFrameCallback` fires), and
 resolves `['qr_code']` and whose `detect` resolves the chosen
 `rawValue`; `navigator.permissions.query` reports camera granted. With
 `${E2E_PUBLIC_SITE_URL}/q/U-000001` (`tests/fixtures/public-site.ts`, the
-same value `playwright.config.mts` gives the web server) scanning lands on
-the unit; with `https://example.com/phish` the page shows "Not a BICII
+same value `playwright.config.mts` gives the web server: since Phase 8 the
+environment's scan-only base, `http://localhost:4001` by default) scanning
+lands on the unit; with `https://example.com/phish` the page shows "Not a BICII
 label" with the text, keeps detecting, stays on /scan and links nothing on
 example.com, and typing a code still works. The header search finds
 "shi-l05a-rf" as P-000001 with "N in stock", and `p-000001` + Enter opens
@@ -863,6 +910,28 @@ from the sale line → "Restocked" and the unit Available again (D46);
 mechanic2 sells one "DSP 3.2mm bar tape" (only "Below the asking price"
 warns; no Preview, cost, yield or Cult Commons in the sheet or on the
 sale, no "$26.00", no Record refund) and the stock drops by one.
+
+Phase 8 step 2 (`print-view.spec.ts`, phone and iPad, READ-ONLY on the
+seeded print jobs: it never clicks Print, Open PDF or a confirmation).
+`payload` is `${SHOP.publicSiteUrl}/q/P-000011` (the database base,
+`http://localhost:4000`) and every payload assertion is exact equality:
+the queued job's print view has 10 `[data-label]` boxes whose
+`data-qr-payload` all equal it; the "Open PDF" href (read, not clicked)
+fetched with the page's session is 200 `application/pdf`, `no-store`,
+`inline; filename="labels-P-000011-x10.pdf"`, and pdf-lib reads 10 pages of
+58 × 40 mm with 10 link URIs equal to the payload; under print media the
+toolbar, captions and the toast region are hidden and every rendered text
+element is inside a label; the printed job shows "Printed … by Marcus
+Tan", a Print again link equal to `reprintPath`, no Print or Open PDF,
+and its PDF is 409 (a malformed id 404); `/labels` lists the five seeded
+jobs, Failed shows the failed job (its reason on the detail page, the
+label as an image) and not the queued one, the reprint's detail links
+"Reprint of" to it, To confirm shows the rendered bike tag and not the
+printed job; `/scan` manual entry opens the product from the payload and
+from `${E2E_PUBLIC_SITE_URL}/q/P-000011` (the environment base, asserted
+different); the product page's "QR label URL" equals the payload.
+`inventory-publish.spec.ts` now expects the new product's QR URL on
+`SHOP.publicSiteUrl`.
 
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:

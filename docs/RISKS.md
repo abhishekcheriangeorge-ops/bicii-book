@@ -353,14 +353,23 @@ URLs, or customer data in this file.
 - Evidence and confidence: high; `private.qr_payload` and
   `shop_settings_public_site_url_check` in
   `supabase/migrations/20261004003800_labels.sql`;
-  `tests/db/labels.test.ts` ("QR payload (D9)"). The Admin's QR display
-  and scan bases move to the column in Phase 8 step 2 (`src/lib/qr.ts`);
-  until then `src/lib/qr.ts` still reads the environment variable.
+  `tests/db/labels.test.ts` ("QR payload (D9)"). Since Phase 8 step 2 the
+  Admin displays QR URLs from the same column (`getQrBase()` / `qrUrl()`
+  in `src/lib/qr.ts`, "QR address not set" when unusable) and scans both
+  bases (`scanBases()`): `tests/unit/qr-base.test.ts` (parity with
+  `tests/fixtures/qr-bases.ts`), `tests/unit/qr-base-sources.test.ts`, and
+  `tests/e2e/print-view.spec.ts`, whose environment base
+  (`http://localhost:4001`) differs from the seeded database base
+  (`http://localhost:4000`): the product page shows the database URL and
+  manual entry accepts both.
 - Workaround or containment: keep the old public address redirecting
-  `/q/*`; reprint labels after a move (Print again keeps the history).
-- Next action: Phase 8 step 2 points `getQrBase()` at the column and keeps
-  the environment's base in `scanBases()`; the RUNBOOK says to set the
-  address before the first print and not to change it casually.
+  `/q/*`, and keep the old address as the environment's
+  `NEXT_PUBLIC_PUBLIC_SITE_URL` so the Admin scanner still accepts its
+  labels; reprint labels after a move (Print again keeps the history).
+- Next action: none in the app for the residual; the RUNBOOK says to set
+  the address before the first print and not to change it casually. Only
+  one earlier address can be accepted through the environment; more would
+  need a list of retired bases (not planned).
 - Revisit trigger: the public site's address changes; Phase 11 builds the
   public `/q` route.
 - Last checked: 2026-10-05.
@@ -446,17 +455,18 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phases 7–9). Consignment stopped
-  being a placeholder in Phase 6 step 3 (`feat/p6-consignment`, local
-  only); the heading is kept so links stay valid.
-- Trigger: staff open Purchasing, Labels or Reports.
+- Status and owner: open; build agent (Phases 7 and 9). Consignment stopped
+  being a placeholder in Phase 6 step 3 and Labels in Phase 8 step 2 (the
+  print history, `feat/p8-labels`, local only); the heading is kept so
+  links stay valid.
+- Trigger: staff open Purchasing or Reports.
 - Impact: those pages render the `ComingSoon` component
   (`src/components/shell/coming-soon.tsx`), which reads "Arrives in Phase
   N (…)"; none of their features exist on
   this branch.
-- Evidence and confidence: high; `src/app/(staff)/{purchasing,labels,reports}/page.tsx`.
+- Evidence and confidence: high; `src/app/(staff)/{purchasing,reports}/page.tsx`.
 - Workaround or containment: none.
-- Next action: Phases 7 (parallel track), 8 and 9.
+- Next action: Phases 7 (parallel track) and 9.
 - Revisit trigger: each phase ends.
 - Last checked: 2026-10-05.
 
@@ -465,17 +475,20 @@ URLs, or customer data in this file.
 - Category: known defect (documentation).
 - Status and owner: accepted; build agent.
 - Trigger: reading ADR-001 A1 as the current stack.
-- Impact: ADR-001 names Next.js 16.2 and the `qrcode` package; `package.json`
-  has `next` 16.3.8, `react` 19.2.8 and no `qrcode` dependency (labels are
-  not built). ADR-001 is kept as the historical record.
-- Evidence and confidence: high; `package.json` on 2026-10-05.
+- Impact: ADR-001 names Next.js 16.2 and the `qrcode` package;
+  `package.json` has `next` 16.3.8 and `react` 19.2.8. `qrcode` is
+  installed since Phase 8 step 2 (1.5.4, with `pdf-lib` 1.17.1 and
+  `@pdf-lib/standard-fonts` 1.0.0), so only the version names differ.
+  ADR-001 is kept as the historical record.
+- Evidence and confidence: high; `package.json` on 2026-10-05 (Phase 8
+  step 2).
 - Workaround or containment: `package.json` is authoritative for versions;
   [ARCHITECTURE.md](ARCHITECTURE.md#current-system) states the installed
   versions, and ADR-001's status lines point to it and to the later
   decision records.
 - Next action: none; a later decision record supersedes ADR-001 A1 only if
   the stack choice itself changes.
-- Revisit trigger: a QR rendering library is chosen (Phase 8).
+- Revisit trigger: the stack choice itself changes.
 - Last checked: 2026-10-05.
 
 ## R-020 — A bike record consigned once cannot be consigned again
@@ -756,4 +769,33 @@ URLs, or customer data in this file.
 - Next action: the integration step adds the shortcut to the receive
   screen, calling `create_print_job` per received line.
 - Revisit trigger: the purchasing track is merged into this line.
+- Last checked: 2026-10-05.
+
+## R-030 — Label output is unverified on a real label printer and on iOS
+
+- Category: verification gap.
+- Status and owner: open; build agent (Phase 8 steps 3–4), owner (a test
+  print on the shop's printer).
+- Trigger: the first real print on the shop's label printer, from an
+  iPhone or iPad (browser print) or through the PDF (Share → Print).
+- Impact: the label sheet and the PDF are tested in Chromium and in code
+  (`tests/unit/printing/`: every element inside the label, the QR decoded
+  back to the exact payload with ZXing from a rasterised SVG; the PDF's
+  page size and link; `tests/e2e/print-view.spec.ts`: one label per page
+  under print media), never on a printer. Unknowns: whether iOS Safari
+  honours `@page { size: 58mm 40mm; margin: 0 }` for a label printer or
+  scales the page; whether the device draws "Helvetica, Arial" with the
+  Helvetica metrics the layout was measured with (a wider substitute is
+  clipped at the label edge, never spilled); how a 500-label job
+  (`<use>` copies of one label) behaves on an older iPad.
+- Evidence and confidence: medium; `src/lib/printing/compose.ts`,
+  `label-svg.tsx`, `adapters/`; no printer in the build environment.
+- Workaround or containment: the PDF profile (exact page size, standard
+  fonts) when browser print scales; printer offsets (±5 mm, per profile)
+  for a shifted print; staff confirm or fail every job (D59), so a bad
+  print is recorded and reprinted.
+- Next action: a test print of each built-in template on the shop's
+  printer from an iPad, both profiles, before go-live; note the result in
+  the RUNBOOK's labels section.
+- Revisit trigger: the first real print, or Phase 12's hardware adapter.
 - Last checked: 2026-10-05.

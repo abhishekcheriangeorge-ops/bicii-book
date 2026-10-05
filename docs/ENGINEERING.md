@@ -171,6 +171,17 @@ from the code:
   failed form returns its typed values in `ActionResult.values` so the form
   renders them again. Money is `numeric` in Postgres and `decimal.js` in
   TypeScript; the database does the authoritative arithmetic.
+- **QR URLs and labels** (Phase 8, ADR-017). Never build a QR URL from
+  `NEXT_PUBLIC_PUBLIC_SITE_URL` or anywhere but
+  [`src/lib/qr.ts`](../src/lib/qr.ts) (`qrUrl`, display only); printed
+  payloads come from the database (`print_jobs.qr_payload`). The variable
+  may be read only in `src/lib/env.ts` and `src/lib/qr.ts`
+  (`tests/unit/qr-base-sources.test.ts` fails otherwise). Label text comes
+  only from `print_jobs.content` or `label_preview`, parsed with
+  `labelContentSchema`; one layout engine (`composeLabel`) feeds the SVG and
+  the PDF. A unit test that rasterises with sharp or decodes with ZXing or
+  pdf-lib declares `// @vitest-environment node`, and one that imports a
+  `server-only` module mocks it (`vi.mock("server-only", () => ({}))`).
 - **Tests.** DB tests run on per-file clones; E2E specs run on both the
   phone and iPad projects and give every record a unique tag
   (`tagFor(testInfo)`), never counting rows in the shared database.

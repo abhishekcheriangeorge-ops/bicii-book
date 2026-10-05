@@ -12,6 +12,19 @@ below is built (`supabase/migrations/20261004003800_labels.sql`) and tested
 (`tests/db/labels.test.ts`, `tests/db/labels-concurrency.test.ts`); the
 screens, `src/lib/qr.ts` and `src/lib/printing/` come in the next steps.
 
+Status update 2026-10-05 (Phase 8 step 2): the app side is built. D9's
+display and scan rule: `src/lib/qr.ts` (`getQrBase`, `qrUrl`, `scanBases`)
+with `isValidQrBase` in `src/lib/ids.ts` (`tests/unit/qr-base.test.ts`,
+`tests/unit/qr-base-sources.test.ts`, `tests/e2e/print-view.spec.ts` on an
+environment base distinct from the database base). D56's cap in
+`createPrintJobAction` (`src/app/(staff)/labels/actions.ts`); D58's
+price line in `src/lib/printing/compose.ts` (`0.00` prints, null does not:
+`tests/unit/printing/compose.test.ts`); D59's open-only rendering in the
+print view (`src/app/(print)/print/labels/[jobId]/page.tsx`), the PDF route
+(`src/app/api/labels/[jobId]/pdf/route.ts`, 409 for a finished job) and the
+confirmation (`src/components/domain/print-job-controls.tsx`). The record
+pages' Labels card and the settings screens come in step 3.
+
 ## Context
 
 SPEC §15 says a QR contains only the item's stable URL or ID, never

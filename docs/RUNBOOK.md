@@ -363,6 +363,18 @@ migration ships the default 58 × 40 mm templates and the "This device
 (browser print)" and "PDF download" printers, so a new database can print
 once the address is set.
 
+Since Phase 8 step 2 the product and unit pages show "QR address not set"
+while the address is unusable, and the Admin scanner accepts labels on the
+database address and on `NEXT_PUBLIC_PUBLIC_SITE_URL` (an extra scan-only
+base): after a move, put the OLD address there so its labels still open
+in the Admin. A print that came out wrong is marked failed with the reason
+on its print view (or its page under Labels) and printed again from the
+record as a new job; a finished job's PDF answers 409 by design. Printing
+from an iPhone or iPad: browser print with paper 58 × 40 mm, scale 100%,
+no margins; if Safari scales the page, use the PDF printer (Open PDF, then
+Share → Print). Neither has been tried on the shop's printer yet
+([R-030](RISKS.md#r-030--label-output-is-unverified-on-a-real-label-printer-and-on-ios)).
+
 ## CI
 
 `.github/workflows/ci.yml` runs `check`, `test` and `build` on every pull

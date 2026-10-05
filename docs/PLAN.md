@@ -650,8 +650,17 @@ migration `20261004003800_labels` (`label_templates`, `printer_profiles`,
 by the migration, not the seed); the seed's five print jobs; decisions D9
 (base), D56–D59 ([ADR-017](decisions/ADR-017-labels-and-qr-base.md));
 tests `tests/db/labels.test.ts`, `tests/db/labels-concurrency.test.ts`.
-Steps 2–4 (`src/lib/qr.ts`, `src/lib/printing/`, screens, E2E) are not
-built. The purchase receive screen's "Print N labels" shortcut waits for
+Step 2 of 4 (printing library and print views, on `feat/p8-labels`):
+`src/lib/qr.ts` on the database base (displayed QR URLs from
+`shop_settings.public_site_url`, "QR address not set" when unusable; the
+environment's base kept in `scanBases()`), `src/lib/printing/` (schemas,
+`composeLabel`, `LabelSvg`, the browser and PDF adapters),
+`src/lib/domain/labels.ts`, the label and settings Server Actions, the print
+view `/print/labels/[jobId]`, the PDF route `/api/labels/[jobId]/pdf`, and
+the print history `/labels`, `/labels/[jobId]`; tests in
+`tests/unit/printing/`, `tests/db/labels-domain.stack.test.ts`,
+`tests/e2e/print-view.spec.ts`. Steps 3–4 (the record pages' Labels card,
+the Labels and printers settings screens, journeys) are not built. The purchase receive screen's "Print N labels" shortcut waits for
 the integration with Phase 7
 ([RISKS R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
 
