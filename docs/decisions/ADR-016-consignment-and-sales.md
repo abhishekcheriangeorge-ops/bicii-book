@@ -105,4 +105,4 @@ refund-reporting row (D49).
   [§16](../DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public).
 - [ADR-010](ADR-010-stock-and-units-on-jobs.md) (D27, D29),
   [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) (D4, D7).
-- Verification for step 1 is recorded in [NOW.md](../NOW.md).
+- Verification for step 1 is recorded in [NOW.md](../../NOW.md).
