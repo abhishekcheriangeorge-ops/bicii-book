@@ -46,7 +46,14 @@ status and cancellation; check-in, which opens or links the appointment's
 one work order and completes the appointment with it; appointment counts
 for Today and the reports; the customer booking RPCs the public site will
 call; a seeded schedule, a week of appointments and one customer login)
-with its tests; the screens follow.
+with its tests, and the staff screens: `/appointments` (day and week, the
+week strip, capacity per slot, closed days and custom hours, bookings a
+settings change left outside the hours flagged), booking from a sheet
+whose free times are computed in the browser with the database's rules,
+each appointment's page (arrive, confirm, no-show, reinstate, cancel,
+edit bike and notes, history) and check-in into a new or linked job. The
+Today list, the customer page's section and the schedule settings
+screens follow.
 
 ## Quickstart
 

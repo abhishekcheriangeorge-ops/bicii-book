@@ -308,6 +308,28 @@ same PR.
   390 × 844 (the page never scrolls sideways, so nothing else catches a
   figure running into the next card), that "Right now" says "Awaiting
   collection", and that a `?day=` before `EARLIEST_SHOP_DAY` shows today.
+- Phase 2 (appointments, step 3): the slot mirror's parity with SQL
+  (`appointment-slots.test.ts`): every `slotCases` case of
+  `tests/fixtures/appointment-slot-cases.ts` through `availableSlots`
+  gives exactly the slots and remaining units `tests/db/appointment-slots.test.ts`
+  asserts for `private.available_slots_at`, and every `problemCases` row
+  through `slotProblem` the same first code, with `SLOT_PROBLEM_ORDER`
+  equal to the database's order (misaligned, outside hours, closed,
+  capacity); plus `ignoreCapacity`, the reinstatement's `excludeId`, the
+  D2 `capacityForWindow` extension point, `windowUsage` (used over
+  capacity after a settings change, windows outside the hours that still
+  hold units), `openStretches` and `scheduleWarning` (closure first, grid
+  ignored, D38). Status actions (`appointment-status.test.ts`):
+  `availableActions` for every status against `MARK_STATUS`, `CANCEL` and
+  `CHECK_IN` of `tests/fixtures/appointment-transitions.ts`, no-show only
+  once started, reinstate on the appointment's own Singapore day and not
+  the next (D39), staff cancel after the start (D37), never "complete"
+  (D36); `primaryAction`, labels, tones, `isLate` at 15 minutes and the
+  history sentences ("Reinstated as arrived by …", "Cancelled online by
+  the customer", "Job J-… opened", "Linked to job J-…"). Zone helpers
+  (`appointment-time.test.ts`): Singapore wall times, '24:00' as the next
+  midnight, London and New York across daylight saving, `weekStart`
+  (Monday), HH:MM parsing including Postgres's seconds.
 
 ### Database (SPEC §27.2 and §23)
 
@@ -609,6 +631,43 @@ storage", Significant, Damaged) on anchorDay(1). "What needs attention"
 exceptions are relative to it): J-000017 overdue and J-000016 waiting for
 collection, each opening its job.
 
+Phase 2 spec (`appointments.spec.ts`, step 3; API helpers in
+`tests/e2e/api.ts`: `signInApi(email, password)` through the gateway's
+Auth, `rpc(token, name, args)` and `select(token, pathAndQuery)` through
+PostgREST as that user, throwing with PostgREST's error; global setup
+hands them the gateway URL and anon key as `E2E_GATEWAY_URL` /
+`E2E_ANON_KEY`, because specs load as CommonJS and cannot import
+`scripts/devstack/config.mjs`). These tests use the live shop day
+(`shopToday()`), not the seed's anchor: a customer books ahead of now.
+`beforeAll`, as the admin through the API and idempotent for the second
+project or a retry, sets the online notice to 0 and the capacity to 4,
+opens today 00:00–24:00 with custom hours under the fixed id
+`e4000000-0000-4000-8000-0000000000e2` (inserted with `is_new` when
+missing, else saved again), and cancels today's leftovers from earlier
+runs (customer note "Gears skipping…" or internal note "E2E no-show…",
+still booked, confirmed or arrived; this also keeps Chloe under her three
+online bookings, D37). `afterAll` always restores notice 120 and capacity
+2 and deletes the custom hours with a reason. Journey 2: Chloe (her
+seeded login) reads `available_slots` for today (remaining units null for
+her) and books the first one with `book_my_appointment` on her Giant with
+a tagged note; if no slot is left (the last half hour of the Singapore
+day) the test is skipped with that reason, the only allowed skip;
+`my_appointments()` lists it without internal fields. The admin opens
+today's list and clicks the row by its href (Chloe has a seeded booking
+today too), sees "Booked online", taps Arrived (pill and toast), Check
+in: the Giant preselected, the note as requested work, Marcus Tan as lead,
+"Check in and open job" lands on the new job with a J- number (and the
+toast); the job's timeline shows "Checked in as J-…" and "Linked to an
+appointment"; back on the appointment: Checked in, the job card linking
+to the job, history "Booked online by the customer", "Marked as arrived
+by Asha Admin", "Checked in by Asha Admin", "Job J-… opened". "No-show
+and late arrival" makes its own data: the admin books Daniel through the
+API at now rounded down to the 30-minute grid (staff may book a slot that
+has not ended), marks it a no-show, and in the UI "Reinstate as arrived"
+turns the pill to Arrived with "Reinstated as arrived by Asha Admin" in
+the history. Walk-ins and every earlier spec are unaffected; Today's spec
+reads deltas, so the extra appointment today changes nothing it asserts.
+
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
 
@@ -618,7 +677,8 @@ database, signed in as the seeded admin and mechanic:
    with M1.5: `workshop.spec.ts` for the timeline, `today.spec.ts` for the
    milestone run ending on Today).
 2. Appointment: book (as seeded customer via RPC) → appears on Today → arrive →
-   check in → work order linked.
+   check in → work order linked (`appointments.spec.ts` from Phase 2 step 3,
+   via the appointments list; step 4 adds the Today list).
 3. Bulk product: create → receive PO (partial) → print 10 labels (PDF adapter
    produces 10 identical QR payloads) → consume one on a job → stock −1.
 4. Consignment: create consignor + unique bike → label → public page (hitting

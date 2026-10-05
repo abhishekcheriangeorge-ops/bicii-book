@@ -197,6 +197,19 @@ J-000014); database tests `appointment-check-in`, `appointment-reporting`,
 complete: migrations `…2700`–`…3200`, every RPC above, D36–D42. Steps 3–4
 build the app.
 
+Shipped (app core, step 3): the pure mirror `src/lib/appointments/`
+(`slots.ts` = `private.available_slots_at` / `appointment_slot_problem`
+exactly, proven on the shared fixtures; `status.ts` actions = the status
+machine; `history.ts`, `time.ts`, `format.ts`), `src/lib/domain/appointments.ts`
+(`listDay`, `listWeek`, `loadSchedule`, `getAppointment`, `bookAppointment`,
+`markStatus`, `cancel`, `update`, `checkIn`, `customerBikes`,
+`openUnlinkedJobs`), the Server Actions, `/appointments` (day/week),
+`BookAppointmentSheet`, `/appointments/[id]` and its check-in, the shared
+`LeadPicker`, and `appointments.spec.ts` (journey 2 and the no-show
+reinstatement). Step 4: the Today list, the customer page's section, the
+job's appointment chip and timeline text, the schedule and type settings
+screens and their E2E.
+
 ### Phase 3 — Workshop
 
 - Migrations: work_orders, work_order_assignments, work_order_events,

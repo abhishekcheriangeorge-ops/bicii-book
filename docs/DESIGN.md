@@ -201,6 +201,7 @@ upload itself, below).
 | `CaptureButton` | The camera control for every photo (intake reuses it): "Take photo" (`<input type=file accept="image/*" capture="environment">`, opens the rear camera on phones) and "Choose photos" (library, several at once). Each file is decoded with its EXIF orientation (`createImageBitmap(…, { imageOrientation: "from-image" })`, `<img>` fallback), scaled to at most 2048 px on the long edge and re-encoded as JPEG 0.85 (`prepare-photo.ts`, sizing in `src/lib/images.ts`); re-encoding also drops EXIF, GPS included. A file the browser cannot decode (HEIC outside Safari) is uploaded as is when it is an accepted photo type. Then: a signed upload URL from the server, upload with the browser Supabase client straight to Storage with byte progress, record. Optimistic thumbnails with status and progress; up to two photos in flight. The queue lives above the pages (`PhotoUploadsProvider` in the staff layout, `upload-store.ts`), so uploads finish after leaving the record and their tiles are there again on coming back. A failure keeps the photo and its preview on its tile (Retry, Discard); one error toast per record ("3 photos not saved", Retry all) updates in place and is never pushed out; the header shows "N photos not saved" on every screen, linking to the record; closing or reloading the tab while any photo is unsaved asks first. Retry resumes at the failed step: once the object is in Storage only recording is retried (unless the server says it is missing). Photos are labelled "New photo 3", not by file name (iPhone captures are all image.jpg). A file Storage refuses (type, size) is not retried and says to save it as JPEG. The page refreshes once when a record's queue drains, not once per photo (each refresh re-signs every photo). A photo picked before hydration is picked up when React attaches. An undecodable original keeps its metadata, so it is recorded without dimensions and can never be made public. |
 | `PhotoGrid` | A record's photos: thumbnails (visibility badge when not internal) that open `PhotoViewer`, with `CaptureButton` under them (hidden for archived records). |
 | `ReasonConfirm` | The two-step destructive pattern with a required reason (below, "Forms"), shared by voiding a line and cancelling or reopening a job: focus in the reason field, the confirm button in a new position with a new key, presses ignored for 400 ms, and a dismiss button that returns focus to the first button. The dismiss button says what it keeps where "Cancel" would be ambiguous: "Keep job" beside "Cancel job", "Keep line" beside "Void line", "Back" for a reopen. `onConfirmingChange` lets a sheet hide its own submit while the confirmation is open. |
+| `LeadPicker` | The lead mechanic as `ChipRadioGroup` chips ("Me" first, Unassigned last), shared by the intake's People step and appointment check-in. |
 | `IntakeWizard` | `/jobs/new` (SPEC §7.1): one step at a time with "Step 2 of 5" and a progress bar, Back/Next as 48px buttons kept above the tab bar, Enter advancing on a keyboard (not in a textarea, a picker or a sheet). Customer (one `SearchPicker` over customers and bikes; a bike selects its owner; "New customer" opens `CustomerSheet` with `onCreated`), Bike (the customer's active bikes as large cards with an "Open job J-…" chip; "Add bike" opens `BikeSheet` with the owner preset and `onCreated`), Work (requested work, condition on arrival), People (lead as single-select chips, "Me" first, Unassigned allowed; additional staff as toggles; active staff only, D22), Services (chips by category, a filter above 12, −/+ quantity, a preview subtotal and, only with view_costs, a Cult Commons preview), then Review with Edit per section. It owns the job's and each service line's `newId()` key, so a double tap or retry makes one job. Draft: `src/lib/intake-draft.ts`, one per device under `bicii.intake-draft.v1` (ids, labels, typed text; guarded like recent searches), offered back as "Continue the intake you started at 10:42?" / Discard, cleared on success; Continue drops services no longer offered and staff no longer active (they could not be seen or removed, and the job would be refused every time) and says what it removed. A bike whose owner is archived is "Owned by … (archived)", never a shop bike: choosing it says to unarchive the owner or transfer the bike. If the bikes cannot be loaded, an error with "Try again" replaces the skeleton. The progress bar has one segment per counted step, full at "Step 5 of 5". Rendered only in the browser (the draft is in localStorage). |
 | `JobStatusActions` | The usual next steps (`primaryActions`) as large buttons with a toast, disabled for 400 ms after every status change (the next step's button lands under the finger). "Collected…" is final (D15), so it opens a confirmation naming the job and the customer, focus on Back, "Mark collected" disabled for 400 ms. "Change status": a sheet listing the other allowed moves (`allowedTransitions`) with nothing pre-selected, an optional note and, when Collected is picked, that it is final; plus Reopen and Cancel as `ReasonConfirm` (D15, D16), during which the sheet's own submit is hidden. Nothing for a collected or cancelled job. |
 | `LineTable` | A job's lines, dense (`text-dense`, `tabular-nums`): description, qty, unit price, total, and with view_costs unit cost, yield and Cult Commons per line. Its layout follows its own width (container queries: 28rem without costs, 42rem with), not the screen's, since the lines card is narrow on an iPad; narrower, each line is a stacked row. Voided lines stay, struck through with who, when and why, behind "Show voided". Each live line of an open job has `VoidLineControl`. A manual line added without a cost shows a "Cost pending" badge to everyone (D14), and "—" as its unit cost. |
@@ -469,6 +470,73 @@ upload itself, below).
 | `FinancialEntries` | `<details id="financial-entries">` "What makes up these figures" (open with `?entries=open`): the day's `financial_lines` grouped by job (J- link), description, quantity, sale, and yield and Cult Commons when visible; "Sold at a loss" and "Cost pending" badges. It adds nothing up. |
 | `WeekStrip` | "Last 7 days" ending at the day shown: completed, collected, and gross sales, yield and Cult Commons when visible; each day links to `/?day=`; the day shown has `aria-current="date"` and a bold row. A table from md, stacked cards on a phone. |
 | `SectionLoader`, `SectionSkeleton`, `SectionError` (`section-loader.tsx`) | The streaming pattern above. |
+
+### Appointments
+
+`/appointments`, `/appointments/[id]` and `/appointments/[id]/check-in`
+(SPEC §6; PLAN D2, D36–D42; Phase 2 step 3, completed by step 4's Today
+list, customer-page section and settings screens). Reads in
+`src/lib/domain/appointments.ts`; the grid, statuses, history wording and
+times in `src/lib/appointments/` (pure: `slots.ts` mirrors the database's
+slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
+`format.ts`, 24-hour "10:00–10:30" in shop time).
+
+- **The list** is a URL: `?date=` (shop-local today when missing or not a
+  real day) and `?view=day|week`; Day/Week links styled like
+  `SegmentedControl` (`LinkSegments`), Today, ‹ › by a day or a week. The
+  Monday–Sunday strip sticks under the header: 64px day links with the
+  weekday, date, the count of appointments that are not cancelled (D41)
+  and "Closed" / "Short day" ("Short" on phones), `aria-current="date"` on
+  the day shown and the whole day in its accessible name.
+- **The day view** groups rows by start time; each row links to
+  `/appointments/<id>` (the href is the E2E locator) and shows the time
+  range, `StatusPill`, "Booked online", a solid "Late" (15 minutes past a
+  booked or confirmed start), a "Note" badge, and a solid waiting badge
+  "Outside opening hours" / "Shop closed" for an active booking a
+  settings change left behind (D38: settings never move bookings, so
+  screens flag them; closure first, the grid is not a reason to warn).
+  Cancelled ones fold under "N cancelled". A closed day is an EmptyState
+  "Closed: <reason>" with the next open day, still listing its bookings;
+  custom hours are a banner "Short day 12:00–16:00: <reason>" ("Different
+  hours" when not shorter). Capacity is one slim bar per slot with its
+  words ("1 of 2 booked"; red and "3 of 2 booked" when over), beside the
+  list from lg. The week view is an agenda, stacked on phones, seven
+  columns at lg.
+- **Booking** (`BookAppointmentSheet`, props `presetCustomer`,
+  `lockCustomer`, `presetDate`; `BookAppointmentButton` with `variant`
+  "button" (md+) or "fab", the phones' yellow Book above the tab bar,
+  right of Scan): customer (`CustomerPicker`, or a fixed name when locked;
+  "New customer…" links to Customers rather than nesting a sheet), type
+  as radio cards (staff-only types badged), date as a 14-day chip strip
+  plus a native date input, times as a 3–4 column grid of 44px radios
+  with "N left", bike ("Decide at check-in" first), the two notes. One
+  `loadSchedule` per 14-day window; every day's times are computed in the
+  browser, so changing type or day is instant and "Next day with free
+  times" needs no request. Radios are native inputs inside their cards
+  (`sr-only` inside a `relative` label), so arrows move within a group and
+  the focus ring is drawn on the card (`has-[:focus-visible]`). The form
+  submits through `onSubmit` with controlled state (nothing typed is ever
+  reset); a slot refusal reloads the times and keeps the rest.
+- **The detail page** wraps its content in `AppointmentStatusScope`
+  (`useOptimistic` status shared by `AppointmentStatusPill` in the header
+  and `AppointmentActionBar`), so Arrived changes the pill at once. The
+  bar sticks above the tab bar on phones and sits under the header from
+  md: the next step first (Arrived, Check in, or Reinstate as arrived on
+  the no-show's own day), then Check in, Confirm, "No-show…" (confirm
+  without a reason: focus on Cancel, "Mark no-show" disabled 400 ms) and
+  "Cancel appointment…" (`ReasonConfirm`, "Keep appointment"); every
+  button rests 400 ms after a status change (`useArmedAfter`). Cards:
+  Job (once checked in), Customer (tap to call), Bike (Change before
+  check-in), Notes (Edit sends only changed fields), Details, History
+  (plain sentences with actor and time).
+- **Check-in** (`CheckInForm`): bike cards (the appointment's
+  preselected) with "Add a bike" opening `BikeSheet` with the owner
+  preset and its `onCreated`; New job / Existing job J-… when that bike
+  has open jobs without an appointment; requested work prefilled from the
+  customer's note, condition on arrival and `LeadPicker` (the intake's
+  lead chips, extracted to `lead-picker.tsx`: "Me" first, Unassigned
+  last); one sticky "Check in and open job". A new job opens on its
+  intake photos step (`/jobs/<id>?intake=photos`).
 
 ### Photos and images
 
