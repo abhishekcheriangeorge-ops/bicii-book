@@ -252,7 +252,7 @@ const exception = (patch: Partial<OperationalException>): OperationalException =
   entityType: "work_order",
   entityId: "d5000000-0000-4000-8000-000000000007",
   entityLabel: "J-000017",
-  subjectLabel: "Priya Ramasamy · Trek Domane SL 6",
+  subjectLabel: "Priya Ramasamy · Cervelo R5",
   days: 11,
   quantity: null,
   since: "2026-09-24T02:00:00Z",

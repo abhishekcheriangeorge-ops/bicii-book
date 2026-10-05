@@ -48,7 +48,10 @@ export type SeedCustomer = keyof typeof CUSTOMER;
  * public.bikes.id (Phase 1). Owner in the key; shopCervelo has no owner.
  * nurulBianchi was registered to daniel and then transferred to nurul.
  * Phase 4 adds three shop bikes without an owner, each in stock as a unique
- * unit (UNIT): shopColnago, shopBrompton, shopSurly.
+ * unit (UNIT): shopColnago, shopBrompton, shopSurly. Phase 5 adds four
+ * customers' bikes for its jobs (REPORT_JOB), so no bike has two open jobs
+ * at once: chloeDiverge (H2, T2, T3 in turn), danielEndurace (H3, T1),
+ * priyaCervelo (H7) and hafizDahon (H8).
  */
 export const BIKE = {
   tanTarmac: "b1000000-0000-4000-8000-000000000001",
@@ -64,6 +67,10 @@ export const BIKE = {
   shopColnago: "b1000000-0000-4000-8000-000000000011",
   shopBrompton: "b1000000-0000-4000-8000-000000000012",
   shopSurly: "b1000000-0000-4000-8000-000000000013",
+  chloeDiverge: "b1000000-0000-4000-8000-000000000014",
+  danielEndurace: "b1000000-0000-4000-8000-000000000015",
+  priyaCervelo: "b1000000-0000-4000-8000-000000000016",
+  hafizDahon: "b1000000-0000-4000-8000-000000000017",
 } as const;
 
 export type SeedBike = keyof typeof BIKE;
@@ -86,6 +93,10 @@ export const BIKE_SHORT_ID: Record<SeedBike, string> = {
   shopColnago: "B-000011",
   shopBrompton: "B-000012",
   shopSurly: "B-000013",
+  chloeDiverge: "B-000014",
+  danielEndurace: "B-000015",
+  priyaCervelo: "B-000016",
+  hafizDahon: "B-000017",
 };
 
 /** Serial numbers as entered in the seed (chloeSurly has none). */
@@ -318,11 +329,11 @@ export const SEED_LINE = {
  * they produce are in tests/fixtures/reporting.ts. Kept out of WORK_ORDER /
  * JOB_NUMBER, which list Phase 3's nine jobs exactly.
  *
- *   serviceOnly      H1  Tan's Tarmac, Full Service 200.00; completed and
+ *   serviceOnly      H1  Tan's Brompton, Full Service 200.00; completed and
  *                        ready day 6, collected day 5 (SPEC §10 example 1).
- *   partsOnly        H2  Chloe's Giant, wheelset 800.00 / 400.00; completed
+ *   partsOnly        H2  Chloe's Diverge, wheelset 800.00 / 400.00; completed
  *                        day 4, collected day 3 (example 2).
- *   combined         H3  Daniel's Cannondale, Full Service + wheelset;
+ *   combined         H3  Daniel's Endurace, Full Service + wheelset;
  *                        completed day 3, collected day 2 (example 3).
  *   lossLine         H4  Tan's Tarmac, Wheel True 40.00 + tyre 20.00 at a
  *                        35.00 cost; completed day 2, collected day 1 (D1).
@@ -330,13 +341,14 @@ export const SEED_LINE = {
  *                        1 x 12.05 / 12.00; completed day 1, ready, not
  *                        collected.
  *   uncollected      H6  Priya's Tern, ready since day 9 (uncollected_job).
- *   overdue          H7  Priya's Domane, checked in day 11, awaiting parts
+ *   overdue          H7  Priya's Cervelo, checked in day 11, awaiting parts
  *                        (overdue_job, D20); never recognised.
- *   cancelled        H8  Hafiz's Brompton, cancelled day 2, no lines.
- *   todayInProgress  T1  Daniel's Cannondale, in progress today (open).
- *   todayCollected   T2  Chloe's Surly, checked in day 1, collected today.
- *   todayReceived    T3  Chloe's Giant, received today: its checked_in_at
- *                        is the seed's anchor day (seedToday()).
+ *   cancelled        H8  Hafiz's Dahon, cancelled day 2, no lines.
+ *   todayInProgress  T1  Daniel's Endurace, in progress today (open).
+ *   todayCollected   T2  Chloe's Diverge, checked in day 1, collected today.
+ *   todayReceived    T3  Chloe's Diverge again after T2's collection,
+ *                        received today: its checked_in_at is the seed's
+ *                        anchor day (seedToday()).
  *
  * Leads: Marcus (mechanic1) on H1, H3, H4, H7, T1, T2; Nur (mechanic2) on
  * H2, H5, H6, H8, T3.

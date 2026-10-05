@@ -376,10 +376,12 @@ describe("my_bikes / my_bike_attachments", () => {
   });
 
   it("leave out archived bikes and bikes the caller no longer owns", async () => {
-    // Daniel sold his Bianchi to Nurul in the seed.
+    // Daniel sold his Bianchi to Nurul in the seed (Phase 5 gave him the Endurace).
     expect(
-      await asCustomer(CUSTOMER.daniel, (tx) => rowsOf(tx, "select id from public.my_bikes()")),
-    ).toEqual([{ id: BIKE.danielCannondale }]);
+      (await asCustomer(CUSTOMER.daniel, (tx) => rowsOf(tx, "select id from public.my_bikes()")))
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual([BIKE.danielCannondale, BIKE.danielEndurace].sort());
     expect(
       await asCustomer(CUSTOMER.nurul, (tx) => rowsOf(tx, "select id from public.my_bikes()")),
     ).toEqual([{ id: BIKE.nurulBianchi }]);

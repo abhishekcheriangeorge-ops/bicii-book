@@ -473,6 +473,62 @@ describe("The seeded ledger is consistent", () => {
   });
 });
 
+/**
+ * Seed realism, not a domain rule: the system lets a bike have two jobs
+ * (nothing in SPEC or the RPCs forbids it), but the demo board, bike pages
+ * and Today should not show one physical bike being worked on in two
+ * lanes, or handed back while still in the workshop. A job is open
+ * (private.work_order_status_is_open) from check-in to completion or
+ * cancellation. A bike that is completed and awaiting collection may
+ * still take a new job (Phase 3/4's J-000003 and J-000010, Phase 3's
+ * J-000009 after H6), as when a customer asks for more work before
+ * collecting it.
+ */
+describe("Seed realism: one bike, one job in the workshop at a time", () => {
+  it("no bike has two seeded jobs open at once, and none is collected while another job on it is open", async () => {
+    await inTransaction(conn, (tx) =>
+      readAsOwner(tx, async () => {
+        const { rows } = await tx.query<{ problem: string; bike: string; a: string; b: string }>(
+          `with j as (
+             select w.id, w.job_number, w.bike_id, w.collected_at,
+                    tstzrange(w.checked_in_at, coalesce(w.completed_at, w.cancelled_at, 'infinity'), '[)')
+                      as open_span
+               from public.work_orders w
+              where w.id = any ($1::uuid[])
+           )
+           select 'two open jobs' as problem, b.short_id as bike, x.job_number as a, y.job_number as b
+             from j x join j y on y.bike_id = x.bike_id and x.id < y.id and x.open_span && y.open_span
+             join public.bikes b on b.id = x.bike_id
+           union all
+           select 'collected while another job is open', b.short_id, x.job_number, y.job_number
+             from j x join j y on y.bike_id = x.bike_id and x.id <> y.id
+                               and x.collected_at is not null and y.open_span @> x.collected_at
+             join public.bikes b on b.id = x.bike_id
+           order by 1, 2, 3`,
+          [SEEDED_JOBS],
+        );
+        expect(rows).toEqual([]);
+        // The shared bikes the Phase 5 jobs now use, in turn.
+        const { rows: shared } = await tx.query<{ bike: string; jobs: string[] }>(
+          `select b.short_id as bike, array_agg(w.job_number order by w.checked_in_at) as jobs
+             from public.work_orders w join public.bikes b on b.id = w.bike_id
+            where w.id = any ($1::uuid[])
+            group by b.short_id having count(*) > 1 order by 1`,
+          [SEEDED_JOBS],
+        );
+        expect(shared).toEqual([
+          { bike: "B-000001", jobs: ["J-000001", "J-000014"] },
+          { bike: "B-000002", jobs: ["J-000011", "J-000008", "J-000015"] },
+          { bike: "B-000004", jobs: ["J-000016", "J-000009"] },
+          { bike: "B-000005", jobs: ["J-000003", "J-000010"] },
+          { bike: "B-000014", jobs: ["J-000012", "J-000020", "J-000021"] },
+          { bike: "B-000015", jobs: ["J-000013", "J-000019"] },
+        ]);
+      }),
+    );
+  });
+});
+
 describe("Today shows flows for the day and the current snapshot (D31) — seeded", () => {
   it("today_dashboard(null) is the anchor day: SEED_DAYS[0] flows and the status snapshot", async (ctx) => {
     if (!anchorIsToday) ctx.skip(SKIP_NOT_TODAY());

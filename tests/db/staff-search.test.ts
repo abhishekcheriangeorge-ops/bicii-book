@@ -165,7 +165,9 @@ describe("customers by name, email and phone", () => {
     // Part of an address: the customer first, then her bikes (by owner).
     const partial = await find("priya.rama");
     expect(partial[0]).toMatchObject({ kind: "customer", id: CUSTOMER.priya });
-    expect(ids(partial.slice(1)).sort()).toEqual([BIKE.priyaDomane, BIKE.priyaTern].sort());
+    expect(ids(partial.slice(1)).sort()).toEqual(
+      [BIKE.priyaDomane, BIKE.priyaTern, BIKE.priyaCervelo].sort(),
+    );
   });
 });
 

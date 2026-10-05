@@ -41,7 +41,9 @@
 -- Phase 3, dates the Phase 3, 4 and 5 rows; Phase 3 keeps its day offsets.
 -- Eleven more jobs J-000011 .. J-000021 (the SPEC §10 examples, a loss
 -- line, a rounding case, an uncollected and an overdue job, a cancelled
--- one, and three jobs today), six products P-000017 .. P-000022 with
+-- one, and three jobs today), four more customers' bikes B-000014 ..
+-- B-000017 (so no bike is worked on under two jobs at once, or collected
+-- while another job on it is open), six products P-000017 .. P-000022 with
 -- opening stock 30 days back, and three stock adjustments (one significant,
 -- D33). Today and the daily summary reproduce tests/fixtures/reporting.ts
 -- exactly.
@@ -1048,8 +1050,29 @@ from (values
 join public.products p on p.id = r.product_id
 order by r.ord;
 
+-- Four more customers' bikes (B-000014 .. B-000017), so no Phase 5 job
+-- shares a bike with a job that is still being worked on, and no bike is
+-- collected while another job on it is open (seed realism, checked in
+-- tests/db/reporting-seed.test.ts; the system does not forbid it). Chloe's
+-- Diverge carries H2, T2 and T3 in turn; Daniel's Endurace H3 then T1.
+insert into public.bikes
+  (id, customer_id, brand, model, variant, frame_size, colour, serial_number, description, internal_notes)
+values
+  ('b1000000-0000-4000-8000-000000000014', 'c1000000-0000-4000-8000-000000000004',
+   'Specialized', 'Diverge', 'Comp Carbon', '54', 'Gloss Teal Tint', 'WSBC123009871D',
+   'Gravel and touring build with rack mounts.', null),
+  ('b1000000-0000-4000-8000-000000000015', 'c1000000-0000-4000-8000-000000000005',
+   'Canyon', 'Endurace', 'CF 7', 'M', 'Stealth', 'CYN-EN7-30412',
+   'Second road bike, kept for wet days.', null),
+  ('b1000000-0000-4000-8000-000000000016', 'c1000000-0000-4000-8000-000000000002',
+   'Cervelo', 'R5', null, '51', 'Five Black', 'CV-R5-77310',
+   'Warranty replacement frame; build moved over from the cracked one.', null),
+  ('b1000000-0000-4000-8000-000000000017', 'c1000000-0000-4000-8000-000000000003',
+   'Dahon', 'Mu', 'D9', 'One size', 'Matte Silver', 'DHN-MU-40981',
+   'Weekend folding bike.', null);
+
 -- ---------------------------------------------------------------------------
--- H1 J-000011: Tan's Tarmac, service only (SPEC §10 example 1), collected.
+-- H1 J-000011: Tan's Brompton, service only (SPEC §10 example 1), collected.
 -- Lead Marcus. Sale 200.00, cost 0.00, yield 200.00, Cult Commons 60.00,
 -- BICII after CC 140.00; recognised 6 days ago.
 -- ---------------------------------------------------------------------------
@@ -1060,7 +1083,7 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001',
-   'b1000000-0000-4000-8000-000000000001',
+   'b1000000-0000-4000-8000-000000000002',
    'Full service; gears skip under load on the climbs.',
    pg_temp.seed_at(6, '09:30'), pg_temp.seed_at(6, '09:30'),
    '5a000000-0000-4000-8000-000000000001');
@@ -1092,7 +1115,7 @@ update public.work_orders set status = 'collected', status_changed_at = pg_temp.
 where id = 'd5000000-0000-4000-8000-000000000001';
 
 -- ---------------------------------------------------------------------------
--- H2 J-000012: Chloe's Giant, a part from stock (SPEC §10 example 2),
+-- H2 J-000012: Chloe's Diverge, a part from stock (SPEC §10 example 2),
 -- collected. Lead Nur. One wheelset at 800.00 (cost 400.00): yield 400.00,
 -- Cult Commons 120.00, BICII after CC 280.00; recognised 4 days ago.
 -- ---------------------------------------------------------------------------
@@ -1103,7 +1126,7 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000004',
-   'b1000000-0000-4000-8000-000000000006',
+   'b1000000-0000-4000-8000-000000000014',
    'New wheelset fitted; customer bringing the old one home.',
    pg_temp.seed_at(5, '10:00'), pg_temp.seed_at(5, '10:00'),
    '5a000000-0000-4000-8000-000000000001');
@@ -1158,7 +1181,7 @@ update public.work_orders set status = 'collected', status_changed_at = pg_temp.
 where id = 'd5000000-0000-4000-8000-000000000002';
 
 -- ---------------------------------------------------------------------------
--- H3 J-000013: Daniel's Cannondale, service and a part (SPEC §10
+-- H3 J-000013: Daniel's Endurace, service and a part (SPEC §10
 -- example 3), collected. Lead Marcus. Full Service 200.00 + wheelset 800.00
 -- (cost 400.00): sale 1000.00, yield 600.00, Cult Commons 180.00, BICII
 -- after CC 420.00; recognised 3 days ago.
@@ -1170,7 +1193,7 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000005',
-   'b1000000-0000-4000-8000-000000000008',
+   'b1000000-0000-4000-8000-000000000015',
    'Full service and a wheelset upgrade, approved by phone.',
    pg_temp.seed_at(4, '09:45'), pg_temp.seed_at(4, '09:45'),
    '5a000000-0000-4000-8000-000000000001');
@@ -1409,7 +1432,7 @@ update public.work_orders set status = 'ready_for_collection', status_changed_at
 where id = 'd5000000-0000-4000-8000-000000000006';
 
 -- ---------------------------------------------------------------------------
--- H7 J-000017: Priya's Domane, waiting for parts since 10 days ago and
+-- H7 J-000017: Priya's Cervelo, waiting for parts since 10 days ago and
 -- checked in 11 days ago: overdue (D20), never recognised. Lead Marcus.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
@@ -1419,7 +1442,7 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000007', 'c1000000-0000-4000-8000-000000000002',
-   'b1000000-0000-4000-8000-000000000003',
+   'b1000000-0000-4000-8000-000000000016',
    'Move the build onto the warranty frame; waiting for the headset.',
    pg_temp.seed_at(11, '11:00'), pg_temp.seed_at(11, '11:00'),
    '5a000000-0000-4000-8000-000000000001');
@@ -1447,7 +1470,7 @@ update public.work_orders set status = 'awaiting_parts', status_changed_at = pg_
 where id = 'd5000000-0000-4000-8000-000000000007';
 
 -- ---------------------------------------------------------------------------
--- H8 J-000018: Hafiz's Brompton, cancelled 45 minutes after check-in with
+-- H8 J-000018: Hafiz's Dahon, cancelled 45 minutes after check-in with
 -- no lines (D16). Lead Nur.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
@@ -1457,7 +1480,7 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000008', 'c1000000-0000-4000-8000-000000000003',
-   'b1000000-0000-4000-8000-000000000005',
+   'b1000000-0000-4000-8000-000000000017',
    'Quote for a dynamo hub conversion.',
    pg_temp.seed_at(2, '11:30'), pg_temp.seed_at(2, '11:30'),
    '5a000000-0000-4000-8000-000000000001');
@@ -1477,7 +1500,7 @@ where id = 'd5000000-0000-4000-8000-000000000008';
 select private.set_change_reason(null);
 
 -- ---------------------------------------------------------------------------
--- T1 J-000019: Daniel's Cannondale, in progress today. Lead Marcus.
+-- T1 J-000019: Daniel's Endurace, in progress today. Lead Marcus.
 -- Drivetrain Service 90.00 (cost 10.00), open, so not recognised.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
@@ -1487,7 +1510,7 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000009', 'c1000000-0000-4000-8000-000000000005',
-   'b1000000-0000-4000-8000-000000000008',
+   'b1000000-0000-4000-8000-000000000015',
    'Drivetrain clean; chain noisy in the small cog.',
    pg_temp.seed_at(0, '09:00'), pg_temp.seed_at(0, '09:00'),
    '5a000000-0000-4000-8000-000000000001');
@@ -1513,7 +1536,7 @@ values
    '5a000000-0000-4000-8000-000000000002', pg_temp.seed_at(0, '09:35'));
 
 -- ---------------------------------------------------------------------------
--- T2 J-000020: Chloe's Surly, checked in yesterday evening and collected
+-- T2 J-000020: Chloe's Diverge, checked in yesterday evening and collected
 -- today. Lead Marcus. Drivetrain Service 120.00 (CC 36.00) and a chain at
 -- 45.00 (cost 22.00, CC 6.90): sale 165.00, cost 22.00, yield 143.00, Cult
 -- Commons 42.90, BICII after CC 100.10; recognised today.
@@ -1525,7 +1548,7 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000010', 'c1000000-0000-4000-8000-000000000004',
-   'b1000000-0000-4000-8000-000000000007',
+   'b1000000-0000-4000-8000-000000000014',
    'Drivetrain service and a new chain before the tour.',
    pg_temp.seed_at(1, '17:00'), pg_temp.seed_at(1, '17:00'),
    '5a000000-0000-4000-8000-000000000001');
@@ -1589,8 +1612,9 @@ update public.work_orders set status = 'collected', status_changed_at = pg_temp.
 where id = 'd5000000-0000-4000-8000-000000000010';
 
 -- ---------------------------------------------------------------------------
--- T3 J-000021: Chloe's Giant, received today with no lines. Lead Nur. Its
--- check-in is the seed's anchor (tests read the reset day from it).
+-- T3 J-000021: Chloe's Diverge again, received today with no lines, after
+-- T2 on it was collected (12:10): the brakes rub on the ride home. Lead
+-- Nur. Its check-in is the seed's anchor (tests read the reset day from it).
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
@@ -1599,16 +1623,16 @@ insert into public.work_orders
   (id, customer_id, bike_id, requested_work, checked_in_at, created_at, created_by)
 values
   ('d5000000-0000-4000-8000-000000000011', 'c1000000-0000-4000-8000-000000000004',
-   'b1000000-0000-4000-8000-000000000006',
+   'b1000000-0000-4000-8000-000000000014',
    'Brakes rubbing after the wheel change.',
-   pg_temp.seed_at(0, '10:00'), pg_temp.seed_at(0, '10:00'),
+   pg_temp.seed_at(0, '13:00'), pg_temp.seed_at(0, '13:00'),
    '5a000000-0000-4000-8000-000000000001');
 
 insert into public.work_order_assignments (id, work_order_id, staff_id, role, assigned_by, assigned_at)
 values
   ('d5200000-0000-4000-8000-000000000011', 'd5000000-0000-4000-8000-000000000011',
    '5a000000-0000-4000-8000-000000000003', 'lead', '5a000000-0000-4000-8000-000000000001',
-   pg_temp.seed_at(0, '10:05'));
+   pg_temp.seed_at(0, '13:05'));
 
 select set_config('request.jwt.claims',
   '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);

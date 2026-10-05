@@ -1483,7 +1483,8 @@ project; never to production.
 Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
 `tests/fixtures/ids.ts`; none has a login yet) and bikes
 `b1000000-…-0000000000NN` (`BIKE`, short IDs `B-000001`…`B-000010` in insert
-order, `BIKE_SHORT_ID`), one shop bike without an owner and one bike
+order, `BIKE_SHORT_ID`; Phase 4 adds B-000011…B-000013 and Phase 5
+B-000014…B-000017), one shop bike without an owner and one bike
 transferred between customers (two ownership events). No attachments.
 
 Phase 3 part (done): service categories `ca000000-…-00000000000N`
@@ -1614,21 +1615,28 @@ inserts, explicit times, claims naming whoever acts; a part from stock is
 the line, one `job_consumption` movement at the line's time with −quantity
 and cost snapshot = the line's unit cost, and a hand-written
 `stock_consumed` event one second later). d = shop days before the reset
-day; times are Singapore time:
+day; times are Singapore time. Four more customers' bikes
+`b1000000-…-000000000014`…`17` (B-000014…B-000017: Chloe's Specialized
+Diverge, Daniel's Canyon Endurace, Priya's Cervelo R5, Hafiz's Dahon Mu;
+`BIKE.chloeDiverge`, `danielEndurace`, `priyaCervelo`, `hafizDahon`) are
+inserted before H1 so that, as seed realism (the schema allows it), no
+bike has two jobs open at once and none is collected while another job on
+it is open (`reporting-seed.test.ts`). A bike awaiting collection may take
+a newer job (J-000003 then J-000010; H6 then J-000009):
 
 | Case | Job | Customer, bike, lead | Timeline | Lines (qty × sale / cost) → sale / cost / yield / CC / after CC |
 |---|---|---|---|---|
-| H1 service only (SPEC §10 ex. 1) | J-000011 | Tan, Tarmac, Marcus | in d6 09:30, start d6 10:15, done d6 16:40, ready 16:45, collected d5 11:10 | Full Service 1 × 200.00 / 0.00 → 200 / 0 / 200 / 60.00 / 140.00 |
-| H2 parts (ex. 2) | J-000012 | Chloe, Giant, Nur | in d5 10:00, start d5 13:00, done d4 15:30, ready 15:35, collected d3 10:20 | wheelset 1 × 800.00 / 400.00 → 800 / 400 / 400 / 120.00 / 280.00 |
-| H3 combined (ex. 3) | J-000013 | Daniel, Cannondale, Marcus | in d4 09:45, start d4 11:00, done d3 17:10, ready 17:15, collected d2 12:00 | Full Service 200.00 + wheelset 800.00 / 400.00 → 1000 / 400 / 600 / 180.00 / 420.00 |
+| H1 service only (SPEC §10 ex. 1) | J-000011 | Tan, Brompton, Marcus | in d6 09:30, start d6 10:15, done d6 16:40, ready 16:45, collected d5 11:10 | Full Service 1 × 200.00 / 0.00 → 200 / 0 / 200 / 60.00 / 140.00 |
+| H2 parts (ex. 2) | J-000012 | Chloe, Diverge (B-000014), Nur | in d5 10:00, start d5 13:00, done d4 15:30, ready 15:35, collected d3 10:20 | wheelset 1 × 800.00 / 400.00 → 800 / 400 / 400 / 120.00 / 280.00 |
+| H3 combined (ex. 3) | J-000013 | Daniel, Endurace (B-000015), Marcus | in d4 09:45, start d4 11:00, done d3 17:10, ready 17:15, collected d2 12:00 | Full Service 200.00 + wheelset 800.00 / 400.00 → 1000 / 400 / 600 / 180.00 / 420.00 |
 | H4 loss line (D1) | J-000014 | Tan, Tarmac, Marcus | in d3 10:30, start d3 14:00, done d2 15:00, ready 15:05, collected d1 09:40 | Wheel True 1 × 40.00 / 0.00 + tyre 1 × 20.00 / 35.00 (yield −15.00, CC 0) → 60 / 35 / 25 / 12.00 (not 7.50) / 13.00 |
 | H5 rounding | J-000015 | Tan, Brompton, Nur (Asha prices) | in d2 10:00, start d2 15:00, done d1 14:00, ready 14:05 | manual 3 × 33.33 / 10.00 (CC 21.00) + 1 × 12.05 / 12.00 (CC 0.02, 0.015 half up) → 112.04 / 42.00 / 70.04 / 21.02 / 49.02 |
 | H6 uncollected (D34) | J-000016 | Priya, Tern, Nur | in d12 09:00, start d11 10:00, done d9 16:00, ready d9 16:05 | Custom Labour 1 × 120.00 |
-| H7 overdue (D20) | J-000017 | Priya, Domane, Marcus | in d11 11:00, start d10 10:00, awaiting parts d10 15:00 | Bike Build 1 × 150.00 (open, never recognised) |
-| H8 cancelled (D16) | J-000018 | Hafiz, Brompton, Nur | in d2 11:30, cancelled d2 12:15 "Customer declined the quote" | none |
-| T1 in progress today | J-000019 | Daniel, Cannondale, Marcus | in d0 09:00, start d0 09:30 | Drivetrain Service 1 × 90.00 / 10.00 (open) |
-| T2 collected today | J-000020 | Chloe, Surly, Marcus | in d1 17:00, start d0 09:15, done 11:30, ready 11:35, collected 12:10 | Drivetrain Service 1 × 120.00 / 0.00 + chain 1 × 45.00 / 22.00 → 165 / 22 / 143 / 42.90 / 100.10 |
-| T3 received today (the anchor) | J-000021 | Chloe, Giant, Nur | in d0 10:00 | none |
+| H7 overdue (D20) | J-000017 | Priya, Cervelo R5 (B-000016), Marcus | in d11 11:00, start d10 10:00, awaiting parts d10 15:00 | Bike Build 1 × 150.00 (open, never recognised) |
+| H8 cancelled (D16) | J-000018 | Hafiz, Dahon (B-000017), Nur | in d2 11:30, cancelled d2 12:15 "Customer declined the quote" | none |
+| T1 in progress today | J-000019 | Daniel, Endurace, Marcus | in d0 09:00, start d0 09:30 | Drivetrain Service 1 × 90.00 / 10.00 (open) |
+| T2 collected today | J-000020 | Chloe, Diverge, Marcus | in d1 17:00, start d0 09:15, done 11:30, ready 11:35, collected 12:10 | Drivetrain Service 1 × 120.00 / 0.00 + chain 1 × 45.00 / 22.00 → 165 / 22 / 143 / 42.90 / 100.10 |
+| T3 received today (the anchor) | J-000021 | Chloe, Diverge (after T2's collection), Nur | in d0 13:00 | none |
 
 Six quantity products `d5300000-…-00000000000N` (`REPORT_PRODUCT`,
 `REPORT_PRODUCT_SHORT_ID`, P-000017…P-000022) in a new product category

@@ -626,7 +626,11 @@ compare the two first and skip with a message when they differ; tests that
 take a short ID or sequence value skip when `isolatedDatabase()` is false.
 E2E reads the same anchor in global setup (`E2E_SEED_ANCHOR`). Tests that
 list a seeded customer's jobs list the Phase 5 jobs too
-(`workshop-customer-access.test.ts`).
+(`workshop-customer-access.test.ts`). Seed realism, which the schema does
+not enforce, is pinned in `reporting-seed.test.ts`: no bike has two seeded
+jobs open at once (check-in to completion or cancellation) and none is
+collected while another job on it is open; the bikes that carry more than
+one job are listed (a bike awaiting collection may take a newer job).
 
 ## CI
 

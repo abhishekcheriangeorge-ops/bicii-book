@@ -61,7 +61,8 @@ const JOB_COLUMNS = [
 
 /**
  * Tan's non-cancelled jobs, newest first (checked_in_at desc): H5 on the
- * Brompton, H4 and H1 on the Tarmac (Phase 5), J-000001 on the Tarmac.
+ * Brompton, H4 on the Tarmac and H1 on the Brompton (Phase 5), J-000001 on
+ * the Tarmac.
  */
 const TAN_JOBS = [
   REPORT_JOB.rounding,
@@ -179,7 +180,7 @@ describe("my_work_orders", () => {
   it("lists exactly the caller's non-cancelled jobs, with customer-safe columns only", async () => {
     const rows = await asCustomer(CUSTOMER.tan, myJobs);
     // Tan's Brompton job J-000008 was cancelled; the rest are his, newest
-    // first (Phase 5 adds H1, H4 on the Tarmac and H5 on the Brompton).
+    // first (Phase 5 adds H4 on the Tarmac and H1, H5 on the Brompton).
     expect(rows.map((r) => r.id)).toEqual(TAN_JOBS);
     const tarmac = rows.find((r) => r.id === WORK_ORDER.tanTarmacCollected)!;
     for (const row of rows) expect(Object.keys(row).sort()).toEqual(JOB_COLUMNS);
@@ -462,11 +463,7 @@ describe("D17: a job stays with the customer it was for", () => {
       expect(await myTimeline(tx, WORK_ORDER.tanTarmacCollected)).toHaveLength(5);
 
       await actAs(tx, customerClaims(priya));
-      for (const tarmacJob of [
-        WORK_ORDER.tanTarmacCollected,
-        REPORT_JOB.serviceOnly,
-        REPORT_JOB.lossLine,
-      ]) {
+      for (const tarmacJob of [WORK_ORDER.tanTarmacCollected, REPORT_JOB.lossLine]) {
         expect(await myJobIds(tx)).not.toContain(tarmacJob);
       }
       expect(await myLines(tx, WORK_ORDER.tanTarmacCollected)).toEqual([]);
