@@ -159,7 +159,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
               href={TILE_LINKS.in_progress}
             />
             <StatTile
-              label="Ready for collection"
+              label="Awaiting collection"
               value={dash.now.awaitingCollection}
               hint="Completed, not yet collected"
               href={TILE_LINKS.awaiting_collection}

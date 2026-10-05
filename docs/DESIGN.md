@@ -411,7 +411,10 @@ upload itself, below).
   Started, Completed, Ready for collection, Collected (Cancelled when > 0),
   the jobs whose current stamp falls on the day; each links to its list in
   Activity. "Right now" (today only): Received, Waiting, Ready to start,
-  In progress, Ready for collection and Overdue ("Open more than 7 days",
+  In progress, Awaiting collection ("Completed, not yet collected": the
+  Completed and Ready for collection statuses together, D31, so it never
+  shares a name with the flow tile, the status or the board's Ready for
+  collection column) and Overdue ("Open more than 7 days",
   `OVERDUE_AFTER_DAYS`), the current snapshot grouped as `BOARD_GROUPS`,
   each linking to the board filtered the same way (`TILE_LINKS`). A past
   day has no snapshot, no low stock and no "Needs attention".
