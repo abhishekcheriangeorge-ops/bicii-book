@@ -661,6 +661,9 @@ never sees production keys.
 
 ## 5. Risks and mitigations
 
+This is the planning-time list. Live risks, with status, evidence and next
+actions, are in [RISKS.md](RISKS.md); update them there.
+
 - **Docker-less environments cannot run `supabase start`.** Mitigated by the
   devstack (`scripts/devstack/`): the real Supabase Auth, PostgREST and
   Storage on a plain Postgres 16 behind a local gateway, so DB tests and

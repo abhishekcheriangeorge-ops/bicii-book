@@ -104,7 +104,7 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 
 | Actor | Reaches | Enforced by | Test evidence |
 |---|---|---|---|
-| anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`; nothing else | grants, RLS, definer projections | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access` |
+| anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`; objects in the public bucket `media-public` by URL, with no listing ([§2](#2-customers-bikes-attachments), [§15](#15-row-level-security-matrix)); nothing else | grants, RLS, definer projections, public bucket (`20261004000800_media_storage.sql`) | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access` |
 | customer (signed in) | own rows only, through `my_*` RPCs; base tables return nothing | staff-only RLS, `private.current_customer_id()` | `customer-access`, `workshop-customer-access`, `appointment-customer-access` |
 | staff (active) | base tables through RLS; cost columns hidden | `private.is_staff()`, column grants, `*_staff` views | `staff-rls`, `work-order-lines`, `inventory-catalog` |
 | staff with a permission | costs, inventory writes, stock changes, financial reports, staff management | `private.require_permission` / `has_permission` in RPCs | `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger` |
@@ -113,8 +113,26 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 
 **Lifecycle.**
 
-- Rows are archived (`archived_at`), not deleted; archived rows stay readable
-  to history and hidden from pickers.
+- Customers, bikes, categories, services, products and units are archived
+  (`archived_at`), not deleted; stock locations and appointment types are
+  switched off (`active`). Archived rows stay readable to history and hidden
+  from pickers. Work orders and appointments are never deleted; they end in
+  a status.
+- Exceptions that are hard-deleted, each leaving an append-only event row
+  with who and when:
+  - photos: `delete_attachment` (any active staff member, reason required)
+    deletes the `attachments` row, kept as the payload of an
+    `attachment_events` 'deleted' row, and the server then removes the
+    Storage object ([§2](#2-customers-bikes-attachments)); the file
+    cannot be recovered (nothing is backed up,
+    [R-002](RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery));
+  - closures: `delete_closure_override` (admin, reason required), kept in
+    `schedule_events`;
+  - weekly hours: `set_shop_hours` (admin) replaces a weekday's intervals,
+    the old ones kept in `schedule_events` (no reason is asked);
+  - permission grants: `revoke_permission` deletes the `staff_permissions`
+    row, kept in a `permission_revoked` `staff_events` row (no reason is
+    asked).
 - Event and ledger tables are append-only (triggers refuse updates and
   deletes); a correction is a linked reversal or a new event.
 - Financial snapshots on lines never change after the line is written.

@@ -53,6 +53,8 @@ URLs, or customer data in this file.
   log retention configured anywhere and no error tracker. A database restore
   would not cover Storage objects (photos), which live outside the
   database tables (inferred from Supabase's architecture; not exercised).
+  A photo deleted by staff (`delete_attachment`) is therefore gone for
+  good; only its metadata stays in `attachment_events`.
 - Evidence and confidence: high for absence (no backup, monitoring or
   error-tracker configuration or dependency in the repository); the hosted
   plan's backup features are unknown because no hosted project exists.
@@ -276,7 +278,8 @@ URLs, or customer data in this file.
 - Status and owner: open; build agent, Phase 10.
 - Trigger: Phase 10.
 - Impact: no Shopify integration exists on this branch (only the reserved
-  column `customers.shopify_customer_id`). When built, its webhook
+  id columns `customers.shopify_customer_id`, `products.shopify_product_id`
+  and `products.shopify_variant_id`). When built, its webhook
   and sync code will be tested against signed fixture payloads only until a
   real or development store is connected, so API and payload drift would not
   be caught.
@@ -297,7 +300,8 @@ URLs, or customer data in this file.
   printer protocol before inspecting BICII's printers. Phase 8 is not
   built; Phase 12 waits for the printer models. Until then printing will be
   browser print / PDF only.
-- Evidence and confidence: high; `/labels` is a "Coming soon" page (R-018).
+- Evidence and confidence: high; `/labels` is a placeholder page reading
+  "Arrives in Phase 8 (QR and labels)" (R-018).
 - Workaround or containment: browser print/PDF fallback, planned for Phase 8.
 - Next action: owner names the label printer models and label sizes.
 - Revisit trigger: Phase 8 starts.
@@ -340,9 +344,12 @@ URLs, or customer data in this file.
 - Category: security concern (non-exploitable summary).
 - Status and owner: mitigated by procedure; operator.
 - Trigger: running `supabase/seed.sql` on a hosted project.
-- Impact: the seed creates staff logins whose password is published in
-  [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application),
-  so seeding a hosted project would open it to anyone.
+- Impact: the seed creates staff logins and one customer login whose
+  shared password is published: in the docs only in
+  [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)
+  (other docs link there), and in the public code (`supabase/seed.sql`,
+  `scripts/devstack/db.mjs`, `tests/fixtures/ids.ts`). Seeding a hosted
+  project would therefore open it to anyone.
 - Evidence and confidence: high; RUNBOOK "Hosted Supabase projects" step 5
   says never to run it on a hosted project.
 - Workaround or containment: create the first hosted admin as RUNBOOK
@@ -357,13 +364,20 @@ URLs, or customer data in this file.
 - Status and owner: open; owner.
 - Trigger: a customer asks for their data to be deleted, or a legal or
   business retention limit applies.
-- Impact: customers and bikes are archived, never deleted (no DELETE through
-  the API); history and photos are kept indefinitely. Neither the brief nor
+- Impact: customers, bikes and job history are archived or kept, never
+  deleted (no DELETE through the API), and are kept indefinitely. Staff can
+  delete individual photos, including customer and bike photos, with a
+  reason: any active staff member may, the Storage object is removed and
+  only the metadata stays in `attachment_events`
+  ([DATA-MODEL "Lifecycle"](DATA-MODEL.md#authority-applied-state-and-implementation-status)).
+  Neither the brief nor
   the docs set a retention or deletion policy, and whether any legal
   obligation applies has not been checked.
 - Evidence and confidence: high for the behaviour
-  (`20261004000600_customers.sql`: soft delete only); the policy question
-  is open.
+  (`20261004000600_customers.sql`: soft delete only;
+  `20261004000900_attachments.sql` `delete_attachment` and
+  `src/lib/domain/attachments.ts` `deletePhoto`: photo deletion); the policy
+  question is open.
 - Workaround or containment: none.
 - Next action: owner decides a retention and deletion policy; the build
   agent then designs a deletion or anonymisation path that keeps financial
@@ -388,13 +402,14 @@ URLs, or customer data in this file.
 - Revisit trigger: customer self-booking goes live (Phase 11).
 - Last checked: 2026-10-05.
 
-## R-018 — Four sections are "Coming soon" placeholders
+## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
 - Status and owner: open; build agent (Phases 6–9).
 - Trigger: staff open Consignment, Purchasing, Labels or Reports.
 - Impact: those pages render the `ComingSoon` component
-  (`src/components/shell/coming-soon.tsx`); none of their features exist on
+  (`src/components/shell/coming-soon.tsx`), which reads "Arrives in Phase
+  N (…)"; none of their features exist on
   this branch.
 - Evidence and confidence: high; `src/app/(staff)/{consignment,purchasing,labels,reports}/page.tsx`.
 - Workaround or containment: none.

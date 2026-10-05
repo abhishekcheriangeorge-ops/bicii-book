@@ -21,9 +21,10 @@ Where a step below is not covered by a spec, it says so.
 1. Open the Admin (on a developer machine: http://localhost:3000). You see
    **Staff sign in**.
 2. Enter your **Email** and **Password** and press **Sign in**. On a
-   developer machine only, the seeded logins work, e.g. `admin@bicii.test`
-   or `mechanic2@bicii.test` with the password `bicii-dev-password`; a real
-   shop has its own logins, created by an admin.
+   developer machine only, the seeded logins work (listed with their
+   password in
+   [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application));
+   a real shop has its own logins, created by an admin.
 3. **Today** opens with a greeting and today's date. On a phone the tabs at
    the bottom are Today, Jobs, Scan, Inventory and More (Customers, Bikes,
    Appointments, Settings and the rest); on an iPad every section is in the
@@ -248,6 +249,6 @@ that." Ask an admin.
 Not available yet: **Consignment**, **Purchasing**, **Labels** and
 **Reports** show "Arrives in Phase 6 (Consignment)", "Phase 7
 (Purchasing)", "Phase 8 (QR and labels)" and "Phase 9 (Reporting)"
-([R-018](RISKS.md#r-018--four-sections-are-coming-soon-placeholders)).
+([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 There is no reschedule, no customer messaging and no data export. Help:
 ask the owner or an admin.

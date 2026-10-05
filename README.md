@@ -1,9 +1,10 @@
 # BICII Admin (bicii-book)
 
 The phone-first staff app for BICII, a custom bicycle workshop in
-Singapore: staff run intake, work orders, appointments and inventory in it
-today, with consignment, purchasing, labels, reporting and the Shopify
-boundary planned.
+Singapore. Built so far (not deployed; see [NOW.md](NOW.md)): intake, work
+orders, appointments and inventory. Purchasing is in progress on a separate
+branch; consignment, labels, reporting and the Shopify boundary are
+planned.
 
 Owner: Abhishek Cherian George (George), GitHub
 [abhishekcheriangeorge-ops](https://github.com/abhishekcheriangeorge-ops).

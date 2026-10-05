@@ -46,7 +46,9 @@ supported ([RUNBOOK "Local Supabase with Docker"](../RUNBOOK.md#local-supabase-w
   into `~/.cache/bicii-devstack`: 985 MB measured on 2026-10-05, mostly
   Storage's `node_modules`; CI caches it under a key of the pinned versions.
 - The binaries are linux-x64 builds; macOS and Windows use the Docker CLI
-  path instead (README "Quickstart").
+  path instead ([ENGINEERING.md "Prerequisites and access"](../ENGINEERING.md#prerequisites-and-access),
+  which links the
+  [RUNBOOK procedure](../RUNBOOK.md#local-supabase-with-docker-supabase-cli)).
 - The local platform layer differs from hosted Supabase (recreated roles and
   grants, Auth settings, Postgres major version, pinned service versions):
   [RISKS R-003](../RISKS.md#r-003--the-devstack-differs-from-hosted-supabase).

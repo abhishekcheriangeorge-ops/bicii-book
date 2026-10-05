@@ -76,7 +76,8 @@ Hosted Auth settings, redirect URLs and exposed API schemas are listed in
 
 Done in the app by an admin, or by a staff member holding the named
 permission. These tasks were exercised only on developer machines and in
-CI; the E2E spec named in each task covers it. Labels are as on screen.
+CI, by the E2E spec named in each task; where a step has no E2E spec, the
+task says so. Labels are as on screen.
 
 **Invite staff** (admin, or `manage_staff` within the D11 ceiling:
 non-admins invite role Staff only;
@@ -96,13 +97,13 @@ person → the switch for the permission. Expected: toast "… granted" or
 "… removed"; the change appears in their Staff history with who made it.
 Verify: the person's Settings → Your profile lists it under their
 permissions. A non-admin can grant only permissions they hold, never
-Manage staff.
+Manage staff. (`tests/e2e/staff.spec.ts`.)
 
 **Deactivate or reactivate** (same roles; never an admin by a non-admin).
 Settings → Staff → the person → Deactivate…, give the reason, confirm
 "Deactivate <name>". Expected: "<name> deactivated"; their open session
 loses access at once; the reason is in Staff history. The database refuses
-to leave the shop without an active admin.
+to leave the shop without an active admin. (`tests/e2e/staff.spec.ts`.)
 
 **Services and prices** (`manage_inventory`). Settings → Services → New
 service, or a service to edit or archive. **Cult Commons rate** (admin;
@@ -112,7 +113,13 @@ Cult Commons → Schedule a new rate; enter the Rate and when it Starts
 (now, or a Singapore time in the future: "Start this rate now" or "Schedule
 this rate"). Rates are never edited or backdated; a scheduled rate can be
 cancelled before it starts. Each line keeps the rate in force when it was
-added.
+added. Coverage: New service is driven by
+`tests/e2e/workshop-board.spec.ts`; editing or archiving a service and the
+Cult Commons rate screens are not covered by any E2E spec (that spec only
+checks that a mechanic without View costs sees no "Schedule a new rate").
+`schedule_cult_commons_rate` and `cancel_cult_commons_rate` are covered by
+the database tests `tests/db/workshop-catalog.test.ts` and
+`tests/db/work-order-lines.test.ts`.
 
 **Shop hours, closures and booking capacity** (admin; every staff member
 can read them). Settings → Shop hours and closures: Weekly hours, Booking
@@ -136,7 +143,7 @@ reschedule (cancel and rebook;
 no customer data deletion
 ([R-016](RISKS.md#r-016--no-retention-or-deletion-policy-for-customer-personal-data)),
 and Consignment, Purchasing, Labels and Reports are placeholders
-([R-018](RISKS.md#r-018--four-sections-are-coming-soon-placeholders)).
+([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 
 ## Technical operation
 

@@ -30,7 +30,7 @@ a separate, label-triggered run. All listed results are success.
 | Inventory | Yes, PR #5 9922441 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262357001), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262379042/job/111612114525) | Not deployed |
 | Today and financial engine | Yes, PR #6 d3e2101 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262369366), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262380782/job/111612119938) | Not deployed |
 | Appointments | Yes, PR #7 b34bbcd | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521); locally `npm test` 82 files / 1186 tests, `npm run check`, `check:types`, `test:e2e` 106 passed | Not deployed |
-| Docs stack | Yes, `feat/docs-stack` | Locally: docs link check, 33 files / 458 links, 0 problems; `npm run check` pass | Not deployed |
+| Docs stack | Yes, `feat/docs-stack` | Locally: docs link check, 33 files / 476 links, 0 problems; `npm run check` pass (after the review fixes) | Not deployed |
 | Purchasing (Phase 7) | On `feat/p7-purchasing` 59944d6 only | Not verified here | Not deployed |
 | Staff email OTP | Parallel track; no `feat/auth-email-otp` ref visible | Not verified | Not deployed |
 | Consignment and sales, labels, reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
@@ -54,7 +54,11 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
 ## Attention and links
 
-- Main risk: [R-001](docs/RISKS.md#r-001--nothing-is-deployed), then the PR
-  stack integration ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
+- Top risks, most consequential first ([RISKS.md](docs/RISKS.md) order):
+  [R-001](docs/RISKS.md#r-001--nothing-is-deployed),
+  [R-002](docs/RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery),
+  [R-003](docs/RISKS.md#r-003--the-devstack-differs-from-hosted-supabase).
+  Next in play: the PR stack integration
+  ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 - Decisions needed: [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions).
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).

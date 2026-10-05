@@ -190,7 +190,7 @@ All records: [decisions/README.md](decisions/README.md).
 - [R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp) and
   [R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet): owner
   changes not yet in the code.
-- [R-018](RISKS.md#r-018--four-sections-are-coming-soon-placeholders):
+- [R-018](RISKS.md#r-018--four-sections-are-placeholder-pages):
   consignment, purchasing, labels and reports are placeholders by design,
   not defects.
 - The lock order and the single helpers in

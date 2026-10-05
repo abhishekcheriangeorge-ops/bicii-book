@@ -24,6 +24,14 @@ the Next.js 16 differences (`proxy.ts`, async request APIs, Turbopack):
   [`scripts/devstack/config.mjs`](../scripts/devstack/config.mjs)) are
   linux-x64. On macOS or Windows use the Supabase CLI with Docker instead:
   [RUNBOOK "Local Supabase with Docker (Supabase CLI)"](RUNBOOK.md#local-supabase-with-docker-supabase-cli).
+- For the E2E suite, a Chromium that Playwright can launch. On your own
+  machine run `npx playwright install --with-deps chromium` once (CI does
+  the same in [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml);
+  exercised only there, and `--with-deps` may ask for sudo on Linux).
+  `PLAYWRIGHT_CHROMIUM_EXECUTABLE` points it at another Chromium instead.
+  Exception: in the build agent's container Chromium is preinstalled at
+  `/opt/pw-browsers` and used automatically; do not download browsers
+  there.
 - About 1 GB of disk for the devstack cache (`~/.cache/bicii-devstack`,
   985 MB measured on 2026-10-05).
 - Variables: the app reads `.env.local`, which `npm run devstack:env`
@@ -85,9 +93,9 @@ Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
 | `npm run format` / `npm run lint` | Prettier write / ESLint. | `lint` runs inside `check`; `format` not exercised |
 | `npm run tokens:contrast` | Recompute WCAG ratios for the colour tokens; fails on a miss. | Local: 29 pairs ok |
 | `npm run icons` | Regenerate the PWA icons from `brand/logo-source.png`. | Not exercised |
-| `npm run devstack:setup` | Download and build the devstack components (idempotent; `-- --force` rebuilds). | Local: cached; `--force` not exercised |
-| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321; pids and logs in `.devstack/`. `start` restarts services that were started against a different database. | Local: all three |
-| `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. | Local: exit 0 |
+| `npm run devstack:setup` | Download and build the devstack components into `~/.cache/bicii-devstack` (`BICII_DEVSTACK_CACHE` moves it; idempotent; `-- --force` rebuilds). | Local: cached; `--force` not exercised |
+| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321; pids and logs in `.devstack/`. `start` builds the database first if it does not exist yet (as `db:reset` would), never touches an existing one, and restarts services that were started against a different database. | Local: all three |
+| `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. Only the app reads `.env.local`; the scripts and tests take `DATABASE_URL` / `PG*` from the shell. | Local: exit 0 |
 | `npm run db:reset` | Drop and rebuild the dev database, then seed it. The demo history is relative to the shop day of the reset: reset to move "today". | Local: 2.8 s |
 | `npm run db:migrate` | Apply pending migrations without a reset. | Local: "already up to date" |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database from the migrations first; CI diffs that). | Local: wrote the file; `git diff --exit-code` clean |
@@ -100,7 +108,7 @@ Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
 | Generated types | `npm run check:types` | `database.types.ts` matches the migrations | Needs Postgres and the devstack cache | Local pass, 2026-10-05 |
 | Unit | `npm run test:unit` | Pure rules: money, permissions, status transitions, labels, form parsing, components | No database | Local: 45 files, 512 tests |
 | Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests |
-| End to end | `npm run test:e2e` | The staff journeys on an iPhone 13 and an iPad viewport against a production build and the devstack | Chromium only; resets `bicii_dev`; uses `/opt/pw-browsers` when present (never `playwright install` here); not a required check in CI ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) | Local: 106 passed in 11.1 min (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, no dev server running); CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521) |
+| End to end | `npm run test:e2e` | The staff journeys on an iPhone 13 and an iPad viewport against a production build and the devstack | Chromium only (installed once, see [Prerequisites](#prerequisites-and-access)); resets `bicii_dev`; not a required check in CI ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) | Local: 106 passed in 11.1 min (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, no dev server running); CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521) |
 | Contrast | `npm run tokens:contrast` | WCAG ratios of the colour token pairs | Tokens only, not rendered pages | Local: 29 pairs ok |
 | Build | `npm run build` | The app compiles for production with placeholder public env | Does not contact Supabase; writes under `.next`, as `npm run dev` does; it was exercised only with no dev server running in the checkout | Local inside `test:e2e`; CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766) |
 | Docs links | the Vibe Code Docs Stack link checker (below) | Every relative link and heading anchor in the repository's Markdown resolves; fences are closed | Does not check external URLs or the truth of the text | Local: 0 problems at this commit |
@@ -190,7 +198,7 @@ process yet ([OPERATIONS.md](OPERATIONS.md#releases)).
 | Signed out or dev tooling misbehaving when the app is opened on `http://127.0.0.1:3000` | Check the address bar | Use `http://localhost:3000`. Auth's site URL is localhost (`scripts/devstack/services.mjs`) and the session cookie belongs to the host you signed in on. `next.config.ts` already allows `127.0.0.1` as a dev origin, and `/login` answered 200 there on 2026-10-05 |
 | Today, the board and the demo appointments look a day or more old | The demo history is anchored to the shop day of the last reset | `npm run db:reset` (then restart the services, as above) |
 | The Scan screen says "The camera only works over a secure connection. Open the app over HTTPS (or on localhost)." | Opened from a phone over `http://<LAN IP>:3000` | Expected; type the code instead, or follow [RUNBOOK "The camera scanner on phones and iPads"](RUNBOOK.md#the-camera-scanner-on-phones-and-ipads) |
-| Playwright cannot find a browser | `ls /opt/pw-browsers` | In this environment Chromium comes from `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH`, or `PLAYWRIGHT_CHROMIUM_EXECUTABLE`); never run `playwright install` here. CI installs Chromium itself |
+| Playwright cannot find a browser ("Executable doesn't exist …") | Is `PLAYWRIGHT_CHROMIUM_EXECUTABLE` set? Does `/opt/pw-browsers/chromium` exist? | On your own machine: `npx playwright install --with-deps chromium` (as CI does), or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`. In the build agent's container Chromium is preinstalled at `/opt/pw-browsers` (`PLAYWRIGHT_BROWSERS_PATH`); do not download browsers there |
 | `check:types` fails in CI | The job prints "Out of date. Run 'npm run db:types' …" | `npm run db:reset && npm run db:types`, commit `src/lib/database.types.ts` |
 | A service will not start | `npm run devstack:status`; logs in `.devstack/logs/{auth,rest,storage,gateway}.log` | Free the port or set `BICII_*_PORT` in the shell ([`.env.example`](../.env.example)) |
 

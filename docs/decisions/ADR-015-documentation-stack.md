@@ -53,9 +53,6 @@ Further rules:
   record here for each new decision (plus its PLAN §6 row), records known
   problems in RISKS with evidence, and updates NOW at the end.
 
-The files above that do not exist yet are created by the later steps of the
-same retrofit.
-
 ## Alternatives actually considered
 
 | Option | Why chosen or rejected |
