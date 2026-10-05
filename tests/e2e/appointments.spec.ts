@@ -292,6 +292,30 @@ test("Staff book for a customer and capacity closes the slot", async ({ page }, 
     await sheet.getByLabel("Or pick a date").fill(day);
     await expect(sheet.getByRole("radio", { name: /^11:30/ })).toBeVisible();
     await expect(sheet.getByRole("radio", { name: /^11:00/ })).toHaveCount(0);
+
+    // The race: 11:30 fills (two bookings through the API) after the sheet
+    // offered it. Book is refused; the Time field says why and takes focus
+    // (the sheet may be scrolled down to the notes), a toast says it too,
+    // the times reload without 11:30 and the rest of the form is kept.
+    await pickTime(sheet, "11:30");
+    await sheet.getByLabel("Internal note").fill(note);
+    for (const customer of [CUSTOMER.tan, CUSTOMER.priya]) {
+      await rpc(adminToken, "book_appointment", {
+        appointment_id: randomUUID(),
+        customer_id: customer,
+        appointment_type_id: APPOINTMENT_TYPE.serviceDropOff,
+        starts_at: `${day}T11:30:00+08:00`,
+        internal_note: note,
+      });
+    }
+    await sheet.getByRole("button", { name: "Book", exact: true }).click();
+    await expect(toast(page, "Not booked")).toBeVisible();
+    const time = sheet.getByRole("group", { name: /^Time/ });
+    await expect(time).toBeFocused();
+    await expect(time.getByText("That time has just filled up. Pick another time.")).toBeVisible();
+    await expect(time.getByRole("radio", { name: /^12:00/ })).toBeVisible();
+    await expect(time.getByRole("radio", { name: /^11:30/ })).toHaveCount(0);
+    await expect(sheet.getByLabel("Internal note")).toHaveValue(note);
     await sheet.getByRole("button", { name: "Cancel", exact: true }).click();
 
     // Cancel both with a reason (two steps): the place frees up again.

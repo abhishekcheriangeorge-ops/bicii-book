@@ -529,7 +529,10 @@ slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
   (`sr-only` inside a `relative` label), so arrows move within a group and
   the focus ring is drawn on the card (`has-[:focus-visible]`). The form
   submits through `onSubmit` with controlled state (nothing typed is ever
-  reset); a slot refusal reloads the times and keeps the rest.
+  reset); a slot refusal is the Time field's error (focus and scroll go
+  there, an error toast says it too), reloads the times and keeps the
+  rest. The free times are computed against the server's clock
+  (`ScheduleData.asOf` plus the time since the load), not the device's.
 - **The detail page** wraps its content in `AppointmentStatusScope`
   (`useOptimistic` status shared by `AppointmentStatusPill` in the header
   and `AppointmentActionBar`), so Arrived changes the pill at once. The
@@ -548,7 +551,8 @@ slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
   has open jobs without an appointment; requested work prefilled from the
   customer's note, condition on arrival and `LeadPicker` (the intake's
   lead chips, extracted to `lead-picker.tsx`: "Me" first, Unassigned
-  last); one sticky "Check in and open job". A new job opens on its
+  last); one sticky "Check in and open job". A refusal no field explains
+  also shows as an error toast beside that button. A new job opens on its
   intake photos step (`/jobs/<id>?intake=photos`).
 - **Status → tone** (`appointmentTone`, `StatusPill` with its words):
   Booked info, Confirmed progress, Arrived waiting, Checked in and

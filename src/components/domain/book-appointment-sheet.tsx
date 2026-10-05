@@ -33,6 +33,9 @@ import { ShortId } from "./short-id";
 /** How many days the sheet loads and computes at once (the chip strip and "Next day with free times"). */
 const WINDOW_DAYS = 14;
 
+/** How often the free times are recomputed as the clock moves on. */
+const CLOCK_TICK_MS = 30_000;
+
 /** Refusals that mean the time is no longer bookable: show why, reload the times, keep the rest. */
 const SLOT_CODES = new Set([
   "appointment_capacity_exceeded",
@@ -104,6 +107,15 @@ function BookAppointmentBody({
   const [pending, startTransition] = useTransition();
   const formRef = useFocusFirstInvalid(state);
 
+  // The device's clock, read every CLOCK_TICK_MS (only the time elapsed
+  // since a load is taken from it), so a time that ends while the sheet is
+  // open drops out.
+  const [deviceNow, setDeviceNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setDeviceNow(Date.now()), CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   const scheduleKey = `${windowFrom}#${reloads}`;
   useEffect(() => {
     let live = true;
@@ -160,12 +172,16 @@ function BookAppointmentBody({
       closures: data.closures,
       appointments: data.appointments,
     };
-    const asOf = new Date(schedule.receivedAt);
+    // The server's clock (the database refuses a time by its own now()),
+    // advanced by the time elapsed here since the load: a device clock that
+    // runs slow or fast must not offer an ended slot or hide a live one.
+    const elapsed = Math.max(0, deviceNow - schedule.receivedAt);
+    const asOf = new Date(Date.parse(data.asOf) + elapsed);
     for (const day of daysFrom(data.from, data.days)) {
       out.set(day, availableSlots({ day, type, asOf, forStaff: true }, ctx));
     }
     return out;
-  }, [schedule, type]);
+  }, [schedule, type, deviceNow]);
 
   const daySlots = slotsByDay.get(date) ?? [];
   const nextDay = [...slotsByDay.entries()].find(([d, s]) => d > date && s.length > 0)?.[0] ?? null;
@@ -205,14 +221,26 @@ function BookAppointmentBody({
         customerNote,
         internalNote,
       });
-      setState(result);
       if (!result.ok) {
-        if (result.code && SLOT_CODES.has(result.code)) {
+        const slotRefused = Boolean(result.code && SLOT_CODES.has(result.code));
+        // A refused time is the Time field's error: it shows beside the
+        // reloaded grid and useFocusFirstInvalid scrolls it into view, even
+        // when the sheet is scrolled down to the notes.
+        setState(
+          slotRefused
+            ? { ...result, fieldErrors: { ...result.fieldErrors, startsAt: [result.error] } }
+            : result,
+        );
+        if (slotRefused) {
           setStartsAt(null);
           setReloads((n) => n + 1);
         }
+        if (slotRefused || !result.fieldErrors) {
+          toast({ title: "Not booked", description: result.error, tone: "error" });
+        }
         return;
       }
+      setState(result);
       toast({
         title: `Booked ${formatAppointmentStart(result.data.startsAt)} for ${customer!.label}`,
         tone: "success",

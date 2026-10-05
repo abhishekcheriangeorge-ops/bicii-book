@@ -99,7 +99,15 @@ export function CheckInForm({
         leadMechanicId: linkJob ? null : leadId,
       });
       setState(result);
-      if (!result.ok) return;
+      if (!result.ok) {
+        // A refusal no field explains (a job conflict, the appointment
+        // cancelled meanwhile) shows only at the top of a long form: say it
+        // where the submit button is too.
+        if (!result.fieldErrors) {
+          toast({ title: "Not checked in", description: result.error, tone: "error" });
+        }
+        return;
+      }
       const { workOrderId, jobNumber, created } = result.data;
       toast({
         title: created ? `Checked in. ${jobNumber} opened.` : `Checked in. Linked to ${jobNumber}.`,
