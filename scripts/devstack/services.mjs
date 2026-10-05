@@ -91,7 +91,10 @@ export function services() {
         // do not use (GOTRUE_JWT_EXP = jwt_expiry is in authEnv). Without the
         // reuse interval (no default in the binary: 0s) two requests racing
         // to refresh an expired session could trip reuse detection.
-        // password_requirements = "" is the binary's default (no env).
+        // password_requirements = "" is the binary's default (no env). The
+        // two password settings below only keep parity with config.toml:
+        // the Admin has no password path (PLAN D10), and no staff login has
+        // a password anyone knows (seed and invites: a random secret's hash).
         GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true",
         GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10",
         GOTRUE_PASSWORD_MIN_LENGTH: "6",
