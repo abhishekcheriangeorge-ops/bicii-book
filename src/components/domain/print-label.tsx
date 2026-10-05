@@ -67,7 +67,8 @@ const noSubscribe = () => () => {};
  * "Print label" (outline, 48 px). Disabled, with the reason beneath it,
  * when the record cannot get a label now (`unavailable`). With `preset`
  * (the page's `?print=1&qty=…&reprint=…`) the sheet opens once by itself;
- * closing it drops those parameters from the address.
+ * closing it drops those parameters from the address, and printing from
+ * it replaces that address with the print view (Back does not reopen it).
  */
 export function PrintLabelButton({
   kind,
@@ -230,7 +231,11 @@ export function PrintLabelSheet({
       if (r.ok) {
         if (profileId) rememberPrinter(profileId);
         // Inside the transition: the button stays pending until the print view shows.
-        router.push(printViewPath(r.data.jobId));
+        // A deep link (`?print=1&qty=…&reprint=…`, `preset`) is spent once
+        // it printed: the print view REPLACES that history entry, so Back
+        // never lands on it and reopens the sheet for another job.
+        if (preset) router.replace(printViewPath(r.data.jobId));
+        else router.push(printViewPath(r.data.jobId));
         return;
       }
       if (r.code === "print_job_conflict") {
@@ -375,6 +380,7 @@ export function PrintLabelSheet({
           }))}
           value={profileId}
           onChange={setProfileId}
+          list
         />
 
         {setup.templates.length > 1 ? (
@@ -395,23 +401,28 @@ export function PrintLabelSheet({
 }
 
 /**
- * One choice among a few (a SegmentedControl up to 4 options), or a radio
- * list above that: never a long dropdown (SPEC §22).
+ * One choice among a few (a SegmentedControl up to 4 short options), or a
+ * radio list, each option with its hint: never a long dropdown (SPEC §22).
+ * `list` forces the radio list: printer names are long (up to 80
+ * characters, "This device (browser print)"), and a segmented row of them
+ * scrolls sideways off a phone screen and hides the PDF printer.
  */
 function ChoiceField({
   label,
   options,
   value,
   onChange,
+  list = false,
 }: {
   label: string;
   options: { value: string; label: string; hint: string }[];
   value: string | null;
   onChange: (value: string) => void;
+  list?: boolean;
 }) {
   const name = useId();
   const chosen = options.find((o) => o.value === value);
-  if (options.length <= 4) {
+  if (!list && options.length <= 4) {
     return (
       <div className="flex flex-col gap-1.5">
         {/* The radiogroup carries the name; this is the visible label. */}
@@ -428,7 +439,7 @@ function ChoiceField({
       <legend className="mb-1.5 font-display text-xs font-bold tracking-wide uppercase">
         {label}
       </legend>
-      {options.map((o) => (
+      {options.map((o, i) => (
         <label
           key={o.value}
           className="flex min-h-tap cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-dust-100"
@@ -439,11 +450,17 @@ function ChoiceField({
             value={o.value}
             checked={o.value === value}
             onChange={() => onChange(o.value)}
-            className="size-5 accent-ink"
+            aria-labelledby={`${name}-${i}-label`}
+            aria-describedby={`${name}-${i}-hint`}
+            className="size-5 shrink-0 accent-ink"
           />
-          <span className="flex flex-col">
-            <span className="font-medium">{o.label}</span>
-            <span className="text-sm text-dust-500">{o.hint}</span>
+          <span className="flex min-w-0 flex-col">
+            <span id={`${name}-${i}-label`} className="font-medium break-words">
+              {o.label}
+            </span>
+            <span id={`${name}-${i}-hint`} className="text-sm text-dust-500">
+              {o.hint}
+            </span>
           </span>
         </label>
       ))}

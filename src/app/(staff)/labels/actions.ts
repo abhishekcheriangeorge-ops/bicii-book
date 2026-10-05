@@ -56,7 +56,13 @@ const createSchema = z
 export const createPrintJobAction = staffAction(
   createSchema,
   { name: "labels.create_print_job" },
-  async (input, { supabase }) => createPrintJob(supabase, input),
+  async (input, { supabase }) => {
+    const result = await createPrintJob(supabase, input);
+    // ADR-001 A6: the record page (Recent prints) is current when staff
+    // come back to it from the print view.
+    refresh();
+    return result;
+  },
 );
 
 const statusSchema = z

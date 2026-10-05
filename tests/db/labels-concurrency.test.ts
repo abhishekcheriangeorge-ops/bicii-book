@@ -229,3 +229,74 @@ describe.skipIf(!isolatedDatabase())("defaults under concurrency", () => {
     expect(rows).toEqual([{ id: other }]);
   });
 });
+
+describe.skipIf(!isolatedDatabase())("printing while an admin moves a default", () => {
+  // create_print_job with no printer or template reads the default FOR
+  // SHARE, twice at most: the first read waits on set_default_*'s row
+  // locks and then drops the old default (no longer is_default); the
+  // second, a new statement, finds the new one. Without that retry (or
+  // the FOR SHARE) the print fails with "(default) not found" or
+  // label_template_missing although a default exists.
+
+  it("a print with no printer named waits for the new default printer and uses it", async () => {
+    await must(committed(setup, (tx) => setDefaultProfile(tx, PRINTER_PROFILE.browser), ADMIN));
+    const jobId = randomUUID();
+    const [a, b] = await race(
+      (tx) => setDefaultProfile(tx, PRINTER_PROFILE.pdf),
+      (tx) =>
+        createPrintJob(tx, {
+          jobId,
+          kind: "product",
+          entityId: PRODUCT.barTape,
+          quantity: 1,
+          templateId: LABEL_TEMPLATE.product,
+        }),
+      ADMIN,
+      MECHANIC2,
+    );
+    expect(a).toMatchObject({ ok: true, value: { id: PRINTER_PROFILE.pdf, is_default: true } });
+    expect(b).toMatchObject({
+      ok: true,
+      value: { id: jobId, printer_profile_id: PRINTER_PROFILE.pdf, adapter: "pdf" },
+    });
+    expect(await jobCount(jobId)).toBe(1);
+  });
+
+  it("a print with no template named waits for the new default template and uses it", async () => {
+    await must(committed(setup, (tx) => setDefaultTemplate(tx, LABEL_TEMPLATE.product), ADMIN));
+    const next = randomUUID();
+    await must(
+      committed(setup, (tx) =>
+        tx.query(
+          `insert into public.label_templates (id, name, kind, width_mm, height_mm, layout)
+           values ($1, 'Race product default', 'product', 58, 40, $2::jsonb)`,
+          [next, JSON.stringify(DEFAULT_LAYOUTS.product)],
+        ),
+      ),
+    );
+    const jobId = randomUUID();
+    const [a, b] = await race(
+      (tx) => setDefaultTemplate(tx, next),
+      (tx) =>
+        createPrintJob(tx, {
+          jobId,
+          kind: "product",
+          entityId: PRODUCT.barTape,
+          quantity: 1,
+          profileId: PRINTER_PROFILE.browser,
+        }),
+      ADMIN,
+      MECHANIC2,
+    );
+    expect(a).toMatchObject({ ok: true, value: { id: next, is_default: true } });
+    expect(b).toMatchObject({
+      ok: true,
+      value: {
+        id: jobId,
+        label_template_id: next,
+        template_snapshot: { name: "Race product default" },
+      },
+    });
+    expect(await jobCount(jobId)).toBe(1);
+  });
+});

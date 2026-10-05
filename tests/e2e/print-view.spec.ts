@@ -63,6 +63,7 @@ test("printed, the view is the labels and nothing else", async ({ page }) => {
   await page.emulateMedia({ media: "print" });
 
   await expect(page.locator("[data-print-toolbar]")).toBeHidden();
+  await expect(page.locator("[data-print-details]")).toBeHidden();
   await expect(page.getByRole("link", { name: "Open PDF" })).toBeHidden();
   await expect(page.getByText("1 of 10", { exact: true })).toBeHidden();
   for (const label of await page.locator("[data-label]").all()) await expect(label).toBeVisible();

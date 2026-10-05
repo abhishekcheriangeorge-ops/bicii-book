@@ -846,3 +846,30 @@ URLs, or customer data in this file.
 - Revisit trigger: To confirm regularly holds more than a day's prints, or
   Phase 12.
 - Last checked: 2026-10-05.
+
+## R-032 — One Phase 8 commit is undocumented and fails E2E on its own
+
+- Category: process gap (commit history, not code).
+- Status and owner: open; the orchestrator (who opens the pull request).
+- Trigger: `git bisect` or a review stepping through `feat/p8-labels`
+  commit by commit.
+- Impact: commit `41c1a5c` (step 3's screens: the print sheet, the Labels
+  card, the record pages' Print label and `/settings/labels`) changes no
+  file under `docs/` and not NOW.md, against the AGENTS.md contract (docs
+  "in the same commit as the code"); the docs arrive in the next commit,
+  `abe7e6c`. At `41c1a5c` `npm run test:e2e` is also red: the Labels card's
+  `<ul aria-label="Units to label">` matches `getByRole("list", { name:
+  "Units" })` (Playwright matches names as case-insensitive substrings) in
+  `tests/e2e/inventory.spec.ts` and `sales.spec.ts`, a strict-mode
+  failure; `abe7e6c` renames it "Unit labels". Business semantics are
+  untouched and the branch head is complete and green.
+- Evidence and confidence: high; `git show --stat 41c1a5c` (21 files, all
+  under `src/` and `tests/`), `git show abe7e6c` (the docs and the rename),
+  the Phase 8 review.
+- Workaround or containment: none needed in the tree.
+- Next action: when the pull request is opened, squash `41c1a5c` and
+  `abe7e6c`, or say in its documentation-impact answer that `41c1a5c`'s
+  documentation and the E2E selector fix are in `abe7e6c`, so bisecting
+  does not stop on a red, undocumented commit.
+- Revisit trigger: the Phase 8 pull request.
+- Last checked: 2026-10-05.

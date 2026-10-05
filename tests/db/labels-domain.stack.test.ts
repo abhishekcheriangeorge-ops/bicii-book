@@ -6,8 +6,10 @@
  * results that must never throw), the reprint preset, and one job created
  * and confirmed through the RPCs.
  *
- * Reads the seeded jobs only; the one job it creates is confirmed printed,
- * so the seeded "To confirm" list is unchanged. Needs the devstack
+ * Reads the seeded jobs; the jobs it creates (on BIKE.tanTarmac, which no
+ * E2E spec prints on) are confirmed printed, so the seeded "To confirm"
+ * list is unchanged. Nothing here assumes the seeded jobs are a record's
+ * newest: E2E runs leave jobs in bicii_dev. Needs the devstack
  * (`npm run db:reset && npm run devstack:start`); skips otherwise, unless
  * BICII_REQUIRE_STACK=1.
  */
@@ -134,11 +136,27 @@ describe.skipIf(!reachable)("print jobs", () => {
     );
   });
 
-  it("lists a record's latest jobs", async () => {
-    const jobs = await listJobsFor(staff, "unit", UNIT.colnago, 3);
-    expect(jobs.map((j) => j.id)).toEqual(
-      expect.arrayContaining([PRINT_JOB.unitReprint, PRINT_JOB.unitFailed]),
-    );
+  it("lists a record's latest jobs, newest first", async () => {
+    // Two jobs of its own, on a record E2E never prints on: whatever jobs
+    // earlier runs left in bicii_dev, these are the newest two.
+    const first = newId();
+    const second = newId();
+    for (const id of [first, second]) {
+      await createPrintJob(staff, { id, kind: "bike", entityId: BIKE.tanTarmac, quantity: 1 });
+      // Confirmed, so the seeded "To confirm" list is unchanged.
+      await setPrintJobStatus(staff, { id, status: "printed" });
+    }
+    const latest = await listJobsFor(staff, "bike", BIKE.tanTarmac, 2);
+    expect(latest.map((j) => j.id)).toEqual([second, first]);
+    expect(latest.every((j) => j.status === "printed")).toBe(true);
+
+    // The seeded unit's jobs, the reprint after the job it reprints. The
+    // limit leaves room for one E2E run's jobs (global setup resets the
+    // database before each run).
+    const seeded = (await listJobsFor(staff, "unit", UNIT.colnago, 50))
+      .map((j) => j.id)
+      .filter((id) => id === PRINT_JOB.unitReprint || id === PRINT_JOB.unitFailed);
+    expect(seeded).toEqual([PRINT_JOB.unitReprint, PRINT_JOB.unitFailed]);
   });
 });
 
@@ -171,6 +189,13 @@ describe.skipIf(!reachable)("label context", () => {
       reason: "archived",
       message: "That record is archived. Unarchive it before printing labels.",
     });
+  });
+
+  it("says a record that does not exist cannot get labels, without throwing", async () => {
+    // label_preview raises P0002 for it; the bike page calls notFound()
+    // before it asks, and a record deleted mid-render must not throw.
+    const ctx = await getLabelContext(staff, { kind: "bike", entityId: newId() });
+    expect(ctx).toMatchObject({ ok: false, reason: "not_found", recentJobs: [] });
   });
 
   it("gives a bike tag no publication", async () => {

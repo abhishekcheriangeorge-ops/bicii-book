@@ -136,15 +136,13 @@ describe("PrintLabelButton", () => {
     ).toBeVisible();
     expect(within(dialog()).getByRole("img", { name: /^Label: / })).toBeInTheDocument();
     expect(within(dialog()).getByText("58 × 40 mm · Product 58 × 40")).toBeInTheDocument();
-    expect(within(dialog()).getByRole("radio", { name: "PDF download" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(within(dialog()).getByRole("radio", { name: "PDF download" })).toBeChecked();
 
     fireEvent.click(within(dialog()).getByRole("button", { name: "10 labels" }));
     const submit = within(dialog()).getByRole("button", { name: "Print 10 labels" });
     await act(async () => fireEvent.click(submit));
     await waitFor(() => expect(push).toHaveBeenCalledWith(`/print/labels/${JOB}`));
+    expect(replace).not.toHaveBeenCalled();
     expect(createJob).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "product",
@@ -175,10 +173,7 @@ describe("PrintLabelButton", () => {
     ).toBeVisible();
     expect(screen.getByText("Prints 500 now; print again for the remaining 120.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Print 500 labels" })).toBeVisible();
-    expect(screen.getByRole("radio", { name: "PDF download" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "PDF download" })).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -186,6 +181,41 @@ describe("PrintLabelButton", () => {
     // Opened manually later: no preset any more.
     fireEvent.click(screen.getByRole("button", { name: "Print label" }));
     expect(screen.getByRole("heading", { name: "Print labels · P-000011" })).toBeVisible();
+  });
+
+  it("printing from a preset replaces the deep link, so Back cannot reopen the sheet", async () => {
+    createJob.mockResolvedValue({ ok: true, data: { jobId: JOB, adapter: "pdf" } });
+    render(
+      <PrintLabelButton
+        kind="product"
+        entityId={ENTITY}
+        shortId="P-000011"
+        setup={setup("39.90")}
+        preset={preset}
+      />,
+    );
+    const submit = await screen.findByRole("button", { name: "Print 500 labels" });
+    await act(async () => fireEvent.click(submit));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith(`/print/labels/${JOB}`));
+    expect(push).not.toHaveBeenCalled();
+    expect(createJob).toHaveBeenCalledWith(expect.objectContaining({ reprintOfId: JOB }));
+  });
+
+  it("lists the printers as radios with their hints, never a sideways scroller", () => {
+    render(
+      <PrintLabelButton kind="product" entityId={ENTITY} shortId="P-000011" setup={setup()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Print label" }));
+    const printers = within(dialog()).getByRole("group", { name: "Printer" });
+    const radios = within(printers).getAllByRole("radio");
+    expect(radios).toHaveLength(2);
+    expect(
+      within(printers).getByRole("radio", { name: "PDF download" }),
+    ).toHaveAccessibleDescription("Opens a PDF to share or print");
+    expect(
+      within(printers).getByRole("radio", { name: "This device (browser print)" }),
+    ).toBeChecked();
+    expect(within(printers).queryByRole("radiogroup")).toBeNull();
   });
 
   it("a zero price prints $0.00 and a missing price prints no price line (D58, D24 amended)", () => {

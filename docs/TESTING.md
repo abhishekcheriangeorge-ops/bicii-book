@@ -433,11 +433,18 @@ appears in code (comments stripped) only in `src/lib/env.ts` and
 `window.print` before the "rendered" action resolves, a rendered job is not
 marked again and asks at once, Open PDF links the PDF in a new tab, failed
 needs a reason (the 400 ms guard first), "Yes, all printed" is armed after
-400 ms and then links back to the record and the history; a printed job
+400 ms and then links back to the record and the history, a one-label job
+asks "Did the label print correctly?" (never "all 1 label"); a printed job
 (`PrintJobOutcome`) has no Print or Open PDF and links Print again to
 `reprintPath`, disabled with the archived sentence for an archived record.
 
 Phase 8 step 3 (the print flow and the settings screens):
+`template-sheet.test.tsx` (jsdom, actions mocked): a new template opens
+with no error, a preview and Add template enabled; a blocked save puts
+"Give the template a name." on the Name field (`aria-invalid`, its
+description) and focuses it; a size out of range marks only that field
+once changed; the layout's "does not fit" sentence is live under the
+preview even with no name, and disables Add template.
 `printing/print-sheet.test.ts`: the remembered printer (missing, malformed,
 blocked or full storage), `choosePrinter` / `chooseTemplate` precedence,
 `priceChanged` (Decimal compare; 0 is a price, NULL differs from every
@@ -447,7 +454,10 @@ remainder, `printButtonLabel`, `parsePrintParams`. `print-label.test.tsx`
 its description; the sheet with the preview, the remembered printer, the
 10-label chip and the created job opening the print view; a preset opens
 once as "Print again" with the price-changed note, the 500 cap and its
-remainder, and closing drops the parameters; a 0.00 price draws `$0.00` and
+remainder, and closing drops the parameters; printing from a preset
+replaces the deep link's history entry (`router.replace`, no push) while a
+manual print pushes; the printers are a radio list (never a sideways
+segmented row), each described by its hint; a 0.00 price draws `$0.00` and
 a NULL price no price line; the not-public hint and a refusal kept with
 its field error; a conflict mints a new id and links the record's jobs.
 `number-input.test.tsx` "NumberInput decimal stepper": 0.5 steps through 0
@@ -566,8 +576,8 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Print job status machine (Phase 8; D59) | `labels.test.ts`, table-driven from `tests/fixtures/print-transitions.ts`: `private.print_job_transition_allowed` for all 16 pairs; `set_print_job_status` from each status to each: allowed moves stamp `rendered_at` / `completed_at` and `status_changed_by` = the caller, same status is a no-op (a failed job keeps its first error), the rest `print_job_transition_invalid` (also for the owner, by the trigger); failed without, with a blank or with a 501-character error → `print_job_error_required` / `reason_too_long`. |
 | Templates and printers: staff read, admins write (Phase 8) | `labels.test.ts`: mechanic2 reads the three built-in templates and two profiles, insert → 42501, update affects 0 rows, `set_default_*` → 42501; the admin inserts and renames (trimmed, `created_by` set); `is_default` and delete → 42501; switching off a default → `*_default_required`; `set_default_*` leaves one default per kind / one printer and refuses an inactive target; inactive printer or template and a template of another kind refused by `create_print_job`; no default for a kind → `label_template_missing`; kind / adapter changes → `*_immutable`; `bluetooth` and `network_raw` → 23514 `printer_profiles_adapter_available`; config v1; width / height checks; `label_mm` rejects NaN. Layout v1 from `tests/fixtures/label-layouts.ts` (shared with step 2's zod schema): every case through `private.label_layout_problem`, and every invalid one through an admin insert → `label_layout_invalid` with the sentence as DETAIL. |
 | Customers and anonymous visitors read nothing about labels (Phase 8; SPEC §4.2) | `labels.test.ts`: a linked customer reads 0 rows from `label_templates`, `printer_profiles`, `print_jobs` and gets 42501 from the five label RPCs; anon has no privilege on the tables and cannot execute the functions (also `meta.test.ts`'s allow-lists). |
-| Labels under concurrency (Phase 8; SPEC §25) | `labels-concurrency.test.ts` (committed, real connections; each case proves the second call waits on a lock): the same print job from two devices → one job, the second returns the first's row; another quantity → `print_job_conflict`, one row; two admins making different templates (and printers) default → exactly one default, the second's target, no 23505; printed and failed at once → one wins, the other `print_job_transition_invalid`. |
-| The labels domain module against the devstack (Phase 8 step 2) | `labels-domain.stack.test.ts` (skips without the devstack unless `BICII_REQUIRE_STACK=1`): `getPrintJob` maps the seeded queued job from its snapshots (payload `${SHOP.publicSiteUrl}/q/P-000011`, PDF printer, 58 × 40 template, requester), keeps the failed job's reason and the reprint link; `listPrintJobs` filters To confirm, Failed, a short ID (any case) and a name, and pages by `(created_at, id)` without gaps; `getLabelContext` offers the counted product (default template and printer first, last printed price), and returns `unique_product` and `archived` without throwing, and `publication: null` for a bike; `getReprintPreset` only for the same record (with the reprinted job's price); `resolvePrintPreset` turns `?print=1&qty=…&reprint=…` into the sheet's preset (null without `print=1`; another record's job opens the sheet without the link); one job created replay-safely as mechanic2, marked rendered then printed, and refused failed afterwards. |
+| Labels under concurrency (Phase 8; SPEC §25) | `labels-concurrency.test.ts` (committed, real connections; each case proves the second call waits on a lock): the same print job from two devices → one job, the second returns the first's row; another quantity → `print_job_conflict`, one row; two admins making different templates (and printers) default → exactly one default, the second's target, no 23505; printed and failed at once → one wins, the other `print_job_transition_invalid`; a print naming no printer (no template) while an admin moves the default waits on `set_default_*`'s row locks and then uses the NEW default (adapter `pdf`; the new template's snapshot), which only `create_print_job`'s two-attempt `for share` read makes pass (checked by cutting the loop to one attempt: both cases fail). |
+| The labels domain module against the devstack (Phase 8 step 2) | `labels-domain.stack.test.ts` (skips without the devstack unless `BICII_REQUIRE_STACK=1`): `getPrintJob` maps the seeded queued job from its snapshots (payload `${SHOP.publicSiteUrl}/q/P-000011`, PDF printer, 58 × 40 template, requester), keeps the failed job's reason and the reprint link; `listPrintJobs` filters To confirm, Failed, a short ID (any case) and a name, and pages by `(created_at, id)` without gaps; `listJobsFor` returns two jobs the test creates (and confirms) on `BIKE.tanTarmac` newest first, and the seeded unit's two jobs in order within a limit of 50: nothing assumes the seeded jobs are a record's newest, so jobs that E2E runs leave in `bicii_dev` cannot turn it red (they did, until the Phase 8 review); `getLabelContext` offers the counted product (default template and printer first, last printed price), and returns `unique_product`, `archived` and, for an id that does not exist, `not_found` without throwing, and `publication: null` for a bike; `getReprintPreset` only for the same record (with the reprinted job's price); `resolvePrintPreset` turns `?print=1&qty=…&reprint=…` into the sheet's preset (null without `print=1`; another record's job opens the sheet without the link); one job created replay-safely as mechanic2, marked rendered then printed, and refused failed afterwards. |
 
 ### End-to-end (SPEC §27.3)
 
@@ -959,19 +969,32 @@ exact equality; it never changes the shop's public address or a seeded
 job's status): a tagged product printed ×10 on the browser printer (chip
 10) gives 10 `[data-label]` boxes with `${base}/q/P-…`, Print calls
 `window.print` once, "Yes, all printed" → "Marked as printed" and the job
-reads Printed (and appears in the record's Labels card); UNIT.colnago's
-"What the public sees" anchor shows "Not public", its sheet says "Not public
-yet…" and caps at 10, its one label carries `${base}/q/U-000001` and the
-bike's "Size 52s · PJBK…" line, and that payload typed into /scan opens the
-unit; a tagged bike's tag marked failed (reason required after the 400 ms
-guard) is listed under Failed with the reason, and its Print again opens
-the bike page's sheet "Print again · B-…" with quantity 1 and makes a new
-job whose page links "An earlier print job"; mechanic2 prints a bike tag,
+reads Printed (and appears in the record's Labels card); a unit of a
+tagged unique product the spec creates (unique data: E2E prints on no
+seeded unit, so its jobs never crowd a seeded record's latest jobs) shows
+"Not public" under "What the public sees", its sheet says "Not public
+yet…" and caps at 10, its one label carries `${base}/q/U-…`, its condition
+line and its short ID, the print view asks "Did the label print
+correctly?", and that payload typed into /scan opens the unit (the bike
+size line of a bike-linked unit is covered by `labels.test.ts`); a tagged
+bike's tag marked failed (reason required after the 400 ms guard; the
+print view's sticky toolbar is under a quarter of the viewport and **Mark
+as failed** is in the viewport on the phone) is listed under Failed with
+the reason, and its Print again opens the bike page's sheet "Print again ·
+B-…" with quantity 1 and makes a new job, after which Back returns to the
+failed job's print view with no sheet open, and the new job's page links
+"An earlier print job"; mechanic2 prints a bike tag,
 sees no Labels and printers row and gets a 403 at `/settings/labels`; the
 admin's "{tag} 50 × 30" template shows "does not fit" with Save disabled
 for a 30 mm QR, saves with 24 mm, prints 2 labels with `@page` 50.0 × 30.0
 mm and is switched off; a signed-out context ends on /login for a print view
-and a PDF; an archived tagged bike's page renders with "That record is
+and a PDF (that is proxy.ts); the seeded customer login (Chloe), signed in,
+gets a 403 from the PDF route (not `application/pdf`, no `%PDF`) and a 403
+"You can't open this" print view with no label: the handlers' own staff
+checks; `/bikes/{random uuid}` shows "Nothing here", not the error page.
+Two cases still print on seeded records (mechanic2 on `BIKE.priyaTern`, the
+admin's template on `PRODUCT.barTape`): the stack test reads neither
+record's newest jobs, only that the bar tape has some and a printed price; an archived tagged bike's page renders with "That record is
 archived…" and Print label disabled; Labels and printers shows `base`, and
 the bar tape's Labels card and "QR label URL" both equal `${base}/q/P-000011`,
 never the environment base.

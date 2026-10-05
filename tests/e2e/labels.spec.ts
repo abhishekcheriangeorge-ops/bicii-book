@@ -1,6 +1,15 @@
+import { randomUUID } from "node:crypto";
+
 import { expect, test, type Page } from "@playwright/test";
 
-import { BIKE, PRINT_JOB, PRODUCT, PRODUCT_SHORT_ID, UNIT, UNIT_SHORT_ID } from "../fixtures/ids";
+import {
+  BIKE,
+  CUSTOMER_LOGIN,
+  PRINT_JOB,
+  PRODUCT,
+  PRODUCT_SHORT_ID,
+  SEED_PASSWORD,
+} from "../fixtures/ids";
 import { E2E_PUBLIC_SITE_URL } from "../fixtures/public-site";
 import { createProduct, section, signIn, tagFor, toast } from "./helpers";
 import { QR_BASE, labelPayloads as payloads } from "./label-helpers";
@@ -64,6 +73,32 @@ async function newBike(page: Page, model: string): Promise<{ url: string; shortI
   return { url: page.url(), shortId: shortId.trim() };
 }
 
+/** A new unique product with its first unit (unique data); ends on the unit's page. */
+async function newUniqueUnit(
+  page: Page,
+  name: string,
+  serial: string,
+  condition: string,
+): Promise<{ url: string; shortId: string }> {
+  await page.goto("/inventory");
+  await page.getByRole("button", { name: "New product" }).first().click();
+  const form = page.getByRole("dialog", { name: "New product" });
+  await form.getByRole("radio", { name: "Unique" }).click();
+  await form.getByLabel("Name").fill(name);
+  await form.getByLabel("Sale price", { exact: true }).fill("900.00");
+  await form.getByLabel("Cost", { exact: true }).fill("400.00");
+  const firstUnit = form.getByRole("region", { name: "First unit" });
+  await firstUnit.getByLabel("Serial number").fill(serial);
+  await firstUnit.getByLabel("Condition (shown publicly when published)").fill(condition);
+  await form.getByRole("button", { name: "Add product" }).click();
+  await expect(page).toHaveURL(/\/products\/[0-9a-f-]{36}$/);
+  const units = page.getByRole("list", { name: "Units", exact: true });
+  const shortId = (await units.getByText(/^U-\d{6}$/).textContent())!.trim();
+  await units.getByRole("link").first().click();
+  await expect(page).toHaveURL(/\/units\/[0-9a-f-]{36}$/);
+  return { url: page.url(), shortId };
+}
+
 test("browser print produces 10 identical labels", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const tag = tagFor(testInfo);
@@ -101,11 +136,17 @@ test("browser print produces 10 identical labels", async ({ page }, testInfo) =>
   );
 });
 
-test("a unique unit prints one distinct label that opens its record", async ({ page }) => {
-  await signIn(page, "mechanic1");
-  await page.goto(`/units/${UNIT.colnago}`);
+test("a unique unit prints one distinct label that opens its record", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const tag = tagFor(testInfo);
+  await signIn(page, "admin"); // a new product needs manage_inventory
+  // A unit of its own (unique data): its jobs never crowd a seeded record's.
+  // The condition stays short: a label truncates a long line with "…".
+  const unit = await newUniqueUnit(page, `Frame ${tag}`, `SN-${tag}`, "Scuffed");
 
-  // The seeded unit's product is not published: what the public sees is nothing.
+  // A new product is not published: what the public sees is nothing.
   await section(page, "Labels").getByRole("link", { name: "What the public sees" }).click();
   await expect(page).toHaveURL(/#what-the-public-sees$/);
   await expect(page.getByRole("region", { name: "What the public sees" })).toContainText(
@@ -123,15 +164,19 @@ test("a unique unit prints one distinct label that opens its record", async ({ p
   await startJob(page, "Print 1 label");
 
   await expect(page.locator("[data-label]")).toHaveCount(1);
-  const payload = `${base}/q/${UNIT_SHORT_ID.colnago}`;
+  const payload = `${base}/q/${unit.shortId}`;
   expect(await payloads(page)).toEqual([payload]);
-  await expect(page.locator("[data-label]").first()).toContainText("Size 52s · PJBK");
-  await expect(page.locator("[data-label]").first()).toContainText(UNIT_SHORT_ID.colnago);
+  // The unit's own lines: its condition's first line and its short ID.
+  await expect(page.locator("[data-label]").first()).toContainText("Scuffed");
+  await expect(page.locator("[data-label]").first()).toContainText(unit.shortId);
+  // One label: the question is about "the label", never "all 1 label".
+  await page.getByRole("button", { name: "Print", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Did the label print correctly?" })).toBeVisible();
 
   await page.goto("/scan");
   await page.getByLabel("Or type the code on the label").fill(payload);
   await page.getByRole("button", { name: "Open", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/units/${UNIT.colnago}$`));
+  await expect(page).toHaveURL(unit.url);
 });
 
 test("a failed print keeps its reason and is printed again as a new job", async ({
@@ -151,10 +196,16 @@ test("a failed print keeps its reason and is printed again as a new job", async 
   const failedId = await startJob(page, "Print 1 label");
   expect(await payloads(page)).toEqual([`${base}/q/${bike.shortId}`]);
 
+  // Only a compact row stays on top while the labels scroll (Back, status, Print).
+  const toolbar = await page.locator("[data-print-toolbar]").boundingBox();
+  expect(toolbar!.height).toBeLessThan(page.viewportSize()!.height / 4);
   await page.getByRole("button", { name: "Print", exact: true }).click();
   await page.getByRole("button", { name: "Something went wrong…" }).click();
   const reason = page.getByLabel("What went wrong?");
   await expect(reason).toBeFocused();
+  // The whole confirmation is in the page's flow: on a phone too, its last
+  // button is on screen (it used to sit below the fold of a sticky header).
+  await expect(page.getByRole("button", { name: "Mark as failed" })).toBeInViewport();
   await page.waitForTimeout(500); // the confirm button ignores presses for 400 ms
   await page.getByRole("button", { name: "Mark as failed" }).click();
   await expect(page.getByText("Give a reason.")).toBeVisible();
@@ -177,6 +228,10 @@ test("a failed print keeps its reason and is printed again as a new job", async 
   await expect(sheet(page).getByLabel("How many")).toHaveValue("1");
   const againId = await startJob(page, "Print 1 label");
   expect(againId).not.toBe(failedId);
+  // The deep link is spent: Back skips it (no sheet, no second job).
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/print/labels/${failedId}$`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await page.goto(`/labels/${againId}`);
   await expect(page.getByRole("link", { name: "An earlier print job" })).toHaveAttribute(
@@ -251,6 +306,33 @@ test("signed-out visitors cannot open print views or PDFs", async ({ browser }) 
   await page.goto(`/api/labels/${PRINT_JOB.productQueued}/pdf`);
   await expect(page).toHaveURL(/\/login/);
   await context.close();
+});
+
+test("a signed-in customer gets a 403, not a print view or a PDF", async ({ page }) => {
+  // proxy.ts only redirects signed-out visitors: this reaches the handlers'
+  // own staff checks (requireStaff, authorizeStaff) with a real session.
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(CUSTOMER_LOGIN.chloe.email);
+  await page.getByLabel("Password").fill(SEED_PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).not.toHaveURL(/\/login/);
+
+  const pdf = await page.request.get(`/api/labels/${PRINT_JOB.productQueued}/pdf`);
+  expect(pdf.status()).toBe(403);
+  expect(pdf.headers()["content-type"] ?? "").not.toContain("application/pdf");
+  expect((await pdf.body()).subarray(0, 4).toString("latin1")).not.toBe("%PDF");
+
+  const view = await page.goto(`/print/labels/${PRINT_JOB.productQueued}`);
+  expect(view?.status()).toBe(403);
+  await expect(page.getByRole("heading", { name: "You can't open this" })).toBeVisible();
+  await expect(page.locator("[data-label]")).toHaveCount(0);
+});
+
+test("an unknown bike is not found, not an error", async ({ page }) => {
+  await signIn(page, "mechanic2");
+  await page.goto(`/bikes/${randomUUID()}`);
+  await expect(page.getByRole("heading", { name: "Nothing here" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
 });
 
 test("a record page still renders when printing is unavailable", async ({ page }, testInfo) => {

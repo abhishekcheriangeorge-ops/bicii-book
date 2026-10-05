@@ -5,7 +5,11 @@ import { z } from "zod";
 import type { Database } from "@/lib/database.types";
 import { DbError, constraintOf, unwrap } from "@/lib/db-errors";
 import { isValidQrBase, parseShortId } from "@/lib/ids";
-import { labelUnavailable, type LabelUnavailableReason } from "@/lib/printing/availability";
+import {
+  LABEL_ENTITY_NOT_FOUND,
+  labelUnavailable,
+  type LabelUnavailableReason,
+} from "@/lib/printing/availability";
 import { maxLabelQuantity } from "@/lib/printing/job";
 import {
   PUBLIC_SITE_URL_PROBLEM,
@@ -444,6 +448,9 @@ async function labelPreview(
 ): Promise<{ ok: true; content: LabelContent } | { ok: false; code: string }> {
   const { data, error } = await supabase.rpc("label_preview", { kind, entity_id: entityId });
   if (error) {
+    // P0002: the record is gone (label_content's "… not found"), e.g.
+    // deleted while the page rendered: unavailable, never a page error.
+    if (error.code === "P0002") return { ok: false, code: LABEL_ENTITY_NOT_FOUND };
     const unavailable = error.code === "P0001" ? labelUnavailable(error.message) : null;
     if (unavailable) return { ok: false, code: error.message };
     throw new DbError(error);
@@ -492,7 +499,7 @@ async function publicationOf(
 /**
  * Everything a record page needs to offer labels. Never throws for a
  * "printing unavailable" condition (archived, a unique product, the QR
- * address not set, no template): it returns { ok: false, reason, message }
+ * address not set, no template, the record gone): it returns { ok: false, reason, message }
  * so one misconfiguration cannot take down the product, unit or bike page.
  * Any other failure throws.
  */

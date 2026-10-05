@@ -54,15 +54,19 @@ export default async function BikePage({ params, searchParams }: PageProps<"/bik
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const supabase = await createClient();
-  const [bike, photos, jobs, stockUnit, labels, preset] = await Promise.all([
+  const [bike, photos, jobs, stockUnit] = await Promise.all([
     getBike(supabase, id),
     listPhotos(supabase, { entityType: "bike", entityId: id }),
     listWorkOrdersForBike(supabase, id),
     getBikeStockUnit(supabase, id),
+  ]);
+  if (!bike) notFound();
+  // Labels only for a bike that exists (as on the product and unit pages):
+  // an unknown id is a 404, never the label code's "not found" error.
+  const [labels, preset] = await Promise.all([
     getLabelContext(supabase, { kind: "bike", entityId: id }),
     searchParams.then((sp) => resolvePrintPreset(supabase, "bike", id, parsePrintParams(sp))),
   ]);
-  if (!bike) notFound();
   const archived = bike.archivedAt !== null;
   const details = [
     { label: "Serial number", value: bike.serialNumber, mono: true },

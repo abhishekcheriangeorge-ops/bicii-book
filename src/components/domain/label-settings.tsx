@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 
 import {
   saveProfileAction,
@@ -23,6 +23,7 @@ import { useToast } from "@/components/ui/toast";
 import { useArmed } from "@/components/ui/use-armed";
 import type { ActionResult } from "@/lib/actions";
 import { composeLabel, type LabelDrawing } from "@/lib/printing/compose";
+import { PRINTER_TYPE_NAMES } from "@/lib/printing/job";
 import { LabelSvg } from "@/lib/printing/label-svg";
 import { SAMPLE_CONTENT } from "@/lib/printing/samples";
 import {
@@ -211,13 +212,6 @@ export function QrAddressForm({
 // Printers
 // ---------------------------------------------------------------------------
 
-const ADAPTER_NAMES: Record<PrinterProfile["adapter"], string> = {
-  browser: "Browser print",
-  pdf: "PDF download",
-  network_raw: "Network printer",
-  bluetooth: "Bluetooth printer",
-};
-
 const HARDWARE_NOTE = "Network and Bluetooth need the printer's hardware adapter (Phase 12).";
 
 function RowButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
@@ -255,7 +249,7 @@ export function PrinterList({ profiles }: { profiles: PrinterProfile[] }) {
                 {p.isDefault ? <Badge tone="done">Default</Badge> : null}
                 {!p.active ? <Badge>Off</Badge> : null}
               </span>
-              <span className="text-sm text-dust-500">{ADAPTER_NAMES[p.adapter]}</span>
+              <span className="text-sm text-dust-500">{PRINTER_TYPE_NAMES[p.adapter]}</span>
             </span>
           </RowButton>
         ))}
@@ -402,7 +396,7 @@ export function ProfileSheet({
           </p>
           {profile ? (
             <>
-              <p className="font-medium">{ADAPTER_NAMES[profile.adapter]}</p>
+              <p className="font-medium">{PRINTER_TYPE_NAMES[profile.adapter]}</p>
               <p className="text-sm text-dust-500">
                 A printer keeps its type. Add a new printer for another type.
               </p>
@@ -612,12 +606,25 @@ const FALLBACK_LAYOUT: LabelTemplate["layout"] = {
   textMm: 3,
 };
 
+/** The template fields that carry their own error (the rest is the layout's sentence). */
+const TEMPLATE_FIELD_KEYS = ["name", "widthMm", "heightMm", "qrMm", "paddingMm", "textMm"] as const;
+type TemplateFieldKey = (typeof TEMPLATE_FIELD_KEYS)[number];
+
+function templateFieldKey(path: readonly PropertyKey[]): TemplateFieldKey | null {
+  const last = path.at(-1);
+  return (TEMPLATE_FIELD_KEYS as readonly PropertyKey[]).includes(last as PropertyKey)
+    ? (last as TemplateFieldKey)
+    : null;
+}
+
 /**
  * One label template: name, kind (fixed once created), size, the QR size
  * and margin, which side the QR goes, which fields print (always in the
  * canonical order; the short ID is always on), name lines and text size,
- * with a live preview on sample content and the problem that stops it
- * saving (the database's sentence). "Make default" for its kind.
+ * with a live preview on sample content and the layout problem that stops
+ * it saving (the database's sentence). A field's own problem (no name, a
+ * size out of range) shows on that field once it is changed or Save is
+ * pressed, and a blocked Save moves focus to it. "Make default" for its kind.
  */
 export function TemplateSheet({
   template,
@@ -646,7 +653,16 @@ export function TemplateSheet({
   const [textMm, setTextMm] = useState(String(layout0.textMm));
   const [active, setActive] = useState(template?.active ?? true);
   const [result, setResult] = useState<ActionResult<unknown> | null>(null);
+  const [touched, setTouched] = useState<ReadonlySet<TemplateFieldKey>>(() => new Set());
+  // Counts blocked saves: each one moves focus to the first invalid field.
+  const [attempted, setAttempted] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
   const [pending, start] = useTransition();
+
+  useEffect(() => {
+    if (attempted === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [attempted]);
 
   const input = {
     name,
@@ -664,15 +680,35 @@ export function TemplateSheet({
     active,
   };
   const parsed = labelTemplateInputSchema.safeParse(input);
-  const problem = parsed.success ? null : (parsed.error.issues[0]?.message ?? "Check the values.");
-  // The preview needs only a valid size and layout (not yet a name).
-  const shape = parsed.success
-    ? parsed.data
-    : (() => {
-        const p = labelTemplateInputSchema.safeParse({ ...input, name: "Preview" });
-        return p.success ? p.data : null;
-      })();
+  // The size and layout alone: the preview needs no name, and a missing
+  // name must not hide whether the layout fits (zod skips the fit check
+  // while any field is invalid).
+  const shapeParsed = labelTemplateInputSchema.safeParse({ ...input, name: "Preview" });
+  const fieldIssues: Partial<Record<TemplateFieldKey, string>> = {};
+  for (const issue of [
+    ...(parsed.success ? [] : parsed.error.issues),
+    ...(shapeParsed.success ? [] : shapeParsed.error.issues),
+  ]) {
+    const key = templateFieldKey(issue.path);
+    if (key) fieldIssues[key] ??= issue.message;
+  }
+  // A problem of the whole layout (the database's sentence, e.g. the QR
+  // does not fit): live under the preview, and Save waits for it.
+  const problem = shapeParsed.success
+    ? null
+    : (shapeParsed.error.issues.find((i) => templateFieldKey(i.path) === null)?.message ?? null);
+  const shape = parsed.success ? parsed.data : shapeParsed.success ? shapeParsed.data : null;
   const drawing = shape ? safeDrawing(shape, kind) : null;
+  // One field's problem shows on that field once it was changed, or after
+  // Save was pressed (DESIGN.md "Forms"): never on a form not touched yet.
+  const errorFor = (key: TemplateFieldKey) =>
+    attempted > 0 || touched.has(key) ? fieldIssues[key] : undefined;
+  const edit =
+    (key: TemplateFieldKey, set: (v: string) => void) =>
+    (v: string): void => {
+      set(v);
+      setTouched((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    };
 
   const chooseKind = (next: LabelKind) => {
     setKind(next);
@@ -684,7 +720,10 @@ export function TemplateSheet({
     setFields((prev) => (on ? [...prev.filter((x) => x !== f), f] : prev.filter((x) => x !== f)));
 
   const submit = () => {
-    if (!parsed.success) return;
+    if (!parsed.success) {
+      setAttempted((n) => n + 1);
+      return;
+    }
     start(async () => {
       const r = await saveTemplateAction({
         id,
@@ -714,15 +753,21 @@ export function TemplateSheet({
     });
 
   const failure = result && !result.ok ? result : null;
-  const mm = (label: string, value: string, set: (v: string) => void, step: number) => (
-    <Field label={label} required>
+  const mm = (
+    key: TemplateFieldKey,
+    label: string,
+    value: string,
+    set: (v: string) => void,
+    step: number,
+  ) => (
+    <Field label={label} error={errorFor(key)} required>
       <NumberInput
         kind="decimal"
         stepper
         step={step}
         minValue={0}
         value={value}
-        onValueChange={set}
+        onValueChange={edit(key, set)}
       />
     </Field>
   );
@@ -753,6 +798,7 @@ export function TemplateSheet({
     >
       <form
         id={formId}
+        ref={formRef}
         noValidate
         className="flex flex-col gap-5"
         onSubmit={(e) => {
@@ -786,12 +832,12 @@ export function TemplateSheet({
           {problem ?? "The template fits the label."}
         </p>
 
-        <Field label="Name" required>
+        <Field label="Name" error={errorFor("name")} required>
           <Input
             autoComplete="off"
             maxLength={80}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => edit("name", setName)(e.target.value)}
           />
         </Field>
 
@@ -821,10 +867,10 @@ export function TemplateSheet({
         </div>
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          {mm("Width (mm)", widthMm, setWidthMm, 1)}
-          {mm("Height (mm)", heightMm, setHeightMm, 1)}
-          {mm("QR size (mm)", qrMm, setQrMm, 1)}
-          {mm("Margin (mm)", paddingMm, setPaddingMm, 0.5)}
+          {mm("widthMm", "Width (mm)", widthMm, setWidthMm, 1)}
+          {mm("heightMm", "Height (mm)", heightMm, setHeightMm, 1)}
+          {mm("qrMm", "QR size (mm)", qrMm, setQrMm, 1)}
+          {mm("paddingMm", "Margin (mm)", paddingMm, setPaddingMm, 0.5)}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -883,7 +929,7 @@ export function TemplateSheet({
           />
         </div>
 
-        {mm("Text size (mm)", textMm, setTextMm, 0.1)}
+        {mm("textMm", "Text size (mm)", textMm, setTextMm, 0.1)}
 
         <Switch
           label="Active"

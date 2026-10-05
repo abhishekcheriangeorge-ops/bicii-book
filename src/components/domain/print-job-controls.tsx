@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 
 import { setPrintJobStatusAction } from "@/app/(staff)/labels/actions";
 import { Button, buttonClasses } from "@/components/ui/button";
@@ -24,7 +34,129 @@ import { ReasonConfirm } from "./reason-confirm";
  *   Print on an iPad), marks the job rendered and shows the confirmation.
  * - A job already rendered (sent earlier, not confirmed) shows the
  *   confirmation straight away.
+ *
+ * The parts share one state (PrintJobProvider) so the print view can keep
+ * only the action in its compact sticky toolbar and put the hint and the
+ * confirmation in the page's flow: a sticky confirmation grew taller than
+ * a phone screen and hid "Mark as failed" (review finding, Phase 8).
+ * PrintJobControls is all of them stacked, for one place.
  */
+
+type PrintJobState = {
+  confirming: boolean;
+  /** Marks the job rendered (once) and asks for the confirmation. */
+  sent: () => void;
+};
+
+const PrintJobContext = createContext<PrintJobState | null>(null);
+
+function usePrintJob(): PrintJobState {
+  const ctx = useContext(PrintJobContext);
+  if (!ctx) throw new Error("PrintJob parts must be inside PrintJobProvider");
+  return ctx;
+}
+
+export function PrintJobProvider({
+  jobId,
+  status,
+  children,
+}: {
+  jobId: string;
+  status: Extract<PrintStatus, "queued" | "rendered">;
+  children: ReactNode;
+}) {
+  const { toast } = useToast();
+  const [confirming, setConfirming] = useState(status === "rendered");
+  const marked = useRef(status === "rendered");
+
+  const sent = useCallback(() => {
+    setConfirming(true);
+    if (marked.current) return;
+    marked.current = true;
+    void setPrintJobStatusAction({ id: jobId, status: "rendered" }).then((result) => {
+      if (!result.ok) {
+        marked.current = false;
+        toast({ title: "Not recorded as sent", description: result.error, tone: "error" });
+      }
+    });
+  }, [jobId, toast]);
+
+  const value = useMemo(() => ({ confirming, sent }), [confirming, sent]);
+  return <PrintJobContext.Provider value={value}>{children}</PrintJobContext.Provider>;
+}
+
+/** "Print" (browser printer) or "Open PDF" (PDF printer). */
+export function PrintJobAction({
+  adapter,
+  pdfHref,
+  size = "lg",
+}: {
+  adapter: "browser" | "pdf";
+  pdfHref: string;
+  size?: "md" | "lg";
+}) {
+  const { sent } = usePrintJob();
+
+  if (adapter === "browser") {
+    return (
+      <Button
+        size={size}
+        icon={<PrinterIcon className="size-5" />}
+        onClick={() => {
+          // Synchronous, first: the print dialog needs the click's user gesture.
+          window.print();
+          sent();
+        }}
+      >
+        Print
+      </Button>
+    );
+  }
+  return (
+    <a
+      href={pdfHref}
+      target="_blank"
+      rel="noopener"
+      className={buttonClasses({ size })}
+      onClick={sent}
+    >
+      <PrinterIcon className="size-5" />
+      Open PDF
+    </a>
+  );
+}
+
+/** What to choose in the print dialog, or how to print the PDF. */
+export function PrintJobHint({
+  adapter,
+  widthMm,
+  heightMm,
+}: {
+  adapter: "browser" | "pdf";
+  widthMm: number;
+  heightMm: number;
+}) {
+  const size = `${widthMm} × ${heightMm} mm`;
+  return (
+    <p className="text-sm text-dust-700">
+      {adapter === "browser"
+        ? `In the print dialog choose the label printer, paper ${size}, scale 100%, no margins.`
+        : `Open the PDF, then Share → Print. Set the paper to ${size}, scale 100%.`}
+    </p>
+  );
+}
+
+/** The confirmation, once the job was sent (or straight away when it already was). */
+export function PrintJobConfirmWhenSent(props: {
+  jobId: string;
+  quantity: number;
+  shortId: string;
+  recordHref: string;
+}) {
+  const { confirming } = usePrintJob();
+  return confirming ? <PrintJobConfirm {...props} /> : null;
+}
+
 export function PrintJobControls({
   jobId,
   status,
@@ -46,79 +178,35 @@ export function PrintJobControls({
   shortId: string;
   recordHref: string;
 }) {
-  const { toast } = useToast();
-  const [confirming, setConfirming] = useState(status === "rendered");
-  const sent = useRef(status === "rendered");
-
-  const markRendered = () => {
-    if (sent.current) return;
-    sent.current = true;
-    void setPrintJobStatusAction({ id: jobId, status: "rendered" }).then((result) => {
-      if (!result.ok) {
-        sent.current = false;
-        toast({ title: "Not recorded as sent", description: result.error, tone: "error" });
-      }
-    });
-  };
-
-  const print = () => {
-    // Synchronous, first: the print dialog needs the click's user gesture.
-    window.print();
-    markRendered();
-    setConfirming(true);
-  };
-
-  const size = `${widthMm} × ${heightMm} mm`;
-
   return (
-    <div className="flex flex-col gap-4">
-      {adapter === "browser" ? (
+    <PrintJobProvider jobId={jobId} status={status}>
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <div>
-            <Button size="lg" icon={<PrinterIcon className="size-5" />} onClick={print}>
-              Print
-            </Button>
+            <PrintJobAction adapter={adapter} pdfHref={pdfHref} />
           </div>
-          <p className="text-sm text-dust-700">
-            In the print dialog choose the label printer, paper {size}, scale 100%, no margins.
-          </p>
+          <PrintJobHint adapter={adapter} widthMm={widthMm} heightMm={heightMm} />
         </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <div>
-            <a
-              href={pdfHref}
-              target="_blank"
-              rel="noopener"
-              className={buttonClasses({ size: "lg" })}
-              onClick={() => {
-                markRendered();
-                setConfirming(true);
-              }}
-            >
-              <PrinterIcon className="size-5" />
-              Open PDF
-            </a>
-          </div>
-          <p className="text-sm text-dust-700">
-            Open the PDF, then Share → Print. Set the paper to {size}, scale 100%.
-          </p>
-        </div>
-      )}
-      {confirming ? (
-        <PrintJobConfirm
+        <PrintJobConfirmWhenSent
           jobId={jobId}
           quantity={quantity}
           shortId={shortId}
           recordHref={recordHref}
         />
-      ) : null}
-    </div>
+      </div>
+    </PrintJobProvider>
   );
 }
 
+/** The D59 question: "Did the label print correctly?" for one, "Did all N labels …" for more. */
+export function confirmQuestion(quantity: number): string {
+  return quantity === 1
+    ? "Did the label print correctly?"
+    : `Did all ${quantity} labels print correctly?`;
+}
+
 /**
- * "Did all N labels print correctly?" (D59): staff confirm the job printed,
+ * "Did all N labels print correctly?" (D59; "Did the label …" for one): staff confirm the job printed,
  * or say what went wrong (two steps with a required reason, DESIGN.md
  * "Forms"). Focus moves here when it appears. Used on the print view and on
  * an open job's history page.
@@ -178,14 +266,14 @@ export function PrintJobConfirm({
       tabIndex={-1}
       role="group"
       aria-labelledby={`confirm-${jobId}`}
-      className="flex flex-col gap-3 rounded-2xl border border-hairline bg-card p-4 focus:outline-none"
+      className="flex scroll-mt-32 flex-col gap-3 rounded-2xl border border-hairline bg-card p-4 focus:outline-none"
     >
       <h2 id={`confirm-${jobId}`} className="text-lg">
         {done === "printed"
           ? "Marked as printed"
           : done === "failed"
             ? "Marked as failed"
-            : `Did all ${quantity} ${quantity === 1 ? "label" : "labels"} print correctly?`}
+            : confirmQuestion(quantity)}
       </h2>
       {done ? (
         links

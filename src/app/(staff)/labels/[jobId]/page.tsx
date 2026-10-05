@@ -15,6 +15,7 @@ import { labelUnavailable } from "@/lib/printing/availability";
 import { buildLabelDocument } from "@/lib/printing/document";
 import {
   LABEL_KIND_NAMES,
+  PRINTER_TYPE_NAMES,
   isPrintable,
   printStatusLabel,
   printStatusTone,
@@ -25,13 +26,6 @@ import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
 export const metadata: Metadata = { title: "Print job" };
-
-const ADAPTER_NAMES = {
-  browser: "browser print",
-  pdf: "PDF",
-  network_raw: "network printer",
-  bluetooth: "Bluetooth printer",
-} as const;
 
 /**
  * One print job (SPEC §16; PLAN D58, D59): the label exactly as the job
@@ -53,7 +47,10 @@ export default async function PrintJobPage({ params }: PageProps<"/labels/[jobId
 
   const details: [string, ReactNode][] = [
     ["Quantity", `${job.quantity} ${job.quantity === 1 ? "label" : "labels"}`],
-    ["Printer", `${job.profile.name} (${ADAPTER_NAMES[job.adapter]})`],
+    // The name and the type apart: the built-in printers' names already say
+    // their type ("This device (browser print)", "PDF download").
+    ["Printer", job.profile.name],
+    ["Printer type", PRINTER_TYPE_NAMES[job.adapter]],
     ["Label size", `${job.template.widthMm} × ${job.template.heightMm} mm · ${job.template.name}`],
     ["Requested by", job.requestedBy.name],
     ["Requested at", formatDateTime(job.createdAt)],

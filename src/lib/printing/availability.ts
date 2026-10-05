@@ -4,7 +4,14 @@
  * condition (null): callers rethrow it.
  */
 export type LabelUnavailableReason =
-  "archived" | "unique_product" | "site_url_invalid" | "no_template";
+  "archived" | "unique_product" | "site_url_invalid" | "no_template" | "not_found";
+
+/**
+ * Not a database message: label_preview's P0002 (the record does not
+ * exist, e.g. deleted while the page rendered), which getLabelContext maps
+ * here so a record page never fails on it.
+ */
+export const LABEL_ENTITY_NOT_FOUND = "label_entity_not_found";
 
 export type LabelUnavailable = { reason: LabelUnavailableReason; message: string };
 
@@ -25,6 +32,10 @@ const UNAVAILABLE: Record<string, LabelUnavailable> = {
   label_template_missing: {
     reason: "no_template",
     message: "There is no label template for this kind of record. Ask an admin to set one up.",
+  },
+  [LABEL_ENTITY_NOT_FOUND]: {
+    reason: "not_found",
+    message: "That record no longer exists, so it cannot get a label.",
   },
 };
 

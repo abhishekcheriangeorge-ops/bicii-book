@@ -1865,7 +1865,8 @@ Archived records keep their jobs readable (SPEC §23).
   product), `listPrintJobs` (all, open = queued + rendered, failed; a short
   ID matched exactly, else part of `content->>name`; newest first with a
   `(created_at, id)` cursor), `listJobsFor`, `getLabelContext` (never
-  throws for the four unavailable codes; a unique product's P- label is
+  throws for the four unavailable codes, nor for `label_preview`'s P0002 on
+  a record that does not exist, reason `not_found`; a unique product's P- label is
   refused without calling `label_preview`), `getReprintPreset`,
   `createPrintJob`, `setPrintJobStatus`, and the admin writes
   (`saveTemplate` / `saveProfile` with the client id, `setDefaultTemplate`,

@@ -364,13 +364,16 @@ Settings → Your profile.
   print. **How many**: type a number, use − and +, or for a product tap 1,
   5, 10, 20 or 50 (one print job is up to 500 labels of a product, or up
   to 10 of a unit or bike; ask for more and the sheet says "Prints 500 now;
-  print again for the remaining 120."). **Printer**: this device's last
-  printer is already chosen. **Label size** appears when an admin has added
+  print again for the remaining 120."). **Printer**: a list of the printers,
+  each with what it does ("This device's print dialog", "Opens a PDF to
+  share or print"); this device's last printer is already chosen. **Label size** appears when an admin has added
   more than one. Press **Print 10 labels**. In the print view with the
   browser printer press **Print**, pick the label printer, paper at the
   label size (58 × 40 mm), scale 100%, no margins. With the PDF printer
   (iPhone and iPad) press **Open PDF**, then Share → Print with the same
-  paper and scale. Then answer "Did all 10 labels print correctly?": **Yes,
+  paper and scale. **Print** and **Open PDF** stay at the top while you
+  scroll the labels. Then answer "Did all 10 labels print correctly?" ("Did
+  the label print correctly?" for one label), just below the title: **Yes,
   all printed**, or **Something went wrong…**, say what went wrong and
   **Mark as failed**.
 - Success looks like: "Marked as printed" (or "Marked as failed") and
@@ -378,7 +381,9 @@ Settings → Your profile.
   lists its last three prints and **All label jobs**; **Labels** (More)
   lists every print newest first; **To confirm** shows jobs sent but not
   confirmed, **Failed** the failed ones with their reason; search by short
-  ID or name. A job's page shows the label exactly as it printed.
+  ID or name. A job's page shows the label exactly as it printed, the
+  printer's name and its type (Browser print or PDF download) on separate
+  rows.
 - Worth knowing: "Not public yet: anyone who scans this label sees 'not
   found' until it is published." means the label works in the shop but not
   for customers until the product is published (**What the public sees**
@@ -395,7 +400,9 @@ Settings → Your profile.
 - If it fails: a printed or failed job cannot be printed again as it was:
   its print view shows what happened and **Print again**, which opens the
   record's print sheet ("Print again · …", same count and printer) for a
-  new job with today's label, linked to the old one ("Reprint of"). Print
+  new job with today's label, linked to the old one ("Reprint of"). After
+  printing it, Back returns to where you pressed Print again; it does not
+  open the sheet a second time. Print
   label is disabled with the reason when the record is archived ("That
   record is archived. Unarchive it before printing labels."), when the
   shop's public website address is not set (ask an admin), or when there is

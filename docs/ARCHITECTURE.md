@@ -273,16 +273,24 @@ All records: [decisions/README.md](decisions/README.md).
   `redirect()` / `forbidden()` become a 307 to /login and an empty 403 in a
   Route Handler (verified in `next/dist/server/route-modules/app-route`
   and the `forbidden` API reference).
-  The record pages (product, unit, bike) call `getLabelContext`, which
-  never throws for "printing unavailable" (archived, unique product, QR
-  address not set, no template): a misconfiguration disables Print label
-  with the reason and cannot take the page down. The print sheet is a
+  The record pages (product, unit, bike) load the record and call
+  `notFound()` first, then `getLabelContext`, which never throws for
+  "printing unavailable" (archived, unique product, QR address not set, no
+  template, or the record gone: `label_preview`'s P0002 maps to
+  `not_found`): a misconfiguration disables Print label with the reason
+  and cannot take the page down, and an unknown id is a 404 (the bike page
+  asked before `notFound()` until the Phase 8 review). The print sheet is a
   client component given only the label preview, templates and printers;
   it starts a job with `createPrintJobAction` keyed by an id minted when the
   sheet opens and remembers the printer per device in `localStorage`
   (a convenience, never data). "Print again" is a link to the record with
   `?print=1&qty=N&reprint={job}`, so a reprint is always a new job created
-  from the current label.
+  from the current label. The deep link is spent once: closing the sheet
+  `router.replace`s the address without it, and printing from it replaces
+  its history entry with the print view (a push would leave it, and Back
+  would rebuild the page and reopen the sheet with a fresh job id).
+  `createPrintJobAction` calls `refresh()` (ADR-001 A6), so the record's
+  Recent prints are current when staff come back.
 - Errors: `P0001` with a stable code, `42501` for authorization, `P0002` for
   missing rows; mapped in [src/lib/db-errors.ts](../src/lib/db-errors.ts)
   ([DATA-MODEL §16](DATA-MODEL.md#16-rpc-catalogue-security-definer-in-public)).

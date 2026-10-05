@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { labelUnavailable } from "@/lib/printing/availability";
+import { LABEL_ENTITY_NOT_FOUND, labelUnavailable } from "@/lib/printing/availability";
 import {
   canTransition,
   isPrintable,
@@ -43,7 +43,7 @@ describe("job status helpers", () => {
 });
 
 describe("labelUnavailable", () => {
-  it("maps exactly the four printing-unavailable codes", () => {
+  it("maps exactly the four printing-unavailable codes, and a vanished record", () => {
     expect(labelUnavailable("label_entity_archived")).toEqual({
       reason: "archived",
       message: "That record is archived. Unarchive it before printing labels.",
@@ -55,6 +55,11 @@ describe("labelUnavailable", () => {
         "Labels are off until an admin sets the public website address in Labels and printers settings.",
     });
     expect(labelUnavailable("label_template_missing")?.reason).toBe("no_template");
+    // label_preview's P0002, mapped by getLabelContext (never a page error).
+    expect(labelUnavailable(LABEL_ENTITY_NOT_FOUND)).toEqual({
+      reason: "not_found",
+      message: "That record no longer exists, so it cannot get a label.",
+    });
     expect(labelUnavailable("print_job_conflict")).toBeNull();
     expect(labelUnavailable("toString")).toBeNull();
     expect(labelUnavailable(undefined)).toBeNull();

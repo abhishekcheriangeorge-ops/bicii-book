@@ -1,4 +1,4 @@
-import type { LabelKind, PrintStatus } from "./types";
+import type { LabelKind, PrinterAdapterId, PrintStatus } from "./types";
 
 /**
  * The print job status machine (PLAN D59; private.print_job_transition_allowed):
@@ -56,4 +56,12 @@ export const LABEL_KIND_NAMES: Record<LabelKind, string> = {
   product: "Product",
   unit: "Unit",
   bike: "Bike tag",
+};
+
+/** A printer's type, as Settings → Labels and printers and a job's details name it. */
+export const PRINTER_TYPE_NAMES: Record<PrinterAdapterId, string> = {
+  browser: "Browser print",
+  pdf: "PDF download",
+  network_raw: "Network printer",
+  bluetooth: "Bluetooth printer",
 };

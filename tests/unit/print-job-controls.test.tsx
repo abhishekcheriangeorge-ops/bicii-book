@@ -81,6 +81,12 @@ describe("PrintJobControls", () => {
     expect(setStatus).not.toHaveBeenCalled();
   });
 
+  it("asks about the one label of a single-label job (never 'all 1 label')", () => {
+    renderControls({ status: "rendered", quantity: 1 });
+    expect(screen.getByRole("heading", { name: "Did the label print correctly?" })).toBeVisible();
+    expect(screen.queryByText(/Did all 1 label/)).toBeNull();
+  });
+
   it("offers Open PDF for a PDF printer, linking the job's PDF in a new tab", () => {
     renderControls({ adapter: "pdf" });
     expect(screen.queryByRole("button", { name: "Print" })).toBeNull();
