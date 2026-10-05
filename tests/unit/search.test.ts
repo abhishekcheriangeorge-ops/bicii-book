@@ -71,8 +71,13 @@ describe("hrefForHit", () => {
     expect(hrefForHit({ kind: "consignment_item", id: "c" })).toBe("/consignment/items/c");
     expect(isSearchKind("consignor")).toBe(true);
     expect(isSearchKind("consignment_item")).toBe(true);
-    // Sales arrive with their page (Phase 6 step 4).
-    expect(isSearchKind("sale")).toBe(false);
+  });
+
+  it("opens sales on their page and labels the group Sales (Phase 6)", () => {
+    expect(isSearchKind("sale")).toBe(true);
+    expect(hrefForHit({ kind: "sale", id: "s" })).toBe("/sales/s");
+    const groups = groupHits([hit("sale", "s1", 1), hit("customer", "k1", 0.6)]);
+    expect(groups.map((g) => g.label)).toEqual(["Sales", "Customers"]);
   });
 
   it("labels the consignment groups", () => {

@@ -6,10 +6,9 @@ import { hrefForRecord, parseShortId } from "@/lib/ids";
 
 /**
  * Kinds staff_search knows: customers and bikes (Phase 1), jobs (Phase 3),
- * products and unique units (Phase 4), consignors and consignment items
- * (Phase 6; sales arrive with their page in step 4). Later phases add
- * theirs here and in the RPC; the order is the tie-break order of the
- * /search groups.
+ * products and unique units (Phase 4), consignors, consignment items and
+ * sales (Phase 6). Later phases add theirs here and in the RPC; the order
+ * is the tie-break order of the /search groups.
  */
 export const SEARCH_KINDS = [
   "customer",
@@ -19,6 +18,7 @@ export const SEARCH_KINDS = [
   "inventory_unit",
   "consignor",
   "consignment_item",
+  "sale",
 ] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 
@@ -44,6 +44,7 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
   inventory_unit: "Units",
   consignor: "Consignors",
   consignment_item: "Consignment items",
+  sale: "Sales",
 };
 
 /**

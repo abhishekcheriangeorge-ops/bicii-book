@@ -103,8 +103,8 @@ export function parseScan(input: string, options: ParseScanOptions = {}): ScanRe
 
 /**
  * Where a record of `kind` opens in the staff app, or null for kinds the
- * Admin has no page for yet (sales arrive with Phase 6's sale page,
- * purchase orders in Phase 7; each adds its case here). Shared by
+ * Admin has no page for yet (purchase orders arrive in Phase 7, which adds
+ * its case here). Shared by
  * resolveShortId (src/lib/domain/scan.ts, the /q resolver) and the search
  * results, so a short ID and a search hit always open the same page.
  */
@@ -120,8 +120,9 @@ export function hrefForRecord(kind: ShortIdKind, id: string): string | null {
       return `/units/${id}`;
     case "consignment_item":
       return `/consignment/items/${id}`;
-    case "purchase_order":
     case "sale":
+      return `/sales/${id}`;
+    case "purchase_order":
       return null;
   }
 }

@@ -15,7 +15,7 @@ import type { ServerSupabase } from "@/lib/supabase/server";
  *   P  products.short_id          -> /products/[id]
  *   U  inventory_units.short_id   -> /units/[id]
  *   C  consignment_items.short_id -> /consignment/items/[id] (Phase 6)
- *   S  sales: Phase 6's sale page adds its case here
+ *   S  sales.sale_number          -> /sales/[id] (Phase 6)
  *   PO purchase orders: Phase 7 adds its case here
  *
  * This is the only Admin resolver and /q/[shortId] the only Admin /q
@@ -64,7 +64,11 @@ export async function resolveShortId(
             .maybeSingle(),
         )?.id ?? null;
       break;
-    case "sale": // Phase 6 step 4 (the sale page)
+    case "sale":
+      id =
+        unwrap(await supabase.from("sales").select("id").eq("sale_number", shortId).maybeSingle())
+          ?.id ?? null;
+      break;
     case "purchase_order": // Phase 7
       return null;
   }

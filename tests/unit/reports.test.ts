@@ -102,7 +102,7 @@ describe("toTodayDashboard", () => {
       grossSales: "165.00",
       linesRecognised: 2,
       costPendingLines: 0,
-      consignmentSales: null,
+      consignmentSales: { count: 0, total: "0.00" },
       costs: {
         cogs: "22.00",
         yield: "143.00",
@@ -110,7 +110,7 @@ describe("toTodayDashboard", () => {
         biciiAfterCc: "100.10",
         lossTotal: "0.00",
         lossLines: 0,
-        newConsignorLiability: null,
+        newConsignorLiability: "0.00",
       },
     });
     expect(d.stock).toEqual({
@@ -187,11 +187,12 @@ describe("toTodayDashboard", () => {
     expect(d.now).toBeNull();
   });
 
-  it("keeps the Phase 2 and Phase 6 placeholders null until they are tracked", () => {
+  it("keeps the Phase 2 placeholder null until tracked; Phase 6's consignment figures are always numbers", () => {
     const d = toTodayDashboard(row());
     expect(d.appointments).toBeNull();
-    expect(d.money?.consignmentSales).toBeNull();
-    expect(d.money?.costs?.newConsignorLiability).toBeNull();
+    // A missing value reads as zero: the database zero-fills these columns.
+    expect(d.money?.consignmentSales).toEqual({ count: 0, total: "0.00" });
+    expect(d.money?.costs?.newConsignorLiability).toBe("0.00");
 
     const lit = toTodayDashboard(
       row({
@@ -479,6 +480,7 @@ describe("financial entries", () => {
       ["J-000021", ["b"]],
     ]);
     expect(documentHref(groups[0])).toBe("/jobs/j1");
-    expect(documentHref({ source: "sale", documentId: "s1" })).toBeNull();
+    expect(documentHref({ source: "sale", documentId: "s1" })).toBe("/sales/s1");
+    expect(documentHref({ source: "other", documentId: "x1" })).toBeNull();
   });
 });
