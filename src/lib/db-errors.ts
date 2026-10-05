@@ -220,7 +220,7 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   refund_exceeds_sale: "That's more than is left to refund on this sale.",
   // Settlements (Phase 6, D47)
   consignor_has_balance:
-    "This consignor's balance isn't zero. Settle it, or clear an overpayment, before archiving.",
+    "This consignor's balance isn't zero. Pay what is owed first. An overpayment clears with a later sale, by voiding a consignor-paid charge or by reversing a payment.",
   settlement_conflict: "That settlement clashes with another one already recorded. Start again.",
   settlement_paid_in_future: "A settlement can't be dated in the future.",
   settlement_allocations_required:

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { setBikeArchived } from "@/app/(staff)/bikes/actions";
+import { setConsignorArchivedAction } from "@/app/(staff)/consignment/actions";
 import { archiveProduct } from "@/app/(staff)/inventory/actions";
 import { setCustomerArchived } from "@/app/(staff)/customers/actions";
 import { setServiceArchived } from "@/app/(staff)/settings/services/actions";
@@ -34,6 +35,13 @@ const COPY = {
     active:
       "Archiving hides this product from the Inventory list, search and the job part picker. Only a product with no stock left and not public can be archived. Nothing is deleted, and you can unarchive it later.",
   },
+  consignor: {
+    noun: "consignor",
+    archived:
+      "Archived: hidden from the consignor list, search and the intake picker, and takes in no new items. Their items, payments and history are kept.",
+    active:
+      "Archiving hides this consignor from the list, search and the intake picker. Only a consignor with no items for sale and nothing owed either way can be archived. Nothing is deleted, and you can unarchive them later.",
+  },
   service: {
     noun: "service",
     archived:
@@ -47,7 +55,7 @@ const COPY = {
  * Archive (two steps: the first press opens a confirmation in a different
  * place whose button is disabled for 400 ms, DESIGN.md "Forms") or
  * unarchive (one press). Archiving is the
- * only way to retire a customer, bike, service or product: rows are never deleted, so every
+ * only way to retire a customer, bike, service, product or consignor: rows are never deleted, so every
  * historical reference keeps working (SPEC §23).
  */
 export function ArchiveControl({
@@ -56,7 +64,7 @@ export function ArchiveControl({
   name,
   archived,
 }: {
-  kind: "customer" | "bike" | "service" | "product";
+  kind: "customer" | "bike" | "service" | "product" | "consignor";
   id: string;
   name: string;
   archived: boolean;
@@ -92,7 +100,9 @@ export function ArchiveControl({
             ? await setBikeArchived({ bikeId: id, archived: next })
             : kind === "product"
               ? await archiveProduct({ productId: id, archived: next })
-              : await setServiceArchived({ id, archived: next });
+              : kind === "consignor"
+                ? await setConsignorArchivedAction({ consignorId: id, archived: next })
+                : await setServiceArchived({ id, archived: next });
       if (!result.ok) {
         toast({
           title: next ? `${name} not archived` : `${name} not unarchived`,
