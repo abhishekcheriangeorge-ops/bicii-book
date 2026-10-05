@@ -26,9 +26,10 @@ path because code and migration comments cite it as "ADR-001".
 | [ADR-007](ADR-007-short-ids-and-qr-base.md) | D9 | Accepted; QR base open until Phase 8 | Phase 8 (labels) starts |
 | [ADR-008](ADR-008-work-order-lifecycle.md) | D15, D16, D18, D20, D22 | D15 owner-confirmed (with its reopen deviation); others accepted | Phase 9 reporting restates periods |
 | [ADR-009](ADR-009-line-pricing-and-cost-pending.md) | D14 | Owner-confirmed with clarification | Owner picks one of the cost-pending options |
-| [ADR-010](ADR-010-stock-and-units-on-jobs.md) | D6, D23–D29 | D24 amended, D27 changed, D29 owner-confirmed; others accepted | Phase 6 (consigned parts); first D29 workaround (proposed) |
+| [ADR-010](ADR-010-stock-and-units-on-jobs.md) | D6, D23–D29 | D24 amended, D27 changed (implemented by Phase 6, D44), D29 owner-confirmed; others accepted | First D29 workaround (proposed) |
 | [ADR-011](ADR-011-recognition-and-financial-reporting.md) | D3, D30–D34 | D32 owner-confirmed; others accepted | Phase 9 reporting |
 | [ADR-012](ADR-012-shop-time-zone-and-currency.md) | D35 | Accepted | A second shop, time zone or currency |
 | [ADR-013](ADR-013-appointments.md) | D2, D36–D41 | Accepted | Phase 11 customer booking; reschedule or messaging requested |
-| [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) | D4, D5, D7 | Accepted defaults, not implemented on this branch | Phases 6, 7 and 10 start |
+| [ADR-014](ADR-014-defaults-for-unbuilt-phases.md) | D4, D5, D7 | Accepted defaults; D4 implemented by Phase 6, D5 and D7 not implemented on this branch | Phases 7 and 10 start |
 | [ADR-015](ADR-015-documentation-stack.md) | D43 DOCS-STACK | Accepted | Toolkit version change; an issue tracker is adopted |
+| [ADR-016](ADR-016-consignment-and-sales.md) | D44–D53 (consignment and in-store sales), the implementation of the owner's D27 change, D4 | Accepted: build defaults, owner to confirm; D53 has an open question | Owner confirms a row; D53 answered; Phase 9 refund reporting (D49) |

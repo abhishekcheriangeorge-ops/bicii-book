@@ -434,3 +434,24 @@ URLs, or customer data in this file.
   the stack choice itself changes.
 - Revisit trigger: a QR rendering library is chosen (Phase 8).
 - Last checked: 2026-10-05.
+
+## R-020 — A bike record consigned once cannot be consigned again
+
+- Category: deliberate shortcut.
+- Status and owner: accepted (D51, build default, owner to confirm); owner.
+- Trigger: a consignor takes a consigned bike back (or buys it back) and
+  later brings the same bike to be consigned again.
+- Impact: a unit keeps its link to its bike for life, both ways
+  (`inventory_units.bike_id`, `bikes.inventory_unit_id`), so the returned
+  unit still holds the bike record and a new intake of that bike record is
+  refused with `bike_already_linked` (D51). The same is true of a sold shop
+  bike that comes back.
+- Evidence and confidence: high; `create_consignment_item` applies Phase 4's
+  bike rules (`supabase/migrations/20261004003300_consignment.sql`) and
+  `tests/db/consignment.test.ts` (D51) proves the link stays after a return.
+- Workaround or containment: register a new bike record for the second
+  consignment (the old record keeps its history and photos).
+- Next action: none until the revisit trigger; then decide whether a unit
+  that left stock may release its bike link.
+- Revisit trigger: the first bike consigned a second time.
+- Last checked: 2026-10-05, the migration and test above.

@@ -5,6 +5,10 @@ confirmed by the owner); not implemented on this branch. Decision owner:
 Abhishek Cherian George (owner) for business meaning; defaults proposed by
 the build agent.
 
+Status update 2026-10-05 (D4): implemented by Phase 6 (a charge's `bearer`
+has no default and a missing one is refused with `charge_bearer_required`),
+see [ADR-016](ADR-016-consignment-and-sales.md).
+
 ## Context
 
 The plan had to choose defaults for three phases that are not built on this
