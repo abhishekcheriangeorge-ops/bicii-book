@@ -6,6 +6,8 @@ import { HistoryList, MovementList } from "@/components/domain/movement-list";
 import { CopyText } from "@/components/domain/copy-text";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { PublicPreviewPanel } from "@/components/domain/public-preview";
+import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
+import { RestockControl } from "@/components/domain/sale-controls";
 import { ShortId } from "@/components/domain/short-id";
 import { StockTransferButton } from "@/components/domain/stock-transfer-sheet";
 import { EditUnitButton, WriteOffUnitControl } from "@/components/domain/unit-sheet";
@@ -18,6 +20,7 @@ import { CONSIGNED_STOCK_NOTE } from "@/lib/consignment";
 import { consignmentForUnit } from "@/lib/domain/consignment";
 import { formatDateTime } from "@/lib/dates";
 import { getUnit, listLocations } from "@/lib/domain/inventory";
+import { saleForUnit } from "@/lib/domain/sales";
 import { publicationLabel, unitStatusLabel, unitStatusTone } from "@/lib/inventory";
 import { describeUnitEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
@@ -45,6 +48,10 @@ const OWNERSHIP_LABELS: Record<string, string> = {
  * offered for a consigned unit (D50), which shows its Consignment card
  * instead (C- link, consignor, the agreed amount for money users, D48). Its QR URL
  * and what the public sees (read-only: publication is the product's).
+ * Phase 6: Sell (any staff, D48) while it is available and shop-owned or
+ * consigned; "Sold on S-…" when a sale sold it, with Restock for
+ * adjust_stock holders (a consigned unit also needs manage_consignments,
+ * D46).
  */
 export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
   const staff = await requireStaff();
@@ -62,10 +69,17 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
   // D50: consigned stock is never written off; D44: its consignment card.
   const consigned = unit.ownershipType === "consignment";
   const seesConsignmentMoney = canViewConsignmentMoney(staff);
-  const [qr, consignment] = await Promise.all([
+  const [qr, consignment, sale] = await Promise.all([
     qrUrl(unit.shortId),
     consigned ? consignmentForUnit(supabase, unit.id) : Promise.resolve(null),
+    unit.status === "sold" ? saleForUnit(supabase, unit.id) : Promise.resolve(null),
   ]);
+  const sellable =
+    unit.status === "available" &&
+    unit.archivedAt === null &&
+    unit.ownershipType !== "customer_owned";
+  const canRestock =
+    sale !== null && canAdjust && (!consigned || hasPermission(staff, "manage_consignments"));
 
   const inStock = unit.status === "available" || unit.status === "reserved";
   const archived = unit.archivedAt !== null;
@@ -108,9 +122,23 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
               </Link>
             </p>
           ) : null}
+          {sale ? (
+            <p className="font-medium">
+              <Link href={`/sales/${sale.saleId}`} className="underline">
+                Sold on {sale.saleNumber}
+              </Link>
+            </p>
+          ) : null}
         </div>
-        {manage || canAdjust ? (
+        {manage || canAdjust || sellable ? (
           <div className="flex flex-wrap items-center gap-2">
+            {sellable ? (
+              <RecordSaleButton
+                label="Sell"
+                viewCosts={viewCosts}
+                preset={{ q: unit.shortId, unitId: unit.id }}
+              />
+            ) : null}
             {manage ? (
               <EditUnitButton
                 unit={{
@@ -305,6 +333,25 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
           />
         </Card>
       </div>
+
+      {sale && canRestock ? (
+        <Card title="Restock">
+          <p className="mb-3 text-dust-700">
+            If {unit.shortId} came back, put it back into stock with a reason. The sale and any
+            refund stay as they are.
+          </p>
+          <RestockControl
+            unitId={unit.id}
+            unitShortId={unit.shortId}
+            saleLineId={sale.lineId}
+            consigned={consigned}
+            defaultLocationId={unit.location.id}
+            locations={locations.locations
+              .filter((l) => l.active)
+              .map((l) => ({ id: l.id, name: l.name }))}
+          />
+        </Card>
+      ) : null}
 
       {canAdjust && inStock && !consigned ? (
         <Card title="Write off">

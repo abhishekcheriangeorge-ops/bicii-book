@@ -10,6 +10,7 @@ import { PhotoGrid } from "@/components/domain/photo-grid";
 import { ConsignmentItemRow } from "@/components/domain/consignment-item-row";
 import { EditProductButton } from "@/components/domain/product-sheet";
 import { PublicationControls } from "@/components/domain/publication-card";
+import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
 import { ShortId } from "@/components/domain/short-id";
 import { SplitToUniqueButton } from "@/components/domain/split-to-unique-sheet";
 import { StockBadge } from "@/components/domain/stock-badge";
@@ -55,6 +56,8 @@ const plain = (n: number) => signedQuantity(n).replace(/^\+/, "");
  * manual moves (manage_inventory), what publishing needs, the QR URL and
  * what the public sees; "Split off as unique item" (D28) needs both
  * adjust_stock and manage_inventory and is offered on counted products.
+ * Phase 6: Sell (any staff, D48) on an active counted product with stock,
+ * shop-owned or consigned (its oldest consignment with stock first, D45).
  */
 export default async function ProductPage({ params }: PageProps<"/products/[id]">) {
   const staff = await requireStaff();
@@ -80,6 +83,12 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
 
   const archived = product.archivedAt !== null;
   const counted = product.trackingType === "quantity";
+  const sellable =
+    counted &&
+    !archived &&
+    product.active &&
+    product.ownershipType !== "customer_owned" &&
+    product.stock.some((s) => s.onHand > 0);
   const sheetStock = product.stock.map((s) => ({
     locationId: s.locationId,
     name: s.name,
@@ -116,25 +125,34 @@ export default async function ProductPage({ params }: PageProps<"/products/[id]"
             {counted ? "Counted by quantity" : "Unique: each item has its own U- number"}
           </p>
         </div>
-        {manage ? (
+        {manage || sellable ? (
           <div className="flex flex-wrap items-center gap-2">
-            <EditProductButton
-              product={{
-                id: product.id,
-                name: product.name,
-                sku: product.sku,
-                brand: product.brand,
-                categoryId: product.category?.id ?? null,
-                description: product.description,
-                defaultSalePrice: product.defaultSalePrice,
-                ...(viewCosts ? { cost: product.cost ?? null } : {}),
-                reorderPoint: product.reorderPoint,
-                active: product.active,
-                trackingType: product.trackingType,
-              }}
-              categories={categories}
-              viewCosts={viewCosts}
-            />
+            {sellable ? (
+              <RecordSaleButton
+                label="Sell"
+                viewCosts={viewCosts}
+                preset={{ q: product.shortId, productId: product.id }}
+              />
+            ) : null}
+            {manage ? (
+              <EditProductButton
+                product={{
+                  id: product.id,
+                  name: product.name,
+                  sku: product.sku,
+                  brand: product.brand,
+                  categoryId: product.category?.id ?? null,
+                  description: product.description,
+                  defaultSalePrice: product.defaultSalePrice,
+                  ...(viewCosts ? { cost: product.cost ?? null } : {}),
+                  reorderPoint: product.reorderPoint,
+                  active: product.active,
+                  trackingType: product.trackingType,
+                }}
+                categories={categories}
+                viewCosts={viewCosts}
+              />
+            ) : null}
           </div>
         ) : null}
       </header>

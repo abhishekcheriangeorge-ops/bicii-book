@@ -407,7 +407,7 @@ function MoneySection({ dash, children }: { dash: TodayDashboard; children: Reac
     <TodaySection
       id="today-money"
       title="Money"
-      description="Jobs completed on this day, from each line's prices and costs when it was added."
+      description="Jobs completed and sales recorded on this day, from each line's prices and costs when it was added or sold."
     >
       <MoneyTile label="Gross sales" amount={money.grossSales} currency={c} large />
       {costs ? (
@@ -439,40 +439,30 @@ function MoneySection({ dash, children }: { dash: TodayDashboard; children: Reac
       ) : null}
       {dash.isToday ? null : (
         <p className="text-sm text-dust-500">
-          Counts jobs completed on this day. If one is reopened, it moves to the day it is completed
-          again.
+          Counts jobs completed and sales recorded on this day. If a job is reopened, it moves to
+          the day it is completed again.
         </p>
       )}
       <TileGrid>
-        {money.consignmentSales ? (
-          <MoneyTile
-            label="Consignment sales"
-            amount={money.consignmentSales.total}
-            currency={c}
-            hint={
-              money.consignmentSales.count === 1
-                ? "1 sale"
-                : `${money.consignmentSales.count} sales`
-            }
-          />
-        ) : (
-          <StatTile label="Consignment sales" value="" notTracked hint="Arrives with consignment" />
-        )}
+        <MoneyTile
+          label="Consignment sales"
+          amount={money.consignmentSales.total}
+          currency={c}
+          href={dash.isToday ? "/sales?range=today" : "/sales"}
+          hint={
+            money.consignmentSales.count === 1
+              ? "1 sale with consigned items"
+              : `${money.consignmentSales.count} sales with consigned items`
+          }
+        />
         {costs ? (
-          costs.newConsignorLiability !== null ? (
-            <MoneyTile
-              label="New consignor liability"
-              amount={costs.newConsignorLiability}
-              currency={c}
-            />
-          ) : (
-            <StatTile
-              label="New consignor liability"
-              value=""
-              notTracked
-              hint="Arrives with consignment"
-            />
-          )
+          <MoneyTile
+            label="New consignor liability"
+            amount={costs.newConsignorLiability}
+            currency={c}
+            href="/consignment"
+            hint="Owed to consignors for what sold on this day"
+          />
         ) : null}
       </TileGrid>
       {children}

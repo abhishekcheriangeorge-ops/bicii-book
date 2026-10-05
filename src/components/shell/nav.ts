@@ -8,6 +8,7 @@ import {
   HomeIcon,
   MoreIcon,
   PrinterIcon,
+  ReceiptIcon,
   ScanIcon,
   SettingsIcon,
   TagIcon,
@@ -55,6 +56,12 @@ export const MORE_ITEMS: readonly NavItem[] = [
     label: "Consignment",
     icon: TagIcon,
     description: "Consignors, items and settlements",
+  },
+  {
+    href: "/sales",
+    label: "Sales",
+    icon: ReceiptIcon,
+    description: "In-store sales, refunds and restocks",
   },
   {
     href: "/purchasing",

@@ -8,6 +8,7 @@ import {
   ReturnToConsignorControl,
 } from "@/components/domain/consignment-item-controls";
 import { PhotoGrid } from "@/components/domain/photo-grid";
+import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
 import { ShortId, ShortIdLink } from "@/components/domain/short-id";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -45,7 +46,9 @@ export const metadata: Metadata = { title: "Consignment item" };
  * Listing photos live on the product (they may be public, D26); agreement
  * photos are internal only (D52) and shown to money users, since they
  * carry the terms. Edit terms, Add charge, Void and Return to consignor
- * need manage_consignments. Selling it comes with the Sales screens.
+ * need manage_consignments. Sell (any staff, D48) opens the sale sheet
+ * preset with this item while it is for sale with stock left: the unit,
+ * or this consignment of the product (D45); its sales link to their pages.
  */
 export default async function ConsignmentItemPage({
   params,
@@ -92,6 +95,7 @@ export default async function ConsignmentItemPage({
         })
       : null;
 
+  const sellable = active && (unique ? item.unit?.status === "available" : st.remainingQty > 0);
   const liveJobs = item.jobs.filter((j) => !j.voided);
   const liveSales = item.sales.filter((s) => !s.voided);
 
@@ -124,13 +128,30 @@ export default async function ConsignmentItemPage({
             ) : null}
           </p>
         </div>
-        {manage && active && st.agreedAmountOwed !== null ? (
+        {sellable || (manage && active && st.agreedAmountOwed !== null) ? (
           <div className="flex flex-wrap items-center gap-2">
-            <EditTermsButton
-              itemId={item.id}
-              agreedAmountOwed={st.agreedAmountOwed}
-              askingPrice={item.askingPrice}
-            />
+            {sellable ? (
+              <RecordSaleButton
+                label="Sell"
+                viewCosts={costs}
+                preset={
+                  unique && item.unit
+                    ? { q: item.unit.shortId, unitId: item.unit.id }
+                    : {
+                        q: item.shortId,
+                        productId: item.product.id,
+                        consignmentItemId: item.id,
+                      }
+                }
+              />
+            ) : null}
+            {manage && active && st.agreedAmountOwed !== null ? (
+              <EditTermsButton
+                itemId={item.id}
+                agreedAmountOwed={st.agreedAmountOwed}
+                askingPrice={item.askingPrice}
+              />
+            ) : null}
           </div>
         ) : null}
       </header>
@@ -218,7 +239,9 @@ export default async function ConsignmentItemPage({
                 ))}
                 {liveSales.map((s) => (
                   <li key={s.id} className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">Sale {s.saleNumber}</span>
+                    <Link href={`/sales/${s.saleId}`} className="font-medium underline">
+                      Sale {s.saleNumber}
+                    </Link>
                     <span className="text-dust-700">
                       {s.quantity} × {fmt(s.unitPrice)}
                       {s.restocked ? " · restocked" : ""}
