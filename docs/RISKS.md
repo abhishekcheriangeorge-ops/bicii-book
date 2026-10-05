@@ -321,9 +321,12 @@ URLs, or customer data in this file.
 - Status and owner: open; owner (printer models).
 - Trigger: Phase 8 (labels) and Phase 12 (hardware adapter).
 - Impact: [SPEC §16](SPEC.md#16-label-printing) forbids hard-coding a
-  printer protocol before inspecting BICII's printers. Phase 8 is not
-  built; Phase 12 waits for the printer models. Until then printing will be
-  browser print / PDF only.
+  printer protocol before inspecting BICII's printers. Phase 8 step 1
+  built the database with the `browser` and `pdf` adapters only
+  (`network_raw` and `bluetooth` exist but `printer_profiles_adapter_available`
+  refuses them) and 58 × 40 mm default templates, a size not checked
+  against BICII's label stock; Phase 12 waits for the printer models.
+  Until then printing will be browser print / PDF only.
 - Evidence and confidence: high; `/labels` is a placeholder page reading
   "Arrives in Phase 8 (QR and labels)" (R-018).
 - Workaround or containment: browser print/PDF fallback, planned for Phase 8.
@@ -331,22 +334,35 @@ URLs, or customer data in this file.
 - Revisit trigger: Phase 8 starts.
 - Last checked: 2026-10-05.
 
-## R-013 — QR base undecided until Phase 8
+## R-013 — Changing the QR base leaves printed labels on the old address
 
-- Category: unverified assumption.
-- Status and owner: open; build agent, Phase 8.
-- Trigger: printing or scanning labels across environments.
-- Impact: the QR base is `NEXT_PUBLIC_PUBLIC_SITE_URL` until Phase 8 decides
-  between it and `shop_settings.public_site_url` (D9). A label encoding
-  another environment's public site URL is shown as "Not a BICII label" by
-  this environment's scanner. The Admin shows the QR URL as text today; no
-  QR image is rendered and no label printed yet.
-- Evidence and confidence: high; `src/lib/qr.ts` (`getQrBase`,
-  `scanBases`), `src/lib/scan.ts`.
-- Workaround or containment: type the short ID into Scan or Search.
-- Next action: Phase 8 decides the base and keeps the environment's base in
-  `scanBases()` ([ADR-007](decisions/ADR-007-short-ids-and-qr-base.md)).
-- Revisit trigger: Phase 8 starts.
+- Category: compromise (D9 decided by Phase 8,
+  [ADR-017](decisions/ADR-017-labels-and-qr-base.md)).
+- Status and owner: open (residual); owner (the public address), build
+  agent (procedures).
+- Trigger: an admin changes `shop_settings.public_site_url` after labels
+  were printed, or the public site moves.
+- Impact: the QR base is now `shop_settings.public_site_url`, computed only
+  by `private.qr_payload` with no fallback (decided 2026-10-05, Phase 8
+  step 1). Labels already printed keep encoding the address they were
+  printed with; after a change they open the old address unless the old
+  site redirects `/q/{short_id}`, and the Admin scanner accepts them only
+  if that base is still one of `scanBases()` (the database base and the
+  environment's `NEXT_PUBLIC_PUBLIC_SITE_URL`). Until an admin sets a valid
+  address nothing prints (`public_site_url_invalid`), which is intended.
+- Evidence and confidence: high; `private.qr_payload` and
+  `shop_settings_public_site_url_check` in
+  `supabase/migrations/20261004003800_labels.sql`;
+  `tests/db/labels.test.ts` ("QR payload (D9)"). The Admin's QR display
+  and scan bases move to the column in Phase 8 step 2 (`src/lib/qr.ts`);
+  until then `src/lib/qr.ts` still reads the environment variable.
+- Workaround or containment: keep the old public address redirecting
+  `/q/*`; reprint labels after a move (Print again keeps the history).
+- Next action: Phase 8 step 2 points `getQrBase()` at the column and keeps
+  the environment's base in `scanBases()`; the RUNBOOK says to set the
+  address before the first print and not to change it casually.
+- Revisit trigger: the public site's address changes; Phase 11 builds the
+  public `/q` route.
 - Last checked: 2026-10-05.
 
 ## R-014 — Camera scanning needs HTTPS or localhost
@@ -698,4 +714,46 @@ URLs, or customer data in this file.
   sheet hides "Sold earlier?" beyond it.
 - Revisit trigger: the owner's answer, Phase 9 reporting, or the first
   closed-period request.
+- Last checked: 2026-10-05.
+
+## R-028 — The main-line decision range D43–D59 is exhausted
+
+- Category: process gap.
+- Status and owner: open; orchestrator and owner.
+- Trigger: the next main-line phase needs a new D-row (for example
+  Shopify, Phase 10, or Phase 9 reporting's refund row).
+- Impact: [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) reserves
+  D43–D59 for this line and D60 and up for the purchasing track (D60–D66
+  on `feat/p7-purchasing`). Phase 8 took D56–D59, the last four numbers,
+  so there is no free main-line number; a later phase that picks one on
+  its own risks a collision at the integration step.
+- Evidence and confidence: high; PLAN §6 on `feat/p8-labels` ends at D59;
+  the purchasing range is stated in PLAN §6 and
+  [decisions/README.md](decisions/README.md).
+- Workaround or containment: none; a phase needing a decision row stops
+  and asks.
+- Next action: the orchestrator or owner opens a new main-line range (for
+  example D70–D89) in PLAN §6 and decisions/README.md before the next
+  phase that adds a decision.
+- Revisit trigger: the next main-line decision; the integration of the
+  purchasing track.
+- Last checked: 2026-10-05.
+
+## R-029 — The purchase receive screen has no "Print N labels" shortcut yet
+
+- Category: compromise (integration deferred).
+- Status and owner: open; build agent, integration step.
+- Trigger: staff receive a purchase order and want labels for what came in.
+- Impact: Phase 8 builds labels on this line, where purchasing (Phase 7)
+  does not exist; the receive screen's shortcut to print one label per
+  received unit, or N for a quantity line, cannot be built here. Staff
+  open the product or unit and print from its Labels card instead (one
+  more step). Split-off units (Phase 4) and consignment intake (Phase 6)
+  already land on, or link to, the unit page.
+- Evidence and confidence: high; Phase 7 lives only on
+  `feat/p7-purchasing` ([R-009](#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
+- Workaround or containment: print from the product or unit page.
+- Next action: the integration step adds the shortcut to the receive
+  screen, calling `create_print_job` per received line.
+- Revisit trigger: the purchasing track is merged into this line.
 - Last checked: 2026-10-05.
