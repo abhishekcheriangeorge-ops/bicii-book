@@ -251,12 +251,17 @@ URLs, or customer data in this file.
   `test (unit + db)` and `build` with a broken journey. RUNBOOK "CI" asks
   for branch protection on `main` requiring those three checks, but the
   protection settings could not be read (REST `branches/main/protection`
-  returned 403), so whether it is configured is unknown.
+  returned 403), so whether it is configured is unknown. The nightly e2e
+  schedule and the push-to-`main` CI trigger run from the default branch,
+  which is still the initial commit without workflows, so neither has
+  ever run.
 - Evidence and confidence: CI check runs on 2026-10-05: PR #1 (7f04f99) has
   none (it predates CI); PRs #2–#7 heads (9106a01, 74fff3e, 8763e6b,
   9922441, d3e2101, b34bbcd) all show `check`, `test (unit + db)`, `build`
   and `e2e (Playwright)` = success (PR #7:
   https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
+  GitHub REST on 2026-10-05: 0 workflow runs with event `schedule` and 0
+  with event `push`; `main` is 1594c78 (four files, no `.github/`).
 - Workaround or containment: the `e2e` label was applied on PRs #2–#7 (their
   successful e2e runs were `pull_request` events).
 - Next action: owner confirms or sets branch protection on `main` (see
