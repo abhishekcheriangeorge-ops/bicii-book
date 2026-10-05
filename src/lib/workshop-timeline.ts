@@ -4,8 +4,10 @@
  * the job page and tests share it. Payloads never carry costs, yield or
  * Cult Commons (the database guarantees it), so nothing here can show one.
  */
+import { formatAppointmentMoment } from "@/lib/appointments/format";
 import type { Database } from "@/lib/database.types";
 import { DEFAULT_CURRENCY, formatMoney, formatQuantity } from "@/lib/money";
+import { isUuid } from "@/lib/uuid";
 import {
   STATUS_LABELS,
   WORK_ORDER_STATUSES,
@@ -34,6 +36,8 @@ export type EventDescription = {
   /** A note, reason or the text that changed; shown quoted under the title. */
   detail: string | null;
   tone: StatusTone;
+  /** Where the title links (the appointment a job was opened from). */
+  href?: string;
 };
 
 type Payload = Record<string, unknown>;
@@ -209,10 +213,27 @@ export function describeEvent(
         tone: "info",
       };
     }
-    case "appointment_linked":
-      // Phase 2 (D40): written when check-in creates or links the job.
-      // Step 4 adds a link to the appointment.
-      return { title: "Linked to an appointment", detail: null, tone: "info" };
+    case "appointment_linked": {
+      // Phase 2 (D40): written when check-in creates (created: true) or
+      // links the job. Payload {appointment_id, starts_at,
+      // appointment_type_name, created}; staff only, never a cost.
+      const opened = p.created === true;
+      const appointmentId = text(p, "appointment_id");
+      const startsAt = text(p, "starts_at");
+      const when = startsAt && !Number.isNaN(Date.parse(startsAt)) ? startsAt : null;
+      const typeName = text(p, "appointment_type_name");
+      const title = when
+        ? `${opened ? "Opened from" : "Linked to"} the appointment on ${formatAppointmentMoment(when)}${typeName ? ` (${typeName})` : ""}`
+        : opened
+          ? "Opened from an appointment"
+          : "Linked to an appointment";
+      return {
+        title,
+        detail: null,
+        tone: "info",
+        ...(isUuid(appointmentId) ? { href: `/appointments/${appointmentId}` } : {}),
+      };
+    }
     default: {
       const unknown: never = event.type;
       return { title: String(unknown), detail: null, tone: "neutral" };

@@ -17,6 +17,7 @@ import {
 } from "@/lib/appointments/slots";
 import {
   isActiveStatus,
+  isLate,
   statusBucket,
   type AppointmentSource,
   type AppointmentStatus,
@@ -317,6 +318,54 @@ function dayHours(day: string, config: ScheduleConfig): DayHours {
 const LIST_COLUMNS =
   "id, starts_at, ends_at, status, source, capacity_units, customer_note, internal_note, customer:customers(id, first_name, last_name, display_name, email, phone), bike:bikes(id, short_id, brand, model, variant), type:appointment_types(id, name), work_orders(id, job_number, status)";
 
+type ListRow = {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  status: AppointmentStatus;
+  source: AppointmentSource;
+  capacity_units: number;
+  customer_note: string | null;
+  internal_note: string | null;
+  customer: (NameColumns & { id: string }) | null;
+  bike: {
+    id: string;
+    short_id: string;
+    brand: string;
+    model: string;
+    variant: string | null;
+  } | null;
+  type: { id: string; name: string } | null;
+  work_orders: { id: string; job_number: string; status: WorkOrderStatus }[];
+};
+
+/**
+ * One list row as a DTO; `config` (the schedule around it) adds the D38
+ * warning, null leaves it out (the customer page lists without one).
+ */
+function toListItem(r: ListRow, config: ScheduleConfig | null): AppointmentListItem | null {
+  if (!r.customer || !r.type) return null;
+  const job = r.work_orders[0] ?? null;
+  return {
+    id: r.id,
+    startsAt: r.starts_at,
+    endsAt: r.ends_at,
+    status: r.status,
+    source: r.source,
+    capacityUnits: r.capacity_units,
+    customer: { id: r.customer.id, label: labelOf(r.customer), phone: r.customer.phone },
+    bike: r.bike ? { id: r.bike.id, shortId: r.bike.short_id, title: bikeTitle(r.bike) } : null,
+    type: { id: r.type.id, name: r.type.name },
+    hasCustomerNote: Boolean(r.customer_note),
+    hasInternalNote: Boolean(r.internal_note),
+    job: job ? { id: job.id, jobNumber: job.job_number, status: job.status } : null,
+    scheduleWarning:
+      config && isActiveStatus(r.status)
+        ? scheduleWarning({ startsAt: r.starts_at, endsAt: r.ends_at }, config)
+        : null,
+  };
+}
+
 async function listBetween(
   supabase: ServerSupabase,
   from: Date,
@@ -334,29 +383,7 @@ async function listBetween(
         .order("created_at")
         .limit(1000),
     ) ?? [];
-  return rows.flatMap((r): AppointmentListItem[] => {
-    if (!r.customer || !r.type) return [];
-    const job = r.work_orders[0] ?? null;
-    return [
-      {
-        id: r.id,
-        startsAt: r.starts_at,
-        endsAt: r.ends_at,
-        status: r.status,
-        source: r.source,
-        capacityUnits: r.capacity_units,
-        customer: { id: r.customer.id, label: labelOf(r.customer), phone: r.customer.phone },
-        bike: r.bike ? { id: r.bike.id, shortId: r.bike.short_id, title: bikeTitle(r.bike) } : null,
-        type: { id: r.type.id, name: r.type.name },
-        hasCustomerNote: Boolean(r.customer_note),
-        hasInternalNote: Boolean(r.internal_note),
-        job: job ? { id: job.id, jobNumber: job.job_number, status: job.status } : null,
-        scheduleWarning: isActiveStatus(r.status)
-          ? scheduleWarning({ startsAt: r.starts_at, endsAt: r.ends_at }, config)
-          : null,
-      },
-    ];
-  });
+  return rows.flatMap((r) => toListItem(r, config) ?? []);
 }
 
 /**
@@ -426,6 +453,133 @@ export async function listWeek(
         counts,
       };
     }),
+  };
+}
+
+/** One expected arrival on Today's list. */
+export type ExpectedArrival = {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  status: Extract<AppointmentStatus, "booked" | "confirmed">;
+  customerLabel: string;
+  typeName: string;
+  /** More than LATE_AFTER_MINUTES past its start, not arrived yet. */
+  late: boolean;
+};
+
+export type TodayAppointmentSummary = {
+  day: string;
+  /** D41: not cancelled. */
+  booked: number;
+  /** Still booked or confirmed: not arrived yet. */
+  expected: number;
+  /** Arrived, checked in or completed. */
+  arrived: number;
+  noShows: number;
+  /** Up to TODAY_ARRIVALS_ROWS expected arrivals: late ones first, then by start. */
+  arrivals: ExpectedArrival[];
+};
+
+/** Expected arrivals Today lists; the rest are one tap away on the day view. */
+export const TODAY_ARRIVALS_ROWS = 5;
+
+/**
+ * Today's appointment figures for `day`, the shop day today_dashboard
+ * returned (never the app's own clock; D35): the counts from
+ * public.appointment_daily (D41: by scheduled day and current status;
+ * operational, every active staff member, D30) and the first
+ * TODAY_ARRIVALS_ROWS still-expected (booked or confirmed) arrivals that
+ * day, late ones first, then by start time.
+ */
+export async function todaySummary(
+  supabase: ServerSupabase,
+  day: string,
+): Promise<TodayAppointmentSummary> {
+  const [countsResult, rowsResult] = await Promise.all([
+    supabase.rpc("appointment_daily", { from_day: day, to_day: day }),
+    supabase
+      .from("appointments")
+      .select(
+        "id, starts_at, ends_at, status, customer:customers(first_name, last_name, display_name, email, phone), type:appointment_types(name)",
+      )
+      .gte("starts_at", dayStart(day).toISOString())
+      .lt("starts_at", dayStart(shiftShopDay(day, 1)).toISOString())
+      .in("status", ["booked", "confirmed"])
+      .order("starts_at")
+      .order("created_at")
+      .limit(TODAY_ARRIVALS_ROWS),
+  ]);
+  const counts = (unwrap(countsResult) ?? [])[0];
+  const now = new Date();
+  const arrivals = (unwrap(rowsResult) ?? [])
+    .flatMap((r): ExpectedArrival[] =>
+      r.customer && r.type && (r.status === "booked" || r.status === "confirmed")
+        ? [
+            {
+              id: r.id,
+              startsAt: r.starts_at,
+              endsAt: r.ends_at,
+              status: r.status,
+              customerLabel: labelOf(r.customer),
+              typeName: r.type.name,
+              late: isLate({ status: r.status, startsAt: r.starts_at }, now),
+            },
+          ]
+        : [],
+    )
+    // Late first, then by start (already the query's order; stable sort).
+    .sort((a, b) => Number(b.late) - Number(a.late));
+  return {
+    day,
+    booked: counts?.booked ?? 0,
+    expected: counts?.expected ?? 0,
+    arrived: counts?.arrived ?? 0,
+    noShows: counts?.no_shows ?? 0,
+    arrivals,
+  };
+}
+
+/** How many past appointments the customer page lists under the upcoming ones. */
+export const CUSTOMER_PAST_APPOINTMENTS = 5;
+
+export type CustomerAppointments = {
+  /** From today's shop day on, soonest first (cancelled ones too, labelled). */
+  upcoming: AppointmentListItem[];
+  /** Before today, newest first, at most CUSTOMER_PAST_APPOINTMENTS. */
+  past: AppointmentListItem[];
+};
+
+/**
+ * A customer's appointments for their page: today's and later ones first
+ * (soonest first), then the last CUSTOMER_PAST_APPOINTMENTS before today.
+ */
+export async function customerAppointments(
+  supabase: ServerSupabase,
+  customerId: string,
+): Promise<CustomerAppointments> {
+  const todayStart = dayStart(shopToday()).toISOString();
+  const [upcomingResult, pastResult] = await Promise.all([
+    supabase
+      .from("appointments")
+      .select(LIST_COLUMNS)
+      .eq("customer_id", customerId)
+      .gte("starts_at", todayStart)
+      .order("starts_at")
+      .order("created_at")
+      .limit(50),
+    supabase
+      .from("appointments")
+      .select(LIST_COLUMNS)
+      .eq("customer_id", customerId)
+      .lt("starts_at", todayStart)
+      .order("starts_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(CUSTOMER_PAST_APPOINTMENTS),
+  ]);
+  return {
+    upcoming: (unwrap(upcomingResult) ?? []).flatMap((r) => toListItem(r, null) ?? []),
+    past: (unwrap(pastResult) ?? []).flatMap((r) => toListItem(r, null) ?? []),
   };
 }
 

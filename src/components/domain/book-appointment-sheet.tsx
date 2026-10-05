@@ -10,7 +10,7 @@ import {
   loadSchedule,
 } from "@/app/(staff)/appointments/actions";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, type ButtonSize, type ButtonVariant } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { PlusIcon } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -48,7 +48,7 @@ const SLOT_CODES = new Set([
 export type BookAppointmentSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Start with this customer (the customer page, step 4). */
+  /** Start with this customer (the customer page). */
   presetCustomer?: { id: string; label: string };
   /** Keep the preset customer: the picker is replaced by their name. */
   lockCustomer?: boolean;
@@ -582,12 +582,20 @@ export function BookAppointmentButton({
   lockCustomer,
   variant = "button",
   label = "Book appointment",
+  buttonVariant = "solid",
+  size = "md",
+  disabled = false,
 }: {
   presetDate?: string;
   presetCustomer?: { id: string; label: string };
   lockCustomer?: boolean;
   variant?: "button" | "fab";
   label?: string;
+  /** The "button" variant's look (the customer page uses outline, like Add bike). */
+  buttonVariant?: ButtonVariant;
+  size?: ButtonSize;
+  /** E.g. an archived customer (book_appointment refuses customer_archived). */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -603,7 +611,13 @@ export function BookAppointmentButton({
           Book
         </Button>
       ) : (
-        <Button icon={<PlusIcon className="size-5" />} onClick={() => setOpen(true)}>
+        <Button
+          variant={buttonVariant}
+          size={size}
+          icon={<PlusIcon className={size === "sm" ? "size-4" : "size-5"} />}
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+        >
           {label}
         </Button>
       )}

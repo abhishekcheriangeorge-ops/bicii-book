@@ -4,7 +4,7 @@ import { ShortId } from "@/components/domain/short-id";
 import { Badge } from "@/components/ui/badge";
 import { RowList, RowLink } from "@/components/ui/row-list";
 import { StatusPill } from "@/components/ui/status-pill";
-import { formatClock, formatTimeRange } from "@/lib/appointments/format";
+import { formatAppointmentWhen, formatClock, formatTimeRange } from "@/lib/appointments/format";
 import type { WindowUsage } from "@/lib/appointments/slots";
 import {
   APPOINTMENT_SOURCE_LABELS,
@@ -341,5 +341,50 @@ export function WeekAgenda({
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * A customer's appointments on their page: when (day and time range), the
+ * status pill, who booked it ("Booked online" / "Booked by staff"), the
+ * type and the bike; each row opens the appointment.
+ */
+export function CustomerAppointmentRows({
+  label,
+  appointments,
+}: {
+  label: string;
+  appointments: readonly AppointmentListItem[];
+}) {
+  return (
+    <RowList label={label}>
+      {appointments.map((a) => (
+        <RowLink key={a.id} href={`/appointments/${a.id}`} className="items-start">
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span
+              className={cn(
+                "font-semibold tabular-nums",
+                a.status === "cancelled" && "text-dust-500 line-through",
+              )}
+            >
+              {formatAppointmentWhen(a.startsAt, a.endsAt)}
+            </span>
+            <span className="flex flex-wrap items-center gap-2">
+              <StatusPill status={appointmentTone(a.status)}>
+                {APPOINTMENT_STATUS_LABELS[a.status]}
+              </StatusPill>
+              <Badge tone={a.source === "customer" ? "info" : "neutral"}>
+                {APPOINTMENT_SOURCE_LABELS[a.source]}
+              </Badge>
+            </span>
+            <span className="text-sm text-dust-700">
+              {a.type.name}
+              {a.bike ? ` · ${a.bike.title}` : ""}
+              {a.job ? ` · Job ${a.job.jobNumber}` : ""}
+            </span>
+          </div>
+        </RowLink>
+      ))}
+    </RowList>
   );
 }

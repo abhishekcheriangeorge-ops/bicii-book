@@ -30,3 +30,8 @@ export function formatAppointmentWhen(start: DateInput, end: DateInput): string 
 export function formatAppointmentStart(start: DateInput): string {
   return `${formatDayShort(start)} ${formatClock(start)}`;
 }
+
+/** "Tue 6 Oct 10:00": an appointment named in a sentence (the job's chip and timeline). */
+export function formatAppointmentMoment(start: DateInput): string {
+  return `${formatDayShort(start).replace(",", "")} ${formatClock(start)}`;
+}
