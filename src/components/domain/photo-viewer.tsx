@@ -180,9 +180,9 @@ function VisibilityControl({ photo }: { photo: Photo }) {
           </Button>
         </div>
       ) : null}
-      {blocked.map((o) => (
-        <p key={o.value} className="text-sm text-dust-500">
-          {o.blocked}
+      {[...new Set(blocked.map((o) => o.blocked))].map((why) => (
+        <p key={why} className="text-sm text-dust-500">
+          {why}
         </p>
       ))}
     </section>

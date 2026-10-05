@@ -65,6 +65,20 @@ describe("hrefForHit", () => {
     expect(isSearchKind("inventory_unit")).toBe(true);
     expect(isSearchKind("supplier")).toBe(false);
   });
+
+  it("opens consignors and consignment items in Consignment (Phase 6)", () => {
+    expect(hrefForHit({ kind: "consignor", id: "k" })).toBe("/consignment/consignors/k");
+    expect(hrefForHit({ kind: "consignment_item", id: "c" })).toBe("/consignment/items/c");
+    expect(isSearchKind("consignor")).toBe(true);
+    expect(isSearchKind("consignment_item")).toBe(true);
+    // Sales arrive with their page (Phase 6 step 4).
+    expect(isSearchKind("sale")).toBe(false);
+  });
+
+  it("labels the consignment groups", () => {
+    const groups = groupHits([hit("consignor", "k1", 0.6), hit("consignment_item", "c1", 1)]);
+    expect(groups.map((g) => g.label)).toEqual(["Consignment items", "Consignors"]);
+  });
 });
 
 describe("bike naming (mirrors private.search_bikes)", () => {

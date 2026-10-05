@@ -6,8 +6,10 @@ import { hrefForRecord, parseShortId } from "@/lib/ids";
 
 /**
  * Kinds staff_search knows: customers and bikes (Phase 1), jobs (Phase 3),
- * products and unique units (Phase 4). Later phases add theirs here and in
- * the RPC; the order is the tie-break order of the /search groups.
+ * products and unique units (Phase 4), consignors and consignment items
+ * (Phase 6; sales arrive with their page in step 4). Later phases add
+ * theirs here and in the RPC; the order is the tie-break order of the
+ * /search groups.
  */
 export const SEARCH_KINDS = [
   "customer",
@@ -15,6 +17,8 @@ export const SEARCH_KINDS = [
   "work_order",
   "product",
   "inventory_unit",
+  "consignor",
+  "consignment_item",
 ] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 
@@ -38,6 +42,8 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
   work_order: "Jobs",
   product: "Products",
   inventory_unit: "Units",
+  consignor: "Consignors",
+  consignment_item: "Consignment items",
 };
 
 /**
@@ -46,6 +52,7 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
  */
 export function hrefForHit(hit: Pick<SearchHit, "kind" | "id">): string {
   if (hit.kind === "customer") return `/customers/${hit.id}`;
+  if (hit.kind === "consignor") return `/consignment/consignors/${hit.id}`;
   // Every other search kind has an Admin page (hrefForRecord is null only
   // for kinds staff_search does not return yet).
   return hrefForRecord(hit.kind, hit.id) ?? "/search";
