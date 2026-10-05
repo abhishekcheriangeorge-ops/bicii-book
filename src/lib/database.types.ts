@@ -2884,7 +2884,8 @@ export type Database = {
         | "line_added"
         | "line_voided"
         | "stock_consumed"
-        | "stock_reversed";
+        | "stock_reversed"
+        | "appointment_linked";
       work_order_note_kind: "note" | "diagnosis";
       work_order_status:
         | "received"
@@ -3367,6 +3368,7 @@ export const Constants = {
         "line_voided",
         "stock_consumed",
         "stock_reversed",
+        "appointment_linked",
       ],
       work_order_note_kind: ["note", "diagnosis"],
       work_order_status: [

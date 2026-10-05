@@ -216,6 +216,13 @@ describe("describeEvent", () => {
     }
   });
 
+  it("the appointment link (Phase 2, D40) reads as information, never a person or a cost", () => {
+    expect(
+      d({ type: "appointment_linked", payload: { appointment_id: "a1", created: true } }),
+    ).toEqual({ title: "Linked to an appointment", detail: null, tone: "info" });
+    expect(d({ type: "appointment_linked", payload: {} }).title).toBe("Linked to an appointment");
+  });
+
   it("survives a payload that is not an object", () => {
     expect(d({ type: "line_added", payload: null }).title).toBe("Added A line");
     expect(d({ type: "checked_in", payload: [1, 2] }).title).toBe("Checked in as a new job");

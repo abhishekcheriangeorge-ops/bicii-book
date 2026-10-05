@@ -209,6 +209,10 @@ export function describeEvent(
         tone: "info",
       };
     }
+    case "appointment_linked":
+      // Phase 2 (D40): written when check-in creates or links the job.
+      // Step 4 adds a link to the appointment.
+      return { title: "Linked to an appointment", detail: null, tone: "info" };
     default: {
       const unknown: never = event.type;
       return { title: String(unknown), detail: null, tone: "neutral" };
