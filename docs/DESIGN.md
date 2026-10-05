@@ -207,7 +207,7 @@ upload itself, below).
 | `VoidLineControl` | "Void…" on a line: `ReasonConfirm` calling `voidLine`. |
 | `AddServiceButton` / `AddServiceSheet` | `SearchPicker` over active services (price and category shown), quantity with steppers, the price prefilled and editable by anyone (D14), the cost field only with view_costs, a live line-total preview; the sheet's `newId()` line key makes a repeat submit add one line. Disabled with "Completed jobs are locked. Reopen to change lines." once the job is completed. |
 | `ManualLineButton` / `ManualLineSheet` | Description, quantity, unit price and (view_costs only) cost, with the same preview, key and lock. Left without a cost, the line is marked cost pending (D14); the sheet says so (to view_costs holders: "Enter 0 when there is no direct cost"). |
-| `TotalsSummary` (server) | The compact summary row under the lines (SPEC §22, not a modal): the running sale total for everyone; with view_costs also Cost, Yield, Cult Commons (with the rate when every line shares it) and BICII yield after Cult Commons, from `work_order_totals_staff`, marked "Provisional" while a live line has no cost entered (D14), with what to do about it. |
+| `TotalsSummary` (server) — the job yield panel | The compact summary row under the lines (SPEC §22, not a modal): the running sale total for everyone; with view_costs also Cost, Yield, Cult Commons (with the rate when every line shares it) and BICII yield after Cult Commons, from `work_order_totals_staff`, marked "Provisional" while a live line has no cost entered (D14), with what to do about it. It is PLAN Phase 5's job yield panel (no second economics block): for view_costs holders the job page also reads `work_order_yield` (`getWorkOrderYield`, in its `Promise.all`) and passes it as `report`, which labels Cult Commons with the lines' snapshot rates ("30%", or "25–30%" when they differ, `formatRateRange`), adds the loss note shared with Today ("1 line sold at a loss: −$15.00. Losses don't reduce Cult Commons on other lines.", D1) and says when the job counts in reports: "Counted in reports on Sat, 3 Oct 2026 (completed)" from its current completion (D32), or "Counted in reports once the job is completed" while open or after a reopen. Without view_costs: the sale total only, and no recognition text anywhere on the page. |
 | `Timeline` (server, `job-timeline.tsx`) | A job's events newest first: `describeEvent` titles (`src/lib/workshop-timeline.ts`), notes and reasons quoted, the actor ("Recorded outside the app" when none) and the time. Payloads carry no costs. The page shows the newest 200 (`?events=all`: 1,000); when older ones exist it says so ("Earlier ones, including the check-in, are not shown") with "Show earlier events". |
 | `PhotoViewer` | Sheet: the photo enlarged (tap for full size), who can see it (`SegmentedControl` Internal / Customer / Public, applied immediately with `useOptimistic` and a toast; each level explained; Public disabled on a customer record, PLAN D13, and on a job, D19), caption, and delete with a reason (two steps; Cancel returns focus to "Delete photo…"). A change that went through but could not remove the old copy from Storage is reported as done, with "Finish" (toast and inline), not as a failure; the next showing of the record finishes it anyway. |
 | `LinkSegments`, `GroupChips`, `ActiveFilterChips`, `JobRow` (server, `workshop-board.tsx`) | The board's pieces as links, so every view is a URL and works before hydration: the All / My jobs / Unassigned switch (styled like `SegmentedControl`, `aria-current` on the current one); the groups as a horizontally scrolling chip row with counts ("All open" first; wraps from `sm`); the active filters as removable chips (`Remove filter: …`) and "Clear"; and the job row (whole row tappable, ≥ 64px): J- number, `StatusPill` (text + tone), bike, customer, lead or "Unassigned" (waiting tone), age ("3 d") and, for D20, a solid danger "Overdue" badge with its word. No money on the board. |
@@ -393,6 +393,70 @@ upload itself, below).
   `ApprovalSwitch`, internal and completion notes, Add note / Add
   diagnosis) and the timeline, a second column on wide screens. "Edit" on
   Requested work opens the details sheet.
+
+### Today
+
+`/` (SPEC §19.1; PLAN D30–D35), components in `src/components/domain/today/`
+(server unless noted), reads in `src/lib/domain/reports.ts` over the Phase
+5 read RPCs, shapes and wording in `src/lib/reports.ts`.
+
+- **The database decides which day is today** (D35). The page asks
+  `today_dashboard` for the `?day=` given (a real `YYYY-MM-DD` before this
+  server's shop day), else for null; if the database refuses an explicit
+  day as in its future (clocks either side of Singapore midnight) it asks
+  again with null, so a day choice never errors. Every other read, label,
+  the Next-day link (disabled on today) and the date input's `max` use the
+  `day` and `is_today` the database returned. A garbage `?day=` is today.
+- **Flows vs snapshot** (D31). "Today" / "On Sat, 3 Oct": Checked in,
+  Started, Completed, Ready for collection, Collected (Cancelled when > 0),
+  the jobs whose current stamp falls on the day; each links to its list in
+  Activity. "Right now" (today only): Received, Waiting, Ready to start,
+  In progress, Ready for collection and Overdue ("Open more than 7 days",
+  `OVERDUE_AFTER_DAYS`), the current snapshot grouped as `BOARD_GROUPS`,
+  each linking to the board filtered the same way (`TILE_LINKS`). A past
+  day has no snapshot, no low stock and no "Needs attention".
+- **Permissions** (D30). Money needs View financial reports: without it
+  the section is not rendered at all. Inside it, COGS, Yield, Cult Commons
+  and BICII after Cult Commons need View costs too; without it one line
+  says "Costs, yield and Cult Commons need the View costs permission." The
+  database returns hidden figures as NULL and the DTO keeps them null; the
+  UI never derives one. Workshop, stock and exception counts are for all
+  active staff; an adjustment's value at cost only with View costs.
+- **Money notes.** Danger: the loss note (D1). Warning: "Provisional: N
+  lines have no cost entered…" (D14). On a past day, muted: "Counts jobs
+  completed on this day. If one is reopened, it moves to the day it is
+  completed again." (D32; words, not colour).
+- **Placeholders are extension points.** `AppointmentsSection` shows
+  Scheduled / Arrived / No-shows as "—" with "Arrives with appointments"
+  (sr-only "Not tracked yet") until Phase 2 fills the columns; its
+  `children` takes Phase 2's appointment list. Consignment sales and New
+  consignor liability say "Arrives with consignment" until Phase 6. The
+  `ExceptionList` is the list Phase 9 links from `/reports/exceptions`.
+- **Streaming.** The dashboard row loads first; each list (financial
+  entries, adjustments, low stock, exceptions, activity, last 7 days) is a
+  `SectionLoader` (async) in its own `<Suspense>` with a `SectionSkeleton`,
+  and a failed read logs and shows "Couldn't load this. Refresh the page to
+  try again." in place. Still no `loading.tsx` at the group root (see
+  "Loading").
+- **Layout.** Phone: one column, two-column tile grids, 44 px targets;
+  from md three or four columns and the lists side by side. Numbers are
+  `font-display tabular-nums`. Every tile is a `<dl>`/`<dt>`/`<dd>`; a
+  linked tile's name is "Completed: 3"; money tiles show the currency
+  code; section headings are `<h2>`.
+
+| Component | Notes |
+|---|---|
+| `StatTile`, `MoneyTile`, `TileGrid`, `TodaySection` (`stat-tile.tsx`) | A figure as `<dl>` with label, value, hint, optional link, tone (value colour only) and `notTracked`; money formatted with a real minus sign and its currency; the grid; a section with its `<h2>`. |
+| `AppointmentsSection` | The Phase 2 slot, above. |
+| `DayNavigator` (client) | ‹ Previous day / Today / Next day › links and a `next/form` GET form (`<input type="date" name="day">` with `max`, "Go"); works before hydration; once hydrated a picked date submits after a 600 ms pause (typing a year passes through "0002"). |
+| `RefreshButton` (client) | "Updated 10:42 am" and Refresh: `router.refresh()` in a transition with a spinner; returning to the tab refreshes once the figures are a minute old. |
+| `ActivityList` | One flow's jobs from `work_order_activity_on`: J- number, status pill, Overdue badge, customer, bike, sale total; the heading's id is the flow tile's anchor. Checked in, Completed and Collected always; Started, Ready for collection and Cancelled when not empty; "Nothing happened on this day" for a quiet day. |
+| `AdjustmentList` | The day's adjustments and damaged stock: signed delta, P- link, reason, type · location · actor · time, a "Significant" badge (D33) and the value at cost when present. |
+| `LowStockList` | The first 5 of P4's `reporting.low_stock` (largest shortfall first) with `StockBadge`; "See all" opens `/inventory?filter=low`. |
+| `ExceptionList` | D34 exceptions, danger first: pill (tone and words), short ID, subject, `exceptionCopy` sentence; rows link through `exceptionHref` (a line opens its job via `/q/J-…`); unknown kinds render a generic sentence; EmptyState "Nothing needs attention". |
+| `FinancialEntries` | `<details id="financial-entries">` "What makes up these figures" (open with `?entries=open`): the day's `financial_lines` grouped by job (J- link), description, quantity, sale, and yield and Cult Commons when visible; "Sold at a loss" and "Cost pending" badges. It adds nothing up. |
+| `WeekStrip` | "Last 7 days" ending at the day shown: completed, collected, and gross sales, yield and Cult Commons when visible; each day links to `/?day=`; the day shown has `aria-current="date"` and a bold row. A table from md, stacked cards on a phone. |
+| `SectionLoader`, `SectionSkeleton`, `SectionError` (`section-loader.tsx`) | The streaming pattern above. |
 
 ### Photos and images
 

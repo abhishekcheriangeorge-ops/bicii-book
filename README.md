@@ -10,7 +10,7 @@ It shares **one Supabase backend** with the public site
 Business rules live in Postgres (RLS, constraints, RPCs); this app and the
 public site are two frontends over the same database.
 
-**Status:** Phase 1, milestone M1.2 (customers, bikes, photos). Phase 0 /
+**Status:** milestone M1 is built through M1.5 ([PLAN §3](docs/PLAN.md)). Phase 0 /
 M1.1 is in place: the Next.js 16 scaffold, design tokens and UI primitives,
 the Docker-free Supabase devstack, the foundation, staff and
 staff-management migrations, the DB test harness, email + password
@@ -30,7 +30,16 @@ and seeded jobs, the intake wizard (`/jobs/new`), the workshop board and My
 Jobs (`/jobs`), the job page (status, lines and totals, photos, people,
 approval, notes, details, timeline), services settings with the Cult
 Commons rate (`/settings/services`), service history on bikes and
-customers, and jobs in global search.
+customers, and jobs in global search. M1.4 (inventory) is built: products
+and units, the stock ledger with linked reversals, parts on jobs with live
+stock, stock adjustments and transfers, publication, the Scan screen and
+`/q` short-ID links. M1.5 (Today) is built: the financial reporting views
+and read RPCs (recognised lines, daily summaries, job activity, stock
+adjustments, operational exceptions; money only with View financial
+reports, costs only with View costs), a seed spanning a week of shop days,
+the Today dashboard (`/`: today's or an earlier day's jobs, money, stock,
+low stock, what needs attention and the last 7 days) and the job yield
+panel on the job page.
 
 ## Quickstart
 

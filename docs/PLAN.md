@@ -412,6 +412,33 @@ job-level yield panel, and the `view_financial_reports` gate. Tests: fixture
 table reconciles end to end from seed; a staff user without the permission
 gets no financial rows.
 
+Shipped (M1.5, Phase 5 as a whole): migrations
+`20261004002300_reporting_calendar`, `…2400_financial_lines`,
+`…2500_daily_summary` and `…2600_dashboard_rpcs` (read-only: no table and
+no change to a Phase 3 or 4 function); `private.shop_timezone`,
+`shop_currency`, `shop_day`, `shop_today`, `shop_day_start` and
+`is_significant_adjustment`; views `reporting.financial_lines`,
+`work_order_activity`, `daily_summary` and `operational_exceptions`
+(granted to no API role); security definer read RPCs `daily_summary`,
+`today_dashboard`, `work_order_activity_on`, `stock_adjustments_on`,
+`operational_exceptions`, `financial_lines` (view_financial_reports) and
+`work_order_yield` (view_costs), and the error code
+`report_range_invalid`. A seed spanning a week of shop days relative to
+the reset day (the SPEC §10 examples, a loss line, rounding, overdue,
+uncollected and cancelled jobs, stock adjustments;
+`tests/fixtures/reporting.ts`). App: `src/lib/reports.ts` and
+`src/lib/domain/reports.ts`; the Today dashboard at `/` (flows, the
+current snapshot linked to the board, appointment and consignment
+placeholders, Money, stock, low stock, what needs attention, activity and
+the last 7 days; any earlier day by `?day=`); the job yield panel as an
+extension of P3's `TotalsSummary` (snapshot rate range, loss note,
+recognition day). Decisions D30-D35 (§6). Tests: the database files
+`reporting`, `reporting-access`, `reporting-concurrency` and
+`reporting-seed` plus `meta` checks; unit tests for `reports.ts`, the new
+`dates.ts` helpers and `TotalsSummary`; E2E `today.spec.ts` (the
+milestone journey on phone and iPad, the mechanics' boundaries, the
+seeded history, low stock, adjustments and exceptions).
+
 ### Phase 6 — Consignment
 
 - Migrations: consignors, consignment_items, consignment_item_charges,

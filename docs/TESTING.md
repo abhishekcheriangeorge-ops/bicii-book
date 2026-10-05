@@ -248,6 +248,28 @@ same PR.
   getUserMedia errors to denied / insecure / unsupported / failed, Phase
   0's messages kept).
 
+- Phase 5 (M1.5) app: shop days for people (`dates.test.ts`: today
+  flips at 16:00:00Z, `shopDayToDate` is noon Singapore time and reads back
+  as the same day in any zone, `formatShopDay` "Sat, 3 Oct 2026",
+  `formatShopDayLong`, `formatShopDayShort`; `parseShopDay` and
+  `shiftShopDay` from step 2); the Today DTO and wording (`reports.test.ts`:
+  `toTodayDashboard` for every permission combination: no money without
+  View financial reports, money without costs for it alone, costs never
+  shown when the flags say hidden, no snapshot on a past day, the Phase 2/6
+  placeholders null until tracked and their values once filled, losses and
+  cost-pending counts carried; `notTracked`; the loss and provisional notes
+  with a real minus sign; `formatRateRange` "30%" / "25–30%";
+  `exceptionCopy` for every D34 kind, the overdue sentence from
+  `OVERDUE_AFTER_DAYS`, an unknown kind rendered generically;
+  `exceptionHref` (a line opens its job through `/q`); `weekStrip` exactly
+  seven days oldest first with quiet and missing days; `TILE_LINKS` naming
+  only `BOARD_GROUPS` ids and parsing back through `parseBoardFilters`;
+  `groupEntries`, `documentHref`); the job yield panel
+  (`totals-summary.test.tsx`: sale only without view_costs even if a report
+  were passed, Phase 3's summary without a report, the rate range over the
+  shared rate, the loss note, "Counted in reports on Sat, 3 Oct 2026
+  (completed)" and "once the job is completed").
+
 ### Database (SPEC §27.2 and §23)
 
 Each invariant from SPEC §23 has at least one test, named after it:
@@ -501,12 +523,51 @@ timeline shows both lead assignments, "Marcus Tan removed from the job",
 the note, "Marked customer-approved" and the details change; the board
 finds the job by number with Nur as lead.
 
+Phase 5 (`today.spec.ts`, phone and iPad; today's values asserted as
+deltas read just before acting, past days only from `seedAnchor()` /
+`anchorDay(n)`, seeded jobs found by `REPORT_JOB_NUMBER`; Today tiles read
+with `readCount` / `readMoney` from `helpers.ts`, which find a tile's
+`<dt>` and read its `<dd>`). "Milestone M1.5" is a serial describe whose
+job is kept per project: (1a) PLAN §3's exit criteria on a phone: as the
+admin, Today's Checked in, Completed, Collected, Gross sales, Yield and
+Cult Commons; a tagged customer and bike checked in through the intake with
+the fixture photo, condition, requested work and Nur Aisyah as lead
+(`createJobViaIntake` with `photo` and `condition`); a tagged product
+(`createProduct`, moved here from `inventory.spec.ts` unchanged, as was
+`pickPart`) with opening stock 10; Basic Service and one part added, the
+line and product reading 9 before and after a reload; the totals panel
+equal to `jobEconomics` over the two lines; start → complete → ready →
+collected with separate Completed and Collected timeline entries and
+stamps and "Counted in reports on <today> (completed)"; Today then reads
++1 checked in, completed and collected and gross, yield and Cult Commons
+up by exactly the job's (summed with Decimal); the job under Activity →
+Completed and Collected, its row opening the job; `/?entries=open` listing
+its lines. (1b) mechanic2 sees the job's sale total and no cost, yield,
+Cult Commons or recognition text, and on Today the workshop tiles and the
+job in Activity but no Money section; mechanic1 (view_costs) sees the full
+panel and no Money section. "Several days of history reconcile":
+`/?day=anchorDay(3)` flows and money equal `SEED_DAYS[3]` (1000.00 /
+400.00 / 600.00 / 180.00 / 420.00) with the past-day note and no "Right
+now" or "Needs attention"; Previous / Next move one day; anchorDay(2)
+shows the loss note with −$15.00 and Cult Commons $12.00; Last 7 days from
+anchorDay(1) has seven rows, days 1–6 with the seeded completed,
+collected, gross, yield and Cult Commons, the shown day `aria-current`;
+`?day=garbage` is today. "Low stock and the day's significant adjustment":
+P-000009, P-000008 and P-000012 listed and linking to their pages, "See
+all" → `/inventory?filter=low`; A2 (P-000021 −6, "Water damage in
+storage", Significant, Damaged) on anchorDay(1). "What needs attention"
+(skipped with a message unless the seed's anchor is the live day, since
+exceptions are relative to it): J-000017 overdue and J-000016 waiting for
+collection, each opening its job.
+
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
 
 1. Walk-in: new customer + bike → intake photo (fixture image upload) → job →
    add service + part → stock badge decrements → complete → ready → collected;
-   timeline shows every step.
+   timeline shows every step; Today shows the job and its money (complete
+   with M1.5: `workshop.spec.ts` for the timeline, `today.spec.ts` for the
+   milestone run ending on Today).
 2. Appointment: book (as seeded customer via RPC) → appears on Today → arrive →
    check in → work order linked.
 3. Bulk product: create → receive PO (partial) → print 10 labels (PDF adapter
