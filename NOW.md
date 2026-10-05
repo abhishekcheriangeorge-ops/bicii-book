@@ -1,40 +1,48 @@
 # Current state
 
-Updated: 2026-10-05, Phase 6 review fixes and the critic's documentation
-follow-up on `feat/p6-consignment` (after step 4). Evidence checked:
-`git for-each-ref refs/heads refs/remotes` and `git worktree list` at the
-review fixes; local gates on this branch at the review-fix commit and
-again at the documentation follow-up (below); step 4's at a8967c7, step 3's at ecc90f1,
-step 2's at 2c402b2, step 1's at 365bdd7. Earlier rows: GitHub REST pull list and check
-runs for the seven PR heads, local gates on b34bbcd (the head of PR #7).
+Updated: 2026-10-05, Phase 8 (QR identity and labels) step 1 of 4, the
+database, on `feat/p8-labels` (stacked on `feat/p6-consignment` at
+c791d4b). Evidence checked: `git for-each-ref refs/heads refs/remotes` and
+`git worktree list` at the start of the step; local gates at the step's
+code commit (below). Earlier rows: Phase 6's gates at its review fixes and
+documentation follow-up, GitHub REST pull list and check runs for the
+seven PR heads, local gates on b34bbcd (the head of PR #7).
 
 ## Return in two minutes
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
-- Current objective: [PLAN](docs/PLAN.md#2-phases) Phase 6, consignment and
-  sales, is complete on `feat/p6-consignment` (four steps): the whole
-  Phase 6 database (steps 1 and 2), the consignment screens (step 3) and
-  the sales screens, refunds, restocks, Today and navigation wiring,
-  journey 4 and the closing docs (step 4). Everything is committed locally
-  and not pushed.
-- Next action: the orchestrator pushes `feat/p6-consignment` and opens its
-  PR on top of `feat/docs-stack` with the Phase 6 description drafted from
-  [the template](.github/pull_request_template.md) (held by the
-  orchestrator, not committed); then the next phase in the build order
-  (labels, Phase 8). The owner answers D44–D55 (D53's price-floor and
-  D55's backdating questions) in
-  [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
-- Review fixes (one commit after a8967c7): each consignor's quantity stock
-  is tracked per location (D54), a sale is never dated before its stock
-  came in (D55), restock and job reopen refuse an archived consignor, an
-  in-store sale refuses a Shopify line id, a new consignor is created in
-  the intake's own transaction, `list_consignors` hides who is awaiting
-  payment from staff without money access, and the UI fixes (intake sheet
-  width on a phone, sale sheet field errors and preset fallback, Today's
-  consignment tile wording and `?day=` link, "Nothing owed yet", the
-  settlement prompt's tone, "each" only for several); races for refunds
-  and restocks; RISKS R-025 to R-027.
+- Current objective: [PLAN](docs/PLAN.md#phase-8--qr-and-labels) Phase 8,
+  QR identity and label printing, in four steps on `feat/p8-labels`. Step 1
+  (database) is done and committed locally: migration
+  `20261004003800_labels.sql` (templates, printer profiles, print jobs,
+  `private.qr_payload`, `private.label_content`, five RPCs, the built-in
+  58 × 40 mm templates and browser/PDF printers), the seed's five print
+  jobs, decisions D9 (base) and D56–D59
+  ([ADR-017](docs/decisions/ADR-017-labels-and-qr-base.md)). Steps 2–4
+  (`src/lib/qr.ts` on the database base, `src/lib/printing/`, the domain
+  module and screens, E2E) are not built. Phase 6 (`feat/p6-consignment`,
+  c791d4b) is complete and not pushed.
+- Next action: Phase 8 step 2: point `getQrBase()` / `qrUrl()` in
+  `src/lib/qr.ts` at `shop_settings.public_site_url` (validated with the
+  `tests/fixtures/qr-bases.ts` rule, "QR address not set" when unusable),
+  keep `NEXT_PUBLIC_PUBLIC_SITE_URL` in `scanBases()`, and build
+  `src/lib/printing/` with zod parity against
+  `tests/fixtures/label-layouts.ts` and `print-transitions.ts`. The
+  orchestrator pushes `feat/p6-consignment` and `feat/p8-labels` and opens
+  their PRs. The owner answers D44–D59 (rows 9 and 15) in
+  [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions); the
+  orchestrator or owner opens a new main-line decision range (D59 was the
+  last, [R-028](docs/RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted)).
+- Phase 8 step 1 in one line: labels encode only
+  `{shop_settings.public_site_url}/q/{short_id}` (no fallback: nothing
+  prints until the address is set), print 1–500 per job for a product and
+  1–10 for a unit or bike, label unique items per unit, price through
+  `private.selling_price` (NULL no price, 0 → 0.00), never carry cost,
+  consignor, ownership or notes, and are confirmed printed or failed by
+  staff. Deferred: the purchase receive screen's "Print N labels"
+  shortcut, until Phase 7 is integrated
+  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -59,7 +67,8 @@ a separate, label-triggered run. All listed results are success.
 | Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
 | Sales screens, refunds, restocks, Today and nav wiring, journey 4 (Phase 6 step 4: D7, D46, D48, D49, D51, D53) | Yes, `feat/p6-consignment` 67b1607, b65484a, 543760f, eccd687 and the closing docs commit: `/sales`, `/sales/[id]`, `RecordSaleSheet` / `SaleablePicker`, `RefundSheet`, `RestockControl`; Sell on the consignment item, unit and product pages; "Sold on S-…" with Restock on the unit page; `S-` in `/q` and the `sale` search kind; Sales in More; Today's consignment tiles linked | Locally: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 92 files / 1364 tests passed, `npm run build` pass (inside `test:e2e`), `npm run test:e2e` 118 passed on phone and tablet (13.3 min; an earlier run had 2 failures, the Today past-day note's old wording in `today.spec.ts`, fixed in eccd687), docs link check 34 files / 528 links / 0 problems | Not deployed |
 | Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment` 32f19e6 (the follow-up commit corrects DATA-MODEL's authority and applied state, PLAN's Phase 6 test list and this file's owner-question list) | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems; rerun at the documentation follow-up: `npm run db:reset` pass (`37\|20261004003700`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.6 min, build inside, no failures, flaky or skipped), docs link check 34 files / 545 links / 0 problems | Not deployed |
-| Labels, Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Labels database (Phase 8 step 1: D9 base, D56–D59) | Database only, `feat/p8-labels` 1294e36 (decisions), 2c4f6a3 (migration `20261004003800_labels`, seed, types, tests, docs); no screens yet | Locally at 2c4f6a3: `npm run db:reset` pass (`38\|20261004003800`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 95 files / 1414 tests passed (incl. `labels.test.ts` 25 tests, `labels-concurrency.test.ts` 5 tests, `meta.test.ts`); `test:e2e` not run (no screen changed); docs link check 35 files / 581 links / 0 problems (after this update) | Not deployed |
+| Label screens, printing, `src/lib/qr.ts` on the database base (Phase 8 steps 2–4), Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -69,6 +78,10 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   (#2) ← … ← `feat/p2-appointments` (#7) ← `feat/docs-stack`. #1–#7 are open
   drafts, pushed and equal to origin.
 - `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
+- `feat/p8-labels`: stacked on `feat/p6-consignment` (c791d4b); Phase 8
+  step 1 committed locally, not pushed (1294e36 decisions, 2c4f6a3 the
+  database layer, and the commit with this update). No origin branch of
+  that name.
 - `feat/p6-consignment`: stacked on `feat/docs-stack`; committed locally,
   not pushed (34783d6 decisions D44–D53, step 1's commits, step 2's
   2d2ba0c and 2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and d8ba313,
