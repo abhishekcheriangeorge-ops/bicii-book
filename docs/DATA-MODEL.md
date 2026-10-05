@@ -269,56 +269,153 @@ the server calls `record_attachment`.
 
 ## 3. Shop hours and appointments
 
+Phase 2 migrations: `…2700_appointment_enum_values` (work_order_event_type
+`appointment_linked`), `…2800_schedule`, `…2900_appointments`,
+`…3000_appointment_customer_access` (step 1); step 2 adds check-in, the
+`work_orders.appointment_id` foreign key, the completion trigger (D36) and
+the appointment counts (D41). Decisions: PLAN D2, D35, D37–D42.
+
 ```
-shop_settings (single row, id = 1)
-  timezone text not null default 'Asia/Singapore'
-  default_currency char(3) not null default 'SGD'
-  intake_slot_minutes integer not null default 30
-  intake_capacity_units integer not null default 2   -- per slot window
-  public_site_url text not null                      -- base for QR URLs
-  updated_at, updated_by
+shop_settings (single row: id smallint = 1, check shop_settings_singleton;
+               inserted by the migration; never deleted: shop_settings_required)
+  timezone text not null default 'Asia/Singapore'   -- fixed in the MVP (D35);
+                                                    -- read via private.shop_timezone()
+  default_currency text not null default 'SGD'      -- ^[A-Z]{3}$; private.shop_currency()
+  intake_slot_minutes integer not null default 30   -- 5..240, divides 1440
+  intake_capacity_units integer not null default 2  -- 1..50, per window (D2)
+  booking_min_notice_minutes integer default 120    -- 0..10080 (D37)
+  booking_horizon_days integer default 60           -- 1..365 (D37)
+  customer_max_active_bookings integer default 3    -- 1..20 (D37)
+  customer_cancel_cutoff_minutes integer default 120 -- 0..10080 (D37)
+  public_site_url text null                         -- https?://…, ≤ 200; informational
+                                                    -- until Phase 8 (D9 note)
+  updated_at, updated_by -> staff                   -- updated_by = the caller's staff id
 
 shop_hours
-  id, weekday smallint (0=Sunday..6), opens_at time, closes_at time,
-  active boolean
-  unique (weekday, opens_at)             -- allows split days later
+  id, weekday smallint (0=Sunday..6, as extract(dow)), opens_at time,
+  closes_at time (≤ 24:00, after opens_at), active boolean, created_at, updated_at
+  unique (weekday, opens_at)             -- several intervals per day
+  no two intervals of one weekday overlap (trigger, shop_hours_overlap)
 
 closure_overrides
-  id, starts_at timestamptz, ends_at timestamptz, reason text,
-  kind closure_kind                       -- enum: closed | custom_hours
-  opens_at time null, closes_at time null -- for custom_hours
-  created_by, created_at
+  id, kind closure_kind (closed | custom_hours), starts_at, ends_at
+  (≤ 366 days), opens_at/closes_at time (custom_hours only), reason text
+  (1..200), created_by -> staff, created_at, updated_at
+  exclude using gist (tstzrange(starts_at, ends_at)) where kind = custom_hours
 
 appointment_types
-  id, name, description, duration_minutes integer, capacity_units integer,
-  public boolean, active boolean, sort_order integer
+  id, name (1..80, unique ignoring case), description (≤ 500),
+  duration_minutes (5..480, multiple of 5), capacity_units (1..50),
+  public boolean, active boolean, sort_order, created_at, updated_at
+  -- never deleted (deactivate)
+
+schedule_events (append-only; triggers on the four tables above)
+  id bigint identity, entity (shop_settings | shop_hours | closure_override |
+  appointment_type), entity_id uuid null (null for shop_settings),
+  event_type (created | updated | deleted), payload jsonb (created/deleted:
+  the row; updated: {"column": {"from","to"}} for changed columns only),
+  reason (private.change_reason()), actor_staff_id, actor_user_id,
+  correlation_id, created_at
 
 appointments
-  id uuid PK
-  customer_id uuid not null -> customers
-  bike_id uuid null -> bikes
-  appointment_type_id uuid not null -> appointment_types
-  starts_at timestamptz not null
-  ends_at timestamptz not null             -- starts_at + duration
-  capacity_units integer not null          -- snapshot from type
-  status appointment_status not null default 'booked'
-     -- enum: booked | confirmed | arrived | checked_in | completed |
-     --       cancelled | no_show
-  customer_note text, internal_note text
-  cancelled_at, cancellation_reason
-  created_by_user_id uuid null             -- customer or staff auth id
+  id uuid PK                               -- client-made: the idempotency key
+  customer_id -> customers, bike_id null -> bikes, appointment_type_id -> appointment_types
+  starts_at timestamptz, ends_at timestamptz -- snapshot: starts_at + duration (D38)
+  capacity_units integer                   -- snapshot of the type (D38)
+  status appointment_status default 'booked'
+     -- booked | confirmed | arrived | checked_in | completed | cancelled | no_show
+  source appointment_source                -- staff | customer ("Booked online")
+  customer_note (≤ 1000; customers see it), internal_note (≤ 5000; staff only)
+  confirmed_at, arrived_at, checked_in_at, completed_at, no_show_at,
+  cancelled_at, cancellation_reason (≤ 500; staff only),
+  cancelled_via appointment_source null    -- set exactly when cancelled (a channel)
+  created_by_user_id -> auth.users, created_by_staff_id -> staff
   created_at, updated_at
-  index (starts_at) where status not in ('cancelled','no_show')
+  index (starts_at, ends_at) where status not in ('cancelled','no_show')
+
+appointment_events (append-only; triggers)
+  id bigint identity, appointment_id, event_type (booked | confirmed |
+  arrived | checked_in | completed | cancelled | no_show | details_changed |
+  work_order_linked), from_status, to_status, reason, payload jsonb,
+  actor_staff_id, actor_user_id, correlation_id, created_at
+  -- booked at created_at; a status event at its status stamp; a cancelled
+  -- event's payload {"via"}; details_changed {"field": {"from","to"}} for
+  -- bike_id, customer_note, internal_note; timelines order by (created_at, id)
 ```
 
-Capacity rule (enforced in `book_appointment`): for every
-`intake_slot_minutes` window overlapping `[starts_at, ends_at)`, the sum of
-`capacity_units` of non-cancelled, non-no-show appointments overlapping that
-window plus the new appointment must be `<= intake_capacity_units`. The window
-must fall inside active `shop_hours` for that weekday and outside any `closed`
-override (or inside `custom_hours`). The RPC takes
-`pg_advisory_xact_lock(hashtext('appointments:' || date))` so two concurrent
-bookings for the same day serialise. Walk-ins never create an appointment.
+**Time zone.** The shop's time zone is fixed at Asia/Singapore in the MVP
+(D35, SPEC §24): `private.shop_timezone()` reads `shop_settings.timezone`
+(fallback 'Asia/Singapore') and `private.shop_currency()` reads
+`default_currency` (fallback 'SGD'); no RPC edits either. Every shop-day
+computation goes through `private.shop_day()` / `shop_today()` /
+`shop_day_start()`; a local wall-clock instant is
+`(day + t) at time zone private.shop_timezone()` and the local time of an
+instant `(ts at time zone private.shop_timezone())::time`.
+
+**Open hours and closures (D38).** `private.shop_hours_ranges(day)` is the
+open stretches of one shop-local date: the custom-hours override covering
+the date if there is one (it replaces every weekly interval), else the
+active weekly intervals of that weekday, merged (adjacent intervals form one
+stretch; `day + time '24:00'` is the next midnight). `closed` overrides are
+`[starts_at, ends_at)` (whole days or part of one day) and beat custom
+hours; `custom_hours` rows always span whole shop-local days
+(`save_closure_override` builds them) and never overlap each other.
+
+**The slot grid and capacity (D2, D38).** Capacity windows are
+`intake_slot_minutes` long and aligned to shop-local midnight
+(`private.appointment_windows`). An appointment takes its `capacity_units`
+in every window it overlaps; cancelled and no-show appointments take
+nothing. A booking must start on the grid, lie wholly inside one open
+stretch of one shop-local date, overlap no closed override and fit every
+window: `private.appointment_slot_problem(starts_at, ends_at, units,
+exclude_id)` returns the first code that fails, in the order
+`appointment_slot_misaligned`, `appointment_outside_hours`,
+`appointment_closed`, `appointment_capacity_exceeded` (or null).
+`private.capacity_for_window(window_start, window_end)` returns
+`intake_capacity_units` today; it is the D2 EXTENSION POINT (a later
+migration replaces it to derive capacity from mechanic hours, leave and
+skills) and nothing else reads `intake_capacity_units` for capacity.
+`private.available_slots_at(day, type_id, as_of, for_staff)` lists the grid
+starts of `day` that pass, with `remaining_units` (the least free capacity
+over the overlapped windows before the booking); staff keep slots that
+have not ended, everyone else only starts within the notice and horizon of
+public active types (D37). Settings changes never move, shrink or cancel an
+appointment: `ends_at` and `capacity_units` are snapshots (D38).
+
+**Status machine (D39).** booked → confirmed | arrived | checked_in |
+cancelled | no_show; confirmed → arrived | checked_in | cancelled |
+no_show; arrived → checked_in | cancelled; no_show → arrived; checked_in →
+completed. cancelled and completed are final. The trigger
+`appointments_enforce_rules` enforces it for every writer, stamps the
+status's `*_at` (a writer may provide an earlier business stamp), requires
+`private.change_reason()` to cancel (it becomes `cancellation_reason`;
+`cancelled_via` defaults to staff) and keeps customer, type, times, units,
+source and creator immutable (`appointment_immutable`); the bike changes
+only before check-in and must be the customer's and not archived. Staff
+mark confirmed / arrived / no_show (`mark_appointment_status`; no_show only
+after the start; no_show → arrived only on its own shop-local date, with a
+capacity re-check), cancel with `cancel_appointment`, check in through
+step 2's `check_in_appointment` (D40); completed follows the work order
+(D36).
+
+**Locks and keys.** Lock order, followed by every path so nothing
+deadlocks: (a) the `shop_settings` row — FOR SHARE by appointment writers
+that read settings, FOR UPDATE by the admin configuration RPCs (which
+serialises configuration changes); (b) the per-customer advisory lock
+`pg_advisory_xact_lock(hashtextextended('bicii.appointments.customer.' ||
+customer_id, 0))` (`private.appointment_lock_customer`; customer
+self-booking only; Phase 11 reuses it); (c) the per-day advisory lock
+`hashtextextended('bicii.appointments.' || local_day, 0)`
+(`private.appointment_lock_day`) and/or the appointment row FOR UPDATE —
+`mark_appointment_status` takes the row, then the day lock; booking never
+locks an appointment row; (d) step 2's check-in then takes the work order,
+customer and bike row locks through Phase 3's path. Bookings of one day
+therefore serialise, so two bookings for the last unit cannot both succeed.
+Every booking is idempotent on its client-made id (same customer, type and
+start → the original row, even after the type was deactivated; otherwise
+`appointment_conflict`); closures and types are saved by client-made ids
+with `is_new` insert-or-replay semantics (`closure_conflict`,
+`appointment_type_conflict`). Walk-ins never create an appointment.
 
 Future-proofing (tables designed now, created when needed, no code paths in
 MVP): `staff_working_hours`, `staff_leave`, `staff_skills`,
@@ -1299,8 +1396,13 @@ security-definer function. Blank = no access.
 | attachment_events | S | triggers only | never | never |
 | storage `media-internal` | S | S | — | S, only objects no attachment points at |
 | storage `media-public` | S (everyone else only by public URL; nobody lists it) | S | — | S, only objects no attachment points at |
-| shop_hours, closure_overrides, appointment_types | S; anon/C active+public rows | A | A | A |
-| appointments | S; C own | RPC (`book_appointment`) | RPC / S | — |
+| shop_settings | S; nobody else (anon/C read none of it) | — (one row, inserted by the migration) | RPC `update_shop_settings` (A) | never (`shop_settings_required`) |
+| shop_hours | S; anon/C active weekly rows via `public_shop_hours()` | RPC `set_shop_hours` (A) | RPC `set_shop_hours` (A) | RPC `set_shop_hours` (A) |
+| closure_overrides | S (anon/C: never listed; `available_slots` leaves closures out) | RPC `save_closure_override` (A) | RPC `save_closure_override` (A) | RPC `delete_closure_override` (A, reason) |
+| appointment_types | S; anon/C active + public types (no capacity units) via `public_appointment_types()` | RPC `save_appointment_type` (A) | RPC `save_appointment_type` (A) | — (deactivate) |
+| schedule_events | S | triggers only | never | never |
+| appointments | S; C own via `my_appointments()` (D42 projection); anon/C bookable times via `available_slots()` (D37) | RPC `book_appointment` (S), `book_my_appointment` (C, D37) | RPC `mark_appointment_status`, `cancel_appointment`, `update_appointment` (S); `cancel_my_appointment` (C, D37); step 2: `check_in_appointment` (S) | — |
+| appointment_events | S | triggers only | never | never |
 | work_orders | S; C own, not cancelled, via `my_work_orders()` (D17) | RPC `create_work_order` | RPC (`set_work_order_status`, `update_work_order`, `set_approval_flag`; `lead_mechanic_id` by the assignments trigger) | — |
 | work_order_assignments | S | RPC `assign_staff` (S, D22) | RPC `unassign_staff` (closes the row) | — |
 | work_order_events | S; C own job's check-in, customer-status changes and customer-visible photos via `my_work_order_timeline()` (D8, D17) | triggers and `add_work_order_note` only | never | never |
@@ -1395,7 +1497,21 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 
 | RPC | Guard | Effects |
 |---|---|---|
-| `book_appointment(type_id, starts_at, customer_id, bike_id, note)` | C own / S | Capacity + hours check under advisory lock; insert. |
+| `update_shop_settings(intake_slot_minutes = null, intake_capacity_units = null, booking_min_notice_minutes = null, booking_horizon_days = null, customer_max_active_bookings = null, customer_cancel_cutoff_minutes = null, public_site_url = null)` → `shop_settings` | A | Built (Phase 2). `shop_settings` FOR UPDATE; null keeps a field, `public_site_url` '' clears it; no time zone or currency parameter (D35); `shop_capacity_below_type` when an active type takes more units; checks 23514 by name; unchanged → the row, no event. Never moves appointments (D38). |
+| `set_shop_hours(weekday smallint, intervals jsonb, active = true)` → `setof shop_hours` | A | Built (Phase 2). Replaces one weekday's rows atomically from a JSON array of 0..4 `{"opens_at","closes_at"}` ("HH:MM", closes_at up to "24:00"); weekday outside 0..6 or malformed JSON → 22023; an inverted interval → 23514 `shop_hours_interval_check`; overlaps → `shop_hours_overlap`; the same intervals and flag → the existing rows, no events. |
+| `save_closure_override(closure_id, is_new, kind closure_kind, first_day date, last_day date, reason, from_time time = null, to_time time = null)` → `closure_overrides` | A | Built (Phase 2, D38). closed without times: whole days; closed with both times: part of one day; custom_hours: times required, whole days. `closure_invalid_range` (last before first, over 366 days, one time only, times on several days, start not before end), `reason_required`, 23514 `closure_overrides_reason_check` (> 200), `closure_custom_hours_overlap` (exclusion constraint as backstop, 23P01). is_new: insert, identical row → replay (no event), different row → `closure_conflict`; not is_new: P0002 when missing, else update (no event when unchanged). |
+| `delete_closure_override(closure_id, reason)` → `closure_overrides` | A | Built (Phase 2). `reason_required` / `reason_too_long` first; deletes and returns the row (its `deleted` schedule event keeps the row and the reason); null when already gone. |
+| `save_appointment_type(appointment_type_id, is_new, name, description, duration_minutes, capacity_units, public, active, sort_order = 0)` → `appointment_types` | A | Built (Phase 2). Same insert-or-replay semantics (`appointment_type_conflict`, P0002); an active type above the intake capacity → `appointment_type_capacity_too_large`; 23505 `appointment_types_name_key` (ignoring case); existing appointments keep their snapshot (D38). |
+| `public_appointment_types()` → `id, name, description, duration_minutes` | everyone (anon, authenticated) | Built (Phase 2). Active and public types by sort_order, name; never capacity units. |
+| `public_shop_hours()` → `weekday, opens_at, closes_at` | everyone | Built (Phase 2). Active weekly rows by weekday, opens_at; closures are not listed. |
+| `available_slots(day date, appointment_type_id uuid)` → `slot_start, slot_end, remaining_units` | everyone (D37; Phase 11 must not revoke anon) | Built (Phase 2). `private.available_slots_at(day, type, now(), private.is_staff())`; `remaining_units` NULL for non-staff; null arguments → 22004. Phase 11's `bookable_slots` range wrapper calls `private.available_slots_at`. |
+| `book_appointment(appointment_id, customer_id, appointment_type_id, starts_at timestamptz, bike_id = null, customer_note = null, internal_note = null)` → `appointments` | S | Built (Phase 2). `private.book_appointment_core(…, 'staff')`, in order: 22004 on nulls; `shop_settings` FOR SHARE; the day lock; replay by id (same customer, type and start → the row, no event; else `appointment_conflict`); P0002 / `appointment_type_unavailable` (inactive); P0002 / `customer_archived`; bike P0002 / `appointment_bike_archived` / `appointment_bike_not_owned`; `appointment_in_past` (ends_at ≤ now); `private.appointment_slot_problem` (misaligned, outside hours, closed, capacity); insert with the snapshots. |
+| `mark_appointment_status(appointment_id, status, reason = null)` → `appointments` | S | Built (Phase 2, D39). `shop_settings` FOR SHARE, the row FOR UPDATE (P0002); targets confirmed / arrived / no_show only (`appointment_use_check_in`, `appointment_use_cancel`, `appointment_transition_invalid` for booked/completed); same status → replay; `appointment_transition_invalid`; `appointment_not_started`; no_show → arrived only on its own shop-local date, then the day lock and `appointment_capacity_exceeded`. One event with the optional reason. |
+| `cancel_appointment(appointment_id, reason)` → `appointments` | S | Built (Phase 2). `reason_required` / `reason_too_long` first; the row FOR UPDATE (P0002); already cancelled → the row (no event); only booked, confirmed or arrived (`appointment_transition_invalid`); `cancelled_via` = staff. |
+| `update_appointment(appointment_id, bike_id = null, clear_bike = false, customer_note = null, internal_note = null)` → `appointments` | S | Built (Phase 2). The row FOR UPDATE (P0002); null keeps, '' clears a note, `clear_bike` removes the bike; bike rules from the trigger (before check-in, the customer's, not archived); the customer's note only while not cancelled/completed/no_show (`appointment_immutable`); unchanged → no update, no event; one `details_changed` event otherwise. |
+| `my_appointments(include_past = false)` → `setof my_appointment` | authenticated (C) | Built (Phase 2, D42; consumed by Phase 11). The caller's appointments not yet over, soonest first; `include_past` adds the past ones after them, latest first. Bike fields only while the bike is still theirs and not archived (D12). |
+| `book_my_appointment(appointment_id, appointment_type_id, starts_at, bike_id = null, customer_note = null)` → `my_appointment` | C (42501 otherwise) | Built (Phase 2, D37). The booking core with the caller's customer id and source customer: active public types, `appointment_too_soon`, `appointment_too_far_ahead`, `appointment_customer_limit` (per-customer lock), then hours, closures, capacity; a bike that is not theirs (or unknown) → `appointment_bike_not_owned` with nothing about the bike. |
+| `cancel_my_appointment(appointment_id, reason = null)` → `my_appointment` | C (42501 otherwise) | Built (Phase 2, D37). `reason_too_long`; `shop_settings` FOR SHARE; the caller's row FOR UPDATE, else NULL (no error); already cancelled → it (no event); booked/confirmed before `customer_cancel_cutoff_minutes` ahead of the start, else `appointment_not_cancellable`; reason defaults to 'Cancelled by the customer'; `cancelled_via` = customer. |
 | `check_in_appointment(appointment_id, bike_id)` | S | Phase 2, built on `private.create_work_order` (with the appointment id) for a new job, or linking an existing open, unlinked job by setting `work_orders.appointment_id` once (null → value; never changed or cleared afterwards, `work_order_immutable`, §4). Status → checked_in; creates or links the work order. |
 | `create_work_order(work_order_id, customer_id, bike_id, requested_work, intake_notes = null, lead_mechanic_id = null, additional_staff_ids uuid[] = '{}', services jsonb = '[]')` → `work_orders` | S | Calls `private.create_work_order(actor, …, appointment_id)`. Replay first: an existing id returns the row as it is now when customer and bike match (no check, assignment or line re-run, no number burned), else `work_order_conflict`. Then FOR SHARE on customer and bike (D18 against a concurrent transfer), insert (trigger: J- number, `work_order_customer_archived`, `work_order_bike_archived`, `bike_owner_mismatch`), lead, ≤ 10 distinct additional staff, ≤ 20 services `{line_id, service_id, quantity}` (malformed 22023) through `private.insert_service_line`. One transaction. `requested_work_required`; 22004 for missing ids. |
 | `set_work_order_status(work_order_id, status, note = null)` → `work_orders` | S | Locks the job; same status → row unchanged (no event); `work_order_transition_invalid`; `reason_required` for cancel/reopen; `work_order_has_lines` when cancelling with live lines. Triggers stamp the time and write one event. |

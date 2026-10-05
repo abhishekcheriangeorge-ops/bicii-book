@@ -39,7 +39,11 @@ adjustments, operational exceptions; money only with View financial
 reports, costs only with View costs), a seed spanning a week of shop days,
 the Today dashboard (`/`: today's or an earlier day's jobs, money, stock,
 low stock, what needs attention and the last 7 days) and the job yield
-panel on the job page.
+panel on the job page. Phase 2 (appointments) is in progress: step 1 adds
+its database core (shop settings, weekly hours, closures, appointment
+types and their history; appointments with capacity, the slot grid,
+booking, status and cancellation; the customer booking RPCs the public site
+will call) and its tests; check-in, the seed and the screens follow.
 
 ## Quickstart
 
