@@ -1,11 +1,12 @@
 /**
  * Appointments under concurrency (SPEC §6 "Prevent overbooking
  * transactionally", §23 "Appointment booking cannot exceed configured
- * capacity", §25; PLAN D2, D37, D39): real connections, committed
+ * capacity", §25; PLAN D2, D37, D39, D40): real connections, committed
  * transactions. Bookings of one shop day serialise on the per-day advisory
  * lock (customer self-bookings first on the per-customer lock), so the
  * capacity check and the insert cannot interleave; a reinstated no-show
- * re-checks capacity under the same day lock.
+ * re-checks capacity under the same day lock; two check-ins of one
+ * appointment serialise on its row lock, so it gets one work order (D40).
  *
  * Commits, so the whole file runs only on a per-file clone. Each case has
  * its own date (or today's current slot); the settings, weekly hours and
@@ -44,7 +45,7 @@ import {
   staffClaims,
   type Claims,
 } from "./harness";
-import { makeCustomer } from "./workshop-fixtures";
+import { makeBike, makeCustomer } from "./workshop-fixtures";
 
 let setup: pg.Client;
 let savedSettings: Record<string, unknown>;
@@ -312,8 +313,48 @@ describe.skipIf(!isolatedDatabase())("appointments under concurrency", () => {
     ).toBe(1);
   });
 
-  // STEP 2 (check-in, D40): add the check-in race here, e.g. two check-ins
-  // of the same appointment (or a check-in racing a cancel) on two
-  // connections -> one work order, one 'checked_in' appointment event, the
-  // loser gets the replay or appointment_transition_invalid.
+  it("D40: two concurrent check-ins of one appointment make one work order; the second returns created = false with the same work_order_id", async () => {
+    const typeId = await makeType(setup, { durationMinutes: 30, capacityUnits: 1 });
+    const customerId = await makeCustomer(setup);
+    const bikeId = await makeBike(setup, customerId);
+    const day = await futureDay(setup, 6);
+    const appointmentId = await insertAppointment(setup, {
+      customerId,
+      typeId,
+      bikeId,
+      startsAt: sgt(day, "10:00"),
+      endsAt: sgt(day, "10:30"),
+      status: "confirmed",
+    });
+    const checkInSql = (tx: pg.Client, workOrderId: string) =>
+      tx
+        .query<{ work_order_id: string; job_number: string; created: boolean }>(
+          `select (c).work_order_id, (c).job_number, (c).created from (
+             select public.check_in_appointment($1, $2, $3, false, 'Booked service') c
+           ) s`,
+          [appointmentId, bikeId, workOrderId],
+        )
+        .then((r) => r.rows[0]);
+
+    const [first, second] = await race(
+      { claims: STAFF_CLAIMS, run: (tx) => checkInSql(tx, randomUUID()) },
+      { claims: staffClaims(AUTH_USER.admin), run: (tx) => checkInSql(tx, randomUUID()) },
+    );
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(first.value.created).toBe(true);
+    expect(second.value).toEqual({ ...first.value, created: false });
+    expect(
+      await scalar(
+        setup,
+        "select count(*)::int from public.work_orders where appointment_id = $1 or customer_id = $2",
+        [appointmentId, customerId],
+      ),
+    ).toBe(1);
+    expect((await appointmentEvents(setup, appointmentId)).map((e) => e.event_type)).toEqual([
+      "booked",
+      "checked_in",
+      "work_order_linked",
+    ]);
+  });
 });

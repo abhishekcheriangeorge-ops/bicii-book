@@ -182,6 +182,9 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   appointment_not_cancellable:
     "This appointment can no longer be cancelled online. Please contact the shop.",
   appointment_history_append_only: "Appointment history cannot be changed.",
+  appointment_not_checked_in: "Check the appointment in before linking a job.",
+  appointment_work_order_mismatch:
+    "That job is not an open job for this customer and bike, or it already has an appointment.",
   schedule_history_append_only: "Schedule history cannot be changed.",
   shop_hours_overlap: "Those opening hours overlap.",
   closure_invalid_range: "Check the closure's days and times.",
@@ -242,6 +245,7 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   inventory_movements_reversal_of_id_key: "That stock change has already been reversed.",
   // Appointments and schedule (Phase 2)
   appointments_pkey: "That appointment has already been booked.",
+  work_orders_appointment_id_key: "That appointment already has a job.",
   appointment_types_name_key: "An appointment type with that name already exists.",
   appointment_types_pkey: "That appointment type has already been saved.",
   closure_overrides_pkey: "That closure has already been saved.",

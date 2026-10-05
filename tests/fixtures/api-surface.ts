@@ -118,6 +118,8 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.set_shop_hours(smallint, jsonb, boolean)",
   "public.update_appointment(uuid, uuid, boolean, text, text)",
   "public.update_shop_settings(integer, integer, integer, integer, integer, integer, text)",
+  // Check-in (D40) creates or links the appointment's one work order
+  "public.check_in_appointment(uuid, uuid, uuid, boolean, text, text, uuid)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",

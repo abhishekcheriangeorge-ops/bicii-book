@@ -1826,6 +1826,13 @@ export type Database = {
         };
         Relationships: [
           {
+            foreignKeyName: "work_orders_appointment_id_fkey";
+            columns: ["appointment_id"];
+            isOneToOne: false;
+            referencedRelation: "appointments";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "work_orders_bike_id_fkey";
             columns: ["bike_id"];
             isOneToOne: false;
@@ -2373,6 +2380,24 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "my_appointment";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      check_in_appointment: {
+        Args: {
+          appointment_id: string;
+          bike_id: string;
+          intake_notes?: string;
+          lead_mechanic_id?: string;
+          link_existing?: boolean;
+          requested_work?: string;
+          work_order_id: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["appointment_check_in"];
+        SetofOptions: {
+          from: "*";
+          to: "appointment_check_in";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -3643,6 +3668,13 @@ export type Database = {
         | "cancelled";
     };
     CompositeTypes: {
+      appointment_check_in: {
+        appointment_id: string | null;
+        appointment_status: Database["public"]["Enums"]["appointment_status"] | null;
+        work_order_id: string | null;
+        job_number: string | null;
+        created: boolean | null;
+      };
       customer_profile: {
         id: string | null;
         first_name: string | null;
