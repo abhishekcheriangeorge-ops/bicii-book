@@ -1,6 +1,6 @@
 # ADR-001 — BICII Admin architecture
 
-Status: proposed (accepted on merge of the plan PR)
+Status: proposed in PR #1 (open draft); implemented on the stacked branches through Phase 2; becomes accepted when PR #1 merges. Later decisions: [decisions/README.md](decisions/README.md).
 Date: 2026-10-04
 
 ## Context
