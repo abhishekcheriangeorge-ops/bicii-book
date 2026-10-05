@@ -86,11 +86,17 @@ async function addClosure(
 
 async function deleteClosure(page: Page, reason: string) {
   await page.goto("/settings/schedule");
-  const row = page
-    .getByRole("list", { name: "Upcoming closures" })
-    .getByRole("listitem")
-    .filter({ hasText: reason });
-  await row.getByRole("button", { name: "Delete", exact: true }).click();
+  const upcoming = page.getByRole("list", { name: "Upcoming closures" });
+  const row = upcoming.getByRole("listitem").filter({ hasText: reason });
+  // Each closure's Delete… is named for its closure.
+  const start = row.getByRole("button", { name: /^Delete the .+ closure…$/ });
+  await expect(start).toBeVisible();
+  // Screen-reader and voice-control users tell the rows' Delete… apart.
+  const names = await upcoming
+    .getByRole("button", { name: /^Delete/ })
+    .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")));
+  expect(new Set(names).size).toBe(names.length);
+  await start.click();
   await row.getByLabel(/^Why remove/).fill(`Plans changed ${tag}`);
   await page.waitForTimeout(500); // the confirm button ignores presses for 400 ms
   await row.getByRole("button", { name: "Delete closure" }).click();

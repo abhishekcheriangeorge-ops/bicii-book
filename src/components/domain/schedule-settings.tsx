@@ -653,7 +653,8 @@ function ClosureSheet({ closure, onClose }: { closure: ClosureValue | null; onCl
 export function DeleteClosureControl({ id, label }: { id: string; label: string }) {
   return (
     <ReasonConfirm
-      startLabel="Delete"
+      startLabel="Delete…"
+      startAccessibleName={`Delete ${label}…`}
       startVariant="ghost"
       startSize="sm"
       question={`Why remove ${label}?`}
