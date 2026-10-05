@@ -13,8 +13,8 @@ public site are two frontends over the same database.
 **Status:** milestone M1 is built through M1.5 ([PLAN §3](docs/PLAN.md)). Phase 0 /
 M1.1 is in place: the Next.js 16 scaffold, design tokens and UI primitives,
 the Docker-free Supabase devstack, the foundation, staff and
-staff-management migrations, the DB test harness, email + password
-sign-in, the staff shell (phone tab bar / iPad rail), Staff settings
+staff-management migrations, the DB test harness, staff sign-in (email
+one-time codes since 2026-10-05, PLAN D10), the staff shell (phone tab bar / iPad rail), Staff settings
 (invite, permissions, deactivate), the PWA manifest and service worker,
 Playwright E2E, and CI. M1.2 ([PLAN §3](docs/PLAN.md)) adds customers,
 bikes with ownership history, photo attachments in Storage, customer
@@ -59,8 +59,16 @@ npm run dev              # http://localhost:3000
 ```
 
 Open **http://localhost:3000** (not 127.0.0.1: Next 16 blocks dev resources
-on other origins) and sign in with a seeded login. The password for all of
-them is `bicii-dev-password`:
+on other origins) and sign in with a seeded login. There are no passwords
+(PLAN D10): enter one of the emails below, press **Email me a code**, then
+read the 6-digit code from the devstack's mail catcher and type it in:
+
+```sh
+curl "http://127.0.0.1:${BICII_MAIL_HTTP_PORT:-8025}/messages/latest?to=admin@bicii.test"
+# the "code" field is the code; or open the newest file in .devstack/mail/
+```
+
+A code is valid for 10 minutes and only the newest one works.
 
 | Email | Role | Permissions |
 |---|---|---|

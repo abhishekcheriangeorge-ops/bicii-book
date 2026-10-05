@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { STAFF } from "../fixtures/ids";
 
-import { isPhone, signIn, toast } from "./helpers";
+import { isPhone, signIn, signInAs, toast } from "./helpers";
 
 test("mechanic2 (no manage_staff) gets the 403 page on /settings/staff", async ({ page }) => {
   await signIn(page, "mechanic2");
@@ -73,7 +73,7 @@ test("a permission the admin grants appears on mechanic2's profile", async ({
   await expect(toast(page, `${permission} removed`)).toBeVisible();
 });
 
-test("the admin invites a colleague who signs in with the one-time password", async ({
+test("the admin invites a colleague who signs in with an emailed code", async ({
   browser,
   page,
 }, testInfo) => {
@@ -92,9 +92,18 @@ test("the admin invites a colleague who signs in with the one-time password", as
 
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Invite" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "can now sign in" })).toBeVisible();
-  const password = (await page.getByTestId("temporary-password").textContent())?.trim() ?? "";
-  expect(password).toMatch(/^[A-Za-z0-9]{5}(-[A-Za-z0-9]{5}){3}$/);
+  await expect(
+    page.getByRole("status").filter({ hasText: `${email} can now sign in.` }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "They open BICII Admin, enter this email and type the 6-digit code we email them. No password needed.",
+    ),
+  ).toBeVisible();
+  // No credential is shown or handed over (PLAN D10, D11).
+  await expect(page.getByRole("button", { name: /copy/i })).toHaveCount(0);
+  expect(await page.getByRole("main").textContent()).not.toMatch(/temporary|shown once/i);
+  await expect(page.getByRole("link", { name: "Set permissions" })).toBeVisible();
 
   // Same email again: refused with a field error, nothing half-created.
   await page.getByRole("button", { name: "Invite another" }).click();
@@ -108,29 +117,14 @@ test("the admin invites a colleague who signs in with the one-time password", as
   const colleague = await browser.newContext({ ...testInfo.project.use });
   const colleaguePage = await colleague.newPage();
   try {
-    await colleaguePage.goto("/login");
-    await colleaguePage.getByLabel("Email").fill(email);
-    await colleaguePage.getByLabel("Password").fill(password);
-    await colleaguePage.getByRole("button", { name: "Sign in" }).click();
+    // The colleague signs in with the code emailed to them.
+    await signInAs(colleaguePage, email);
+    await expect(colleaguePage).toHaveURL(/\/$/);
     await expect(colleaguePage.getByRole("heading", { level: 1 })).toContainText("Eddie");
     // New staff are active staff with no granted permissions: Today opens,
     // Staff settings is a 403.
     const response = await colleaguePage.goto("/settings/staff");
     expect(response?.status()).toBe(403);
-
-    // Replacing the temporary password needs the current one.
-    const newPassword = `e2e-new-password-${Date.now()}`;
-    await colleaguePage.goto("/settings/profile");
-    await colleaguePage.getByLabel("Current password").fill("not-the-temporary-password");
-    await colleaguePage.getByLabel(/^New password/).fill(newPassword);
-    await colleaguePage.getByLabel("Repeat new password").fill(newPassword);
-    await colleaguePage.getByRole("button", { name: "Change password" }).click();
-    await expect(colleaguePage.getByText("That isn't your current password.")).toBeVisible();
-    await colleaguePage.getByLabel("Current password").fill(password);
-    await colleaguePage.getByLabel(/^New password/).fill(newPassword);
-    await colleaguePage.getByLabel("Repeat new password").fill(newPassword);
-    await colleaguePage.getByRole("button", { name: "Change password" }).click();
-    await expect(toast(colleaguePage, "Password changed")).toBeVisible();
 
     // The admin deactivates them: a reason is required, and it lands in their history.
     await page.goto("/settings/staff");

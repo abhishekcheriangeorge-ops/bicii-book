@@ -5,8 +5,9 @@
 -- tests/fixtures/ids.ts, so tests never query by name. Applied to local and
 -- preview databases only; NEVER to production.
 --
--- Phase 0 contents: three staff with working Supabase Auth logins, all with
--- the local-only password `bicii-dev-password`:
+-- Phase 0 contents: three staff with working Supabase Auth logins. They have
+-- no usable password (PLAN D10): sign in with a code emailed to the address,
+-- which the devstack's mail catcher shows (README):
 --   admin@bicii.test      role admin (implies every permission)
 --   mechanic1@bicii.test  role staff, view_costs
 --   mechanic2@bicii.test  role staff, no permissions
@@ -68,7 +69,11 @@ select
   'authenticated',
   'authenticated',
   u.email,
-  extensions.crypt('bicii-dev-password', extensions.gen_salt('bf')),
+  -- What auth.admin.createUser writes for a login created without a
+  -- password (Auth v2.178): the bcrypt hash of a random secret nobody knows.
+  extensions.crypt(
+    encode(extensions.gen_random_bytes(48), 'base64'), extensions.gen_salt('bf', 10)
+  ),
   now(), null,
   '{"provider": "email", "providers": ["email"]}'::jsonb,
   jsonb_build_object('display_name', u.display_name),

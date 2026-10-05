@@ -15,7 +15,7 @@ import path from "node:path";
 
 import pg from "pg";
 
-import { ROOT, databaseUrl, fail, log, redact, withDatabase } from "./config.mjs";
+import { MAIL_URL, ROOT, databaseUrl, fail, log, redact, withDatabase } from "./config.mjs";
 import { applyMigrations, buildDatabase, dropDatabase } from "./database.mjs";
 
 const SUPABASE_CLI = "supabase@2.119.0";
@@ -44,7 +44,10 @@ async function reset() {
   await buildDatabase(url, { onStep: (s) => log(s) });
   await reloadPostgrest(url);
   log(`database ready in ${((Date.now() - started) / 1000).toFixed(1)}s`);
-  log("seeded logins (password bicii-dev-password): admin@, mechanic1@, mechanic2@bicii.test");
+  log(
+    `seeded logins (sign in with an emailed code; read codes at ${MAIL_URL}): ` +
+      "admin@, mechanic1@, mechanic2@bicii.test",
+  );
 }
 
 async function migrate() {

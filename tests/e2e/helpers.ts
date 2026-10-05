@@ -1,7 +1,10 @@
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 
+import { SIGN_IN_MESSAGES } from "../../src/lib/auth/sign-in-errors";
 import { parseShopDay, shiftShopDay } from "../../src/lib/dates";
-import { SEED_PASSWORD, STAFF_EMAIL, type SeedStaff } from "../fixtures/ids";
+import { STAFF_EMAIL, type SeedStaff } from "../fixtures/ids";
+
+import { mailCursor, waitForCode } from "./mail";
 
 /**
  * The seed's anchor: the shop day the database was reset and seeded
@@ -26,16 +29,54 @@ export function anchorDay(n: number): string {
   return shiftShopDay(seedAnchor(), -n);
 }
 
-/** Signs in through the real login form and waits until the app is open. */
+/** Signs a seeded staff member in through the real login form and waits until the app is open. */
 export async function signIn(page: Page, who: SeedStaff, next?: string) {
-  await page.goto(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
-  await signInOnForm(page, who);
+  await signInAs(page, STAFF_EMAIL[who], next);
 }
 
-/** Fills and submits the login form already on screen. */
+/** Signs in on the login form already on screen (a seeded staff member). */
 export async function signInOnForm(page: Page, who: SeedStaff) {
-  await page.getByLabel("Email").fill(STAFF_EMAIL[who]);
-  await page.getByLabel("Password").fill(SEED_PASSWORD);
+  await signInOnFormAs(page, STAFF_EMAIL[who]);
+}
+
+/** signIn() for any address with a login (an invited colleague). */
+export async function signInAs(page: Page, email: string, next?: string) {
+  await page.goto(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
+  await signInOnFormAs(page, email);
+}
+
+/**
+ * The email step of the login form already on screen: asks for a code and
+ * returns it, read from the mail catcher (PLAN D10). The cursor is taken
+ * BEFORE the click, so an older email to the same address is never used.
+ * Auth allows one email per address per second (max_frequency, raised
+ * limits otherwise; TESTING.md), so a rate-limit answer is retried after
+ * 1.1 s, up to 5 times. Each retry reloads the page first, so the previous
+ * attempt's alert cannot be mistaken for the next answer.
+ */
+export async function requestCodeOnForm(page: Page, email: string): Promise<string> {
+  const cursor = await mailCursor(email);
+  const alert = page
+    .getByRole("main")
+    .getByRole("alert")
+    .filter({ hasText: SIGN_IN_MESSAGES.rate_limited });
+  const checkEmail = page.getByRole("heading", { name: "Check your email" });
+  for (let attempt = 1; ; attempt++) {
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: "Email me a code" }).click();
+    await expect(checkEmail.or(alert)).toBeVisible();
+    if (await checkEmail.isVisible()) break;
+    if (attempt >= 5) throw new Error(`Still rate-limited asking for a code for ${email}`);
+    await page.waitForTimeout(1100);
+    await page.reload();
+  }
+  return await waitForCode({ to: email, after: cursor });
+}
+
+/** Signs `email` in on the login form already on screen, with an emailed code. */
+export async function signInOnFormAs(page: Page, email: string) {
+  const code = await requestCodeOnForm(page, email);
+  await page.getByLabel("Code").fill(code);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }

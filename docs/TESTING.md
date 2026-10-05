@@ -222,6 +222,26 @@ a second worktree with the ports moved by `BICII_*_PORT`):
 - `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
   Docker).
 
+Verification of the code sign-in step (2026-10-05, OTP phase step 2: the
+`/login` form asks for an emailed code, invites create no password, the
+password paths are gone), same worktree and ports:
+
+- Established on the devstack (Auth 2.178) before writing the specs: a
+  login made by `auth.admin.createUser` without a password stores the
+  bcrypt hash of a random secret (`$2a$10$…`, not `''` or NULL; the seed
+  now writes the same shape); a wrong code leaves the real one usable; an
+  email code's expiry is read from `auth.users.recovery_sent_at` (ageing
+  `auth.one_time_tokens.created_at` alone left the code valid); an unknown
+  email gets 422 `otp_disabled`.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 71 files, 951
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, every spec signing in with codes
+  from the mail catcher): 98 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
 ## What is tested where
 
 ### Unit (SPEC §27.1)
@@ -235,6 +255,14 @@ a second worktree with the ports moved by `BICII_*_PORT`):
   function mirrored from the SQL, tested against the same fixtures).
 - Publication state machine transitions.
 - Permission resolution (`admin` implies all; inactive staff has none).
+- Staff sign-in codes (PLAN D10, D70): `otp.test.ts` (6 digits, 10
+  minutes, 60 s cooldown; `normaliseCode` drops spaces and hyphens from a
+  pasted code and refuses anything else; `resendSecondsLeft` rounds up and
+  never exceeds the cooldown; the countdown text) and
+  `sign-in-errors.test.ts` (asking for a code: rate limits and outages say
+  so, every other 4xx, 422 `otp_disabled` for an unknown email included,
+  counts as sent; verifying: every other 4xx is one invalid-code failure;
+  the agreed messages).
 - Label template rendering (QR payload is exactly the public URL).
 - Shopify payload mapping (variant → product; unmapped → structured error).
 - Short ID formatting and scanner URL parsing.
@@ -482,20 +510,55 @@ inherit it); specs use `seedAnchor()` and `anchorDay(n)` from
 `E2E_EXTERNAL_STACK=1` or a run across Singapore midnight the anchor is not
 today.
 
+Signing in (PLAN D10, D70; `tests/e2e/helpers.ts`): every spec signs in
+through the real `/login` form with an emailed code. `signIn(page, who,
+next?)` and `signInOnForm(page, who)` (seeded staff) and `signInAs(page,
+email, next?)` / `signInOnFormAs(page, email)` (any login) all end off
+`/login`. Underneath, `requestCodeOnForm(page, email)` takes a mail cursor
+(`mailCursor`) BEFORE pressing "Email me a code", expects "Check your
+email" and returns `waitForCode({ to, after: cursor })` from the mail
+catcher, so an older email to the same address is never used. Auth sends
+at most one email per address per second (`max_frequency` 1s, kept in the
+devstack and config.toml), so when the rate-limit alert appears the helper
+waits 1.1 s, reloads the page (so the old alert cannot be read as the next
+answer) and asks again, up to 5 times. Specs reach the mail client through
+`tests/e2e/mail.ts` (a dynamic import: Playwright compiles specs to
+CommonJS) and the database through `tests/e2e/db.ts` (`sql()` on
+`devDatabaseUrl()`, for the two assertions no screen can make).
+
 Phase 0 specs (`auth.spec.ts`, `staff.spec.ts`): signed-out `/` redirects to
 `/login`; `?next=` deep links survive sign-in and cannot leave the origin
 (absolute, `//host`, `/\host`, dot segments such as `/.//host`, including
-the server-side redirect a signed-in visit to `/login` makes); wrong
-password gives one generic error; the admin lands on Today with the tab
-bar (phone) or rail (iPad); sign-out ends the session; mechanic2 gets a
-real 403 on `/settings/staff`; a permission the admin grants shows on
-mechanic2's profile and in the staff history (then is revoked), and on a
-phone the confirmation toast leaves the Scan tab tappable; a rejected
-invite keeps the typed name and email; an invited colleague signs in with
-the temporary password as active staff with no granted permissions (Today
-opens; `/settings/staff` is 403), must give the current password to change
-it, and when the admin deactivates them (a reason is required and shows in
-their history) their open session loses access.
+the server-side redirect a signed-in visit to `/login` makes); an unknown
+email (`e2e-unknown-<project>-<time>@bicii.test`) gets exactly the "Check
+your email" text a staff email gets (compared with the address
+substituted), no `auth.users` row and no email within 2 s; a wrong code
+(a six-digit value that differs from the real one) gets the one
+invalid-code message, keeps the email, is not echoed and puts focus back
+on Code, and the real code (pasted as "123 456") then signs in (Auth
+2.178 does NOT void a code after a wrong attempt); an expired code is
+refused (the spec moves `auth.users.recovery_sent_at` back 11 minutes:
+for an email code to an existing confirmed login Auth 2.178 times the
+code from `recovery_sent_at` and ignores `auth.one_time_tokens.created_at`,
+established on the devstack by ageing each separately); a used code is
+refused in a second browser context that asked for a newer code; "Send a
+new code" is disabled with a live countdown ("Send a new code in 0:59"),
+"Use a different email" returns to the email step with the email kept
+and focused, and after the countdown (the page clock fast-forwarded)
+"Send a new code" announces "We've sent a new code.", restarts the
+countdown, and only the newest code works; a confirmed login with no
+staff row gets the not-staff message after its code and keeps no session;
+the admin lands on Today with the tab bar (phone) or rail (iPad);
+sign-out ends the session; mechanic2 gets a real 403 on
+`/settings/staff`; a permission the admin grants shows on mechanic2's
+profile and in the staff history (then is revoked), and on a phone the
+confirmation toast leaves the Scan tab tappable; a rejected invite keeps
+the typed name and email; the invite's success view says how to sign in
+and shows no credential; the invited colleague (unique per project and
+run) signs in with an emailed code as active staff with no granted
+permissions (Today opens; `/settings/staff` is 403), and when the admin
+deactivates them (a reason is required and shows in their history) their
+open session loses access.
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
 tag made of the project name and a timestamp, so the phone and iPad runs and

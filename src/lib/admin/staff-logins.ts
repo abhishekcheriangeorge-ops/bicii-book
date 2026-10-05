@@ -2,8 +2,6 @@ import "server-only";
 
 import { createServiceClient } from "@/lib/supabase/service";
 
-import { temporaryPassword } from "./temporary-password";
-
 /**
  * Supabase Auth admin operations for Staff settings. Service role: callers
  * must already have passed requireStaff('manage_staff'), and the staff row is
@@ -18,48 +16,33 @@ export class LoginExistsError extends Error {
   }
 }
 
-/** Supabase Auth refused the generated password (the project's password rules). */
-export class WeakPasswordError extends Error {
-  constructor(readonly reasons: string[]) {
-    super(
-      `Supabase Auth rejected the temporary password: ${reasons.join(", ") || "weak_password"}`,
-    );
-    this.name = "WeakPasswordError";
-  }
-}
-
 /**
- * Creates a confirmed email/password login with a one-time temporary
- * password. The password is returned once, to be shown to the admin; it is
- * not stored or logged anywhere by the app.
+ * Creates a confirmed, code-only login (PLAN D10): the invitee signs in
+ * with a code emailed to this address, and nobody, the inviter included,
+ * ever holds a credential for it. (Auth itself stores the hash of a random
+ * secret that it never reveals.)
  */
 export async function createStaffLogin(input: {
   email: string;
   displayName: string;
-}): Promise<{ userId: string; temporaryPassword: string }> {
+}): Promise<{ userId: string }> {
   const admin = createServiceClient().auth.admin;
-  const password = temporaryPassword();
   const { data, error } = await admin.createUser({
     email: input.email,
-    password,
     email_confirm: true,
     user_metadata: { display_name: input.displayName },
   });
   if (error || !data.user) {
-    // Match on the code: Auth answers 422 for several unrelated problems
-    // (weak_password among them), so the status alone means nothing.
+    // Match on the code: Auth answers 422 for several unrelated problems,
+    // so the status alone means nothing.
     if (error?.code === "email_exists" || error?.code === "user_already_exists") {
       throw new LoginExistsError();
-    }
-    if (error?.code === "weak_password") {
-      const reasons = (error as { reasons?: unknown }).reasons;
-      throw new WeakPasswordError(Array.isArray(reasons) ? reasons.map(String) : []);
     }
     throw new Error(
       `auth.admin.createUser failed: ${error?.code ?? "no user"} ${error?.message ?? ""}`,
     );
   }
-  return { userId: data.user.id, temporaryPassword: password };
+  return { userId: data.user.id };
 }
 
 /** Compensation when linking the staff row fails: remove the login just created. */

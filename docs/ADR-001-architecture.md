@@ -41,10 +41,10 @@ memory):
   React 19.2, TypeScript 5 strict, Tailwind 4 CSS-first config. Same versions
   as the public site so the two repos can share conventions and, later, a
   package.
-- Supabase: Postgres, Auth (email/password for staff and customers), Storage,
-  RLS. Migrations via the Supabase CLI (`supabase/migrations/*.sql`), typed
-  client via `supabase gen types typescript` committed to
-  `src/lib/database.types.ts`.
+- Supabase: Postgres, Auth (email one-time codes for staff, D10; customer
+  sign-in is decided in Phase 11), Storage, RLS. Migrations via the
+  Supabase CLI (`supabase/migrations/*.sql`), typed client via
+  `supabase gen types typescript` committed to `src/lib/database.types.ts`.
 - `@supabase/ssr` for cookie-based sessions in Server Components, Server
   Actions, Route Handlers and `proxy.ts`. `@supabase/supabase-js` with the
   service-role key only inside `src/lib/admin/` (Supabase Auth admin API, e.g.

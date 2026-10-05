@@ -89,17 +89,42 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    `bicii-staging` (then repeat for `bicii-prod`). Region: Southeast Asia
    (Singapore). Generate a strong database password and store it in the
    password manager; it is needed for `supabase link` and `db push`.
-2. Authentication → Sign In / Providers: Email enabled (PLAN D10: staff use
-   email + password, no magic links). Turn **off** "Allow new users to sign
-   up" until the public site's customer sign-in ships (Phase 11); staff
-   logins are created by admins through the Auth admin API, which works with
-   sign-ups off. Minimum password length: 12 (what the Admin's password
-   form requires; invites generate 20-character temporary passwords that
-   always contain upper and lower case, digits and symbols, so any
-   "Password requirements" setting accepts them). Leave "Secure password
-   change" as it is: the Admin itself requires the current password before
-   a change (Settings → Profile), which also covers sessions signed in
-   less than a day ago, where Supabase's reauthentication would not ask.
+2. Authentication: staff sign in with emailed one-time codes (PLAN D10,
+   D70), so email delivery is part of signing in. Set up, in this order:
+   - **Emails → SMTP Settings: a custom SMTP provider is REQUIRED.**
+     Supabase's built-in sender only mails the project's team members and
+     is heavily rate-limited, so staff would get no codes. Enter the
+     provider's host, port, user, sender name and sender address; the SMTP
+     password is typed into the dashboard only (never into the repository,
+     an env file or a chat).
+   - **Emails → Templates → Magic Link** (and **Confirm signup**): paste
+     `supabase/templates/magic_link.html` (and `confirmation.html`), which
+     contain `{{ .Token }}` and no link (codes only: a link would open in
+     the mail app's browser, not the installed Admin). Subjects: "Your BICII
+     sign-in code" (Magic Link) and "Your BICII code" (Confirm signup), as
+     in `supabase/config.toml`.
+   - **Sign In / Providers → Email**: enabled; OTP length **6**; OTP expiry
+     **600** seconds (`OTP_LENGTH`, `OTP_EXPIRY_MINUTES` in
+     `src/lib/auth/otp.ts`). Turn **off** "Allow new users to sign up" (keep
+     it off at least until the public site's customer sign-in ships in
+     Phase 11): invites create logins through the Auth admin API, which
+     works with sign-ups off, and sign-in asks for a code with
+     `shouldCreateUser: false`, so it never creates an account.
+   - **Rate Limits**: the minimum interval between emails to one address
+     **60** seconds (it matches "Send a new code", `RESEND_COOLDOWN_SECONDS`);
+     emails per hour and token verifications sized for the staff (a few
+     sign-ins per person per day plus retries, with headroom; the
+     provider's own sending limit is the real ceiling).
+   - **Configure SMTP and test it with the owner's own address BEFORE
+     deploying the release that switches sign-in to codes**: on the Users
+     page, "Send magic link" to the owner's login must deliver a mail with a
+     6-digit code and no link. Without working email nobody can sign in.
+   - Passwords already set on hosted logins stay in Auth but are unused:
+     the Admin has no password sign-in. Removing them is optional cleanup.
+   - Accepted residual risk (D70): Auth's own `/otp` endpoint, callable by
+     anyone with the public anon key, answers an unknown email with 422
+     `otp_disabled`, so a direct API caller can learn whether an address
+     has a login. The Admin's screens never reveal it.
 3. Authentication → URL Configuration: Site URL is the Admin's URL on that
    environment (production domain, or the staging alias). Add redirect URLs
    for Vercel previews on staging, e.g. `https://*-<vercel-team>.vercel.app/**`.
@@ -123,8 +148,9 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
    `anon` and `authenticated` can reach with the allow-list in
    `tests/fixtures/api-surface.ts`, so a forgotten revoke fails CI instead of
    reaching production.
-5. Do **not** run `supabase/seed.sql` on a hosted project: its logins have a
-   published password. Create the first admin as below.
+5. Do **not** run `supabase/seed.sql` on a hosted project: it is test data
+   with fixed, published UUIDs and `.test` logins, not the shop's. Create
+   the first admin as below.
    The inventory migration (`…1800_inventory`) inserts one stock location,
    'Shop floor' (SPEC §11: the MVP starts with one shop), so stock can be
    counted and parts used without the seed; add more in Settings →
@@ -182,7 +208,9 @@ Every later staff member is invited from Settings → Staff by an admin. The
 very first admin has to be created by hand:
 
 1. Authentication → Users → Add user → Create new user. Enter the owner's
-   email and a strong temporary password, and tick **Auto Confirm User**.
+   email, tick **Auto Confirm User**, and give no usable password: staff
+   sign in with emailed codes (PLAN D10). If the dashboard insists on a
+   password, use a long random one and discard it without storing it.
 2. SQL Editor (runs as `postgres`, which owns the tables, so RLS does not
    block it), with the same email:
 
@@ -199,7 +227,8 @@ very first admin has to be created by hand:
    staff. The staff email must be the login's email (a trigger refuses
    anything else, `staff_email_mismatch`). The insert is recorded in staff
    history as "created" with no actor ("set up outside the app").
-3. Sign in to the Admin, change the password (Settings → Profile), and
+3. Sign in to the Admin with a code (enter the email, then the 6-digit
+   code from the email; custom SMTP must already work, step 2 above), and
    invite everyone else from Settings → Staff.
 
 The `staff_keep_an_active_admin` trigger then refuses any change that would
@@ -218,6 +247,7 @@ everywhere it is used, verify, then revoke the old one.
 | Anon / publishable key | Vercel (public), the public site | New publishable key in API Keys; update `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel **and** the public site's env; redeploy both (the value is inlined at build time); then delete the old key. |
 | JWT secret (legacy keys) | signs every session and the legacy anon/service keys | Rotating it invalidates the legacy anon and service-role keys and signs every user out. Prefer moving to asymmetric JWT signing keys and publishable/secret keys, which rotate one at a time. If you must, do it in a quiet hour and update both keys everywhere straight after. |
 | Database password | `supabase link` / `db push` on admins' machines | Project Settings → Database → Reset database password. Store the new one; re-run `supabase link`. The app does not use it. |
+| SMTP password (sign-in codes) | Supabase Auth's mailer (dashboard only) | Create a new credential at the mail provider, paste it in Authentication → Emails → SMTP Settings, send a code to the owner's address (Users → Send magic link) and check it arrives, then revoke the old credential. Until mail works nobody can sign in. |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Vercel | `openssl rand -base64 32`, set it, redeploy. Open browser tabs holding pages built before the deploy get a failed Server Action once and must reload. |
 | Shopify tokens (Phase 10) | Vercel | Rotate the Admin API token and webhook secret in the Shopify custom app; update Vercel; redeploy. |
 
