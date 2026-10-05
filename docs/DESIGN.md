@@ -406,7 +406,11 @@ upload itself, below).
   day as in its future (clocks either side of Singapore midnight) it asks
   again with null, so a day choice never errors. Every other read, label,
   the Next-day link (disabled on today) and the date input's `max` use the
-  `day` and `is_today` the database returned. A garbage `?day=` is today.
+  `day` and `is_today` the database returned. A garbage `?day=` is today,
+  and so is one before `EARLIEST_SHOP_DAY` (2000-01-01, the date input's
+  `min`; Previous day is disabled on it). `parseShopDay` reads years
+  0001-9999 as themselves and `shiftShopDay` only returns days that parse
+  back, so no derived day (the week strip's) can throw while rendering.
 - **Flows vs snapshot** (D31). "Today" / "On Sat, 3 Oct": Checked in,
   Started, Completed, Ready for collection, Collected (Cancelled when > 0),
   the jobs whose current stamp falls on the day; each links to its list in

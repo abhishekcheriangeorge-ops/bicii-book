@@ -134,15 +134,29 @@ export function toShopLocal(value: DateInput): string {
 const SHOP_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
+ * The earliest day Today can be asked for (`?day=` and the date input's
+ * `min`). Not a business rule: no shop history predates it, and it keeps
+ * every day the page derives from it (the week before, the previous day)
+ * an ordinary four-digit date.
+ */
+export const EARLIEST_SHOP_DAY = "2000-01-01";
+
+/**
  * A shop day as "YYYY-MM-DD" when `value` is exactly that and a real
- * calendar date (no 31 February, no extra text); otherwise null. For
- * `?day=` parameters and other untrusted input.
+ * calendar date from 0001-01-01 to 9999-12-31 (no 31 February, no year
+ * zero, no extra text); otherwise null. For `?day=` parameters and other
+ * untrusted input. The check date is built with setUTCFullYear, so years
+ * 0001-0099 round-trip instead of being read as 1900-1999 (Date.UTC's
+ * two-digit-year rule).
  */
 export function parseShopDay(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const m = SHOP_DAY.exec(value);
   if (!m) return null;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  const year = Number(m[1]);
+  if (year < 1) return null;
+  const d = new Date(0);
+  d.setUTCFullYear(year, Number(m[2]) - 1, Number(m[3]));
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10) === value ? value : null;
 }
@@ -150,13 +164,20 @@ export function parseShopDay(value: unknown): string | null {
 /**
  * The shop day `n` calendar days after `day` (negative: before), across
  * month and year ends. Throws a RangeError for a day that is not
- * "YYYY-MM-DD".
+ * "YYYY-MM-DD", or when the result would not be one (before 0001-01-01 or
+ * after 9999-12-31), so every day it returns parses back.
  */
 export function shiftShopDay(day: string, n: number): string {
   const valid = parseShopDay(day);
   if (valid === null) throw new RangeError(`Invalid shop day: ${String(day)}`);
   if (!Number.isInteger(n)) throw new RangeError(`Invalid day offset: ${String(n)}`);
-  return new Date(Date.parse(`${valid}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const shifted = new Date(Date.parse(`${valid}T00:00:00Z`) + n * 86_400_000);
+  const out = Number.isNaN(shifted.getTime())
+    ? null
+    : parseShopDay(shifted.toISOString().slice(0, 10));
+  if (out === null)
+    throw new RangeError(`Shop day out of range: ${valid} ${n >= 0 ? "+" : ""}${n}`);
+  return out;
 }
 
 /**

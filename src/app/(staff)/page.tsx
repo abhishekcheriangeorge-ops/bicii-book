@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { hasPermission } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import {
+  EARLIEST_SHOP_DAY,
   formatShopDay,
   formatShopDayLong,
   formatShopDayShort,
@@ -81,8 +82,9 @@ async function loadDashboard(
  * dashboard row comes first (one RPC); each list streams in its own
  * Suspense boundary. The database decides which day is today, and every
  * other read and label uses the day it returned. `?day=YYYY-MM-DD` shows
- * an earlier day (flows, money, stock and activity; no snapshot, no
- * exceptions); `?entries=open` opens "What makes up these figures".
+ * an earlier day, from EARLIEST_SHOP_DAY (flows, money, stock and
+ * activity; no snapshot, no exceptions); `?entries=open` opens "What makes
+ * up these figures".
  *
  * No loading.tsx at the group root (DESIGN "Loading"): it would commit a
  * 200 before child pages' 403s.
@@ -90,7 +92,9 @@ async function loadDashboard(
 export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const staff = await requireStaff();
   const { day: raw, entries } = await searchParams;
-  const asked = parseShopDay(Array.isArray(raw) ? raw[0] : raw);
+  const parsed = parseShopDay(Array.isArray(raw) ? raw[0] : raw);
+  // Before EARLIEST_SHOP_DAY is treated like garbage: today.
+  const asked = parsed !== null && parsed >= EARLIEST_SHOP_DAY ? parsed : null;
   const supabase = await createClient();
   const dash = await loadDashboard(supabase, asked);
   const { day, isToday } = dash;
@@ -131,8 +135,9 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           <DayNavigator
             day={day}
             isToday={isToday}
+            min={EARLIEST_SHOP_DAY}
             max={isToday ? day : shopToday()}
-            previousHref={`/?day=${shiftShopDay(day, -1)}`}
+            previousHref={day > EARLIEST_SHOP_DAY ? `/?day=${shiftShopDay(day, -1)}` : null}
             nextHref={isToday ? null : nextDay >= shopToday() ? "/" : `/?day=${nextDay}`}
           />
           <RefreshButton generatedAt={dash.generatedAt} label={formatTime(generated)} />

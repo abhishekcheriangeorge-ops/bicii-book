@@ -8,6 +8,7 @@ import {
   formatShopDayShort,
   formatTime,
   fromShopLocal,
+  EARLIEST_SHOP_DAY,
   parseShopDay,
   SHOP_TIME_ZONE,
   shiftShopDay,
@@ -100,6 +101,7 @@ describe("shop days as YYYY-MM-DD (D35)", () => {
       " 2026-10-05",
       "2026-10-05T00:00",
       "2026/10/05",
+      "0000-01-01",
       "",
       "today",
     ]) {
@@ -118,6 +120,31 @@ describe("shop days as YYYY-MM-DD (D35)", () => {
     expect(shiftShopDay("2026-12-31", 1)).toBe("2027-01-01");
     expect(shiftShopDay("2027-01-03", -7)).toBe("2026-12-27");
     expect(shiftShopDay("2026-01-31", 30)).toBe("2026-03-02");
+  });
+
+  it("reads years before 100 as themselves, not as 1900-1999", () => {
+    // Date.UTC maps years 0-99 to 1900-1999; the check must not.
+    expect(parseShopDay("0099-12-28")).toBe("0099-12-28");
+    expect(parseShopDay("0100-01-03")).toBe("0100-01-03");
+    expect(parseShopDay("0001-01-01")).toBe("0001-01-01");
+    expect(parseShopDay("0099-02-29")).toBeNull();
+    expect(parseShopDay("0096-02-29")).toBe("0096-02-29");
+  });
+
+  it("returns only days that parse back, across the 0100/0099 boundary too", () => {
+    expect(shiftShopDay("0100-01-03", -6)).toBe("0099-12-28");
+    expect(shiftShopDay("0099-12-31", 1)).toBe("0100-01-01");
+    for (let i = -7; i <= 0; i++) {
+      expect(parseShopDay(shiftShopDay("0100-01-03", i))).not.toBeNull();
+    }
+    expect(() => shiftShopDay("0001-01-01", -1)).toThrow(RangeError);
+    expect(() => shiftShopDay("9999-12-31", 1)).toThrow(RangeError);
+  });
+
+  it("names the earliest day Today can be asked for", () => {
+    expect(parseShopDay(EARLIEST_SHOP_DAY)).toBe(EARLIEST_SHOP_DAY);
+    // The week before it, which Today derives, is still a plain date.
+    expect(shiftShopDay(EARLIEST_SHOP_DAY, -7)).toBe("1999-12-25");
   });
 
   it("refuses a malformed day or offset", () => {

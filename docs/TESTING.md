@@ -252,15 +252,19 @@ same PR.
   flips at 16:00:00Z, `shopDayToDate` is noon Singapore time and reads back
   as the same day in any zone, `formatShopDay` "Sat, 3 Oct 2026",
   `formatShopDayLong`, `formatShopDayShort`; `parseShopDay` and
-  `shiftShopDay` from step 2); the Today DTO and wording (`reports.test.ts`:
+  `shiftShopDay` from step 2, plus years 0001-0099 read as themselves,
+  `shiftShopDay` across the 0100/0099 boundary and refusing a result it
+  could not parse back, and `EARLIEST_SHOP_DAY`); the Today DTO and wording (`reports.test.ts`:
   `toTodayDashboard` for every permission combination: no money without
   View financial reports, money without costs for it alone, costs never
   shown when the flags say hidden, no snapshot on a past day, the Phase 2/6
   placeholders null until tracked and their values once filled, losses and
-  cost-pending counts carried; `notTracked`; the loss and provisional notes
+  cost-pending counts carried; the loss and provisional notes
   with a real minus sign; `formatRateRange` "30%" / "25–30%";
-  `exceptionCopy` for every D34 kind, the overdue sentence from
-  `OVERDUE_AFTER_DAYS`, an unknown kind rendered generically;
+  `exceptionCopy` for every D34 kind (overdue in the danger tone, as
+  everywhere else), the overdue sentence from `OVERDUE_AFTER_DAYS`, an
+  unknown kind rendered generically; `exceptionKeys` unique for a product
+  below zero at two locations; `exceptionsShownNote`;
   `exceptionHref` (a line opens its job through `/q`); `weekStrip` exactly
   seven days oldest first with quiet and missing days; `TILE_LINKS` naming
   only `BOARD_GROUPS` ids and parsing back through `parseBoardFilters`;
