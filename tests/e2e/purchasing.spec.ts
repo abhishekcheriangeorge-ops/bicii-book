@@ -6,6 +6,7 @@ import {
   addOrderLine,
   createSubmittedOrder,
   createSupplier,
+  expectNoSideScroll,
   interceptReceiveActions,
   openReceive,
   receiveLine,
@@ -52,7 +53,7 @@ test("a buyer adds a supplier, orders from it, changes a line, submits and finds
 
   await addOrderLine(page, { ...PADS, quantity: "20", unitCost: "12.00" });
   const lines = page.getByRole("table", { name: "Order lines" });
-  await expect(lines).toContainText("0 of 20 received");
+  await expect(lines).toContainText("20 items · not submitted");
   await expect(lines).toContainText("$240.00");
   await expect(
     lines.getByRole("progressbar", { name: /Road disc brake pads.* received/ }),
@@ -68,12 +69,13 @@ test("a buyer adds a supplier, orders from it, changes a line, submits and finds
     await sheet.getByLabel(/^Quantity/).fill(quantity);
     await sheet.getByRole("button", { name: "Save line" }).click();
     await expect(sheet).toBeHidden();
-    await expect(lines).toContainText(`0 of ${quantity} received`);
+    await expect(lines).toContainText(`${quantity} items · not submitted`);
     await expect(lines).toContainText(total);
   }
 
   await submitOrder(page, poNumber);
   await expect(page.getByRole("button", { name: "Submit order" })).toHaveCount(0);
+  await expect(lines).toContainText("0 of 20 received · 20 to come");
 
   // The header search finds it however the number is typed.
   const header = page.getByRole("searchbox", { name: "Search customers, bikes, jobs and stock" });
@@ -278,7 +280,7 @@ test("journey 3, receiving: a double-tapped delivery is received once, sets the 
   await expect(page.locator("header").getByText("Draft", { exact: true })).toBeVisible();
   const draftLines = page.getByRole("table", { name: "Order lines" });
   await expect(draftLines).toContainText(name);
-  await expect(draftLines).toContainText("0 of 21 received");
+  await expect(draftLines).toContainText("21 items · not submitted");
   await expect(draftLines).toContainText("$12.50");
 });
 
@@ -379,6 +381,7 @@ test("a received order shows the closed state on its receive page", async ({ pag
   await expect(
     page.getByRole("button", { name: "Start a new order for this supplier" }),
   ).toBeVisible();
+  await expectNoSideScroll(page);
   await expect(page.getByRole("button", { name: /^Receive \d/ })).toHaveCount(0);
   await page
     .getByRole("link", { name: `Back to ${PO_NUMBER.receivedInFull}` })
@@ -420,4 +423,79 @@ test("a buyer sees Receive on an open order and Reorder beside low stock", async
   await expect(
     page.getByRole("button", { name: "Create draft order (0 products)" }),
   ).toBeDisabled();
+  await expectNoSideScroll(page);
+});
+
+test("purchasing fits a phone: no sideways scroll, names in full, the Receive footer clear of focus", async ({
+  page,
+}, testInfo) => {
+  // The order list: the supplier's name keeps the row; the expected date
+  // joins the status line on a phone.
+  await signIn(page, "admin", `/purchasing?q=${PO_NUMBER.awaitingDelivery}`);
+  const awaiting = page
+    .getByRole("list", { name: "Purchase orders" })
+    .getByRole("listitem")
+    .filter({ hasText: PO_NUMBER.awaitingDelivery });
+  const supplierName = awaiting.getByText("Tropic Tyre & Tube Co", { exact: true });
+  await expect(supplierName).toBeVisible();
+  expect(
+    await supplierName.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    "supplier name not truncated",
+  ).toBe(true);
+  await expect(awaiting).toContainText(/Expected \d{1,2} [A-Z][a-z]{2} \d{4}/);
+  await expectNoSideScroll(page);
+  // A draft has nothing "to come" (D66).
+  await page.goto(`/purchasing?q=${PO_NUMBER.draft}`);
+  const draft = page
+    .getByRole("list", { name: "Purchase orders" })
+    .getByRole("listitem")
+    .filter({ hasText: PO_NUMBER.draft });
+  await expect(draft).toContainText("15 items · not submitted");
+  await expect(draft).not.toContainText("to come");
+  await expectNoSideScroll(page);
+
+  // A received order's note and its preset New order button.
+  await page.goto(`/purchasing/orders/${PURCHASE_ORDER.receivedInFull}`);
+  await expect(page.getByRole("button", { name: /^New order for / })).toBeVisible();
+  await expectNoSideScroll(page);
+
+  // The Receive form: a one-row footer, and a focused field scrolls clear of it.
+  await page.goto(`/purchasing/receive/${PURCHASE_ORDER.partial}`);
+  await expect(page.getByRole("button", { name: "All to come" })).toBeEnabled();
+  await expectNoSideScroll(page);
+  const commit = page.getByRole("button", { name: /^Receive \d/ });
+  const footer = commit.locator("xpath=..");
+  const footerBox = await footer.boundingBox();
+  const commitBox = await commit.boundingBox();
+  expect(footerBox && commitBox).toBeTruthy();
+  // One row: the footer is no taller than its button plus its own padding.
+  expect(footerBox!.height).toBeLessThan(commitBox!.height + 40);
+  const quantity = page
+    .getByRole("list", { name: "Lines to receive" })
+    .getByRole("group")
+    .first()
+    .getByRole("textbox")
+    .first();
+  // On a phone (the iPad's page is too short to scroll there), park the
+  // field inside the viewport but under the footer, where a Tab would
+  // otherwise leave it hidden, then focus it (WCAG 2.4.11).
+  if (testInfo.project.name !== "phone") return;
+  const [field, bar] = await Promise.all([quantity.boundingBox(), footer.boundingBox()]);
+  await page.evaluate(
+    (by) => window.scrollBy({ top: by, behavior: "instant" }),
+    field!.y - (bar!.y + 8),
+  );
+  await expect
+    .poll(async () => {
+      const [f, b] = await Promise.all([quantity.boundingBox(), footer.boundingBox()]);
+      return f && b ? f.y > b.y && f.y < b.y + b.height : false;
+    }, "the field starts under the footer")
+    .toBe(true);
+  await quantity.focus();
+  await expect
+    .poll(async () => {
+      const [f, b] = await Promise.all([quantity.boundingBox(), footer.boundingBox()]);
+      return f && b ? f.y + f.height <= b.y : false;
+    }, "the focused field clears the footer")
+    .toBe(true);
 });

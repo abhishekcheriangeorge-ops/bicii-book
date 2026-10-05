@@ -441,8 +441,10 @@ begin
 end;
 $$;
 
--- D66 D-REORDER / the PO line sheet: the supplier's last cost for the
--- product, else the product's cost, else 0 (0 is a known cost, D24 amended).
+-- D66 D-REORDER: the supplier's last cost for the product, else the
+-- product's cost, else 0 (0 is a known cost, D24 amended). Like
+-- purchase_cost_defaults it never reads the cost of a product a PO cannot
+-- hold (D60); its only caller has already refused those.
 create function private.default_purchase_unit_cost(supplier_id uuid, product_id uuid)
 returns public.money_amount
 language sql
@@ -454,7 +456,10 @@ as $$
     (select sp.last_unit_cost from public.supplier_products sp
       where sp.supplier_id = default_purchase_unit_cost.supplier_id
         and sp.product_id = default_purchase_unit_cost.product_id),
-    (select p.default_direct_cost from public.products p where p.id = default_purchase_unit_cost.product_id),
+    (select p.default_direct_cost from public.products p
+      where p.id = default_purchase_unit_cost.product_id
+        and p.tracking_type = 'quantity'
+        and p.ownership_type = 'shop_owned'),
     0
   )::public.money_amount;
 $$;
@@ -712,10 +717,14 @@ $$;
 comment on function public.cancel_purchase_order(uuid, text) is
   'manage_purchasing: cancel a draft, submitted or partially received PO with a reason (D61); receipts and stock stay.';
 
--- The PO line sheet's cost prefill (allowed by D60): per known product, the
--- supplier's last cost ('supplier_last'), else the product's cost
+-- The PO line sheet's cost prefill (allowed by D60): per orderable product,
+-- the supplier's last cost ('supplier_last'), else the product's cost
 -- ('product'), else 0 ('none', only when both are NULL; a stored 0 is a
--- known cost). Unknown ids are omitted.
+-- known cost). D60 opens a product's cost to manage_purchasing only for
+-- what a PO can hold (D62: quantity-tracked, shop-owned, active, not
+-- archived -- the same rule set_purchase_order_line applies to a new line),
+-- so any other id is omitted exactly like an unknown one: a unique bike's or
+-- a consigned item's cost never reaches a buyer who lacks view_costs.
 create function public.purchase_cost_defaults(supplier_id uuid, product_ids uuid[])
 returns table (product_id uuid, unit_cost public.money_amount, source text)
 language plpgsql
@@ -743,12 +752,16 @@ begin
     left join public.supplier_products sp
       on sp.supplier_id = purchase_cost_defaults.supplier_id and sp.product_id = p.id
     where p.id = any (purchase_cost_defaults.product_ids)
+      and p.tracking_type = 'quantity'
+      and p.ownership_type = 'shop_owned'
+      and p.active
+      and p.archived_at is null
     order by p.id;
 end;
 $$;
 
 comment on function public.purchase_cost_defaults(uuid, uuid[]) is
-  'manage_purchasing: default unit costs for PO lines (supplier last cost, else product cost, else 0) with their source.';
+  'manage_purchasing: default unit costs for PO lines (supplier last cost, else product cost, else 0) with their source; only for products a PO can hold (quantity, shop-owned, active, not archived), other ids omitted (D60).';
 
 -- ---------------------------------------------------------------------------
 -- Privileges

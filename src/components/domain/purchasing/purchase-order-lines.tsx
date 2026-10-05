@@ -148,6 +148,7 @@ export function PurchaseOrderLines({
                     received={l.received}
                     outstanding={l.outstanding}
                     cancelled={l.cancelled}
+                    status={order.status}
                   />
                 </div>
                 <div

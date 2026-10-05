@@ -354,6 +354,11 @@ export function whenText(at: string, now: Date = new Date()): string {
   return shopDateKey(at) === shopDateKey(now) ? `at ${formatTime(at)}` : `on ${formatDateTime(at)}`;
 }
 
+/** A recent receipt's time: "10:42 am" today (shop time), else "4 Oct 2026, 5:30 pm". */
+export function receiptTimeText(at: string, now: Date = new Date()): string {
+  return shopDateKey(at) === shopDateKey(now) ? formatTime(at) : formatDateTime(at);
+}
+
 /** "DN-5531 was already recorded at 10:42 am by Asha Admin (18 items)" */
 export function duplicateWarning(match: RecordedReference, now: Date = new Date()): string {
   return `${match.reference} was already recorded ${whenText(match.receivedAt, now)} by ${match.receivedBy} (${itemsText(match.units)})`;

@@ -120,32 +120,40 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/purch
           />
         ) : (
           <RowList label="Purchase orders">
-            {orders.map((o) => (
-              <RowLink key={o.id} href={`/purchasing/orders/${o.id}`}>
-                <span className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <ShortId value={o.poNumber} />
-                    <span className="truncate font-medium">{o.supplier.name}</span>
-                  </span>
-                  <span className="flex flex-wrap items-center gap-2 text-sm text-dust-500">
-                    <PurchaseOrderStatusPill status={o.status} />
-                    <span className="tabular-nums">
-                      {o.lineCount === 0 ? "No lines yet" : progressText(o)}
+            {orders.map((o) => {
+              // On a phone the date or Overdue joins the status line, so the
+              // supplier's name gets the row's width; a column from sm up.
+              const when = o.overdue ? (
+                <Badge tone="danger" emphasis="solid">
+                  Overdue
+                </Badge>
+              ) : o.expectedAt && o.status !== "received" && o.status !== "cancelled" ? (
+                <span className="text-dust-700">Expected {formatExpected(o.expectedAt)}</span>
+              ) : null;
+              return (
+                <RowLink key={o.id} href={`/purchasing/orders/${o.id}`}>
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <ShortId value={o.poNumber} />
+                      <span className="truncate font-medium">{o.supplier.name}</span>
+                    </span>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-dust-500">
+                      <PurchaseOrderStatusPill status={o.status} />
+                      <span className="tabular-nums">
+                        {o.lineCount === 0 ? "No lines yet" : progressText(o, o.status)}
+                      </span>
+                      {when ? <span className="contents sm:hidden">{when}</span> : null}
                     </span>
                   </span>
-                </span>
-                <span className="flex shrink-0 flex-col items-end gap-1 text-sm">
-                  {o.overdue ? (
-                    <Badge tone="danger" emphasis="solid">
-                      Overdue
-                    </Badge>
-                  ) : o.expectedAt && o.status !== "received" && o.status !== "cancelled" ? (
-                    <span className="text-dust-700">Expected {formatExpected(o.expectedAt)}</span>
+                  {when ? (
+                    <span className="hidden shrink-0 flex-col items-end gap-1 text-sm sm:flex">
+                      {when}
+                    </span>
                   ) : null}
-                </span>
-                <ChevronRightIcon className="size-5 shrink-0 text-dust-500" />
-              </RowLink>
-            ))}
+                  <ChevronRightIcon className="size-5 shrink-0 text-dust-500" />
+                </RowLink>
+              );
+            })}
           </RowList>
         )}
       </section>

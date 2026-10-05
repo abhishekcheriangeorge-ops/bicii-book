@@ -176,7 +176,12 @@ export function ReorderList({
                             preferredHere ? (
                               <Badge tone="done">Preferred</Badge>
                             ) : (
-                              <Badge>Preferred supplier: {i.preferredSupplier.name}</Badge>
+                              // A long supplier name is cut, never widening the page.
+                              <Badge className="max-w-full">
+                                <span className="truncate">
+                                  Preferred supplier: {i.preferredSupplier.name}
+                                </span>
+                              </Badge>
                             )
                           ) : null}
                           {i.draftPoNumbers.map((po) => (
@@ -202,12 +207,17 @@ export function ReorderList({
       ) : null}
 
       {items.length > 0 ? (
-        <div className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-hairline bg-paper/95 p-3 backdrop-blur md:bottom-4">
+        <div
+          data-sticky-footer
+          className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-hairline bg-paper/95 p-3 backdrop-blur md:bottom-4"
+        >
           <p className="text-sm text-dust-700">
             {supplier ? `For ${supplier.name}` : "Choose a supplier first."}
           </p>
           <Button
             size="lg"
+            wrap
+            className="w-full sm:w-auto"
             pending={pending}
             pendingLabel="Creating…"
             disabled={!supplier || n === 0}

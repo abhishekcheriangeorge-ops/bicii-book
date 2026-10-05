@@ -1,5 +1,5 @@
 import { cn } from "@/lib/cn";
-import { progressText, type Progress } from "@/lib/purchasing";
+import { progressText, type Progress, type PurchaseOrderStatus } from "@/lib/purchasing";
 
 /**
  * How much of an order line (or order) has arrived: a bar with
@@ -11,14 +11,17 @@ import { progressText, type Progress } from "@/lib/purchasing";
 export function QuantityProgress({
   label,
   className,
+  status,
   ...progress
 }: Progress & {
   /** Accessible name of the bar, e.g. "Chain 11-speed received". */
   label: string;
+  /** The order's status: a draft's units are not "to come" (progressText). */
+  status?: PurchaseOrderStatus;
   className?: string;
 }) {
   const { ordered, received, cancelled } = progress;
-  const text = progressText(progress);
+  const text = progressText(progress, status);
   const pct = ordered > 0 ? Math.min(100, Math.round((received / ordered) * 100)) : 0;
   const cancelledPct =
     ordered > 0 ? Math.min(100 - pct, Math.round((cancelled / ordered) * 100)) : 0;

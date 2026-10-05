@@ -145,6 +145,8 @@ export default async function PurchaseOrderPage({ params }: PageProps<"/purchasi
               label={`New order for ${po.supplier.name}`}
               variant="outline"
               size="sm"
+              wrap
+              className="w-full sm:w-auto"
             />
           ) : null}
         </div>
@@ -173,7 +175,7 @@ export default async function PurchaseOrderPage({ params }: PageProps<"/purchasi
         ) : (
           <div className="flex flex-col gap-3">
             {po.lines.length > 1 ? (
-              <QuantityProgress label="Whole order received" {...po.progress} />
+              <QuantityProgress label="Whole order received" status={po.status} {...po.progress} />
             ) : null}
             <PurchaseOrderLines
               lines={po.lines}

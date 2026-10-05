@@ -192,3 +192,30 @@ export async function interceptReceiveActions(
     }
   });
 }
+
+/**
+ * The page does not scroll sideways (SPEC §21, DESIGN: phone width, no
+ * horizontal scroll); on failure the message names what sticks out.
+ */
+export async function expectNoSideScroll(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const root = document.documentElement;
+        const overflow = root.scrollWidth - root.clientWidth;
+        if (overflow <= 0) return "fits";
+        const clipped = (el: Element | null): boolean => {
+          for (let p = el?.parentElement; p && p !== document.body; p = p.parentElement) {
+            if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(p).overflowX)) return true;
+          }
+          return false;
+        };
+        const out = [...document.body.querySelectorAll("*")]
+          .filter((el) => el.getBoundingClientRect().right > root.clientWidth + 0.5 && !clipped(el))
+          .slice(0, 5)
+          .map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 120));
+        return `${overflow}px too wide: ${out.join(" | ")}`;
+      }),
+    )
+    .toBe("fits");
+}

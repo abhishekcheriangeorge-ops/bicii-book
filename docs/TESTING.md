@@ -138,7 +138,7 @@ same PR.
 | Command | What it does |
 |---|---|
 | `npm run devstack:setup` | Download/build PostgREST, Supabase Auth, Node 24 and Supabase Storage into `~/.cache/bicii-devstack` (`BICII_DEVSTACK_CACHE`). Idempotent. |
-| `npm run db:reset` | Drop and rebuild the dev database (`bicii_dev`): roles → Auth → Storage → migrations → seed. |
+| `npm run db:reset` | Drop and rebuild the dev database (`PGDATABASE`, default `bicii_dev`): roles → Auth → Storage → migrations → seed. |
 | `npm run db:migrate` | Apply only pending app migrations. |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
 | `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, and restarts services that were started against a different database. |
@@ -308,7 +308,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Over-receipt is refused and a received PO is closed (D65) | more than outstanding (summed per PO line across a receipt's locations) → `purchase_over_receipt`, nothing written; draft → `purchase_order_not_submitted`; received or cancelled → `purchase_order_closed`; two racing keys each receiving 18 of 20 → one succeeds, one over-receipt; receipts and their lines refuse UPDATE/DELETE (`purchase_receipt_immutable`). App: typing more than is to come shows "Only 2 still to come. Raise the ordered quantity on the order first." and blocks the commit; the receive page of a received PO shows the closed state with "Start a new order for this supplier" (E2E). |
 | Last cost by received_at; 0 is a known cost; snapshots untouched (D5, D63, D24 as amended) | a receipt sets `products.default_direct_cost` and the supplier link's `last_unit_cost` only when no later-received receipt holds the product (a back-dated receipt entered after a newer one changes no cost; ties by created_at then id; within a receipt the highest line number); `last_received_at` is the greatest; receiving upserts the supplier link; a 0 line cost and a 0 actual cost are accepted and become the last cost; the cost change is Phase 4's `cost_changed` event with "Received on PO-… (delivery note …)"; earlier `work_order_line_items` and `inventory_movements` snapshots are unchanged (`purchasing.test.ts`, concurrency file for racing receipts). E2E: received at $12.50 → the product's supplier shows "Last cost $12.50". Unit: `buildReceiptLines` keeps "0.00", `receivePurchaseSchema` accepts 0. |
 | Back-dated receipt dating (D64) | `received_at` defaults to now; up to 30 days back accepted, older → `purchase_receipt_too_old`; more than 5 minutes ahead → `purchase_receipt_in_future`; before `submitted_at` → `purchase_receipt_before_submission`; the movement's reason carries the shop-time delivery date. Unit: `receivedAtBounds` and `receivedAtForSubmit` (sent only when changed, from shop time); the three codes land on the Received field (reducer test). |
-| Purchase cost visibility (D60) | `purchasing-access.test.ts`: mechanic2 reads suppliers, PO quantities, statuses and dates, but no cost column (42501 on the base tables' cost columns, 0 rows from the four `*_staff` views, no history) and writes nothing; mechanic1 (view_costs) reads costs and history but writes nothing; a manage_purchasing-only holder reads purchase costs and writes, but the Phase 3/4/5 cost surfaces stay closed to them (`products.default_direct_cost`, `product_costs`, `inventory_unit_costs`, `inventory_movement_costs`, `inventory_movements.unit_cost_snapshot`, `services_staff`, `work_order_line_items_staff`, `work_order_totals_staff`, `work_order_yield`, `financial_lines`, the money in `daily_summary` / `today_dashboard`). E2E: mechanic2's PO page has no "$", no Totals or History, no Receive link; the receive and reorder routes are a real 403. |
+| Purchase cost visibility (D60) | `purchasing-access.test.ts`: mechanic2 reads suppliers, PO quantities, statuses and dates, but no cost column (42501 on the base tables' cost columns, 0 rows from the four `*_staff` views, no history) and writes nothing; mechanic1 (view_costs) reads costs and history but writes nothing; a manage_purchasing-only holder reads purchase costs and writes, gets the `purchase_cost_defaults` prefill only for an orderable product (a unique, consigned, customer-owned, inactive or archived product's id returns no row), and the Phase 3/4/5 cost surfaces stay closed to them (`products.default_direct_cost`, `product_costs`, `inventory_unit_costs`, `inventory_movement_costs`, `inventory_movements.unit_cost_snapshot`, `services_staff`, `work_order_line_items_staff`, `work_order_totals_staff`, `work_order_yield`, `financial_lines`, the money in `daily_summary` / `today_dashboard`). E2E: mechanic2's PO page has no "$", no Totals or History, no Receive link; the receive and reorder routes are a real 403. |
 | Purchase history is append-only (Phase 7) | every PO change appends one `purchase_order_events` row with actor, correlation ID and reason (cancel and line changes after submission need one); replays append none; UPDATE/DELETE refused for the owner too (`purchase_order_history_append_only`). |
 | Reorder suggestions (D66) | `purchasing-reorder.test.ts`: `suggested_reorder_quantity` = max(2 × reorder point − on hand − on order, 0); `reorder_suggestions` lists `reporting.low_stock` only, on order counts submitted and partially received POs (never drafts), names drafts holding the product, carries no cost; `create_purchase_order_from_low_stock` makes one draft, a 0 suggestion ordered at 1, cost = supplier last cost, else product cost (0 included), else 0, replay by id adds nothing; manage_purchasing only. E2E: after receiving 18 of 20 and using 1, the product is pre-ticked with on order 2 and suggestion 21, and the draft has it × 21 at $12.50. |
 | Manual adjustment records actor/time/reason | `adjust_stock` without reason → raises; with reason → row has `created_by`, `reason`. |
@@ -371,20 +371,25 @@ Each invariant from SPEC §23 has at least one test, named after it:
 
 Harness (`playwright.config.mts`, `tests/e2e/`): Chromium only, two projects
 — `phone` (iPhone 13, 390 px: bottom tab bar) and `tablet` (iPad gen 7,
-810 px: side rail). `webServer` runs `npm run build && next start -p 3100`
-with the devstack URL and local demo keys passed explicitly (so `.env.local`
-does not matter). `tests/e2e/global-setup.mts` resets and seeds `bicii_dev`
-(`E2E_RESET=0` skips), starts the devstack if needed, and waits until the
+810 px: side rail). `webServer` runs `npm run build && next start -p $E2E_PORT`
+(default 3100) with the devstack URL and local demo keys passed explicitly
+(so `.env.local` does not matter). `tests/e2e/global-setup.mts` resets and
+seeds the dev database, `PGDATABASE` (default `bicii_dev`; `E2E_RESET=0`
+skips), starts the devstack if needed, and waits until the
 seeded admin can sign in through the gateway and call `my_staff_profile`.
 Tests run serially (one shared database). In this container the preinstalled
 `/opt/pw-browsers/chromium` is used via `launchOptions.executablePath`
 (`PLAYWRIGHT_CHROMIUM_EXECUTABLE` overrides); never `playwright install` here.
 
 ```sh
-npm run test:e2e                       # build + start on :3100, reset bicii_dev, run
+npm run test:e2e                       # build + start on E2E_PORT (3100), reset PGDATABASE (bicii_dev), run
 E2E_REUSE_SERVER=1 npm run test:e2e    # reuse an app already on E2E_PORT (3100)
-E2E_RESET=0 npm run test:e2e           # keep bicii_dev as it is
+E2E_RESET=0 npm run test:e2e           # keep the dev database as it is
 ```
+
+A second checkout (README "Postgres somewhere else?") sets its own
+`PGDATABASE`, `BICII_*_PORT` and `E2E_PORT` first, so its E2E run resets
+only its own database and serves on its own port.
 
 The seed's history is relative to the day it was reset (DATA-MODEL §18
 "Phase 5 part"). Global setup reads that anchor day once, from the seeded

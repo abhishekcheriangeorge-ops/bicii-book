@@ -184,12 +184,17 @@ export function NewPurchaseOrderButton({
   variant = "solid",
   size = "md",
   disabled = false,
+  wrap = false,
+  className,
 }: {
   supplier?: { id: string; name: string };
   label?: string;
   variant?: ButtonVariant;
   size?: ButtonSize;
   disabled?: boolean;
+  /** A long label (a supplier's name) wraps instead of widening a phone page. */
+  wrap?: boolean;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -197,6 +202,8 @@ export function NewPurchaseOrderButton({
       <Button
         variant={variant}
         size={size}
+        wrap={wrap}
+        className={className}
         icon={<PlusIcon className={size === "sm" ? "size-4" : "size-5"} />}
         disabled={disabled}
         onClick={() => setOpen(true)}

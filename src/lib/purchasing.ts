@@ -92,9 +92,16 @@ const units = (n: number) => n.toLocaleString("en-SG");
 
 /**
  * "18 of 20 received · 2 to come", "20 of 20 received",
- * "18 of 20 received · 2 cancelled" (D61).
+ * "18 of 20 received · 2 cancelled" (D61). A draft has not gone to the
+ * supplier, so nothing is "to come" (as reporting.product_on_order leaves
+ * drafts out, D66): "15 items · not submitted".
  */
-export function progressText({ ordered, received, outstanding, cancelled }: Progress): string {
+export function progressText(
+  { ordered, received, outstanding, cancelled }: Progress,
+  status?: PurchaseOrderStatus,
+): string {
+  if (status === "draft")
+    return `${units(ordered)} ${ordered === 1 ? "item" : "items"} · not submitted`;
   const head = `${units(received)} of ${units(ordered)} received`;
   if (cancelled > 0) return `${head} · ${units(cancelled)} cancelled`;
   if (outstanding > 0) return `${head} · ${units(outstanding)} to come`;

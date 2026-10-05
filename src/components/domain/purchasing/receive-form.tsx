@@ -628,19 +628,28 @@ export function ReceiveForm({
         </Field>
       </section>
 
-      <div className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-hairline bg-paper/95 p-3 backdrop-blur md:bottom-4">
-        <div className="flex min-w-0 flex-col">
-          <p className="font-semibold tabular-nums" aria-live="polite">
+      {/* One row at every width (a two-row footer hid the first line's
+          controls on a phone): the summary takes what the button leaves. */}
+      <div
+        data-sticky-footer
+        className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 rounded-2xl border border-hairline bg-paper/95 p-3 backdrop-blur md:bottom-4"
+      >
+        <div className="flex min-w-0 flex-1 flex-col">
+          <p
+            className="text-sm leading-tight font-semibold tabular-nums sm:text-base"
+            aria-live="polite"
+          >
             {totals.text}
           </p>
-          <p className="text-sm text-dust-700 tabular-nums">
+          <p className="text-xs leading-tight text-dust-700 tabular-nums sm:text-sm">
             {state.phase === "submitting" && state.slow
               ? "Still confirming…"
               : `Value ${money(totals.value.toFixed(2))} (preview)`}
           </p>
         </div>
         <Button
-          size="lg"
+          size="md"
+          className="sm:min-h-14 sm:px-8 sm:text-base"
           pending={state.phase === "submitting" || state.phase === "done"}
           pendingLabel={state.slow ? "Still confirming…" : "Receiving…"}
           disabled={!canCommit}
@@ -677,6 +686,8 @@ function ClosedOrder({ order }: { order: ReceiveFormOrder }) {
           <NewPurchaseOrderButton
             supplier={{ id: order.supplier.id, name: order.supplier.name }}
             label="Start a new order for this supplier"
+            wrap
+            className="w-full sm:w-auto"
           />
         ) : null}
         {back}

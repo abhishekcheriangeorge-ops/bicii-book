@@ -5,9 +5,8 @@ import { notFound } from "next/navigation";
 import { PurchaseOrderStatusPill } from "@/components/domain/purchasing/purchase-order-status-pill";
 import { ReceiveForm } from "@/components/domain/purchasing/receive-form";
 import { requireStaff } from "@/lib/auth/session";
-import { formatTime } from "@/lib/dates";
 import { getReceiveForm } from "@/lib/domain/purchasing";
-import { itemsText } from "@/lib/receive-form";
+import { itemsText, receiptTimeText } from "@/lib/receive-form";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -60,12 +59,15 @@ export default async function ReceivePage({ params }: PageProps<"/purchasing/rec
           className="mb-4 rounded-2xl border border-hairline bg-card p-4"
         >
           <h2 id="recent-receipts" className="eyebrow text-dust-500">
-            Already received today
+            Received in the last 24 hours
           </h2>
-          <ul aria-label="Already received today" className="mt-2 flex flex-col gap-1 text-dense">
+          <ul
+            aria-label="Received in the last 24 hours"
+            className="mt-2 flex flex-col gap-1 text-dense"
+          >
             {form.recentReceipts.map((r) => (
               <li key={r.id} className="flex flex-wrap gap-x-2 tabular-nums">
-                <span className="font-semibold">{formatTime(r.receivedAt)}</span>
+                <span className="font-semibold">{receiptTimeText(r.receivedAt)}</span>
                 <span>by {r.receivedBy}</span>
                 {r.reference ? <span className="font-mono">{r.reference}</span> : null}
                 <span className="text-dust-700">{itemsText(r.units)}</span>

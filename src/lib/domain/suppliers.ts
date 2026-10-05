@@ -355,6 +355,26 @@ export async function removeSupplierProduct(
   );
 }
 
+/**
+ * A supplier that can be chosen for a new order (Reorder's `?supplier=`
+ * preset): its id and name, or null when the id is unknown or the supplier
+ * is archived (archived suppliers are never selectable, as in the pickers).
+ */
+export async function getActiveSupplierRef(
+  supabase: ServerSupabase,
+  id: string,
+): Promise<{ id: string; name: string } | null> {
+  const row = unwrap(
+    await supabase
+      .from("suppliers")
+      .select("id, name")
+      .eq("id", id)
+      .is("archived_at", null)
+      .maybeSingle(),
+  );
+  return row ? { id: row.id, name: row.name } : null;
+}
+
 /** Options for a supplier picker: active suppliers matching `q` (staff_search). */
 export async function searchSupplierOptions(
   supabase: ServerSupabase,

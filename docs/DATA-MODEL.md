@@ -1624,7 +1624,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `remove_purchase_order_line(line_id, reason = null)` → setof `purchase_order_lines` | P(manage_purchasing) | Unknown → no row. Locks the PO; `purchase_order_closed`; `purchase_line_has_receipts`; after submission `reason_required` and never the last line (`purchase_order_needs_lines`). Refreshes the status. |
 | `receive_purchase(purchase_order_id, idempotency_key, lines jsonb, reference = null, received_at = null, notes = null)` → `purchase_receipts` | P(manage_purchasing) | Built (Phase 7); the 14 steps in §10 (replay, over-receipt, D64 dating, lock_stock, one movement per receipt line, D63 last cost, `received` event, status). |
 | `purchase_receipt_by_key(idempotency_key)` → setof `purchase_receipts` | P(manage_purchasing) | Zero or one row, after a lost response. |
-| `purchase_cost_defaults(supplier_id, product_ids uuid[])` → `table(product_id, unit_cost, source)` | P(manage_purchasing) | ≤ 200 ids (22023); per known product the supplier's last cost (`supplier_last`), else the product's (`product`, 0 included), else 0 (`none`). The PO line sheet's prefill (D60, D66). |
+| `purchase_cost_defaults(supplier_id, product_ids uuid[])` → `table(product_id, unit_cost, source)` | P(manage_purchasing) | ≤ 200 ids (22023); only products a PO can hold (quantity-tracked, shop-owned, active, not archived; any other id is omitted like an unknown one, so it never reveals a unique or consigned product's cost, D60); per such product the supplier's last cost (`supplier_last`), else the product's (`product`, 0 included), else 0 (`none`). The PO line sheet's prefill (D60, D66). |
 | `set_supplier_product(supplier_id, product_id, supplier_sku = null, lead_days = null, preferred = false)` → `supplier_products` | P(manage_purchasing) | Locks the product row, then upserts the link (never the last cost; a new link takes the product's currency); `preferred` clears the product's other preferred row. P0002 / `supplier_archived`. |
 | `remove_supplier_product(supplier_id, product_id)` → setof `supplier_products` | P(manage_purchasing) | Deletes the link; no row on a replay. |
 | `reorder_suggestions(supplier_id = null)` → `table(product_id, short_id, sku, name, on_hand, reorder_point, on_order, suggested_quantity, supplier_linked, preferred_supplier_id, supplier_sku, draft_po_numbers text[])` | S | Built (Phase 7, D66 D-REORDER; `20261005000500_purchasing_reorder.sql`). The `reporting.low_stock` products; `on_order` from `reporting.product_on_order` (submitted and partially received POs, never drafts); `suggested_quantity` = max(2 × reorder_point − on_hand − on_order, 0); `supplier_linked` / `supplier_sku` relative to the given supplier (false / null without one); `preferred_supplier_id` whatever was asked; `draft_po_numbers` the draft POs (any supplier) already holding the product, ascending, `{}` when none. Ordered by supplier_linked desc, suggested_quantity desc, name. No cost column (D60). |
@@ -1918,8 +1918,14 @@ are back-dated with a plain UPDATE as the owner (those columns write no PO
 event; `pg_temp.seed_at`), and `receive_purchase` records the receipt with
 its past `received_at`. The `purchase_received` movements keep seed time
 (Phase 4's ledger is append-only with no effective date; their reason
-carries the delivery date, e.g. "PO-000002 received 2 Oct 2026 11:30"), and
-PO events keep record time.
+carries the delivery date, e.g. "PO-000002 received 2 Oct 2026 11:30").
+PO events are moved to the moment each stands for, so an order's History
+agrees with its Details and Receipts: created at `created_at`, lines a
+minute apart after it, submitted at `submitted_at`, received at the
+receipt's `received_at` (its status change a second later); PO-000005's
+cancellation stays at seed time. The append-only trigger is disabled for
+that one seed-only UPDATE and re-enabled straight after
+(`purchasing-seed.test.ts` checks the chronology).
 
 Fences on the earlier phases: (1) every receipt cost equals the product's
 current `default_direct_cost`, so D63 changes no cost and writes no

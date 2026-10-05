@@ -71,6 +71,18 @@ them is `bicii-dev-password`:
 Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
 `PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
 shell before any of the commands (they do not read `.env.local`). `npm run devstack:stop` stops the services.
+`PGDATABASE` also names the database that `db:reset`, the devstack services
+and `test:e2e` use (and drop).
+
+A second checkout (a `git worktree`) on the same machine runs its own stack
+beside the first by setting, in its shell before every command:
+`PGDATABASE` (its own database name), `BICII_AUTH_PORT`, `BICII_REST_PORT`,
+`BICII_STORAGE_PORT` and `BICII_GATEWAY_PORT` (devstack ports other than the
+first checkout's), and `E2E_PORT` (the E2E app port). Then `npm run db:reset`
+and `npm run devstack:start` in it, `npm run devstack:env` if its dev server
+should talk to its own stack, and `next dev -p <another port>`. Its devstack
+state lives in its own `.devstack/`; `check:types` and the DB tests build
+per-process throwaway databases, so the two never share one.
 
 ## Scripts
 
@@ -83,16 +95,16 @@ shell before any of the commands (they do not read `.env.local`). `npm run devst
 | `npm test` | Every Vitest project (unit + db). |
 | `npm run test:unit` | Unit project (jsdom): pure TypeScript and synchronous components. |
 | `npm run test:db` | DB project: invariants, RLS and RPCs on clones of a template built with the real Supabase Auth and Storage migrations. Includes a live-stack smoke test when the devstack is running. |
-| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on :3100, resets `bicii_dev`, starts the devstack if needed. |
+| `npm run test:e2e` | Playwright, Chromium, phone + iPad. Builds the app, serves it on `E2E_PORT` (default :3100), resets the dev database (`PGDATABASE`, default `bicii_dev`), starts the devstack if needed. |
 | `npm run format` / `npm run lint` | Prettier write / ESLint. |
 | `npm run tokens:contrast` | Recompute WCAG ratios for the colour tokens; fails on a miss. |
 | `npm run icons` | Regenerate the PWA icons from `brand/logo-source.png`. |
 | `npm run devstack:setup` | Download and build the devstack components (idempotent; `-- --force` rebuilds). |
-| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321. |
+| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321 (override with `BICII_AUTH_PORT`, `BICII_REST_PORT`, `BICII_STORAGE_PORT`, `BICII_GATEWAY_PORT`). |
 | `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. |
-| `npm run db:reset` | Drop and rebuild the dev database, then seed it (the demo history is relative to the shop day of the reset: reset to move "today"). |
+| `npm run db:reset` | Drop and rebuild the dev database (`PGDATABASE`, default `bicii_dev`), then seed it (the demo history is relative to the shop day of the reset: reset to move "today"). |
 | `npm run db:migrate` | Apply pending migrations without a reset. |
-| `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database from the migrations first; CI diffs that). |
+| `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a per-process throwaway database from the migrations first; CI diffs that). |
 
 ## Project layout
 

@@ -201,6 +201,40 @@ describe("Mechanic permission boundaries (SPEC §27.2) and D60 D-PO-COSTS", () =
   });
 
   it7(
+    "manage_purchasing reads the cost prefill only for products a PO can hold (D60, D62)",
+    async () => {
+      await inTransaction(conn, async (tx) => {
+        await grantPurchasing(tx, STAFF.mechanic2);
+        await ownerMode(tx);
+        const supplierId = await makeSupplier(tx);
+        const orderable = await makeProduct(tx, { cost: "8.00" });
+        const unique = await makeProduct(tx, { tracking: "unique", cost: "4200.00" });
+        const consigned = await makeProduct(tx, { cost: "300.00" });
+        const customerOwned = await makeProduct(tx, { cost: "250.00" });
+        const inactive = await makeProduct(tx, { cost: "12.00", active: false });
+        const archived = await makeProduct(tx, { cost: "14.00" });
+        await tx.query("update public.products set ownership_type = 'consignment' where id = $1", [
+          consigned,
+        ]);
+        await tx.query(
+          "update public.products set ownership_type = 'customer_owned' where id = $1",
+          [customerOwned],
+        );
+        await tx.query("update public.products set archived_at = now() where id = $1", [archived]);
+        await actAs(tx, MECHANIC2);
+        // mechanic2 has no view_costs: the product cost views stay closed.
+        expect(await rows(tx, "public.product_costs")).toBe(0);
+
+        const { rows: prefill } = await tx.query(
+          "select product_id, unit_cost::text, source from public.purchase_cost_defaults($1, $2::uuid[])",
+          [supplierId, [orderable, unique, consigned, customerOwned, inactive, archived]],
+        );
+        expect(prefill).toEqual([{ product_id: orderable, unit_cost: "8.00", source: "product" }]);
+      });
+    },
+  );
+
+  it7(
     "manage_purchasing alone runs purchasing and sees purchase costs, but no Phase 3/4/5 cost surface",
     async () => {
       await inTransaction(conn, async (tx) => {

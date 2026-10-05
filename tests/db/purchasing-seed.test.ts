@@ -6,7 +6,8 @@
  *   * five POs PO-000001 .. PO-000005, one per interesting status, built
  *     through the RPCs as the admin;
  *   * every PO's created_at < submitted_at < each receipt's received_at
- *     (back-dated), while the movements keep seed time;
+ *     (back-dated), while the movements keep seed time; the PO history is
+ *     dated to match (created, submitted, received at those instants);
  *   * SPEC §14's partial receipt: ordered 20, received 18, 2 outstanding,
  *     overdue; replaying its receipt key returns the seeded receipt;
  *   * the fences: receipt costs equal the products' costs, no low-stock
@@ -201,6 +202,68 @@ describe("Phase 7 seed: suppliers and purchase orders", () => {
     ]);
     expect(movements[0].reason).toMatch(/^PO-000002 received \d{1,2} [A-Z][a-z]{2} \d{4} 11:30$/);
     expect(movements[1].reason).toMatch(/^PO-000001 received \d{1,2} [A-Z][a-z]{2} \d{4} 14:00$/);
+  });
+
+  it("each seeded PO's history reads true next to its dates; the history stays append-only", async () => {
+    const { rows } = await conn.query<{
+      po: string;
+      event_type: string;
+      at: Date;
+      created_at: Date;
+      submitted_at: Date | null;
+      receipt_at: Date | null;
+    }>(
+      `select o.id as po, e.event_type::text, e.created_at as at, o.created_at, o.submitted_at,
+              r.received_at as receipt_at
+         from public.purchase_order_events e
+         join public.purchase_orders o on o.id = e.purchase_order_id
+         left join public.purchase_receipts r on r.id = e.purchase_receipt_id
+        where o.id = any ($1::uuid[])
+        order by o.po_number, e.created_at, e.id`,
+      [Object.values(PURCHASE_ORDER)],
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    const types = (po: string) => rows.filter((r) => r.po === po).map((r) => r.event_type);
+    // History order is the business order.
+    expect(types(PURCHASE_ORDER.receivedInFull)).toEqual([
+      "created",
+      "line_added",
+      "submitted",
+      "received",
+      "status_changed",
+    ]);
+    expect(types(PURCHASE_ORDER.partial)).toEqual([
+      "created",
+      "line_added",
+      "line_added",
+      "submitted",
+      "received",
+      "status_changed",
+    ]);
+    expect(types(PURCHASE_ORDER.cancelled)).toEqual([
+      "created",
+      "line_added",
+      "submitted",
+      "cancelled",
+    ]);
+    for (const r of rows) {
+      const label = `${r.po} ${r.event_type}`;
+      expect(r.at.getTime(), label).toBeGreaterThanOrEqual(r.created_at.getTime());
+      if (r.event_type === "created") expect(r.at.getTime(), label).toBe(r.created_at.getTime());
+      if (r.event_type === "line_added" && r.submitted_at)
+        expect(r.at.getTime(), label).toBeLessThan(r.submitted_at.getTime());
+      if (r.event_type === "submitted")
+        expect(r.at.getTime(), label).toBe(r.submitted_at!.getTime());
+      if (r.event_type === "received") expect(r.at.getTime(), label).toBe(r.receipt_at!.getTime());
+    }
+    // The seed lifted the append-only trigger for its one UPDATE only.
+    expect(
+      await scalar<string>(
+        conn,
+        `select tgenabled::text from pg_catalog.pg_trigger
+          where tgname = 'purchase_order_events_append_only'`,
+      ),
+    ).toBe("O");
   });
 
   it("PO-000002 is SPEC §14's partial receipt: 20 ordered, 18 received, 2 outstanding, overdue", async () => {

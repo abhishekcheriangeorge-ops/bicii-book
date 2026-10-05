@@ -20,6 +20,7 @@ import {
   receiveTotals,
   receivedAtBounds,
   receivedAtForSubmit,
+  receiptTimeText,
   saveReceiveDraft,
   setAllQuantities,
   toRpcLines,
@@ -252,6 +253,16 @@ describe("duplicate delivery-note guard (D65)", () => {
     expect(duplicateWarning(recorded[0], new Date("2026-10-07T05:00:00Z"))).toMatch(
       /^DN-5531 was already recorded on 5 Oct 2026, 10:42 am by Asha Admin \(18 items\)$/,
     );
+  });
+});
+
+describe("the last-24-hours receipts panel", () => {
+  it("shows the time for a receipt today and the date for yesterday's (shop time)", () => {
+    // 09:30 Singapore on 6 Oct; a receipt at 17:30 on 5 Oct is within 24
+    // hours but not today, so it carries its date.
+    const now = new Date("2026-10-06T01:30:00Z");
+    expect(receiptTimeText("2026-10-06T01:00:00Z", now)).toBe("9:00 am");
+    expect(receiptTimeText("2026-10-05T09:30:00Z", now)).toBe("5 Oct 2026, 5:30 pm");
   });
 });
 

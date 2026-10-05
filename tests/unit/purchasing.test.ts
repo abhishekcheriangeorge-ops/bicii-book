@@ -80,6 +80,15 @@ describe("progressText", () => {
     );
   });
 
+  it("says nothing is to come on a draft, which has not gone to the supplier (D66)", () => {
+    const draft = { ordered: 15, received: 0, outstanding: 15, cancelled: 0 };
+    expect(progressText(draft, "draft")).toBe("15 items · not submitted");
+    expect(progressText({ ...draft, ordered: 1, outstanding: 1 }, "draft")).toBe(
+      "1 item · not submitted",
+    );
+    expect(progressText(draft, "submitted")).toBe("0 of 15 received · 15 to come");
+  });
+
   it("groups thousands", () => {
     expect(progressText({ ordered: 12000, received: 0, outstanding: 12000, cancelled: 0 })).toBe(
       "0 of 12,000 received · 12,000 to come",

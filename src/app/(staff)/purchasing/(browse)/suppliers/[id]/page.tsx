@@ -258,7 +258,7 @@ export default async function SupplierPage({ params }: PageProps<"/purchasing/su
                       ) : null}
                     </span>
                     <span className="text-sm text-dust-500 tabular-nums">
-                      {o.lineCount === 0 ? "No lines yet" : progressText(o)}
+                      {o.lineCount === 0 ? "No lines yet" : progressText(o, o.status)}
                       {o.expectedAt &&
                       !o.overdue &&
                       (o.status === "submitted" || o.status === "partially_received")

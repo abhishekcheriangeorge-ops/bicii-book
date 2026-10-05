@@ -4,8 +4,8 @@ import { PurchasingNav } from "@/components/domain/purchasing/purchasing-nav";
 import { ReorderList } from "@/components/domain/purchasing/reorder-list";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireStaff } from "@/lib/auth/session";
-import { unwrap } from "@/lib/db-errors";
 import { getReorderSuggestions } from "@/lib/domain/purchasing";
+import { getActiveSupplierRef } from "@/lib/domain/suppliers";
 import { DEFAULT_CURRENCY } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -23,19 +23,9 @@ export default async function ReorderPage({ searchParams }: PageProps<"/purchasi
   const raw = (await searchParams).supplier;
   const supplierParam = Array.isArray(raw) ? raw[0] : raw;
   const supabase = await createClient();
-  const supplierRow = isUuid(supplierParam)
-    ? unwrap(
-        await supabase
-          .from("suppliers")
-          .select("id, name, archived_at")
-          .eq("id", supplierParam)
-          .maybeSingle(),
-      )
+  const supplier = isUuid(supplierParam)
+    ? await getActiveSupplierRef(supabase, supplierParam)
     : null;
-  const supplier =
-    supplierRow && supplierRow.archived_at === null
-      ? { id: supplierRow.id, name: supplierRow.name }
-      : null;
   const items = await getReorderSuggestions(supabase, supplier?.id ?? null, staff);
 
   return (

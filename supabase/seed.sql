@@ -1819,4 +1819,43 @@ where id = 'd7100000-0000-4000-8000-000000000005';
 select public.cancel_purchase_order('d7100000-0000-4000-8000-000000000005',
   'Supplier out of stock until next quarter');
 
+-- So that every seeded PO's History reads true next to its Details and
+-- Receipts (as the workshop seed does for job timelines): the RPCs above
+-- stamped each event at seed time, so move it to the moment it stands for.
+-- created -> the PO's created_at; line_added -> a minute apart after it;
+-- submitted -> submitted_at; received -> its receipt's received_at; the
+-- status_changed that a receipt caused -> a second after that receipt; the
+-- cancellation stays at seed time ("cancelled today"). The append-only
+-- trigger is lifted for this one seed-only UPDATE and restored at once;
+-- no app path can do this.
+alter table public.purchase_order_events disable trigger purchase_order_events_append_only;
+update public.purchase_order_events e
+set created_at = t.at
+from (
+  select ev.id,
+         case ev.event_type
+           when 'created' then o.created_at
+           when 'line_added' then o.created_at + pg_catalog.make_interval(mins => (
+             pg_catalog.row_number() over (
+               partition by ev.purchase_order_id, ev.event_type order by ev.created_at, ev.id))::int)
+           when 'submitted' then o.submitted_at
+           when 'received' then r.received_at
+           when 'status_changed' then (
+             select rr.received_at + interval '1 second'
+             from public.purchase_order_events prev
+             join public.purchase_receipts rr on rr.id = prev.purchase_receipt_id
+             where prev.purchase_order_id = ev.purchase_order_id
+               and prev.event_type = 'received'
+               and prev.created_at <= ev.created_at
+             order by prev.created_at desc
+             limit 1)
+         end as at
+  from public.purchase_order_events ev
+  join public.purchase_orders o on o.id = ev.purchase_order_id
+  left join public.purchase_receipts r on r.id = ev.purchase_receipt_id
+  where ev.purchase_order_id::text like 'd7100000-%'
+) t
+where e.id = t.id and t.at is not null;
+alter table public.purchase_order_events enable trigger purchase_order_events_append_only;
+
 select set_config('request.jwt.claims', '', false);
