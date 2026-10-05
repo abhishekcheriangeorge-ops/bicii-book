@@ -75,9 +75,23 @@ reused, so they would burn IDs in a database you keep).
 
 `tests/db/stack.smoke.test.ts` goes one step further when the devstack is
 running (`npm run db:reset && npm run devstack:start`): it signs in through
-the gateway with supabase-js as `admin@bicii.test`, calls
-`rpc('my_staff_profile')`, and round-trips an object through Storage with
-the service key. `tests/db/photo-moves.stack.test.ts` runs the app's own
+the gateway with supabase-js as `admin@bicii.test` the way staff do (PLAN
+D10, D70: `signInWithOtp` with `shouldCreateUser: false`, the code read
+from the devstack's mail catcher with `scripts/devstack/mail-client.mjs`,
+`verifyOtp` with type `email`), checks the email carries our subject ("Your
+BICII sign-in code") and template, calls `rpc('my_staff_profile')`, and
+round-trips an object through Storage with the service key. It also pins
+the code rules Auth enforces: an unknown address with `shouldCreateUser:
+false` gets 422 `otp_disabled` (the Admin will show it as sent, D70),
+creates no `auth.users` row and receives no email; a code works once (the
+second `verifyOtp` is 403 `otp_expired`); a newer code voids the older one.
+Those cases use unique throwaway `.test` logins made with the admin API and
+deleted after the file. Every other live test signs in with
+`tests/db/stack.ts`: `otpClient(email)` gets the code from the service-role
+admin API (`auth.admin.generateLink({ type: 'magiclink' })` returns
+`properties.email_otp` and sends no email) and verifies it with
+`verifyOtp`; `staffClient(who)` is `otpClient` for a seeded login and
+`serviceClient()` is the service-role client. `tests/db/photo-moves.stack.test.ts` runs the app's own
 photo domain code (`src/lib/domain/attachments.ts`, loaded with
 `server-only` aliased to its empty module in the db project) as mechanic2
 against real Storage: moves between buckets, deletes, refused moves and
@@ -141,8 +155,72 @@ same PR.
 | `npm run db:reset` | Drop and rebuild the dev database (`bicii_dev`): roles → Auth → Storage → migrations → seed. |
 | `npm run db:migrate` | Apply only pending app migrations. |
 | `npm run db:types` | Regenerate `src/lib/database.types.ts` (`-- --fresh` builds a throwaway database first). |
-| `npm run devstack:start` / `stop` / `status` | Auth :9999, PostgREST :3001, Storage :5000, gateway :54321; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, and restarts services that were started against a different database. |
+| `npm run devstack:start` / `stop` / `status` | The mail catcher (HTTP :8025, SMTP :2525), Auth :9999, PostgREST :3001, Storage :5000, gateway :54321, started in that order; pids and logs in `.devstack/`. `start` builds the database if it does not exist yet, restarts services that were started against a different database, and refuses to start a service whose port (or SMTP port) another process holds. Ports: `BICII_MAIL_HTTP_PORT`, `BICII_SMTP_PORT`, `BICII_AUTH_PORT`, `BICII_REST_PORT`, `BICII_STORAGE_PORT`, `BICII_GATEWAY_PORT`. |
 | `npm run devstack:env` | Write `.env.local` with the gateway URL and the local anon/service keys (what the app reads). The scripts and tests never read `.env.local`: `DATABASE_URL` / `PG*` come from the shell. |
+
+### The devstack mail catcher
+
+Staff sign in with emailed codes (PLAN D10, D70), so the devstack runs a
+mail catcher, `scripts/devstack/mailcatcher.mjs` (dependency-free; Phase 11
+reuses it for customer codes). It listens on 127.0.0.1 only: SMTP on
+`BICII_SMTP_PORT` (2525) and a JSON API on `BICII_MAIL_HTTP_PORT` (8025).
+Supabase Auth sends to it (`GOTRUE_SMTP_*` in `scripts/devstack/services.mjs`:
+no credentials, no TLS, sender `no-reply@bicii.test`) and fetches its email
+templates from it (`GOTRUE_MAILER_TEMPLATES_*` point at
+`/templates/<name>.html`, served from `supabase/templates`). The devstack's
+Auth also gets 6-digit codes valid for 600 s (`GOTRUE_MAILER_OTP_*`), a 1 s
+per-address interval and local-only rate limits of 100000
+(`GOTRUE_RATE_LIMIT_EMAIL_SENT`, `_VERIFY`, `_OTP`, `_TOKEN_REFRESH`) so
+E2E can sign in hundreds of times. Messages are kept in `.devstack/mail/`
+as `<id>.json` (parsed) and `<id>.eml` (raw); ids keep increasing across
+restarts and the newest 1000 are kept.
+
+| Request | Answer |
+|---|---|
+| `GET /health` | `{ok:true}` |
+| `GET /messages?to=&after=&limit=` | `{messages:[…]}`, newest first: id, receivedAt, envelopeFrom, envelopeTo, from, to, subject, code |
+| `GET /messages/latest?to=&after=` | the newest full message (adds text and html) to that recipient with id > after, else 404 `{error:'not_found'}` |
+| `GET /messages/:id`, `GET /messages/:id/raw` | one message as JSON, or its raw `.eml` |
+| `DELETE /messages[?to=]` | `{deleted:n}` |
+| `GET /templates/<name>.html` | a template file; only `^[a-z0-9_-]+\.html$`, anything else 404 |
+
+`to` matches the envelope recipients (RCPT TO), case-insensitively. `code`
+is the first standalone run of 6–10 digits in the text part, else in the
+tag-stripped HTML (`scripts/devstack/mail-parse.mjs`), so templates must
+not contain another run of six or more digits. By hand:
+`curl "http://127.0.0.1:${BICII_MAIL_HTTP_PORT:-8025}/messages/latest?to=admin@bicii.test"`.
+
+Tests read codes with `scripts/devstack/mail-client.mjs`: take
+`mailCursor(email)` before asking for a code, then
+`waitForCode({ to: email, after: cursor })` (or `waitForMessage` for the
+whole message; both poll every 200 ms for up to 15 s and name the address
+and mail URL when nothing arrives); `clearMail(to?)` deletes. The base URL
+is `BICII_MAIL_URL`, else the devstack's. With `supabase start`
+(`E2E_EXTERNAL_STACK=1`) set `BICII_MAIL_KIND=mailpit`: the client then
+reads Mailpit on :54324 through its documented API (`GET
+/api/v1/search?query=to:"<addr>"`, `GET /api/v1/message/<ID>`). That
+adapter is written from Mailpit's documentation and has **not been run**
+(no Docker here).
+
+Verification of the mail catcher step (2026-10-05, OTP phase step 1, in
+a second worktree with the ports moved by `BICII_*_PORT`):
+
+- `npm run devstack:stop && npm run devstack:start`: mail on its HTTP and
+  SMTP ports, then Auth, PostgREST, Storage, gateway; `devstack:status`
+  all ok: **pass**.
+- A code requested by hand (`POST /auth/v1/otp`, `create_user: false`)
+  arrived with subject "Your BICII sign-in code", our template and a
+  6-digit code; an unknown address got 422 `otp_disabled`: **pass**.
+- 40 rapid code requests for 40 new throwaway addresses: all 200, 40
+  emails, no 429: **pass**.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 71 files, 942
+  tests: **pass**.
+- `npm run test:e2e -- tests/e2e/auth.spec.ts` (global setup signs in with
+  a generated code and needs the mail catcher; the password form is still
+  the app's sign-in until the next step): 24 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
 
 ## What is tested where
 
@@ -286,6 +364,20 @@ same PR.
   390 × 844 (the page never scrolls sideways, so nothing else catches a
   figure running into the next card), that "Right now" says "Awaiting
   collection", and that a `?day=` before `EARLIEST_SHOP_DAY` shows today.
+- OTP phase, the devstack mail catcher: `mail-parse.test.ts` (pure:
+  folded headers, RFC 2047 B and Q words, quoted-printable with soft
+  breaks, nested multipart with base64 and iso-8859-1 parts, attachments
+  skipped, raw 8-bit utf-8, `htmlToText`, `extractCode` taking only
+  standalone 6–10 digit runs from the text part, else the tag-stripped
+  HTML, never a colour or a digit inside a tag) and `mailcatcher.test.ts`
+  (node environment, ports 0, a temp directory: two messages on one raw
+  SMTP connection, pipelined and split mid-terminator, with a dot-stuffed
+  line and mixed-case recipients; EHLO without STARTTLS, AUTH PLAIN and
+  LOGIN, 503 / 502 / 252 replies, 552 above 10 MB with the connection kept;
+  `/messages/latest` with and without `after`, `/messages`, `/raw`,
+  `/templates` refusing traversal, ids continuing after a restart,
+  `DELETE`, and `mail-client.mjs` cursors, `waitForCode` and its timeout
+  error, `clearMail`).
 
 ### Database (SPEC §27.2 and §23)
 
@@ -368,7 +460,10 @@ Harness (`playwright.config.mts`, `tests/e2e/`): Chromium only, two projects
 with the devstack URL and local demo keys passed explicitly (so `.env.local`
 does not matter). `tests/e2e/global-setup.mts` resets and seeds `bicii_dev`
 (`E2E_RESET=0` skips), starts the devstack if needed, and waits until the
-seeded admin can sign in through the gateway and call `my_staff_profile`.
+seeded admin can sign in through the gateway and call `my_staff_profile`
+(with an email code: the service-role admin API generates it, Auth
+verifies it, no email is sent) and the mail catcher answers `GET /health`
+(skipped for `E2E_EXTERNAL_STACK=1` unless `BICII_MAIL_KIND` is set).
 Tests run serially (one shared database). In this container the preinstalled
 `/opt/pw-browsers/chromium` is used via `launchOptions.executablePath`
 (`PLAYWRIGHT_CHROMIUM_EXECUTABLE` overrides); never `playwright install` here.
@@ -658,7 +753,10 @@ fine).
   so a label can never post skipped required checks): `npx playwright install --with-deps chromium`, the devstack on the
   service database, then `npm run test:e2e` (production build on :3100,
   phone + iPad projects, one retry in CI). On failure the HTML report,
-  traces and devstack logs are uploaded as an artifact.
+  traces, devstack logs and the mail catcher's messages (`.devstack/mail/`,
+  local codes only) are uploaded as an artifact. `devstack:start` brings the
+  mail catcher up in both workflows; `ci.yml`'s "Devstack logs" step prints
+  `mail.log` with the others.
 
 Secrets in CI: none. E2E runs against the devstack (real Supabase Auth,
 PostgREST and Storage with the local demo keys), not staging, so it works

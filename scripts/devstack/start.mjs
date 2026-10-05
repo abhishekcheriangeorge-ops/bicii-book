@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Starts Supabase Auth, PostgREST, Supabase Storage and the gateway as
-// detached processes (pid files and logs in .devstack/). Idempotent: a
-// service that is already running and healthy is left alone. Waits until
-// every service reports healthy.
+// Starts the mail catcher, Supabase Auth, PostgREST, Supabase Storage and
+// the gateway as detached processes (pid files and logs in .devstack/),
+// in that order. Idempotent: a service that is already running and healthy
+// is left alone. Waits until every service reports healthy.
 //
 //   npm run devstack:start
 //
@@ -15,11 +15,21 @@ import path from "node:path";
 
 import pg from "pg";
 
-import { GATEWAY_URL, STATE_DIR, databaseUrl, fail, log, redact, requireCache } from "./config.mjs";
+import {
+  GATEWAY_URL,
+  MAIL_URL,
+  STATE_DIR,
+  databaseUrl,
+  fail,
+  log,
+  redact,
+  requireCache,
+} from "./config.mjs";
 import { buildDatabase } from "./database.mjs";
 import {
   isAlive,
   logFile,
+  portOpen,
   probe,
   readPid,
   services,
@@ -88,14 +98,24 @@ async function main() {
       }
       log(`${service.name}: pid ${pid} is not healthy; restarting`);
       await stopService(service.name);
-    } else if (
-      (await probe(service.port, service.health)).ok ||
-      (await probe(service.port, "/")).status
-    ) {
-      fail(
-        `${service.name}: port ${service.port} is already in use by another process. ` +
-          "Stop it, or override the port (BICII_AUTH_PORT, BICII_REST_PORT, BICII_STORAGE_PORT, BICII_GATEWAY_PORT).",
-      );
+    } else {
+      const taken = [];
+      if (
+        (await probe(service.port, service.health)).ok ||
+        (await probe(service.port, "/")).status
+      ) {
+        taken.push(service.port);
+      }
+      for (const port of service.extraPorts ?? []) {
+        if (await portOpen(port)) taken.push(port);
+      }
+      if (taken.length > 0) {
+        fail(
+          `${service.name}: port ${taken.join(", ")} is already in use by another process. ` +
+            "Stop it, or override the port (BICII_AUTH_PORT, BICII_REST_PORT, BICII_STORAGE_PORT, " +
+            "BICII_GATEWAY_PORT, BICII_SMTP_PORT, BICII_MAIL_HTTP_PORT).",
+        );
+      }
     }
     const newPid = startDetached(service);
     if (!(await waitHealthy(service))) {
@@ -105,6 +125,7 @@ async function main() {
   }
   writeFileSync(TARGET_FILE, `${target}\n`);
   log(`ready: ${GATEWAY_URL} (auth/v1, rest/v1, storage/v1; GET /health)`);
+  log(`mail:  ${MAIL_URL} (GET /messages/latest?to=<email>)`);
 }
 
 const TARGET_FILE = path.join(STATE_DIR, "database");

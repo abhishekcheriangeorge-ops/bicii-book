@@ -63,9 +63,18 @@ Differences from the devstack:
   (or `npx supabase@2.119.0 gen types typescript --local --schema public,reporting`,
   then `npx prettier --write src/lib/database.types.ts`). `-- --fresh`
   needs the devstack.
-- **E2E:** `npx supabase@2.119.0 db reset && E2E_EXTERNAL_STACK=1 npm run test:e2e`.
+- **Sign-in codes:** Auth's emails (staff sign-in codes, PLAN D10) go to
+  the CLI's Mailpit, not the devstack's mail catcher: open
+  `http://127.0.0.1:54324` to read a code. `config.toml` gives it the same
+  templates (`supabase/templates`), 6-digit codes valid for 600 s and raised
+  local rate limits.
+- **E2E:** `npx supabase@2.119.0 db reset && E2E_EXTERNAL_STACK=1 BICII_MAIL_KIND=mailpit npm run test:e2e`.
   Playwright then skips its own reset and devstack start and only checks
-  that the seeded admin can sign in (and reads the seed's anchor day).
+  that the seeded admin can sign in (and reads the seed's anchor day);
+  `BICII_MAIL_KIND=mailpit` makes the tests read codes from Mailpit
+  (`scripts/devstack/mail-client.mjs`; written from Mailpit's API
+  documentation and not yet run, as there is no Docker in the build
+  container).
 - `config.toml` sets `[db] major_version = 17`, so Docker runs Postgres 17
   while the devstack and CI run 16. Keep migrations to SQL both accept.
   When the hosted projects exist, set `major_version` to theirs (`show

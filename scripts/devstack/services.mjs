@@ -4,12 +4,14 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 
 import {
   ANON_KEY,
   GATEWAY_URL,
   JWT_SECRET,
+  MAIL_URL,
   PATHS,
   PORTS,
   ROOT,
@@ -41,10 +43,30 @@ function postgrestConfig(url) {
   return file;
 }
 
-/** Service definitions in start order; the gateway goes last. */
+/**
+ * Service definitions in start order: the mail catcher first (Auth sends
+ * through it and fetches its email templates from it), the gateway last.
+ * `extraPorts` are further ports a service listens on (not HTTP); start
+ * refuses to run when one is taken.
+ */
 export function services() {
   const url = databaseUrl();
   return [
+    {
+      name: "mail",
+      port: PORTS.mailHttp,
+      extraPorts: [PORTS.smtp],
+      health: "/health",
+      command: () => [
+        process.execPath,
+        [path.join(ROOT, "scripts", "devstack", "mailcatcher.mjs")],
+      ],
+      cwd: ROOT,
+      env: () => ({
+        BICII_SMTP_PORT: String(PORTS.smtp),
+        BICII_MAIL_HTTP_PORT: String(PORTS.mailHttp),
+      }),
+    },
     {
       name: "auth",
       port: PORTS.auth,
@@ -74,6 +96,39 @@ export function services() {
         GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10",
         GOTRUE_PASSWORD_MIN_LENGTH: "6",
         GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: "false",
+        // Email sign-in codes (PLAN D10, D70). Auth sends through the
+        // devstack's mail catcher (mailcatcher.mjs) on 127.0.0.1, which
+        // accepts any or no credentials, so GOTRUE_SMTP_USER and
+        // GOTRUE_SMTP_PASS stay unset (no AUTH is attempted) and no STARTTLS
+        // is offered. The sender is a .test address: nothing leaves the box.
+        GOTRUE_SMTP_HOST: "127.0.0.1",
+        GOTRUE_SMTP_PORT: String(PORTS.smtp),
+        GOTRUE_SMTP_ADMIN_EMAIL: "no-reply@bicii.test",
+        GOTRUE_SMTP_SENDER_NAME: "BICII",
+        // Minimum gap between two emails to one address: config.toml's
+        // [auth.email] max_frequency. Hosted projects use 60 s (RUNBOOK).
+        GOTRUE_SMTP_MAX_FREQUENCY: "1s",
+        // D70: 6-digit codes valid for 10 minutes (config.toml otp_length,
+        // otp_expiry).
+        GOTRUE_MAILER_OTP_LENGTH: "6",
+        GOTRUE_MAILER_OTP_EXP: "600",
+        // Our templates (supabase/templates), served by the catcher because
+        // Auth fetches templates by URL. Codes only: they carry
+        // {{ .Token }} and no link (D70). signInWithOtp for a confirmed user
+        // sends magic_link; an unconfirmed one gets confirmation.
+        GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: "Your BICII sign-in code",
+        GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: `${MAIL_URL}/templates/magic_link.html`,
+        GOTRUE_MAILER_SUBJECTS_CONFIRMATION: "Your BICII code",
+        GOTRUE_MAILER_TEMPLATES_CONFIRMATION: `${MAIL_URL}/templates/confirmation.html`,
+        // Local only: generous rate limits so the E2E suite and the stack
+        // tests can ask for and verify hundreds of codes from 127.0.0.1
+        // (emails sent per hour; OTP requests, verifications and token
+        // refreshes per 5 minutes per IP). Hosted limits are set in the
+        // dashboard (RUNBOOK); config.toml raises its own for `supabase start`.
+        GOTRUE_RATE_LIMIT_EMAIL_SENT: "100000",
+        GOTRUE_RATE_LIMIT_VERIFY: "100000",
+        GOTRUE_RATE_LIMIT_OTP: "100000",
+        GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "100000",
       }),
     },
     {
@@ -148,6 +203,23 @@ export function probe(port, pathname, timeout = 1500) {
     });
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", (err) => resolve({ ok: false, error: err.code ?? err.message }));
+  });
+}
+
+/**
+ * True when something accepts TCP connections on 127.0.0.1:port.
+ * @param {number} port
+ */
+export function portOpen(port, timeout = 1000) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    const done = (/** @type {boolean} */ open) => {
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(timeout, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
   });
 }
 

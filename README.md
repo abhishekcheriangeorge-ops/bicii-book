@@ -51,7 +51,7 @@ Supabase CLI with Docker instead ([RUNBOOK](docs/RUNBOOK.md#local-supabase-with-
 ```sh
 npm ci
 npm run devstack:setup   # once per machine: Auth, PostgREST, Storage into ~/.cache/bicii-devstack
-npm run devstack:start   # Auth, PostgREST, Storage + gateway on http://127.0.0.1:54321
+npm run devstack:start   # mail catcher, Auth, PostgREST, Storage + gateway on http://127.0.0.1:54321
                          # (builds bicii_dev on first run)
 npm run db:reset         # rebuild bicii_dev: roles, Auth, Storage, migrations, seed (~1s)
 npm run devstack:env     # write the local URLs and demo keys into .env.local
@@ -72,6 +72,25 @@ Postgres somewhere else? Set `DATABASE_URL`, or `PGHOST` / `PGPORT` /
 `PGUSER` / `PGPASSWORD` (and `PGDATABASE`, default `bicii_dev`), in the
 shell before any of the commands (they do not read `.env.local`). `npm run devstack:stop` stops the services.
 
+### The devstack and its mail catcher
+
+`npm run devstack:start` runs, in order: a local mail catcher (HTTP
+:8025, SMTP :2525), Supabase Auth :9999, PostgREST :3001, Storage :5000
+and the gateway :54321, all on 127.0.0.1. Supabase Auth emails sign-in
+codes (PLAN D10) to the mail catcher, which keeps them in `.devstack/mail/`
+and nowhere else. Read the newest one for an address with
+
+```sh
+curl "http://127.0.0.1:${BICII_MAIL_HTTP_PORT:-8025}/messages/latest?to=admin@bicii.test"
+```
+
+(the `code` field is the code; the API is in
+[TESTING.md](docs/TESTING.md#the-devstack-mail-catcher)). Every port can be
+moved in the shell, for example to run a second checkout beside the first:
+`BICII_MAIL_HTTP_PORT`, `BICII_SMTP_PORT`, `BICII_AUTH_PORT`,
+`BICII_REST_PORT`, `BICII_STORAGE_PORT`, `BICII_GATEWAY_PORT` (with its own
+`PGDATABASE`). `npm run devstack:status` prints the gateway and mail URLs.
+
 ## Scripts
 
 | Script | What it does |
@@ -88,7 +107,7 @@ shell before any of the commands (they do not read `.env.local`). `npm run devst
 | `npm run tokens:contrast` | Recompute WCAG ratios for the colour tokens; fails on a miss. |
 | `npm run icons` | Regenerate the PWA icons from `brand/logo-source.png`. |
 | `npm run devstack:setup` | Download and build the devstack components (idempotent; `-- --force` rebuilds). |
-| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321. |
+| `npm run devstack:start` / `stop` / `status` | Run, stop, or show health of the mail catcher :8025 (SMTP :2525), Auth :9999, PostgREST :3001, Storage :5000 and the gateway :54321. |
 | `npm run devstack:env` | Write the devstack values into `.env.local`, keeping other lines. |
 | `npm run db:reset` | Drop and rebuild the dev database, then seed it (the demo history is relative to the shop day of the reset: reset to move "today"). |
 | `npm run db:migrate` | Apply pending migrations without a reset. |
@@ -102,7 +121,7 @@ brand/              logo source for the icons
 docs/               spec, plan, ADR, data model, testing, design, runbook
 public/             logo, icons, service worker (sw.js)
 scripts/            contrast and icon generators
-  devstack/         Docker-free Supabase: setup, start/stop, db reset/migrate/types, gateway
+  devstack/         Docker-free Supabase: setup, start/stop, db reset/migrate/types, gateway, mail catcher
 src/
   app/              App Router: (auth)/login, (staff)/... screens, manifest, error pages
   components/ui/    design-system primitives
@@ -119,6 +138,7 @@ supabase/
   migrations/       the schema, RLS and RPCs (Supabase CLI timestamp names)
   seed.sql          demo data and test fixtures
   devstack/         roles.sql: platform roles for plain Postgres (never a migration)
+  templates/        Auth's email templates (sign-in codes, no links)
 tests/
   unit/  db/  e2e/  fixtures/
 ```
