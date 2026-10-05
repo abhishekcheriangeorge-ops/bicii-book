@@ -106,6 +106,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const nextDay = shiftShopDay(day, 1);
   const flowsTitle = isToday ? "Today" : `On ${formatShopDayShort(day)}`;
   const w = dash.workshop;
+  const exceptionTotal = dash.now?.exceptions ?? 0;
   const flowHref = (count: number, anchor: string) => (count > 0 ? `#${anchor}` : null);
   const anchorOf = (flow: (typeof ACTIVITY_FLOWS)[number]["flow"]) =>
     ACTIVITY_FLOWS.find((f) => f.flow === flow)!.anchor;
@@ -333,7 +334,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
               name="exceptions"
               load={() => getOperationalExceptions(supabase, EXCEPTION_ROWS)}
             >
-              {(rows) => <ExceptionList rows={rows} />}
+              {(rows) => <ExceptionList rows={rows} total={exceptionTotal} />}
             </SectionLoader>
           </Suspense>
         </TodaySection>

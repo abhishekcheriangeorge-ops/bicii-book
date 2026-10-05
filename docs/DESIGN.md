@@ -449,18 +449,23 @@ upload itself, below).
   from md three or four columns and the lists side by side. Numbers are
   `font-display tabular-nums`. Every tile is a `<dl>`/`<dt>`/`<dd>`; a
   linked tile's name is "Completed: 3"; money tiles show the currency
-  code; section headings are `<h2>`.
+  code; section headings are `<h2>`. A money amount never leaves its card:
+  the tile's `<dl>` is a size container, the amount's size is a share of
+  its width picked by the amount's length (`moneySizeClass`, capped at the
+  usual size, floored at 1rem) and the currency code wraps under it when
+  both do not fit, so "$400.00" stays large in a half-width phone tile and
+  "$12,345.67" shrinks beside the iPad side rail.
 
 | Component | Notes |
 |---|---|
-| `StatTile`, `MoneyTile`, `TileGrid`, `TodaySection` (`stat-tile.tsx`) | A figure as `<dl>` with label, value, hint, optional link, tone (value colour only) and `notTracked`; money formatted with a real minus sign and its currency; the grid; a section with its `<h2>`. |
+| `StatTile`, `MoneyTile`, `TileGrid`, `TodaySection` (`stat-tile.tsx`) | A figure as `<dl>` with label, value, hint, optional link, tone (value colour only) and `notTracked` ("—" and `NOT_TRACKED`, "Not tracked yet", for screen readers: the one source of that wording); money formatted with a real minus sign and its currency, scaled to the tile (see Layout); the grid; a section with its `<h2>`. |
 | `AppointmentsSection` | The Phase 2 slot, above. |
-| `DayNavigator` (client) | ‹ Previous day / Today / Next day › links and a `next/form` GET form (`<input type="date" name="day">` with `max`, "Go"); works before hydration; once hydrated a picked date submits after a 600 ms pause (typing a year passes through "0002"). |
+| `DayNavigator` (client) | ‹ Previous day / Today / Next day › links and a `next/form` GET form (`<input type="date" name="day">` with `min` and `max`, "Go"); works before hydration; once hydrated a picked date submits after a 600 ms pause (typing a year passes through "0002"). |
 | `RefreshButton` (client) | "Updated 10:42 am" and Refresh: `router.refresh()` in a transition with a spinner; returning to the tab refreshes once the figures are a minute old. |
 | `ActivityList` | One flow's jobs from `work_order_activity_on`: J- number, status pill, Overdue badge, customer, bike, sale total; the heading's id is the flow tile's anchor. Checked in, Completed and Collected always; Started, Ready for collection and Cancelled when not empty; "Nothing happened on this day" for a quiet day. |
-| `AdjustmentList` | The day's adjustments and damaged stock: signed delta, P- link, reason, type · location · actor · time, a "Significant" badge (D33) and the value at cost when present. |
+| `AdjustmentList` | The day's adjustments and damaged stock: signed delta, P- link, reason, type · location · actor · time, a "Significant" badge (D33) and the value at cost when present. Significant ones first, then newest first; the first `ADJUSTMENT_ROWS` (5) listed and the rest behind a `<details>` "Show N more" (no JavaScript), so an opening stock count does not push "Needs attention" screens down. |
 | `LowStockList` | The first 5 of P4's `reporting.low_stock` (largest shortfall first) with `StockBadge`; "See all" opens `/inventory?filter=low`. |
-| `ExceptionList` | D34 exceptions, danger first: pill (tone and words), short ID, subject, `exceptionCopy` sentence; rows link through `exceptionHref` (a line opens its job via `/q/J-…`); unknown kinds render a generic sentence; EmptyState "Nothing needs attention". |
+| `ExceptionList` | D34 exceptions, danger first: pill (tone and words; Overdue is danger, as on the Overdue tile and the board's badge, while Not collected and other warnings are waiting), short ID, subject, `exceptionCopy` sentence; rows link through `exceptionHref` (a line opens its job via `/q/J-…`); unknown kinds render a generic sentence; keyed by `exceptionKeys` (a product below zero at two locations is two rows); Today lists the 20 most urgent and, when there are more, says "Showing the 20 most urgent of 45" under them (Phase 9 makes it a link to `/reports/exceptions`); EmptyState "Nothing needs attention". |
 | `FinancialEntries` | `<details id="financial-entries">` "What makes up these figures" (open with `?entries=open`): the day's `financial_lines` grouped by job (J- link), description, quantity, sale, and yield and Cult Commons when visible; "Sold at a loss" and "Cost pending" badges. It adds nothing up. |
 | `WeekStrip` | "Last 7 days" ending at the day shown: completed, collected, and gross sales, yield and Cult Commons when visible; each day links to `/?day=`; the day shown has `aria-current="date"` and a bold row. A table from md, stacked cards on a phone. |
 | `SectionLoader`, `SectionSkeleton`, `SectionError` (`section-loader.tsx`) | The streaming pattern above. |

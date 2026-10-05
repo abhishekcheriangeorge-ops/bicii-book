@@ -195,13 +195,12 @@ export function toTodayDashboard(row: TodayDashboardRow): TodayDashboard {
   };
 }
 
-/** What a tile says for a measure a later phase has not started tracking. */
-export const NOT_TRACKED = "not tracked yet";
-
-/** A placeholder measure for display: its value, or "not tracked yet" while NULL. */
-export function notTracked<T extends string | number>(value: T | null | undefined): T | string {
-  return value === null || value === undefined ? NOT_TRACKED : value;
-}
+/**
+ * What a tile says (to screen readers, beside a visible "—") for a measure
+ * a later phase has not started tracking. StatTile's `notTracked` renders
+ * exactly this, so the wording has one source.
+ */
+export const NOT_TRACKED = "Not tracked yet";
 
 // ---------------------------------------------------------------------------
 // Money wording
@@ -373,6 +372,23 @@ export type AdjustmentRow = {
   currency: string;
 };
 
+/** Adjustments listed on Today before "Show N more" (a stock count can add one per product). */
+export const ADJUSTMENT_ROWS = 5;
+
+/**
+ * Today's adjustments split for display: significant ones first (D33; SPEC
+ * §19.1 asks for significant adjustments), each group keeping the
+ * database's newest-first order, the first `limit` shown and the rest
+ * behind a disclosure.
+ */
+export function splitAdjustments<T extends Pick<AdjustmentRow, "significant">>(
+  rows: readonly T[],
+  limit: number = ADJUSTMENT_ROWS,
+): { shown: T[]; more: T[] } {
+  const ordered = [...rows.filter((r) => r.significant), ...rows.filter((r) => !r.significant)];
+  return { shown: ordered.slice(0, limit), more: ordered.slice(limit) };
+}
+
 /** A product at or below its reorder point, or below zero (P4's reporting.low_stock). */
 export type LowStockItem = {
   productId: string;
@@ -433,9 +449,11 @@ export function exceptionCopy(
   const tone = exceptionTone(row.severity);
   switch (kind) {
     case "overdue_job":
+      // Overdue is danger everywhere (DESIGN tones; the Overdue tile and
+      // badges): the view's 'warning' severity only orders it after danger.
       return {
         text: `Open ${days(row.days)} — over the ${OVERDUE_AFTER_DAYS}-day limit`,
-        tone,
+        tone: "danger",
       };
     case "uncollected_job":
       return { text: `Waiting for collection ${days(row.days)}`, tone };
@@ -462,6 +480,30 @@ export function exceptionCopy(
       return { text: what ? `Check ${what}` : "Something needs checking", tone };
     }
   }
+}
+
+/**
+ * A React key per exception row. The view gives one negative_stock row per
+ * product and location under the same product id, so the subject (which
+ * carries the location's unique name) is part of the key; a repeat that is
+ * still identical gets an occurrence suffix, so keys never collide.
+ */
+export function exceptionKeys(
+  rows: readonly Pick<OperationalException, "kind" | "entityType" | "entityId" | "subjectLabel">[],
+): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((r) => {
+    const base = `${r.kind}:${r.entityType}:${r.entityId}:${r.subjectLabel ?? ""}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}#${n}`;
+  });
+}
+
+/** The note under a capped exception list: null when every exception is listed. */
+export function exceptionsShownNote(shown: number, total: number): string | null {
+  if (total <= shown) return null;
+  return `Showing the ${shown} most urgent of ${total}`;
 }
 
 /** Where an exception's row opens; null when this build has no page for it. */

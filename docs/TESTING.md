@@ -272,7 +272,20 @@ same PR.
   (`totals-summary.test.tsx`: sale only without view_costs even if a report
   were passed, Phase 3's summary without a report, the rate range over the
   shared rate, the loss note, "Counted in reports on Sat, 3 Oct 2026
-  (completed)" and "once the job is completed").
+  (completed)", "once the job is completed" and, on a cancelled job, "Not
+  counted in reports (cancelled)"); Today's components
+  (`today-components.test.tsx`: StatTile's placeholder reads exactly
+  `NOT_TRACKED`; MoneyTile keeps the amount on one line with the code
+  free to wrap, sized by `moneySizeClass` smaller for longer amounts and
+  never below 1rem; ExceptionList renders two negative_stock rows for one
+  product without a duplicate key and says "Showing the N most urgent of
+  M" only when capped; AdjustmentList puts significant ones first, lists
+  `ADJUSTMENT_ROWS` and puts the rest behind "Show N more"). E2E
+  (`today.spec.ts`) also checks that every visible box in each Money tile
+  stays inside the tile's padding at the project's size, 1024 × 1366 and
+  390 × 844 (the page never scrolls sideways, so nothing else catches a
+  figure running into the next card), that "Right now" says "Awaiting
+  collection", and that a `?day=` before `EARLIEST_SHOP_DAY` shows today.
 
 ### Database (SPEC §27.2 and §23)
 

@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { jobEconomics } from "../../src/lib/cult-commons";
-import { formatShopDay, formatShopDayShort } from "../../src/lib/dates";
+import { EARLIEST_SHOP_DAY, formatShopDay, formatShopDayShort } from "../../src/lib/dates";
 import { Decimal, formatMoney } from "../../src/lib/money";
 import { OVERDUE_AFTER_DAYS } from "../../src/lib/workshop";
 import {
@@ -337,10 +337,76 @@ test("Several days of history reconcile on Today", async ({ page }) => {
       .getByRole("link"),
   ).toHaveAttribute("aria-current", "date");
 
-  // A day that is not a date shows today.
-  await page.goto("/?day=garbage");
-  await expect(page.getByRole("heading", { name: "Right now", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to today" })).toHaveCount(0);
+  // A day that is not a date shows today, and so does one before the
+  // earliest day (whose week strip once reached unparseable years).
+  for (const bad of ["garbage", "0100-01-03", "1999-12-31"]) {
+    await page.goto(`/?day=${bad}`);
+    await expect(page.getByRole("heading", { name: "Right now", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to today" })).toHaveCount(0);
+  }
+  // The earliest day renders, with nothing before it to go to.
+  await page.goto(`/?day=${EARLIEST_SHOP_DAY}`);
+  await expect(page.getByRole("link", { name: "Back to today" })).toBeVisible();
+  await expect(section(page, "Last 7 days")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Previous day" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+});
+
+/**
+ * Every visible box inside each Money tile's value ends inside the tile's
+ * padding: the amount scales and the currency code wraps, so neither runs
+ * into the next card (the page itself never scrolls sideways, so this is
+ * the only check that catches it).
+ */
+async function moneyOverflow(page: Page): Promise<string[]> {
+  return moneySection(page).evaluate((root) => {
+    const bad: string[] = [];
+    for (const dd of root.querySelectorAll("dd")) {
+      const tile = dd.closest("dl")?.parentElement;
+      if (!tile) continue;
+      const box = tile.getBoundingClientRect();
+      const style = getComputedStyle(tile);
+      const left = box.left + parseFloat(style.paddingLeft) - 0.5;
+      const right = box.right - parseFloat(style.paddingRight) + 0.5;
+      for (const el of dd.querySelectorAll("span")) {
+        if (el.classList.contains("sr-only") || el.childElementCount > 0) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0) continue;
+        if (r.left < left || r.right > right) {
+          bad.push(
+            `${dd.textContent}: ${r.left.toFixed(1)}-${r.right.toFixed(1)} outside ${left.toFixed(1)}-${right.toFixed(1)}`,
+          );
+        }
+      }
+    }
+    return bad;
+  });
+}
+
+test("Money tiles keep their amounts inside the card on a phone and an iPad", async ({ page }) => {
+  await signIn(page, "admin");
+  const sizes = [page.viewportSize()!, { width: 1024, height: 1366 }, { width: 390, height: 844 }];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    for (const url of [`/?day=${anchorDay(3)}`, "/"]) {
+      await page.goto(url);
+      await expect(moneySection(page)).toContainText("BICII after Cult Commons");
+      expect(await moneyOverflow(page), `${size.width}px ${url}`).toEqual([]);
+    }
+  }
+});
+
+test("Right now names the collection snapshot apart from the flow and the status", async ({
+  page,
+}) => {
+  await signIn(page, "admin");
+  await page.goto("/");
+  const now = section(page, "Right now");
+  await expect(now.getByRole("link", { name: /^Awaiting collection: \d+$/ })).toBeVisible();
+  await expect(now.getByRole("link", { name: /^Ready for collection/ })).toHaveCount(0);
+  await expect(now).toContainText("Completed, not yet collected");
 });
 
 test("Today shows low stock and the day's significant adjustment", async ({ page }) => {

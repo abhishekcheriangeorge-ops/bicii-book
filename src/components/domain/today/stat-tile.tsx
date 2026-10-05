@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
-import { formatSignedMoney } from "@/lib/reports";
+import { NOT_TRACKED, formatSignedMoney } from "@/lib/reports";
 
 export type TileTone = "neutral" | "danger" | "waiting";
 
@@ -13,14 +13,14 @@ const valueTone: Record<TileTone, string> = {
 };
 
 const tileClasses =
-  "flex h-full min-h-tap flex-col gap-1 rounded-2xl border border-hairline bg-card px-4 py-3";
+  "flex h-full min-h-tap min-w-0 flex-col gap-1 rounded-2xl border border-hairline bg-card px-4 py-3";
 
 /**
  * One figure on Today (server): a `<dl>` whose `<dt>` is the label and
  * `<dd>` the value, so a screen reader reads them together (as Phase 0's
  * placeholders did). With `href` the whole tile is one link named
  * "Label: value". `notTracked` is the placeholder treatment for a measure a
- * later phase lights up: "—" with "Not tracked yet" for screen readers and
+ * later phase lights up: "—" with NOT_TRACKED for screen readers and
  * the hint saying what brings it. `tone` colours the value; the label
  * always says what it means.
  */
@@ -48,7 +48,7 @@ export function StatTile({
 }) {
   const body = (
     <>
-      <dl className="flex flex-col gap-1">
+      <dl className="@container flex flex-col gap-1">
         <dt className="eyebrow text-dust-500">{label}</dt>
         <dd
           className={cn(
@@ -60,7 +60,7 @@ export function StatTile({
           {notTracked ? (
             <>
               <span aria-hidden="true">—</span>
-              <span className="sr-only">Not tracked yet</span>
+              <span className="sr-only">{NOT_TRACKED}</span>
             </>
           ) : (
             value
@@ -86,9 +86,30 @@ export function StatTile({
 }
 
 /**
+ * The amount's font size for its length: a percentage of the tile's width
+ * (`cqi` of the `<dl>`, a size container) chosen so that many characters
+ * of the display face fit, capped at the usual tile size and floored at
+ * 1rem. So "$400.00" stays large in a half-width phone tile and
+ * "$12,345.67" shrinks to fit instead of running into the next tile.
+ * Literal classes, so Tailwind generates each.
+ */
+export function moneySizeClass(chars: number, large = false): string {
+  if (large) {
+    if (chars <= 9) return "text-[clamp(1rem,17cqi,3rem)]";
+    if (chars <= 11) return "text-[clamp(1rem,13.5cqi,3rem)]";
+    return "text-[clamp(1rem,11cqi,3rem)]";
+  }
+  if (chars <= 7) return "text-[clamp(1rem,21cqi,2.25rem)]";
+  if (chars <= 9) return "text-[clamp(1rem,16.5cqi,2.25rem)]";
+  if (chars <= 11) return "text-[clamp(1rem,13.5cqi,2.25rem)]";
+  return "text-[clamp(1rem,11cqi,2.25rem)]";
+}
+
+/**
  * An amount on Today (server): formatted in its currency, with the
- * currency code beside it so the tile says which money it is. `hidden`
- * (D30) shows that the figure exists but needs a permission, without it.
+ * currency code beside it so the tile says which money it is. The amount
+ * scales to the tile (moneySizeClass) and the code wraps under it when
+ * both do not fit on one line, so neither leaves its card at any width.
  */
 export function MoneyTile({
   label,
@@ -108,6 +129,7 @@ export function MoneyTile({
   tone?: TileTone;
   className?: string;
 }) {
+  const text = formatSignedMoney(amount, currency);
   return (
     <StatTile
       label={label}
@@ -116,10 +138,12 @@ export function MoneyTile({
       hint={hint}
       className={className}
       value={
-        <>
-          {formatSignedMoney(amount, currency)}
-          <span className="ml-1.5 font-sans text-sm font-semibold text-dust-500">{currency}</span>
-        </>
+        <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+          <span className={cn("whitespace-nowrap", moneySizeClass(text.length, large))}>
+            {text}
+          </span>
+          <span className="font-sans text-sm font-semibold text-dust-500">{currency}</span>
+        </span>
       }
     />
   );

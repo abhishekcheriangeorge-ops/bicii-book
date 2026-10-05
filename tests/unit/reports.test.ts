@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   ACTIVITY_FLOWS,
-  NOT_TRACKED,
   TILE_BOARD_FILTERS,
   TILE_LINKS,
   documentHref,
   exceptionCopy,
   exceptionHref,
+  exceptionKeys,
   exceptionLabel,
+  exceptionsShownNote,
   formatRateRange,
   formatSignedMoney,
   groupEntries,
   lossNote,
-  notTracked,
   provisionalNote,
   toTodayDashboard,
   weekStrip,
@@ -221,13 +221,6 @@ describe("toTodayDashboard", () => {
 });
 
 describe("placeholders and notes", () => {
-  it("says a NULL measure is not tracked yet", () => {
-    expect(notTracked(null)).toBe(NOT_TRACKED);
-    expect(notTracked(undefined)).toBe("not tracked yet");
-    expect(notTracked(0)).toBe(0);
-    expect(notTracked("12.00")).toBe("12.00");
-  });
-
   it("writes losses with a real minus sign and says they don't offset other lines (D1)", () => {
     expect(formatSignedMoney("-15.00", "SGD")).toBe("−$15.00");
     expect(lossNote(0, "0.00", "SGD")).toBeNull();
@@ -270,8 +263,9 @@ describe("exceptions (D34)", () => {
   it("words every Phase 5 kind", () => {
     expect(exceptionCopy("overdue_job", exception({}))).toEqual({
       text: `Open 11 days — over the ${OVERDUE_AFTER_DAYS}-day limit`,
-      tone: "waiting",
+      tone: "danger",
     });
+    expect(exceptionCopy("uncollected_job", exception({ days: 9 })).tone).toBe("waiting");
     expect(exceptionCopy("uncollected_job", exception({ days: 9 })).text).toBe(
       "Waiting for collection 9 days",
     );
@@ -299,6 +293,31 @@ describe("exceptions (D34)", () => {
     );
     expect(exceptionLabel("overdue_job")).toBe("Overdue");
     expect(exceptionLabel("negative_stock")).toBe("Below zero");
+  });
+
+  it("keys a product below zero at two locations as two rows", () => {
+    const at = (subjectLabel: string) =>
+      exception({
+        kind: "negative_stock",
+        severity: "danger",
+        entityType: "product",
+        entityId: "c2000000-0000-4000-8000-000000000001",
+        subjectLabel,
+      });
+    const keys = exceptionKeys([
+      at("Road inner tube · Shop floor"),
+      at("Road inner tube · Workshop store"),
+      at("Road inner tube · Workshop store"),
+      exception({}),
+    ]);
+    expect(new Set(keys).size).toBe(4);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it("says how many exceptions a capped list leaves out", () => {
+    expect(exceptionsShownNote(20, 45)).toBe("Showing the 20 most urgent of 45");
+    expect(exceptionsShownNote(20, 20)).toBeNull();
+    expect(exceptionsShownNote(3, 3)).toBeNull();
   });
 
   it("uses OVERDUE_AFTER_DAYS rather than a fixed 7", () => {
