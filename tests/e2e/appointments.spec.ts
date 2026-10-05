@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { formatClock } from "../../src/lib/appointments/format";
 import { shiftShopDay, shopToday } from "../../src/lib/dates";
 import {
   APPOINTMENT_TYPE,
@@ -12,7 +13,7 @@ import {
   STAFF_EMAIL,
 } from "../fixtures/ids";
 import { rpc, select, signInApi } from "./api";
-import { section, signIn, tagFor, toast } from "./helpers";
+import { clearDay, pickTime, readCount, section, signIn, tagFor, toast } from "./helpers";
 
 /**
  * Phase 2 appointments on a phone and an iPad (SPEC §27.3 "Appointment ->
@@ -135,8 +136,21 @@ test("Journey 2: a customer's booking is arrived, checked in and becomes a linke
     expect(Object.keys(booked!)).not.toContain(hidden);
   }
 
+  // Today shows it among the expected arrivals, named with its time (D41
+  // counts by scheduled day and current status; read before, never absolute).
+  await signIn(page, "admin", "/");
+  const todaySection = section(page, "Appointments");
+  const bookedTime = formatClock(slots[0].slot_start);
+  const arrival = todaySection
+    .getByRole("list", { name: "Arrivals" })
+    .locator(`a[href="/appointments/${id}"]`);
+  await expect(arrival).toBeVisible();
+  await expect(arrival).toHaveAccessibleName(new RegExp(`^${bookedTime}, Chloe Lim, `));
+  expect(await readCount(todaySection, "Still expected")).toBeGreaterThanOrEqual(1);
+  const arrivedBefore = await readCount(todaySection, "Arrived");
+
   // Staff see it on today's list and open it by its link (Chloe has another booking today).
-  await signIn(page, "admin", `/appointments?date=${today()}`);
+  await page.goto(`/appointments?date=${today()}`);
   const row = page.locator(`a[href="/appointments/${id}"]`);
   await expect(row).toContainText("Booked online");
   await expect(row).toContainText("Chloe Lim");
@@ -172,7 +186,24 @@ test("Journey 2: a customer's booking is arrived, checked in and becomes a linke
   await page.goto(`/jobs/${jobId}`);
   const timeline = section(page, "Timeline");
   await expect(timeline.getByText(`Checked in as ${jobNumber}`)).toBeVisible();
-  await expect(timeline.getByText("Linked to an appointment")).toBeVisible();
+  await expect(
+    timeline.getByRole("link", {
+      name: new RegExp(`^Opened from the appointment on .* ${bookedTime} \\(Service drop-off\\)$`),
+    }),
+  ).toHaveAttribute("href", `/appointments/${id}`);
+  // The job's chip back to its appointment.
+  await expect(
+    page.getByRole("link", {
+      name: new RegExp(`^Booked appointment · .* ${bookedTime} · Service drop-off$`),
+    }),
+  ).toHaveAttribute("href", `/appointments/${id}`);
+
+  // Today: one more arrival than before (checked in counts as arrived, D41).
+  await page.goto("/");
+  await expect
+    .poll(() => readCount(section(page, "Appointments"), "Arrived"))
+    .toBe(arrivedBefore + 1);
+  await expect(page.locator(`a[href="/appointments/${id}"]`)).toHaveCount(0);
 
   // Back on the appointment: checked in, the job linked, the history in words.
   await page.goto(`/appointments/${id}`);
@@ -216,4 +247,72 @@ test("No-show and late arrival: a no-show is reinstated as arrived on its own da
   await expect(
     section(page, "History").getByText("Marked as a no-show by Asha Admin"),
   ).toBeVisible();
+});
+
+test("Staff book for a customer and capacity closes the slot", async ({ page }, testInfo) => {
+  const tag = tagFor(testInfo);
+  const note = `E2E capacity ${tag}`;
+  // A clear future Tuesday (10:00-19:00, no override), 7 days later on the iPad.
+  const day = clearDay(testInfo, shiftShopDay(today(), 21), 2);
+  const ours = async () =>
+    select<{ id: string }>(
+      adminToken,
+      `appointments?select=id&${dayRange(day)}&status=in.(booked,confirmed,arrived)&internal_note=like.${encodeURIComponent("E2E capacity*")}`,
+    );
+  // D2: one pool of 2 per 30-minute window for this test (beforeAll set 4).
+  await rpc(adminToken, "update_shop_settings", { intake_capacity_units: 2 });
+  try {
+    for (const a of await ours()) {
+      await rpc(adminToken, "cancel_appointment", { appointment_id: a.id, reason: "E2E cleanup" });
+    }
+
+    await signIn(page, "mechanic2", `/customers/${CUSTOMER.tan}`);
+    const booked: string[] = [];
+    for (const customer of [CUSTOMER.tan, CUSTOMER.priya]) {
+      await page.goto(`/customers/${customer}`);
+      const name = (await page.getByRole("heading", { level: 1 }).textContent())!.trim();
+      await section(page, "Appointments").getByRole("button", { name: "Book appointment" }).click();
+      const sheet = page.getByRole("dialog", { name: "Book appointment" });
+      await expect(sheet.getByText(name, { exact: true })).toBeVisible(); // preset and locked
+      await expect(sheet.getByRole("combobox")).toHaveCount(0);
+      await sheet.getByRole("radio", { name: /^Service drop-off/ }).check();
+      await sheet.getByLabel("Or pick a date").fill(day);
+      await pickTime(sheet, "11:00");
+      await sheet.getByLabel("Internal note").fill(note);
+      await sheet.getByRole("button", { name: "Book", exact: true }).click();
+      await expect(page).toHaveURL(/\/appointments\/[0-9a-f-]{36}$/);
+      booked.push(new URL(page.url()).pathname.split("/").at(-1)!);
+    }
+
+    // The window holds 2 of 2: 11:00 is no longer offered, 11:30 still is.
+    await page.goto(`/customers/${CUSTOMER.daniel}`);
+    await section(page, "Appointments").getByRole("button", { name: "Book appointment" }).click();
+    let sheet = page.getByRole("dialog", { name: "Book appointment" });
+    await sheet.getByRole("radio", { name: /^Service drop-off/ }).check();
+    await sheet.getByLabel("Or pick a date").fill(day);
+    await expect(sheet.getByRole("radio", { name: /^11:30/ })).toBeVisible();
+    await expect(sheet.getByRole("radio", { name: /^11:00/ })).toHaveCount(0);
+    await sheet.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    // Cancel both with a reason (two steps): the place frees up again.
+    for (const id of booked) {
+      await page.goto(`/appointments/${id}`);
+      await page.getByRole("button", { name: "Cancel appointment…" }).click();
+      await page.getByLabel("Why is the appointment cancelled?").fill(`Customer rang ${tag}`);
+      await page.waitForTimeout(500); // the confirm button ignores presses for 400 ms
+      await page.getByRole("button", { name: "Cancel appointment", exact: true }).click();
+      await expect(toast(page, "Appointment cancelled")).toBeVisible();
+    }
+    await page.goto(`/customers/${CUSTOMER.daniel}`);
+    await section(page, "Appointments").getByRole("button", { name: "Book appointment" }).click();
+    sheet = page.getByRole("dialog", { name: "Book appointment" });
+    await sheet.getByRole("radio", { name: /^Service drop-off/ }).check();
+    await sheet.getByLabel("Or pick a date").fill(day);
+    await expect(sheet.getByRole("radio", { name: /^11:00/ })).toBeVisible();
+  } finally {
+    for (const a of await ours()) {
+      await rpc(adminToken, "cancel_appointment", { appointment_id: a.id, reason: "E2E cleanup" });
+    }
+    await rpc(adminToken, "update_shop_settings", { intake_capacity_units: 4 });
+  }
 });
