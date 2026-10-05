@@ -340,3 +340,124 @@ test("Staff book for a customer and capacity closes the slot", async ({ page }, 
     await rpc(adminToken, "update_shop_settings", { intake_capacity_units: 4 });
   }
 });
+
+/** The fixed ids of the week-agenda test's custom hours, one per project (RFC-valid v4 UUIDs). */
+const WEEK_SHORT_DAY = {
+  phone: "e4000000-0000-4000-8000-0000000000e3",
+  tablet: "e4000000-0000-4000-8000-0000000000e4",
+} as const;
+
+/** Every element in a week-agenda day that runs past its own day's card (sr-only text aside). */
+function overflowing(page: Page): Promise<string[]> {
+  return page.getByRole("list", { name: "Appointments this week" }).evaluate((ol) => {
+    const out: string[] = [];
+    for (const day of Array.from(ol.children)) {
+      const box = day.getBoundingClientRect();
+      for (const el of Array.from(day.querySelectorAll("*"))) {
+        const r = el.getBoundingClientRect();
+        if (r.width <= 1 || r.height <= 1) continue;
+        if (r.left < box.left - 0.5 || r.right > box.right + 0.5) {
+          const text = (el.textContent ?? "").trim().slice(0, 40);
+          out.push(
+            `${text}: ${Math.round(r.left - box.left)}..${Math.round(r.right - box.right)}px`,
+          );
+        }
+      }
+    }
+    return out;
+  });
+}
+
+test("The week agenda keeps every day's rows inside its column and flags online bookings", async ({
+  page,
+}, testInfo) => {
+  const tag = tagFor(testInfo);
+  const note = `E2E week ${tag}`;
+  // A clear future Friday (10:00-19:00), 7 days later on the iPad.
+  const day = clearDay(testInfo, shiftShopDay(today(), 21), 5);
+  const shortDay =
+    testInfo.project.name === "tablet" ? WEEK_SHORT_DAY.tablet : WEEK_SHORT_DAY.phone;
+  const staffId = randomUUID();
+  const onlineId = randomUUID();
+  const booked: string[] = [];
+  // An earlier run that stopped half way left these booked (Chloe has at most three, D37).
+  const leftovers = await select<{ id: string }>(
+    adminToken,
+    `appointments?select=id&status=in.(booked,confirmed)&or=(${encodeURIComponent(
+      "customer_note.like.E2E week*,internal_note.like.E2E week*",
+    )})`,
+  );
+  for (const a of leftovers) {
+    await rpc(adminToken, "cancel_appointment", { appointment_id: a.id, reason: "E2E cleanup" });
+  }
+  try {
+    // A staff booking, confirmed, and Chloe's own online booking...
+    await rpc(adminToken, "book_appointment", {
+      appointment_id: staffId,
+      customer_id: CUSTOMER.tan,
+      appointment_type_id: APPOINTMENT_TYPE.serviceDropOff,
+      starts_at: `${day}T10:00:00+08:00`,
+      internal_note: note,
+    });
+    booked.push(staffId);
+    await rpc(adminToken, "mark_appointment_status", {
+      appointment_id: staffId,
+      status: "confirmed",
+    });
+    const chloe = await signInApi(CUSTOMER_LOGIN.chloe.email, SEED_PASSWORD);
+    await rpc(chloe, "book_my_appointment", {
+      appointment_id: onlineId,
+      appointment_type_id: APPOINTMENT_TYPE.serviceDropOff,
+      starts_at: `${day}T18:30:00+08:00`,
+      customer_note: note,
+    });
+    booked.push(onlineId);
+    // ...then the day becomes 12:00-16:00, which leaves both outside the
+    // hours (D38: flagged, never moved): the widest badges the agenda shows.
+    const existing = await select<{ id: string }>(
+      adminToken,
+      `closure_overrides?select=id&id=eq.${shortDay}`,
+    );
+    await rpc(adminToken, "save_closure_override", {
+      closure_id: shortDay,
+      is_new: existing.length === 0,
+      kind: "custom_hours",
+      first_day: day,
+      last_day: day,
+      reason: note,
+      from_time: "12:00",
+      to_time: "16:00",
+    });
+
+    await signIn(page, "mechanic2", `/appointments?date=${day}&view=week`);
+    const agenda = page.getByRole("list", { name: "Appointments this week" });
+    const staffRow = agenda.locator(`a[href="/appointments/${staffId}"]`);
+    const onlineRow = agenda.locator(`a[href="/appointments/${onlineId}"]`);
+    // DESIGN.md: "Booked online" on customer bookings in every list.
+    await expect(onlineRow).toContainText("Booked online");
+    await expect(staffRow).not.toContainText("Booked online");
+    for (const row of [staffRow, onlineRow]) {
+      await expect(row).toContainText("Outside opening hours");
+    }
+    await expect(staffRow).toContainText("Confirmed");
+
+    // Phone and iPad as they run; the iPad also at 1024, 1180 and 1366 wide
+    // (portrait and landscape iPad Pros) and on a wide desktop, where the
+    // agenda becomes seven columns.
+    const widths = testInfo.project.name === "tablet" ? [1024, 1180, 1366, 1600] : [];
+    expect(await overflowing(page)).toEqual([]);
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 1024 });
+      await expect(onlineRow).toBeVisible();
+      expect(await overflowing(page), `${width}px wide`).toEqual([]);
+    }
+  } finally {
+    await rpc(adminToken, "delete_closure_override", {
+      closure_id: shortDay,
+      reason: "E2E cleanup",
+    }).catch(() => undefined);
+    for (const id of booked) {
+      await rpc(adminToken, "cancel_appointment", { appointment_id: id, reason: "E2E cleanup" });
+    }
+  }
+});

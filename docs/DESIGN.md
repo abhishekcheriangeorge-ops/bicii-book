@@ -512,8 +512,11 @@ slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
   custom hours are a banner "Short day 12:00–16:00: <reason>" ("Different
   hours" when not shorter). Capacity is one slim bar per slot with its
   words ("1 of 2 booked"; red and "3 of 2 booked" when over), beside the
-  list from lg. The week view is an agenda, stacked on phones, seven
-  columns at lg.
+  list from lg. The week view is an agenda whose columns follow its own
+  width (a container query, so the side rail counts): stacked on phones,
+  two to four columns on tablets, seven only from 72rem; each row has the
+  time, `StatusPill` and the day view's badges, which wrap inside a narrow
+  column rather than run into the next day.
 - **Booking** (`BookAppointmentSheet`, props `open`, `onOpenChange`,
   `presetCustomer`, `lockCustomer`, `presetDate` (a past date falls back
   to today); `BookAppointmentButton` with the same presets, `label`,

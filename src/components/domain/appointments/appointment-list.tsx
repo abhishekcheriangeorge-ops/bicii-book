@@ -121,31 +121,49 @@ export function CustomHoursBanner({ hours }: { hours: CustomHours }) {
   );
 }
 
-/** The badges that flag a row: online booking, late, note, a D38 schedule warning. */
-function RowBadges({ appt, now }: { appt: AppointmentListItem; now: Date }) {
+/**
+ * The badges that flag a row: online booking, late, note, a D38 schedule
+ * warning. `narrow` (the week agenda's day columns) lets a badge wrap onto
+ * a second line instead of running past its column.
+ */
+function RowBadges({
+  appt,
+  now,
+  narrow = false,
+}: {
+  appt: AppointmentListItem;
+  now: Date;
+  narrow?: boolean;
+}) {
+  const fit = narrow ? NARROW_BADGE : undefined;
   return (
     <>
       {appt.source === "customer" ? (
-        <Badge tone="info">{APPOINTMENT_SOURCE_LABELS.customer}</Badge>
+        <Badge tone="info" className={fit}>
+          {APPOINTMENT_SOURCE_LABELS.customer}
+        </Badge>
       ) : null}
       {isLate(appt, now) ? (
-        <Badge tone="danger" emphasis="solid">
+        <Badge tone="danger" emphasis="solid" className={fit}>
           Late
         </Badge>
       ) : null}
       {appt.scheduleWarning ? (
-        <Badge tone="waiting" emphasis="solid">
+        <Badge tone="waiting" emphasis="solid" className={fit}>
           {SCHEDULE_WARNING_LABELS[appt.scheduleWarning]}
         </Badge>
       ) : null}
       {appt.hasCustomerNote || appt.hasInternalNote ? (
-        <Badge tone="neutral">
+        <Badge tone="neutral" className={fit}>
           Note<span className="sr-only">: this appointment has a note</span>
         </Badge>
       ) : null}
     </>
   );
 }
+
+/** A badge or pill that may wrap inside a narrow column rather than overflow it. */
+const NARROW_BADGE = "max-w-full min-w-0 rounded-lg whitespace-normal [overflow-wrap:anywhere]";
 
 /** One appointment as a tappable row (whole row links to it). */
 export function AppointmentRow({ appt, now }: { appt: AppointmentListItem; now: Date }) {
@@ -263,7 +281,13 @@ export function CapacityBars({ windows }: { windows: readonly WindowUsage[] }) {
   );
 }
 
-/** The week view: each day with its appointments, stacked on phones, seven columns at lg. */
+/**
+ * The week view: each day with its appointments. The columns follow the
+ * agenda's own width (a container query, so the side rail is counted):
+ * stacked on phones, two to four columns on tablets, seven only from 72rem,
+ * where a day's column still fits a time, a status and a badge. Badges
+ * wrap rather than run into the next day.
+ */
 export function WeekAgenda({
   days,
   today,
@@ -274,73 +298,71 @@ export function WeekAgenda({
   now: Date;
 }) {
   return (
-    <ol aria-label="Appointments this week" className="grid gap-3 lg:grid-cols-7 lg:gap-2">
-      {days.map((d) => (
-        <li
-          key={d.day}
-          className={cn(
-            "flex min-w-0 flex-col gap-2 rounded-2xl border bg-card p-3",
-            d.day === today ? "border-2 border-ink" : "border-hairline",
-          )}
-        >
-          <h2 className="flex flex-wrap items-center justify-between gap-1">
-            <Link
-              href={appointmentsHref(d.day, "day")}
-              className="flex min-h-tap items-center font-semibold underline-offset-4 hover:underline"
-            >
-              {formatShopDayShort(d.day)}
-              {d.day === today ? <span className="sr-only"> (today)</span> : null}
-            </Link>
-            {d.closedAllDay ? (
-              <Badge tone="neutral">Closed</Badge>
-            ) : d.customHours ? (
-              <Badge tone="waiting">{d.customHours.label}</Badge>
-            ) : null}
-          </h2>
-          {d.appointments.length === 0 ? (
-            <p className="text-sm text-dust-500">
-              {d.closedAllDay ? (d.closedReason ?? "Closed") : "Nothing booked"}
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {d.appointments.map((a) => (
-                <li key={a.id}>
-                  <Link
-                    href={`/appointments/${a.id}`}
-                    className={cn(
-                      "flex min-h-tap flex-col justify-center rounded-lg px-2 py-1.5 text-dense hover:bg-dust-100",
-                      a.status === "cancelled" && "text-dust-500 line-through",
-                    )}
-                  >
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-semibold tabular-nums">{formatClock(a.startsAt)}</span>
-                      <StatusPill
-                        status={appointmentTone(a.status)}
-                        className="min-h-6 px-2 text-[0.75rem]"
-                      >
-                        {APPOINTMENT_STATUS_LABELS[a.status]}
-                      </StatusPill>
-                      {isLate(a, now) ? (
-                        <Badge tone="danger" emphasis="solid">
-                          Late
-                        </Badge>
-                      ) : null}
-                      {a.scheduleWarning ? (
-                        <Badge tone="waiting" emphasis="solid">
-                          {SCHEDULE_WARNING_LABELS[a.scheduleWarning]}
-                        </Badge>
-                      ) : null}
-                    </span>
-                    <span className="truncate">{a.customer.label}</span>
-                    <span className="truncate text-dust-500">{a.type.name}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </li>
-      ))}
-    </ol>
+    <div className="@container">
+      <ol
+        aria-label="Appointments this week"
+        className="grid gap-3 @2xl:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4 @6xl:grid-cols-7 @6xl:gap-2"
+      >
+        {days.map((d) => (
+          <li
+            key={d.day}
+            className={cn(
+              "flex min-w-0 flex-col gap-2 rounded-2xl border bg-card p-3",
+              d.day === today ? "border-2 border-ink" : "border-hairline",
+            )}
+          >
+            <h2 className="flex flex-wrap items-center justify-between gap-1">
+              <Link
+                href={appointmentsHref(d.day, "day")}
+                className="flex min-h-tap items-center font-semibold underline-offset-4 hover:underline"
+              >
+                {formatShopDayShort(d.day)}
+                {d.day === today ? <span className="sr-only"> (today)</span> : null}
+              </Link>
+              {d.closedAllDay ? (
+                <Badge tone="neutral">Closed</Badge>
+              ) : d.customHours ? (
+                <Badge tone="waiting">{d.customHours.label}</Badge>
+              ) : null}
+            </h2>
+            {d.appointments.length === 0 ? (
+              <p className="text-sm text-dust-500">
+                {d.closedAllDay ? (d.closedReason ?? "Closed") : "Nothing booked"}
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {d.appointments.map((a) => (
+                  <li key={a.id}>
+                    <Link
+                      href={`/appointments/${a.id}`}
+                      className={cn(
+                        "flex min-h-tap flex-col justify-center rounded-lg px-2 py-1.5 text-dense hover:bg-dust-100",
+                        a.status === "cancelled" && "text-dust-500 line-through",
+                      )}
+                    >
+                      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span className="font-semibold tabular-nums">
+                          {formatClock(a.startsAt)}
+                        </span>
+                        <StatusPill
+                          status={appointmentTone(a.status)}
+                          className={cn("min-h-6 px-2 text-[0.75rem]", NARROW_BADGE)}
+                        >
+                          {APPOINTMENT_STATUS_LABELS[a.status]}
+                        </StatusPill>
+                        <RowBadges appt={a} now={now} narrow />
+                      </span>
+                      <span className="truncate">{a.customer.label}</span>
+                      <span className="truncate text-dust-500">{a.type.name}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
