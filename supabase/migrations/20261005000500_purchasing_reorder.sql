@@ -5,7 +5,9 @@
 --
 -- Rules encoded here:
 --   * D66 D-REORDER: suggested quantity = max(2 x reorder_point - on_hand -
---     on_order, 0) over Phase 4's reporting.low_stock products; on_order is
+--     on_order, 0) over Phase 4's reporting.low_stock products that are
+--     shop-owned (D62: Phase 6's consigned stock is never purchased, so a
+--     consigned product below its reorder point is never suggested); on_order is
 --     reporting.product_on_order (submitted and partially_received POs only,
 --     never drafts). A selected product whose suggestion is 0 is ordered at
 --     1. A draft line's cost is private.default_purchase_unit_cost: the
@@ -42,7 +44,7 @@ $$;
 comment on function private.suggested_reorder_quantity(integer, integer, integer) is
   'D66 D-REORDER: max(2 x reorder_point - on_hand - on_order, 0), NULLs as 0.';
 
--- Active staff: the low-stock products with what is on order, the
+-- Active staff: the shop-owned low-stock products with what is on order, the
 -- suggestion, and their relationship to `supplier_id` (null: no supplier
 -- chosen, so supplier_linked is false and supplier_sku null).
 -- draft_po_numbers lists the draft POs (any supplier) already holding the
@@ -91,6 +93,11 @@ begin
                )
            ), '{}'::text[])
     from reporting.low_stock ls
+    -- D62 D-PO-SCOPE: only shop-owned stock is purchased. Phase 4's
+    -- low_stock keeps every counted product (Phase 6's consigned ones too),
+    -- so the suggestions keep only what a PO line accepts.
+    join public.products p
+      on p.id = ls.product_id and p.ownership_type = 'shop_owned'
     left join reporting.product_on_order oo on oo.product_id = ls.product_id
     left join public.supplier_products sp
       on sp.product_id = ls.product_id and sp.supplier_id = reorder_suggestions.supplier_id
@@ -101,7 +108,7 @@ end;
 $$;
 
 comment on function public.reorder_suggestions(uuid) is
-  'Active staff: low-stock products with on-order quantity, the D66 suggestion, the link to a supplier and draft POs already holding them. No costs.';
+  'Active staff: shop-owned low-stock products (never consigned, D62) with on-order quantity, the D66 suggestion, the link to a supplier and draft POs already holding them. No costs.';
 
 -- manage_purchasing: a draft PO for `supplier_id` with one line per distinct
 -- selected product, in ascending product id order: quantity

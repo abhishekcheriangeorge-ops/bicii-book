@@ -855,6 +855,25 @@ describe("Purchase order state machine (D61 D-PO-CANCEL, D62 D-PO-SCOPE, D65 D-O
           active: true,
           archived_at: null,
         });
+        // Give it a reorder point above its stock so Phase 4's low_stock
+        // keeps it: the suggestions below must then drop it for its
+        // ownership alone, not because it was never low.
+        const { rows: stock } = await tx.query<{ on_hand: number }>(
+          "select on_hand from reporting.product_stock where product_id = $1",
+          [jersey],
+        );
+        expect(stock).toHaveLength(1);
+        await tx.query("update public.products set reorder_point = $2 where id = $1", [
+          jersey,
+          stock[0].on_hand + 7,
+        ]);
+        const { rows: low } = await tx.query(
+          "select product_id, on_hand, reorder_point from reporting.low_stock where product_id = $1",
+          [jersey],
+        );
+        expect(low).toEqual([
+          { product_id: jersey, on_hand: stock[0].on_hand, reorder_point: stock[0].on_hand + 7 },
+        ]);
         await actAs(tx, ADMIN);
         const po = await createPO(tx, { supplierId });
         await failsWith(
@@ -886,11 +905,13 @@ describe("Purchase order state machine (D61 D-PO-CANCEL, D62 D-PO-SCOPE, D65 D-O
           [supplierId, [jersey]],
         );
         expect(prefill).toEqual([]);
-        const { rows: suggested } = await tx.query(
-          "select product_id from public.reorder_suggestions($1) where product_id = $2",
-          [supplierId, jersey],
-        );
-        expect(suggested).toEqual([]);
+        for (const chosen of [supplierId, null]) {
+          const { rows: suggested } = await tx.query(
+            "select product_id from public.reorder_suggestions($1) where product_id = $2",
+            [chosen, jersey],
+          );
+          expect(suggested).toEqual([]);
+        }
       });
     },
   );

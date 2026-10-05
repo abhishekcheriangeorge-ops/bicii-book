@@ -27,8 +27,10 @@ evidence of their own phase.
   questions 15–17 in
   [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
 - Owner decision recorded here: three staff roles (admin, manager,
-  mechanic; 2026-10-06) are decided but not built on this branch; D60 now
-  covers only a mechanic granted `manage_purchasing` as an exception
+  mechanic; 2026-10-06) are decided but not built on this branch, so D60
+  still covers every non-admin holding `manage_purchasing`; once the roles
+  land it covers only a mechanic granted `manage_purchasing` as an
+  exception
   ([ADR-018](docs/decisions/ADR-018-purchasing.md),
   [R-034](docs/RISKS.md#r-034--a-manage_purchasing-exception-shows-unit-costs-on-purchasing-screens)).
 - Main uncertainty: nothing hosted exists
@@ -47,9 +49,9 @@ a separate, label-triggered run. All listed results are success.
 | Inventory | Yes, PR #5 9922441 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262357001), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262379042/job/111612114525) | Not deployed |
 | Today and financial engine | Yes, PR #6 d3e2101 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262369366), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262380782/job/111612119938) | Not deployed |
 | Appointments | Yes, PR #7 b34bbcd | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521); locally `npm test` 82 files / 1186 tests, `npm run check`, `check:types`, `test:e2e` 106 passed | Not deployed |
-| Docs stack | Yes, `feat/docs-stack` | Locally: docs link check, 33 files / 476 links, 0 problems; `npm run check` pass (after the review fixes) | Not deployed |
-| Purchasing (Phase 7: suppliers, purchase orders, receiving, reorder; D60–D66) | Yes, `feat/p7-purchasing`: built through a0fc1d2 (pushed), integrated with `main` in the merge 06979ec and the documentation commit after it (local only) | Locally on the integrated branch (database `bicii_dev_wt`): `npm run db:reset` pass (42 migrations, `42\|20261005000500`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 102 files / 1517 tests passed (unit 52 / 643, database 50 / 874), `npm run build` pass, `npm run test:e2e` 138 passed on phone and tablet (16.8 min, no failures, flaky or skipped), docs link check 35 files / 595 links / 0 problems | Not deployed |
-| Staff email OTP | On `feat/auth-email-otp` 4b3eadd (local and origin equal: pushed), checked out in the worktree `bicii-book-wt` | Not verified here | Not deployed |
+| Docs stack | Yes, merged in PR #8 (fbf8240; on `origin/main` 6042e6e) | Locally: docs link check, 33 files / 476 links, 0 problems; `npm run check` pass (after the review fixes) | Not deployed |
+| Purchasing (Phase 7: suppliers, purchase orders, receiving, reorder; D60–D66) | Yes, `feat/p7-purchasing`: built through a0fc1d2 (pushed), integrated with `main` in the merge 06979ec, the documentation commit 6f71dd4 and the integration review fixes after it (local only) | Locally on the integrated branch (database `bicii_dev_wt`): `npm run db:reset` pass (42 migrations, `42\|20261005000500`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 102 files / 1517 tests passed (unit 52 / 643, database 50 / 874), `npm run build` pass, `npm run test:e2e` 138 passed on phone and tablet (16.8 min, no failures, flaky or skipped), docs link check 35 files / 595 links / 0 problems. After the integration review fixes (reorder suggestions shop-owned only; product-page supplier costs need view_costs; docs): `npm run db:reset` pass (`42\|20261005000500`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 102 files / 1518 tests passed (the strengthened consigned-reorder test failed against the unfixed migration), `npm run build` pass, `npm run test:e2e` 138 passed on phone and tablet (15.0 min, no failures, flaky or skipped), docs link check 35 files / 596 links / 0 problems | Not deployed |
+| Staff email OTP | On `feat/auth-email-otp` 4b3eadd (local and origin equal: pushed); not checked out in any worktree and not on `main` | Not verified here | Not deployed |
 | Consignment core and consigned job parts (Phase 6 step 1: D44, D45, D48, D50–D52) | Database only, `feat/p6-consignment` 13fe3f3, fe6ac53, 365bdd7; no screens yet | Locally on 365bdd7: `npm run db:reset` pass (34 migrations, `34\|20261004003400`), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 86 files / 1225 tests passed; `test:e2e` not run (no screen changed); docs link check 34 files / 506 links / 0 problems | Not deployed |
 | Sales, restocks, refunds, settlements, consignor ledgers, sale reporting, read RPCs, search, Phase 6 seed (Phase 6 step 2: D44, D46–D49) | Database only, `feat/p6-consignment` 2d2ba0c, 2c402b2; no screens yet | Locally at 2c402b2 + docs: `npm run db:reset` pass (37 migrations, latest `20261004003700`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 89 files / 1298 tests passed, `npm run build` pass, `npm run test:e2e` 106 passed (phone and tablet, 9.7 min), docs link check 34 files / 509 links / 0 problems | Not deployed |
 | Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
@@ -66,8 +68,9 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   appointments, the docs stack and Phase 6. The local `main` ref is stale
   (1594c78); use `origin/main`.
 - `feat/p7-purchasing` (this worktree, `/home/user/bicii-book-wt`): the
-  merge 06979ec (parents a0fc1d2 and 6042e6e) and one documentation
-  commit after it, committed locally and not pushed; `origin/feat/p7-purchasing`
+  merge 06979ec (parents a0fc1d2 and 6042e6e), the documentation commit
+  6f71dd4 and the integration review fixes commit after it, committed
+  locally and not pushed; `origin/feat/p7-purchasing`
   is still a0fc1d2. PR #9 is its pull request.
 - Other branches: `feat/auth-email-otp` (4b3eadd, pushed) and
   `feat/p8-labels` (checked out in `/home/user/bicii-book`, the other
@@ -95,10 +98,13 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-024](docs/RISKS.md#r-024--a-consigned-item-can-be-sold-below-what-the-consignor-is-owed)),
   11 (agreement photos, R-022), 12 (refund netting and Cult Commons
   claw-back, decided by Phase 9's refund-reporting row, D49,
-  [R-021](docs/RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock))
-  and 13 (D55: should backdating an in-store sale more than a few days need
+  [R-021](docs/RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)),
+  13 (D55: should backdating an in-store sale more than a few days need
   a permission?,
-  [R-027](docs/RISKS.md#r-027--a-sale-can-be-backdated-without-limit-by-any-staff-member));
+  [R-027](docs/RISKS.md#r-027--a-sale-can-be-backdated-without-limit-by-any-staff-member))
+  and 14 (how long consignors' personal and payout details are kept, and
+  whether payout-detail changes are recorded,
+  [R-026](docs/RISKS.md#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history));
   Phase 7 adds rows 15 (confirm D61–D66), 16 (a reverse-receipt for a
   wrong delivery,
   [R-030](docs/RISKS.md#r-030--a-wrong-delivery-cannot-be-reversed-only-adjusted))

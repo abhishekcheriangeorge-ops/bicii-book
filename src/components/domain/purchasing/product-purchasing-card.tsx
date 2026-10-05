@@ -15,7 +15,9 @@ import { AddSupplierProductButton } from "./supplier-product-sheet";
 /**
  * The product page's "Suppliers & orders" card (Phase 7, from
  * getProductPurchasing): who supplies it (supplier SKU, lead time,
- * Preferred and, cost-visible staff only, the last cost, D60 D63), what is
+ * Preferred and, view_costs holders only, the last cost: the product page
+ * is not a purchasing screen, so manage_purchasing alone shows no cost
+ * here, D60 D63), what is
  * on order (reporting.product_on_order: submitted and partially received
  * orders, never drafts) and the open orders holding it. manage_purchasing
  * adds a supplier link here (SupplierProductSheet, supplier-picker mode).

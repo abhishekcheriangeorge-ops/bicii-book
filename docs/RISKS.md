@@ -805,11 +805,18 @@ URLs, or customer data in this file.
   Because by D5 a receipt's cost becomes the product's cost, they in
   effect learn the unit cost of every orderable product. They still see no
   yield, margin, Cult Commons or report figure and no Phase 3/4/5 cost
-  surface.
+  surface: the product page's "Suppliers & orders" card shows supplier
+  last costs to `view_costs` holders only (`canSeeProductPageSupplierCosts`
+  in `src/lib/purchasing.ts`, since the integration review; before it the
+  card used the purchasing rule and showed them to the exception holder
+  too). Until the staff roles are built, this applies to every non-admin
+  holding `manage_purchasing`, not only a mechanic.
 - Evidence and confidence: high; `private.can_view_purchase_costs()` in
   `20261005000100_suppliers.sql`; `tests/db/purchasing-access.test.ts`
   ("manage_purchasing alone runs purchasing and sees purchase costs, but no
-  Phase 3/4/5 cost surface" and the prefill test).
+  Phase 3/4/5 cost surface" and the prefill test); `tests/unit/purchasing.test.ts`
+  ("shows supplier last costs on the product page to view_costs holders
+  and admins only").
 - Workaround or containment: grant the exception only to people trusted
   with unit costs; Settings → Staff lists each person's permissions.
 - Next action: revisit with the staff roles (D90–D99) if the owner wants

@@ -26,7 +26,8 @@ const COST_SOURCES: Record<string, string> = {
 /**
  * Reorder from low stock (D66 D-REORDER): pick the supplier (required to
  * create; changing it reloads the list for that supplier), tick the
- * products below their reorder point, and "Create draft order (N
+ * shop-owned products below their reorder point (consigned stock is never
+ * purchased, D62, so it never appears here), and "Create draft order (N
  * products)" makes one draft with them (create_purchase_order_from_low_stock;
  * quantity = the suggestion, at least 1; cost = the supplier's last cost,
  * else the product's, else 0). The id is made when the list mounts, so a
@@ -117,7 +118,7 @@ export function ReorderList({
           <EmptyState
             icon={<BoxIcon />}
             title="Nothing is below its reorder point."
-            description="Counted products at or below their reorder point appear here."
+            description="Shop-owned counted products at or below their reorder point appear here. Consigned stock is never reordered."
           />
         ) : (
           <ul

@@ -135,6 +135,16 @@ export function canSeePurchaseCosts(staff: PermissionHolder): boolean {
   return hasPermission(staff, "view_costs") || hasPermission(staff, "manage_purchasing");
 }
 
+/**
+ * The product page's "Suppliers & orders" card (a Phase 4 screen, not a
+ * purchasing screen): each supplier's last cost needs view_costs.
+ * manage_purchasing alone shows purchase costs on purchasing screens only
+ * (D60), so a buyer without view_costs sees no cost on the product page.
+ */
+export function canSeeProductPageSupplierCosts(staff: PermissionHolder): boolean {
+  return hasPermission(staff, "view_costs");
+}
+
 /** Every supplier and PO write, and receiving. */
 export function canManagePurchasing(staff: PermissionHolder): boolean {
   return hasPermission(staff, "manage_purchasing" satisfies PermissionKey);

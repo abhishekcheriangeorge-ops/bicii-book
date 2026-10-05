@@ -381,6 +381,11 @@ Settings → Your profile.
   D66). Press **Create draft order (N products)**.
 - Success looks like: a draft order with those lines at the supplier's
   last cost; check quantities and costs, then **Submit order**.
+- Only shop-owned products are listed. A consigned product below its
+  reorder point still counts on Today and the Inventory low-stock filter,
+  but it is never reordered here: more of it comes from its consignor
+  through intake. If only consigned products are low, the list says
+  "Nothing is below its reorder point."
 
 ### Publish a product
 
@@ -479,7 +484,7 @@ prices and sale totals are visible to all; costs are not.
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite, permissions and deactivation, only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
-| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history, D60), not job, sale or report costs |
+| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history, D60), not job, sale, product-page or report costs (supplier last costs on a product's **Suppliers & orders** card need View costs) |
 
 Without a permission, its buttons are absent and the figures are not sent
 to your screen at all. Opening a page you may not use shows "You can't open

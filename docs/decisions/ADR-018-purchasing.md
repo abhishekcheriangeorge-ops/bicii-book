@@ -10,8 +10,9 @@ roles, admin, manager and mechanic (today's role "staff" becomes mechanic).
 A manager holds every permission except `manage_staff`, `view_costs` and
 `manage_purchasing` included, so a manager sees purchase and product costs
 through the role, not through D60. D60's rule (manage_purchasing alone
-shows purchase costs on purchasing screens only) stays as built for the
-exception case: an admin granting `manage_purchasing` to one mechanic as a
+shows purchase costs on purchasing screens only) stays as built; the
+roles are not built yet, so today it covers every non-admin holding
+`manage_purchasing`, and once they land it covers only the exception case: an admin granting `manage_purchasing` to one mechanic as a
 single-permission exception. The owner was told and has not objected. The
 roles themselves are recorded in their own record (ADR-021, D90–D99) when
 that work lands.
@@ -21,7 +22,11 @@ products (Phase 6, D45) are never purchased. The PO line and the low-stock
 draft already refused any product that is not shop-owned
 (`purchase_line_not_shop_owned`); at the integration `set_supplier_product`
 refuses them too, so a consigned product never gets a supplier link.
-Evidence: `tests/db/purchasing.test.ts` ("Phase 6's consigned stock is
+At the integration review `reorder_suggestions` also gained its ownership
+filter: Phase 4's `reporting.low_stock` keeps every counted product,
+consigned ones included, so a consigned product given a reorder point was
+suggested, and ticking it made the whole draft fail. The suggestions now
+keep shop-owned products only. Evidence: `tests/db/purchasing.test.ts` ("Phase 6's consigned stock is
 never purchased"). The receive screen's label-print shortcut waits for
 Phase 8 (labels are not on this line).
 
@@ -41,13 +46,13 @@ suggested.
 
 | D | Rule (short) | Status | Implemented in |
 |---|---|---|---|
-| D60 D-PO-COSTS | Purchase costs (line, receipt and supplier last costs, totals, cost defaults, PO history) are for `view_costs` OR `manage_purchasing` (`private.can_view_purchase_costs()`); `manage_purchasing` alone opens no Phase 3/4/5 cost, yield or financial surface; cost defaults only for products a PO can hold | Accepted: build default, owner informed; amended in effect by the owner's staff roles (2026-10-06): managers see costs through their role, and this rule now covers a mechanic granted `manage_purchasing` as an exception | `20261005000100_suppliers` to `…0300_purchase_receiving` |
+| D60 D-PO-COSTS | Purchase costs (line, receipt and supplier last costs, totals, cost defaults, PO history) are for `view_costs` OR `manage_purchasing` (`private.can_view_purchase_costs()`); `manage_purchasing` alone opens no Phase 3/4/5 cost, yield or financial surface (the product page's "Suppliers & orders" card shows supplier last costs to `view_costs` only); cost defaults only for products a PO can hold | Accepted: build default, owner informed; implemented. Today it covers every non-admin holding `manage_purchasing`. Pending: once the owner's staff roles (2026-10-06; not built, D90–D99) land, managers see costs through their role and this rule covers only a mechanic granted `manage_purchasing` as an exception | `20261005000100_suppliers` to `…0300_purchase_receiving` |
 | D61 D-PO-CANCEL | Cancel from draft, submitted or partially received with a reason; received stock, receipts and movements stay; the remainder is reported as cancelled; final | Accepted: build default, owner to confirm | `…0200_purchase_orders` |
 | D62 D-PO-SCOPE | A PO orders quantity-tracked, shop-owned, active products, one line per product; its currency is the shop currency and must equal the product's; unique items are registered with `create_unique_unit` | Accepted: build default, owner to confirm; consignment-owned products refused (checked against Phase 6) | `…0200_purchase_orders`, `…0300_purchase_receiving`, `…0500_purchasing_reorder`; supplier links since the integration |
 | D63 D-LASTCOST | "Latest" is by receipt `received_at` (ties: later `created_at`, then id; within a receipt the highest line); the supplier link's last cost follows the same rule per supplier; 0 is a known cost (D24 as amended); a change writes Phase 4's `cost_changed` event; snapshots never change | Accepted: build default, owner to confirm (refines D5) | `…0300_purchase_receiving` |
 | D64 D-RECEIPT-TIME | `received_at` defaults to now, back-dated up to 30 days, never more than 5 minutes ahead or before submission; movements keep record time and name the delivery time in their reason | Accepted: build default, owner to confirm | `…0300_purchase_receiving` |
 | D65 D-OVERRECEIPT | More than outstanding is refused; staff raise the ordered quantity first on an open PO; a received PO is closed; receipts are immutable and corrected by a stock adjustment; a duplicate delivery note is a soft warning in the Receive screen | Accepted: build default, owner to confirm | `…0300_purchase_receiving`; the Receive screen |
-| D66 D-REORDER | Suggested quantity = max(2 × reorder point − on hand − on order, 0) over `reporting.low_stock`; on order counts submitted and partially received POs only; a draft from low stock takes the supplier's last cost, else the product's cost (0 included), else 0 | Accepted: build default, owner to confirm | `…0500_purchasing_reorder` |
+| D66 D-REORDER | Suggested quantity = max(2 × reorder point − on hand − on order, 0) over the shop-owned products in `reporting.low_stock`; on order counts submitted and partially received POs only; a draft from low stock takes the supplier's last cost, else the product's cost (0 included), else 0 | Accepted: build default, owner to confirm | `…0500_purchasing_reorder` |
 
 Full text of each row: [PLAN §6](../PLAN.md#6-open-decisions-for-the-owner).
 Rationale:
@@ -57,7 +62,11 @@ Rationale:
   not a licence to see yield, margins or Cult Commons, so those surfaces
   stay with `view_costs` and `view_financial_reports`. With the staff
   roles, the people who buy are managers, who hold `view_costs` anyway;
-  the rule matters only for a mechanic given the single permission.
+  the rule matters only for a mechanic given the single permission. The
+  product page is a Phase 4 screen, so its "Suppliers & orders" card
+  shows each supplier's last cost to `view_costs` holders only
+  (`canSeeProductPageSupplierCosts`; found at the integration review,
+  where the card had used the purchasing rule).
 - D61: a supplier that cannot deliver is a normal event; what arrived is
   a fact of the ledger and stays.
 - D62: purchased stock is the shop's; consigned stock belongs to its

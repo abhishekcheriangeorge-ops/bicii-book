@@ -7,6 +7,7 @@ import { toMoneyString } from "@/lib/money";
 import {
   PURCHASE_ORDER_FILTERS,
   canManagePurchasing,
+  canSeeProductPageSupplierCosts,
   canSeePurchaseCosts,
   describePurchaseOrderEvent,
   eventShowsReason,
@@ -929,13 +930,18 @@ export type ProductPurchasing = {
   openOrders: ProductOpenOrder[];
 };
 
-/** A product's suppliers, what is on order and the open orders holding it. */
+/**
+ * A product's suppliers, what is on order and the open orders holding it,
+ * for the product page's card. Supplier last costs need view_costs there
+ * (canSeeProductPageSupplierCosts): the product page is not a purchasing
+ * screen, so manage_purchasing alone shows none (D60).
+ */
 export async function getProductPurchasing(
   supabase: ServerSupabase,
   productId: string,
   staff: StaffDTO,
 ): Promise<ProductPurchasing> {
-  const seeCosts = canSeePurchaseCosts(staff);
+  const seeCosts = canSeeProductPageSupplierCosts(staff);
   const [linksResult, costsResult, onOrderResult, progressResult] = await Promise.all([
     supabase
       .from("supplier_products")
