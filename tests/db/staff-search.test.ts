@@ -8,6 +8,8 @@
  *     number (Phase 3), never in the archived lists; products by short ID,
  *     SKU (ignoring case, spaces and punctuation) and name/brand words, and
  *     units by short ID, serial number and product name (Phase 4);
+ *     suppliers by name, contact, email and phone, and purchase orders by
+ *     PO number, supplier reference and supplier name (Phase 7);
  *   * exact short ID and serial matches rank first (rank 1), above every
  *     fuzzy hit;
  *   * kinds filter and result limit; unknown kinds raise; blank finds
@@ -18,6 +20,8 @@
 import type pg from "pg";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { SEARCH_KINDS } from "@/lib/search";
+
 import {
   AUTH_USER,
   BIKE,
@@ -25,9 +29,12 @@ import {
   BIKE_SHORT_ID,
   CUSTOMER,
   JOB_NUMBER,
+  PO_NUMBER,
   PRODUCT,
   PRODUCT_SHORT_ID,
+  PURCHASE_ORDER,
   STAFF,
+  SUPPLIER,
   UNIT,
   UNIT_SHORT_ID,
   WORK_ORDER,
@@ -40,6 +47,7 @@ import {
   connect,
   inTransaction,
   isolatedDatabase,
+  scalar,
   staffClaims,
 } from "./harness";
 import { ADMIN, makeUnit, writeOff } from "./inventory-fixtures";
@@ -257,7 +265,10 @@ describe("jobs by job number (Phase 3)", () => {
 
   it("the kinds filter keeps jobs in or out", async () => {
     const all = await find("000004");
-    expect(new Set(all.map((h) => h.kind))).toEqual(new Set(["bike", "work_order"]));
+    // Phase 7's seed adds PO-000004, which contains the digits too.
+    expect(new Set(all.map((h) => h.kind))).toEqual(
+      new Set(["bike", "work_order", "purchase_order"]),
+    );
     expect(new Set((await find("000004", ["work_order"])).map((h) => h.kind))).toEqual(
       new Set(["work_order"]),
     );
@@ -473,8 +484,8 @@ describe("query handling", () => {
   });
 
   it("raises 22023 for a kind it does not know", async () => {
-    // 'supplier' arrives in Phase 7; product and inventory_unit are known since Phase 4.
-    await expect(find("tan", ["supplier"])).rejects.toMatchObject({ code: "22023" });
+    // product and inventory_unit are known since Phase 4, supplier since Phase 7.
+    await expect(find("tan", ["not_a_kind"])).rejects.toMatchObject({ code: "22023" });
     await expect(find("tan", ["product", "inventory_unit"])).resolves.toEqual([]);
     await expect(find("tan", ["bike", null as unknown as string])).rejects.toMatchObject({
       code: "22023",
@@ -535,5 +546,162 @@ describe("access", () => {
         return search(tx, "tan");
       }),
     ).rejects.toMatchObject({ code: "42501" });
+  });
+});
+
+describe("suppliers and purchase orders (Phase 7)", () => {
+  const archivedSearch = (q: string, kinds: string[] | null = null) =>
+    asStaff(conn, STAFF.mechanic2, (tx) =>
+      tx
+        .query<Hit>("select * from public.staff_search($1, $2, 20, true)", [q, kinds])
+        .then((r) => r.rows),
+    );
+
+  it("finds a supplier by name words in any order and by its contact", async () => {
+    for (const q of ["velo parts", "Parts Velo", "asia velo", "kenneth", "LIM KENNETH"]) {
+      const hits = await find(q, ["supplier"]);
+      expect(ids(hits), q).toEqual([SUPPLIER.veloParts]);
+      expect(hits[0]).toMatchObject({
+        kind: "supplier",
+        title: "Velo Parts Asia Pte Ltd",
+        subtitle: "Kenneth Lim · +65 6123 4501 · sales@veloparts.test",
+        short_id: null,
+      });
+      expect(hits[0].rank).toBeGreaterThanOrEqual(0.5);
+      expect(hits[0].rank).toBeLessThanOrEqual(0.9);
+    }
+    expect(ids(await find("tropic tyre", ["supplier"]))).toEqual([SUPPLIER.tropicTyre]);
+  });
+
+  it("an exact email or phone number finds the supplier at 0.95; part of the phone at 0.6", async () => {
+    expect((await find("Sales@VeloParts.test"))[0]).toMatchObject({
+      kind: "supplier",
+      id: SUPPLIER.veloParts,
+      rank: 0.95,
+    });
+    for (const q of ["+65 6123 4501", "+6561234501", "6123 4501", "61234501"]) {
+      expect((await find(q))[0], q).toMatchObject({
+        kind: "supplier",
+        id: SUPPLIER.veloParts,
+        rank: 0.95,
+      });
+    }
+    expect(await find("6234", ["supplier"])).toEqual([
+      expect.objectContaining({ id: SUPPLIER.tropicTyre, rank: 0.6 }),
+    ]);
+  });
+
+  it("an exact PO number finds the PO at rank 1, with or without the dash, in any case", async () => {
+    const expected = await scalar<string>(
+      conn,
+      "select to_char(private.shop_today() - 1, 'FMDD Mon YYYY')",
+    );
+    for (const q of [PO_NUMBER.partial, "po 000002", "PO000002", " po-000002 "]) {
+      const hits = await find(q);
+      expect(hits[0], q).toEqual({
+        kind: "purchase_order",
+        id: PURCHASE_ORDER.partial,
+        title: "Velo Parts Asia Pte Ltd",
+        subtitle: `Partially received · expected ${expected} · 28 of 30 received`,
+        short_id: "PO-000002",
+        rank: 1,
+      });
+      for (const other of hits.slice(1)) expect(other.rank).toBeLessThan(1);
+    }
+  });
+
+  it("a PO is found by its supplier reference at 0.95 and by part of its number at 0.6", async () => {
+    for (const q of ["SO-7781", "so 7781", "so7781"]) {
+      expect(await find(q), q).toEqual([
+        expect.objectContaining({ kind: "purchase_order", id: PURCHASE_ORDER.partial, rank: 0.95 }),
+      ]);
+    }
+    expect(await find("000004", ["purchase_order"])).toEqual([
+      expect.objectContaining({ id: PURCHASE_ORDER.draft, short_id: PO_NUMBER.draft, rank: 0.6 }),
+    ]);
+    // Every seeded number contains PO00000.
+    const all = await find("PO-00000", ["purchase_order"]);
+    expect(ids(all).sort()).toEqual(Object.values(PURCHASE_ORDER).sort());
+    expect(new Set(all.map((h) => h.rank))).toEqual(new Set([0.6]));
+  });
+
+  it("POs are found by their supplier's name words, cancelled ones included, below the supplier", async () => {
+    const hits = await find("tropic tyre");
+    expect(hits[0]).toMatchObject({ kind: "supplier", id: SUPPLIER.tropicTyre });
+    const pos = hits.filter((h) => h.kind === "purchase_order");
+    expect(ids(pos).sort()).toEqual(
+      [PURCHASE_ORDER.awaitingDelivery, PURCHASE_ORDER.cancelled].sort(),
+    );
+    for (const po of pos) {
+      expect(po.rank).toBeGreaterThanOrEqual(0.4);
+      expect(po.rank).toBeLessThan(hits[0].rank);
+      expect(po.title).toBe("Tropic Tyre & Tube Co");
+    }
+    expect(pos.find((h) => h.id === PURCHASE_ORDER.cancelled)?.subtitle).toBe(
+      "Cancelled · 0 of 20 received",
+    );
+    expect(pos.find((h) => h.id === PURCHASE_ORDER.awaitingDelivery)?.subtitle).toMatch(
+      /^Submitted · expected \d{1,2} [A-Z][a-z]{2} \d{4} · 0 of 6 received$/,
+    );
+  });
+
+  it("an archived supplier is found only with archived = true", async () => {
+    expect(await find("old spoke")).toEqual([]);
+    expect(await archivedSearch("old spoke")).toEqual([
+      expect.objectContaining({
+        kind: "supplier",
+        id: SUPPLIER.oldSpoke,
+        title: "Old Spoke Trading",
+      }),
+    ]);
+    expect(ids(await archivedSearch("velo", ["supplier"]))).toEqual([]);
+  });
+
+  it("POs are never archived: archived = true returns no PO", async () => {
+    for (const q of [PO_NUMBER.partial, "so 7781", "velo parts", "PO-00000"]) {
+      expect(
+        (await archivedSearch(q)).filter((h) => h.kind === "purchase_order"),
+        q,
+      ).toEqual([]);
+    }
+  });
+
+  it("the kinds filter keeps suppliers and POs in or out", async () => {
+    expect(new Set((await find("kenneth")).map((h) => h.kind))).toEqual(
+      new Set(["supplier", "purchase_order"]),
+    );
+    expect(new Set((await find("kenneth", ["supplier"])).map((h) => h.kind))).toEqual(
+      new Set(["supplier"]),
+    );
+    expect(new Set((await find("kenneth", ["purchase_order"])).map((h) => h.kind))).toEqual(
+      new Set(["purchase_order"]),
+    );
+    expect(
+      await find("kenneth", ["customer", "bike", "work_order", "product", "inventory_unit"]),
+    ).toEqual([]);
+  });
+
+  it("every kind that existed before still returns its seeded hits", async () => {
+    const cases: [string, string, string][] = [
+      ["customer", "tan wei ming", CUSTOMER.tan],
+      ["bike", BIKE_SHORT_ID.priyaDomane, BIKE.priyaDomane],
+      ["work_order", JOB_NUMBER.chloeGiantInProgress, WORK_ORDER.chloeGiantInProgress],
+      ["product", PRODUCT_SHORT_ID.gp5000Tyre, PRODUCT.gp5000Tyre],
+      ["inventory_unit", UNIT_SHORT_ID.colnago, UNIT.colnago],
+    ];
+    for (const [kind, q, id] of cases) {
+      expect((await find(q, [kind]))[0], kind).toMatchObject({ kind, id });
+      expect((await find(q))[0], kind).toMatchObject({ kind, id });
+    }
+  });
+
+  it("staff_search knows every SEARCH_KINDS entry the app asks for (merge guard)", async () => {
+    // src/lib/domain/search.ts asks for every SEARCH_KINDS entry, so a kind
+    // the database does not know (22023) breaks the app's search. A merge
+    // that drops a staff_search branch fails here.
+    for (const kind of SEARCH_KINDS) {
+      await expect(find("anything", [kind]), kind).resolves.toBeInstanceOf(Array);
+    }
+    await expect(find("anything", [...SEARCH_KINDS])).resolves.toBeInstanceOf(Array);
   });
 });
