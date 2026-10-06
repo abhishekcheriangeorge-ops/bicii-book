@@ -1,12 +1,15 @@
 # Current state
 
-Updated: 2026-10-06, staff roles step 1 of 4 (the database) on
-`feat/staff-roles` (from `feat/auth-email-otp` at 85077c9), in the second
-worktree `bicii-book-wt`; before that, the staff email sign-in integration
-with main and purchasing on `feat/auth-email-otp`. Evidence checked: `git fetch origin`, `git branch -a` and
-`git worktree list` before the merge; the local gates on this branch
-after the integration (below). Earlier rows keep the evidence of their own
-phase.
+Updated: 2026-10-06, staff roles complete (steps 1–4, the last being the
+integration review and documentation closure) on `feat/staff-roles`
+(created from `feat/auth-email-otp` at 85077c9, equal to
+`origin/feat/auth-email-otp`), in the second worktree
+`/home/user/bicii-book-wt`; before that, the staff email sign-in
+integration with main and purchasing on `feat/auth-email-otp`. Evidence
+checked: `git status` (clean after the commits), `git worktree list`,
+`git log origin/feat/auth-email-otp..HEAD` (the roles commits, none
+pushed; remote-tracking refs as last fetched) and the local gates on this
+branch (below). Earlier rows keep the evidence of their own phase.
 
 ## Return in two minutes
 
@@ -21,24 +24,29 @@ phase.
   (rewritten), D70–D72, record
   [ADR-019](docs/decisions/ADR-019-staff-email-sign-in.md), risks R-035 to
   R-039. Committed locally, not pushed.
-- Next action: the orchestrator pushes `feat/p7-purchasing` and
-  `feat/auth-email-otp`, runs CI with the `e2e` label on PRs #9 and #10 and
-  merges #9 then #10; then integrates labels (Phase 8) the same way. The
-  owner answers questions 18 (confirm D70–D72) and 19 (the SMTP provider)
-  in [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
+- Next action: the orchestrator runs CI with the `e2e` label on PRs #9
+  and #10 and merges #9 then #10 (`feat/p7-purchasing` 7fed53f and
+  `feat/auth-email-otp` 85077c9 are pushed); after #10 merges it pushes
+  `feat/staff-roles`, opens its pull request against `main` (body: the
+  step 4 report's documentation-impact answer) and runs CI with the `e2e`
+  label; then integrates labels (Phase 8) the same way. The owner answers
+  questions 18 (confirm D70–D72), 19 (the SMTP provider) and 20 (confirm
+  the staff-roles build defaults D92 and D93) in
+  [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
 - Before any hosted deploy of this release: configure SMTP and run the
   REQUIRED password reset in
   [RUNBOOK](docs/RUNBOOK.md#hosted-supabase-projects-staging-and-production)
   ([R-035](docs/RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset),
   [R-039](docs/RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)).
-- Staff roles (admin, manager, mechanic; owner decision 2026-10-06):
-  step 1 of 4, the database, is built and committed locally on
-  `feat/staff-roles` (D90–D94,
-  [ADR-021](docs/decisions/ADR-021-staff-roles.md)); next is step 2, the
-  app's permission model, guards, refunds and profile. The screens still
-  show two roles until step 3. D60 now covers only a mechanic holding
-  `manage_purchasing` as an exception
-  ([R-034](docs/RISKS.md#r-034--a-manage_purchasing-exception-shows-unit-costs-on-purchasing-screens)).
+- Staff roles (admin, manager, mechanic; owner decision 2026-10-06): built
+  and committed locally on `feat/staff-roles`, not pushed (D90–D94,
+  [ADR-021](docs/decisions/ADR-021-staff-roles.md)): the database
+  (`private.role_implies`, exceptions, role administration, refunds for
+  managers), the app's permission model and guards, the profile page, and
+  the staff screens (role picker, Extra access, invites by role). D60 now
+  covers only a mechanic holding `manage_purchasing` as an exception
+  ([R-034](docs/RISKS.md#r-034--a-manage_purchasing-exception-shows-unit-costs-on-purchasing-screens));
+  what stays open is R-050 to R-053.
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -64,8 +72,8 @@ a separate, label-triggered run. All listed results are success.
 | Sales screens, refunds, restocks, Today and nav wiring, journey 4 (Phase 6 step 4: D7, D46, D48, D49, D51, D53) | Yes, `feat/p6-consignment` 67b1607, b65484a, 543760f, eccd687 and the closing docs commit: `/sales`, `/sales/[id]`, `RecordSaleSheet` / `SaleablePicker`, `RefundSheet`, `RestockControl`; Sell on the consignment item, unit and product pages; "Sold on S-…" with Restock on the unit page; `S-` in `/q` and the `sale` search kind; Sales in More; Today's consignment tiles linked | Locally: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 92 files / 1364 tests passed, `npm run build` pass (inside `test:e2e`), `npm run test:e2e` 118 passed on phone and tablet (13.3 min; an earlier run had 2 failures, the Today past-day note's old wording in `today.spec.ts`, fixed in eccd687), docs link check 34 files / 528 links / 0 problems | Not deployed |
 | Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment` 32f19e6 (the follow-up commit corrects DATA-MODEL's authority and applied state, PLAN's Phase 6 test list and this file's owner-question list) | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems; rerun at the documentation follow-up: `npm run db:reset` pass (`37\|20261004003700`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.6 min, build inside, no failures, flaky or skipped), docs link check 34 files / 545 links / 0 problems | Not deployed |
 | Labels (Phase 8) | On `feat/p8-labels` in the other worktree; not on this branch | Not verified here | Not deployed |
-| Staff roles, step 1: the database (D90–D94: three roles, `private.role_implies`, exceptions, role administration, refunds for managers, seed `manager@bicii.test`) | Database only, `feat/staff-roles` (local, not pushed); screens in steps 2–3 | Locally (database `bicii_dev_wt`): `npm run db:reset` pass (47 migrations, `47\|20261006000300`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 112 files / 1632 tests passed (unit 56 / 689, database 56 / 943), `npm run build` pass, `npm run test:e2e` 152 passed on phone and tablet (14.9 min, no failures, flaky or skipped), docs link check 37 files / 664 links / 0 problems | Not deployed |
-| Phase 9 reporting, Shopify, public-site integration, staff-role screens, hardware adapter | No | Not built | Not deployed |
+| Staff roles (D90–D94: admin, manager and mechanic; `private.role_implies`; "Extra access" exceptions; role administration; refunds for managers; seed `manager@bicii.test`; staff screens with the role picker and invites by role) | Yes, `feat/staff-roles`: 0657397, 28de036 (database), bfc5ea2, dd94665 (app model, guards, refunds, profile), ae9763b, 080a796 (staff screens, E2E), a5441dd and the evidence commit (integration review, documentation); local only, not pushed | Locally (database `bicii_dev_wt`) after the step 4 review fixes (a5441dd): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 113 files / 1680 tests passed (unit 57 / 737, database 56 / 943), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (16.8 min, no failures, flaky or skipped; it reset the database: 47 migrations, `47\|20261006000300`, seed applied), docs link check 37 files / 690 links / 0 problems. Earlier steps: step 1 112 / 1632 and 152 E2E; step 2 112 / 1669 and 152 E2E; step 3 113 / 1680 and 158 E2E, all passing | Not deployed |
+| Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -74,11 +82,16 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 - `main` on origin (6042e6e) holds PRs #1–#8 and #11: the stack through
   appointments, the docs stack and Phase 6. The local `main` ref is stale;
   use `origin/main`.
-- `feat/auth-email-otp` (this worktree, `/home/user/bicii-book-wt`): the
-  merge 38db51b (parents 4b3eadd, the pushed head, and 7fed53f,
-  `origin/feat/p7-purchasing`), the documentation commit 35d7a63 and the
-  integration review fixes after it, committed locally and not pushed; `origin/feat/auth-email-otp` is still
-  4b3eadd. PR #10 is its pull request; it merges after PR #9.
+- `feat/staff-roles` (this worktree, `/home/user/bicii-book-wt`): created
+  from `feat/auth-email-otp` at 85077c9; the roles commits 0657397,
+  28de036 (step 1), bfc5ea2, dd94665 (step 2), ae9763b, 080a796 (step 3)
+  and the step 4 review and documentation commits, all committed locally
+  and not pushed (no `origin/feat/staff-roles`). Its pull request goes
+  against `main` after PR #10 merges.
+- `feat/auth-email-otp` (85077c9, local and origin equal): the merge
+  38db51b with `origin/feat/p7-purchasing`, the documentation commit
+  35d7a63 and the integration review fixes. PR #10 is its pull request; it
+  merges after PR #9.
 - `feat/p7-purchasing` (7fed53f, local and origin equal) is PR #9.
 - Other branches: `feat/p8-labels` and then `feat/p10-shopify` are built in
   `/home/user/bicii-book`, the other worktree, with its own database
@@ -124,5 +137,7 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-039](docs/RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)),
   and treats row 1 as answered (the owner's "D11" is the sign-in method;
   the delegation ceiling itself stays a build default, not individually
-  confirmed).
+  confirmed, and is restated for roles by D93); staff roles add row 20
+  (confirm D92 and D93's build defaults,
+  [R-053](docs/RISKS.md#r-053--the-staff-roles-build-defaults-d92-and-d93-are-unconfirmed)).
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).

@@ -375,6 +375,26 @@ worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
   the click on "Void… the charge" right after "Charge added" did not open
   the reason field; the rerun passed unchanged), docs link check **pass**.
 
+Verification of the staff roles (2026-10-06, step 4 of 4, the integration
+review, on `feat/staff-roles` in the second worktree, database
+`bicii_dev_wt`, `E2E_PORT=3200`; one command at a time):
+
+- Review: `record_sale_refund` in
+  `20261006000200_staff_role_permissions.sql` diffed against
+  `20261004003500_sales.sql`: only the guard and its comment differ; no
+  `staff_role` literal `'staff'` remains in `supabase/`, `src/`, `tests/`
+  or `scripts/` (the `'staff'` left are `appointment_source` /
+  `cancelled_via` values, historic migrations and the legacy-label tests):
+  **pass**.
+- `npm run check`: **pass**. `npm run check:types`: **pass** (no diff).
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 113 files, 1680
+  tests (unit 57 / 737, database 56 / 943): **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, with the new 375 px side-scroll
+  checks in `roles.spec.ts`): 158 passed in 16.8 min, no failures, flaky
+  or skipped: **pass**.
+- Docs link check: 37 files / 690 links / 0 problems: **pass**.
+
 ## What is tested where
 
 ### Unit (SPEC §27.1)
