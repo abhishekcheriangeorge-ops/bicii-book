@@ -57,7 +57,7 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.staff_directory()",
   "public.staff_history(uuid, integer)",
   "public.staff_roster()",
-  "public.update_staff(uuid, text, staff_role, text)",
+  "public.update_staff(uuid, text, staff_role, text, staff_role)",
   // Customers, bikes, attachments, search (Phase 1): active staff
   "public.attachment_stray_objects(attachment_entity, uuid)",
   "public.delete_attachment(uuid, text)",

@@ -46,6 +46,9 @@ export default async function ServicesSettingsPage({
   const archived = readFlag((await searchParams).archived);
   const viewCosts = hasPermission(staff, "view_costs");
   const manage = hasPermission(staff, "manage_inventory");
+  // Admin-only on purpose (D91): the Cult Commons rate is an admin setting;
+  // a manager sees it through view_costs but does not change it
+  // (private.require_admin()).
   const admin = staff.role === "admin";
   const supabase = await createClient();
   const now = new Date();

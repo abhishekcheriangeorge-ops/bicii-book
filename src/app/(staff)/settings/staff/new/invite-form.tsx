@@ -10,12 +10,15 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
+import { ROLE_DESCRIPTIONS, ROLE_LABELS, type StaffRole } from "@/lib/auth/permissions";
+import { roleWithArticle } from "@/lib/auth/role-change";
+import { cn } from "@/lib/cn";
 
 import { inviteStaff, type InviteResult } from "../actions";
 
 type State = ActionResult<InviteResult> | null;
 
-/** The invite went through: how the colleague signs in, and what next. */
+/** The invite went through: their role, how the colleague signs in, and what next. */
 function Invited({ result, onAnother }: { result: InviteResult; onAnother: () => void }) {
   return (
     <div className="flex flex-col gap-4">
@@ -23,6 +26,7 @@ function Invited({ result, onAnother }: { result: InviteResult; onAnother: () =>
         <CheckIcon className="size-5 shrink-0 text-done-deep" />
         {result.email} can now sign in.
       </p>
+      <p className="text-dust-700">They join as {roleWithArticle(result.role)}.</p>
       <p className="text-dust-700">
         They open BICII Admin, enter this email and type the 6-digit code we email them. No password
         needed.
@@ -32,16 +36,21 @@ function Invited({ result, onAnother }: { result: InviteResult; onAnother: () =>
           Invite another
         </Button>
         <ButtonLink href={`/settings/staff/${result.staffId}`} variant="solid">
-          Set permissions
+          {result.role === "admin" ? "Open their page" : "Set extra access"}
         </ButtonLink>
       </div>
     </div>
   );
 }
 
-function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () => void }) {
+/**
+ * `roles` is what the inviter may invite (invitableRoles, mirroring
+ * create_staff, D93): an admin picks Admin, Manager or Mechanic (Mechanic
+ * chosen first); anyone else invites a Mechanic, with no picker.
+ */
+function Form({ roles, onDone }: { roles: readonly StaffRole[]; onDone: () => void }) {
   const [state, formAction] = useActionState<State, FormData>(inviteStaff, null);
-  const [role, setRole] = useState<"staff" | "admin">("staff");
+  const [role, setRole] = useState<StaffRole>("mechanic");
   const formRef = useFocusFirstInvalid(state);
 
   if (state?.ok) return <Invited result={state.data} onAnother={onDone} />;
@@ -71,7 +80,7 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
           defaultValue={values?.email ?? ""}
         />
       </Field>
-      {canInviteAdmin ? (
+      {roles.length > 1 ? (
         <div className="flex flex-col gap-1.5">
           <span
             aria-hidden="true"
@@ -79,26 +88,34 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
           >
             Role
           </span>
-          <SegmentedControl
+          <SegmentedControl<StaffRole>
             label="Role"
             value={role}
-            onValueChange={(v) => setRole(v as "staff" | "admin")}
-            options={[
-              { value: "staff", label: "Staff" },
-              { value: "admin", label: "Admin" },
-            ]}
+            onValueChange={setRole}
+            options={roles.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
           />
           {errors?.role?.[0] ? (
             <p className="text-sm font-medium text-danger-deep">{errors.role[0]}</p>
           ) : null}
-          <p className="text-sm text-dust-500">
-            {role === "admin"
-              ? "Admins have every permission, including staff and money."
-              : "Staff start with workshop access; add permissions afterwards."}
-          </p>
+          <ul aria-label="Roles" className="mt-1 flex flex-col gap-1 text-sm">
+            {roles.map((r) => (
+              <li key={r} className={cn(r === role ? "text-ink" : "text-dust-500")}>
+                <span className="font-medium">{ROLE_LABELS[r]}</span>: {ROLE_DESCRIPTIONS[r]}.
+              </li>
+            ))}
+          </ul>
         </div>
-      ) : null}
-      <input type="hidden" name="role" value={role} />
+      ) : (
+        <p className="text-dust-700">
+          They join as a Mechanic. Only an admin invites an admin or a manager.
+          {errors?.role?.[0] ? (
+            <span className="mt-1 block text-sm font-medium text-danger-deep">
+              {errors.role[0]}
+            </span>
+          ) : null}
+        </p>
+      )}
+      <input type="hidden" name="role" value={roles.length > 1 ? role : "mechanic"} />
       <div>
         <SubmitButton pendingLabel="Inviting…">Invite</SubmitButton>
       </div>
@@ -107,7 +124,7 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
 }
 
 /** Remounts the form for "Invite another", starting clean. */
-export function InviteForm({ canInviteAdmin }: { canInviteAdmin: boolean }) {
+export function InviteForm({ roles }: { roles: readonly StaffRole[] }) {
   const [round, setRound] = useState(0);
-  return <Form key={round} canInviteAdmin={canInviteAdmin} onDone={() => setRound((r) => r + 1)} />;
+  return <Form key={round} roles={roles} onDone={() => setRound((r) => r + 1)} />;
 }

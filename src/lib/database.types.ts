@@ -5454,6 +5454,7 @@ export type Database = {
       update_staff: {
         Args: {
           display_name?: string;
+          expected_role?: Database["public"]["Enums"]["staff_role"];
           reason?: string;
           role?: Database["public"]["Enums"]["staff_role"];
           target_staff_id: string;
@@ -5720,7 +5721,7 @@ export type Database = {
         | "reactivated"
         | "permission_granted"
         | "permission_revoked";
-      staff_role: "admin" | "staff";
+      staff_role: "admin" | "manager" | "mechanic";
       tracking_type: "quantity" | "unique";
       unit_status:
         | "available"
@@ -6471,7 +6472,7 @@ export const Constants = {
         "permission_granted",
         "permission_revoked",
       ],
-      staff_role: ["admin", "staff"],
+      staff_role: ["admin", "manager", "mechanic"],
       tracking_type: ["quantity", "unique"],
       unit_status: [
         "available",

@@ -44,11 +44,16 @@ async function asStaffAfter<T>(
 
 const createStaff = (
   tx: pg.Client,
-  args: { authUserId: string; name: string; email: string; role?: "admin" | "staff" },
+  args: {
+    authUserId: string;
+    name: string;
+    email: string;
+    role?: "admin" | "manager" | "mechanic";
+  },
 ) =>
   tx.query(
     "select * from public.create_staff(auth_user_id => $1, display_name => $2, email => $3, role => $4)",
-    [args.authUserId, args.name, args.email, args.role ?? "staff"],
+    [args.authUserId, args.name, args.email, args.role ?? "mechanic"],
   );
 
 describe("create_staff", () => {
@@ -77,10 +82,10 @@ describe("create_staff", () => {
       auth_user_id: login,
       display_name: "New Mechanic",
       email: "new.mechanic@bicii.test",
-      role: "staff",
+      role: "mechanic",
       active: true,
     });
-    expect(row.profile).toMatchObject({ role: "staff", active: true, permissions: [] });
+    expect(row.profile).toMatchObject({ role: "mechanic", active: true, permissions: [] });
   });
 
   it("refuses staff without manage_staff (42501)", async () => {
@@ -134,7 +139,7 @@ describe("create_staff", () => {
       });
       return rows[0];
     });
-    expect(created).toMatchObject({ role: "staff", active: true });
+    expect(created).toMatchObject({ role: "mechanic", active: true });
 
     await expect(
       asStaffAfter(AUTH_USER.mechanic1, setup, (tx) =>
@@ -239,17 +244,22 @@ describe("staff_roster", () => {
         .then((r) => r.rows),
     );
     expect(rows.map((r) => r.id).sort()).toEqual(
-      [STAFF.admin, STAFF.mechanic1, STAFF.mechanic2].sort(),
+      [STAFF.admin, STAFF.manager, STAFF.mechanic1, STAFF.mechanic2].sort(),
     );
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
     expect(byId[STAFF.mechanic1]).toMatchObject({
       email: STAFF_EMAIL.mechanic1,
-      role: "staff",
+      role: "mechanic",
       active: true,
       granted_permissions: ["view_costs"],
     });
-    // Admins hold every permission by role, not by rows.
+    // Admins and managers hold their permissions by role, not by rows (D91).
     expect(byId[STAFF.admin]).toMatchObject({ role: "admin", granted_permissions: [] });
+    expect(byId[STAFF.manager]).toMatchObject({
+      email: STAFF_EMAIL.manager,
+      role: "manager",
+      granted_permissions: [],
+    });
   });
 
   it("is available to manage_staff holders", async () => {
@@ -263,7 +273,7 @@ describe("staff_roster", () => {
       },
       (tx) => tx.query("select id from public.staff_roster()").then((r) => r.rows),
     );
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
   });
 
   it("refuses other staff and anonymous callers (42501)", async () => {

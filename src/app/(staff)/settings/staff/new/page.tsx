@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { invitableRoles } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 
 import { InviteForm } from "./invite-form";
@@ -18,7 +19,7 @@ export default async function InviteStaffPage() {
         description="Creates their login. They sign in with their email and a one-time code; there is no password to hand over."
       />
       <Card>
-        <InviteForm canInviteAdmin={me.role === "admin"} />
+        <InviteForm roles={invitableRoles(me)} />
       </Card>
     </>
   );

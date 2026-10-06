@@ -255,6 +255,10 @@ test("a new code unlocks after the countdown and replaces the old one; the email
     await expect(page.getByRole("main").getByRole("alert")).toHaveText(
       SIGN_IN_MESSAGES.invalid_code,
     );
+    // The alert may still be the previous attempt's: wait until this
+    // submission has finished, which resets the form (React form actions),
+    // so it cannot clear the next code after it is typed.
+    await expect(page.getByLabel("Code")).toHaveValue("");
   }
   await page.getByLabel("Code").fill(third);
   await page.getByRole("button", { name: "Sign in" }).click();

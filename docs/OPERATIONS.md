@@ -79,29 +79,60 @@ permission. These tasks were exercised only on developer machines and in
 CI, by the E2E spec named in each task; where a step has no E2E spec, the
 task says so. Labels are as on screen.
 
-**Invite staff** (admin, or `manage_staff` within the D11 ceiling:
-non-admins invite role Staff only;
+**Roles** (D90-D94, [ADR-021](decisions/ADR-021-staff-roles.md)). Every
+person is an Admin, a Manager or a Mechanic. Admins have every permission
+and the admin-only settings; managers every permission except Manage
+staff, and record refunds; mechanics the workshop only. Anything more for
+one person is **Extra access**, an exception on top of their role.
+
+**Invite staff** (admin, or `manage_staff` within the D11 ceiling, D93:
+non-admins invite Mechanics only;
 [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).
 Settings → Staff → Invite staff; fill Name and Email (their real mailbox:
-they sign in with it), choose the Role (admins only), press Invite.
-Expected: "<email> can now sign in." and "They open BICII Admin, enter this
-email and type the 6-digit code we email them. No password needed." No
+they sign in with it). An admin picks the Role (Admin, Manager or
+Mechanic; Mechanic is chosen first); anyone else sees "They join as a
+Mechanic." and no picker. Press Invite.
+Expected: "<email> can now sign in.", "They join as a <Role>." and "They
+open BICII Admin, enter this email and type the 6-digit code we email
+them. No password needed." No
 password is created or shown (D10,
 [ADR-019](decisions/ADR-019-staff-email-sign-in.md)); tell the person to
 open the Admin and ask for a code. Verify: they sign in with the emailed
-code and Today opens; then **Set permissions**. Refused with "An account
+code and Today opens; then **Set extra access** (**Open their page** for an
+admin). Refused with "An account
 with that email already exists." when the email is taken (a deactivated
 colleague is reactivated instead). Whoever controls the invited mailbox
-controls that login. (`tests/e2e/staff.spec.ts`, `tests/e2e/auth.spec.ts`.)
+controls that login. (`tests/e2e/staff.spec.ts`, `tests/e2e/roles.spec.ts`,
+`tests/e2e/auth.spec.ts`.)
 
-**Grant or remove a permission** (same roles). Settings → Staff → the
-person → the switch for the permission. Expected: toast "… granted" or
-"… removed"; the change appears in their Staff history with who made it.
-Verify: the person's Settings → Your profile lists it under their
-permissions. A non-admin can grant only permissions they hold, never
-Manage staff. (`tests/e2e/staff.spec.ts`.)
+**Change a role** (admin only, never their own, D93). Settings → Staff →
+the person → Role: pick Admin, Manager or Mechanic → Change role…; the
+sheet "Change <name> to <Role>?" says what the new role has, which extra
+access it already includes (removed with the change, D92) and what they
+lose; optionally answer Why? (up to 500 characters) → Change role.
+Expected: "<name> is now a <Role>"; the badge shows the new role; History
+reads "Role changed from <From> to <To>" with the actor and reason, and
+"Extra access: <Permission> removed" for each exception the new role
+includes. Changing back does not restore removed extra access. Refused on
+their own row ("You can't change your own role.", the picker is off) and
+when no active admin would remain ("The shop must keep at least one active
+admin."). Non-admins see the role read-only. (`tests/e2e/roles.spec.ts`;
+the rules: `tests/db/staff-roles.test.ts`.)
 
-**Deactivate or reactivate** (same roles; never an admin by a non-admin).
+**Extra access** (grant or remove a permission as an exception; admin, or
+`manage_staff` on mechanics only). Settings → Staff → the person → Extra
+access → the switch for the permission. The card first says what the role
+includes ("Included in the Manager role: …"); those are never switches.
+An admin's card has none ("Admins have every permission; there is nothing
+extra to grant."); a manager's offers only Manage staff; a mechanic's all
+seven. Expected: toast "… granted" or "… removed"; History reads "Extra
+access: … granted" (or removed) with who made it.
+Verify: the person's Settings → Your profile lists it, marked Extra access.
+A non-admin can grant only permissions they hold, never Manage staff, and
+only to mechanics. (`tests/e2e/staff.spec.ts`, `tests/e2e/roles.spec.ts`.)
+
+**Deactivate or reactivate** (same reach as Extra access: a non-admin acts
+on mechanics only, D93).
 Settings → Staff → the person → Deactivate…, give the reason, confirm
 "Deactivate <name>". Expected: "<name> deactivated"; their Auth sessions
 are ended in the same step and any page they still have open loses access
@@ -136,9 +167,9 @@ customers. (`tests/e2e/appointment-settings.spec.ts`.)
 location (Name, Sort order). Switch a location off when it holds nothing;
 it is then no longer offered for stock. (`tests/e2e/inventory-publish.spec.ts`.)
 
-**Consignment access** (grant as for any permission above; D48,
+**Consignment access** (a manager's role includes it; for a mechanic, extra access as above; D48,
 [ADR-016](decisions/ADR-016-consignment-and-sales.md)). Settings → Staff →
-the person → the Manage consignments switch. It lets them add and edit
+the person → Extra access → the Manage consignments switch. It lets them add and edit
 consignors, receive and return items, add and void charges, record and
 reverse payments, archive consignors and read consignors' payout details
 (Show payout details); with View costs instead they see consignment money
@@ -150,7 +181,7 @@ either permission a member sees counts only, never who is owed money.
 `tests/e2e/consignment-journey.spec.ts`; the grants:
 `tests/db/consignment-access.test.ts`.)
 
-**Record a refund** (admin only; D49). Sales → the sale → Record refund;
+**Record a refund** (an admin or a manager; D94, amending D49). Sales → the sale → Record refund;
 the Amount starts at what is left to refund; press "Record refund of
 $x…", give the reason, confirm "Refund $x". Expected: "Refund of $x
 recorded" and the sale reads Partly refunded or Refunded. A refund is money
@@ -166,16 +197,15 @@ listed as reversed and the balance goes back up. A payment is never edited
 or deleted: reverse it and record the right one. Not covered by an E2E
 spec; `reverse_settlement` is covered by `tests/db/settlements.test.ts`.
 
-**Purchasing access** (grant as for any permission above; D60,
+**Purchasing access** (extra access as above; D60,
 [ADR-018](decisions/ADR-018-purchasing.md)). Settings → Staff → the person
-→ the Manage purchasing switch. It lets them add, edit and archive
+→ Extra access → the Manage purchasing switch. It lets them add, edit and archive
 suppliers and their product links, create, submit and cancel purchase
 orders, receive deliveries and create reorder drafts, and it shows them
 purchase costs on purchasing screens (line, receipt and last costs, order
-totals and history) but no job, sale, product-page or report cost. Under
-the owner's staff roles (2026-10-06, not built on this branch) managers
-hold it through their role; granting it alone to a mechanic is the
-exception D60 describes
+totals and history) but no job, sale, product-page or report cost.
+Managers hold it through their role, with View costs (D91); granting it as
+extra access to a mechanic is the exception D60 describes
 ([R-034](RISKS.md#r-034--a-manage_purchasing-exception-shows-unit-costs-on-purchasing-screens)).
 Verify: Purchasing shows New order, Receive and Reorder. (Mechanic view and
 the 403s: `tests/e2e/purchasing.spec.ts`; the grants:

@@ -105,7 +105,8 @@ test("the admin invites a colleague who signs in with an emailed code", async ({
   // No credential is shown or handed over (PLAN D10, D11).
   await expect(page.getByRole("button", { name: /copy/i })).toHaveCount(0);
   expect(await page.getByRole("main").textContent()).not.toMatch(/temporary|shown once/i);
-  await expect(page.getByRole("link", { name: "Set permissions" })).toBeVisible();
+  await expect(page.getByText("They join as a Mechanic.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Set extra access" })).toBeVisible();
 
   // Same email again: refused with a field error, nothing half-created.
   await page.getByRole("button", { name: "Invite another" }).click();

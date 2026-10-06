@@ -4,8 +4,9 @@ Owner: the build agent, reviewed by the product owner (Abhishek Cherian
 George). Implementation inspected: `c6bf6d0` on 2026-10-05 (application code
 identical to `b34bbcd`, the head of PR #7); the Phase 6 and Phase 7 rows were
 added at their phases, Phase 7's at its integration with the main line on
-`feat/p7-purchasing`, and the staff email sign-in rows at its integration
-on `feat/auth-email-otp` (2026-10-06).
+`feat/p7-purchasing`, the staff email sign-in rows at its integration
+on `feat/auth-email-otp` (2026-10-06), and the staff roles rows on
+`feat/staff-roles` (2026-10-06, ADR-021).
 
 This page describes the system as it is built. The decision of record is
 [ADR-001](ADR-001-architecture.md), whose body stays as written in PR #1;
@@ -119,7 +120,7 @@ replay, never a second movement.
 | Sign-in limits | [src/lib/auth/sign-in-limits.ts](../src/lib/auth/sign-in-limits.ts), [src/lib/admin/sign-in-throttle.ts](../src/lib/admin/sign-in-throttle.ts) | `note_sign_in_attempt` (service role, so `SUPABASE_SERVICE_ROLE_KEY`; D72) | sign-in says it is unavailable for everyone; the error log's `cause` says why (`no_service_role_key`, `rpc_error` with its code, `request_failed`) |
 | Session revocation | trigger `staff_revoke_sessions` (`20261005005000_staff_session_revocation.sql`) | `auth.sessions`, `auth.refresh_tokens` (D71) | a deactivated device can refresh, but every guard still refuses it |
 | Session refresh and redirect | [src/proxy.ts](../src/proxy.ts) | `@supabase/ssr` | stale sessions, missing `x-request-id`; it is not the guard |
-| Staff guard | [src/lib/auth/session.ts](../src/lib/auth/session.ts) (`requireStaff`, `requireAdmin`, `authorizeStaff`) | `my_staff_profile` | pages and actions refuse to run |
+| Staff guard | [src/lib/auth/session.ts](../src/lib/auth/session.ts) (`requireStaff`, `requireAdmin`, `authorizeStaff` with `permission`, `admin` or `roles`), [src/lib/auth/permissions.ts](../src/lib/auth/permissions.ts) (roles, `roleImplies`, the blockers) | `my_staff_profile` | pages and actions refuse to run |
 | Action wrapper | [src/lib/actions.ts](../src/lib/actions.ts) (`staffAction`, `ActionResult`) | zod, `db-errors`, logger | inconsistent errors or lost form values |
 | Domain modules (server-only) | [src/lib/domain/](../src/lib/domain/) | RLS-scoped client, RPCs | the feature fails; rules still hold in SQL |
 | Consignment (Phase 6) | [src/lib/domain/consignment.ts](../src/lib/domain/consignment.ts) (consignors, items, intake, terms, charges, returns, settlements over `list_consignors`, `consignor_statement`, `consignor_payout_details` and the step 1–2 RPCs); screens `src/app/(staff)/consignment/` (`page.tsx` with `?view=consignors\|items`, `consignors/[id]`, `items/[id]`, `actions.ts`); sheets in `src/components/domain/` (consignor, intake, charge, settlement, item controls); pure rules in [src/lib/consignment.ts](../src/lib/consignment.ts) (labels, `autoAllocate`, `allocationProblems`, `paidAtFromDate`) and [consignment-forms.ts](../src/lib/consignment-forms.ts); access mirrors `canViewConsignmentMoney` / `canViewSaleCosts` / `canRecordRefund` in [permissions.ts](../src/lib/auth/permissions.ts) (D48, D49) | RLS-scoped client; the consignment RPCs and the ledger views behind them | consignors cannot be paid or items received; owed, paid and outstanding stay correct because they are derived in SQL (D46). A consignor's totals are summed in the domain module from the item rows, which is how `reporting.consignor_ledger` defines them |
@@ -158,6 +159,7 @@ reasoning is ADR-001's; the "small team" point is inferred.
 | Consignment and in-store sales | [ADR-016](decisions/ADR-016-consignment-and-sales.md) |
 | Purchasing: cost visibility, last cost, receipts, reorder | [ADR-018](decisions/ADR-018-purchasing.md) |
 | Staff sign in with emailed one-time codes; deactivation ends sessions; the Admin's own sign-in limits | [ADR-019](decisions/ADR-019-staff-email-sign-in.md) |
+| Three staff roles (admin, manager, mechanic) with per-person exceptions; refunds for admins and managers | [ADR-021](decisions/ADR-021-staff-roles.md) |
 
 All records: [decisions/README.md](decisions/README.md).
 
@@ -171,7 +173,15 @@ All records: [decisions/README.md](decisions/README.md).
 - Authorization happens in three places: RLS on every table, guards in the
   RPCs (`private.require_staff`, `private.require_permission`,
   `private.require_admin`) and `requireStaff` in the app. The first two are
-  the ones that matter; the app check gives friendly redirects.
+  the ones that matter; the app check gives friendly redirects. A person's
+  permissions are what their role implies (`private.role_implies`: admin
+  all, manager all but `manage_staff`, mechanic none) plus their
+  exceptions; the app mirrors that rule in `roleImplies`
+  (`src/lib/auth/permissions.ts`) and a database test proves the two agree.
+  Rules decided by role rather than permission use `private.is_admin()`
+  (admin-only settings) or `private.can_record_refunds()` (admin or
+  manager), mirrored by `{ admin: true }` and `{ roles: [...] }` in the
+  app's guards ([ADR-021](decisions/ADR-021-staff-roles.md)).
 - Who reaches which data: staff-only base tables; customers only through
   security definer `my_*` RPCs; anonymous visitors only through
   `reporting.public_items`, `public_appointment_types`, `public_shop_hours`

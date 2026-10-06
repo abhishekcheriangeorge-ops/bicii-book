@@ -495,7 +495,8 @@ URLs, or customer data in this file.
 - Category: deliberate shortcut.
 - Status and owner: accepted (D49, build default, owner to confirm);
   owner, with Phase 9's refund-reporting row (working name DR5).
-- Trigger: an admin records a refund on a sale (`record_sale_refund`), or
+- Trigger: an admin or a manager records a refund on a sale
+  (`record_sale_refund`, D94), or
   staff restock a sold unit (`restock_unit`).
 - Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
   Today and the financial reports) keep every sale line at its snapshot:
@@ -512,7 +513,8 @@ URLs, or customer data in this file.
   includes it (passed in `npm test` on 2026-10-05).
 - Workaround or containment: refunds and restocks show on the sale, in
   `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
-  ledger; refunds are admin-only and capped at the sale total (D49). Since
+  ledger; refunds are for admins and managers (D94) and capped at the sale
+  total (D49). Since
   Phase 6 step 4 the sale page's Yield card says "Refunds and restocks do
   not change these figures yet", the Sales list marks Partly refunded /
   Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
@@ -804,7 +806,7 @@ URLs, or customer data in this file.
 - Status and owner: open; owner.
 - Trigger: an admin grants `manage_purchasing` to a mechanic as a
   single-permission exception (managers hold `view_costs` through their
-  role once the staff roles are built, so this is the exception case).
+  role since the staff roles, D91, so this is the exception case).
 - Impact: that mechanic sees purchase costs on purchasing screens: PO line
   costs and totals, actual receipt costs, supplier last costs, the cost
   prefill (the product's cost for products a PO can hold) and PO history.
@@ -815,20 +817,32 @@ URLs, or customer data in this file.
   last costs to `view_costs` holders only (`canSeeProductPageSupplierCosts`
   in `src/lib/purchasing.ts`, since the integration review; before it the
   card used the purchasing rule and showed them to the exception holder
-  too). Until the staff roles are built, this applies to every non-admin
-  holding `manage_purchasing`, not only a mechanic.
+  too). Since the staff roles (D90–D94; in the database on
+  `feat/staff-roles`, `private.role_implies`), a manager holds
+  `view_costs` and `manage_purchasing` through the role and an exception
+  the role implies cannot exist (D92), so this applies only to a mechanic
+  holding `manage_purchasing` as an exception.
 - Evidence and confidence: high; `private.can_view_purchase_costs()` in
   `20261005000100_suppliers.sql`; `tests/db/purchasing-access.test.ts`
   ("manage_purchasing alone runs purchasing and sees purchase costs, but no
   Phase 3/4/5 cost surface" and the prefill test); `tests/unit/purchasing.test.ts`
   ("shows supplier last costs on the product page to view_costs holders
-  and admins only").
+  and admins only", and since the staff roles a manager seeing purchase
+  costs through View costs while a mechanic with the exception sees them on
+  purchasing screens only); `tests/db/staff-roles.test.ts` (an exception the
+  role implies is refused).
 - Workaround or containment: grant the exception only to people trusted
-  with unit costs; Settings → Staff lists each person's permissions.
-- Next action: revisit with the staff roles (D90–D99) if the owner wants
-  the exception to hide costs (a buyer would then order blind).
-- Revisit trigger: the staff roles land, or the owner objects.
-- Last checked: 2026-10-05.
+  with unit costs, or make a buyer who needs costs a manager; Settings →
+  Staff shows each person's role and extra access, and the role-change
+  sheet says what a person keeps.
+- Next action: none unless the owner objects. The staff roles (D90–D94,
+  built on `feat/staff-roles`) resolved the earlier next action: a
+  manager now sees costs through the role, and a mechanic's exception is
+  the only case left; hiding costs from it would make that buyer order
+  blind.
+- Revisit trigger: the owner objects to the exception case, or asks for a
+  buyer role.
+- Last checked: 2026-10-06 (staff roles, integration review).
 
 ## R-035 — Logins created before email codes keep a known password until the pre-deploy reset
 
@@ -879,7 +893,9 @@ URLs, or customer data in this file.
   people who leave.
 - Next action: revisit if Supabase allows codes without the password grant,
   or if the owner wants passwords disabled by an Auth hook.
-- Revisit trigger: an Auth version bump; the staff roles (D90–D99).
+- Revisit trigger: an Auth version bump. (The staff roles, D90–D94, did
+  not change this: roles decide what a signed-in person may do, not how
+  they sign in; checked 2026-10-06.)
 - Last checked: 2026-10-06, `scripts/devstack/services.mjs`,
   `supabase/config.toml`.
 
@@ -957,3 +973,145 @@ URLs, or customer data in this file.
   RUNBOOK step 2 against staging and records what differs.
 - Revisit trigger: R-001.
 - Last checked: 2026-10-06, RUNBOOK.
+
+## R-050 — Managers record refunds with no second approval
+
+- Category: accepted compromise (D94, amending D49).
+- Status and owner: accepted for MVP; owner.
+- Trigger: a manager records a retail refund.
+- Impact: money goes out on one person's decision. Before the roles only
+  an admin could; now every manager can, up to the sale total minus
+  earlier refunds, with a mandatory reason. No second person approves it
+  and no daily limit applies. A refund is financial only (D7) and is
+  replay-safe by its id.
+- Evidence and confidence: high; `private.can_record_refunds()` and
+  `public.record_sale_refund` in
+  `20261006000200_staff_role_permissions.sql` (the body otherwise
+  identical to `20261004003500_sales.sql`); `tests/db/sales.test.ts`
+  ("only admins and managers refund (D94 amends D49) …");
+  `tests/unit/session-guard.test.ts` (the `roles` requirement);
+  `tests/e2e/roles.spec.ts` (a manager records a $6.00 refund).
+- Why accepted: the owner decided on 2026-10-06 that managers may refund;
+  the cap, the reason and the refund list on the sale page leave a trail.
+- Workaround or containment: the sale page lists every refund with who
+  recorded it and why; make someone a manager only if they may refund.
+- Next action: revisit if the owner wants an approval step or a limit per
+  refund or per day; Phase 9's refund reporting (owner question 12) will
+  show refunds by person.
+- Revisit trigger: a disputed refund; Phase 9 reporting.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-051 — A role change reaches open pages only on their next request
+
+- Category: accepted compromise (D90–D93).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: an admin demotes someone, or removes their extra access, while
+  that person has the Admin open.
+- Impact: pages already on their screen keep showing what was rendered
+  before the change (for example costs on a job page, or a Record refund
+  button) until they navigate or refresh. Nothing they do afterwards goes
+  through on the old role: every page request, Server Action, RLS policy
+  and RPC reads the person's role and exceptions again
+  (`my_staff_profile`, `private.has_permission`, `can_record_refunds`).
+- Evidence and confidence: high for the mechanism; `getStaff()` in
+  `src/lib/auth/session.ts` is memoised per request only;
+  `tests/unit/session-guard.test.ts`; `tests/db/staff-roles.test.ts` (the
+  role × permission matrix through `has_permission` and
+  `my_staff_profile` takes effect in the same transaction as the change);
+  `public/sw.js` caches no pages. Not observed in use.
+- Why accepted: the same window as deactivation's open pages (D71); the
+  data already on the screen was allowed when it was loaded.
+- Workaround or containment: ask the person to close the Admin, or
+  deactivate them when access must end at once (D71 ends their sessions).
+- Next action: none planned.
+- Revisit trigger: the owner wants a demotion to clear open screens at
+  once.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-052 — History written before the rename says "staff", not "mechanic"
+
+- Category: compromise (D90).
+- Status and owner: accepted; build agent.
+- Trigger: anyone reading `staff_events` payloads written before
+  `20261006000100_staff_role_values.sql` other than through the Admin, for
+  example a SQL export or a future report.
+- Impact: `created` and `role_changed` events keep the role text of the
+  time, `"staff"`, because `staff_events` is append-only. The Admin labels
+  it Mechanic (`roleLabel` in `src/lib/auth/permissions.ts`,
+  `describeStaffEvent` in `src/lib/staff-events.ts`); a raw reader sees
+  both spellings for the same role. Nothing is hosted (R-001), so only
+  developer databases migrated step by step from before
+  `20261006000100_staff_role_values.sql` have such rows; `db:reset` and
+  the seed write "mechanic" (a fresh `bicii_dev_wt` had 0 such events).
+- Evidence and confidence: high; `tests/unit/auth-helpers.test.ts`
+  (the test that reads the legacy history value `"staff"` as Mechanic),
+  `tests/unit/staff-roles-screens.test.ts`.
+- Why accepted: rewriting append-only history would break its own rule;
+  the rename itself is recorded in ADR-021.
+- Workaround or containment: read history through `staff_history()` and
+  the Admin, or map `"staff"` to mechanic in any export.
+- Next action: Phase 9 maps the value if it reports on `staff_events`.
+- Revisit trigger: a report or export of staff history.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-053 — The staff roles build defaults D92 and D93 are unconfirmed
+
+- Category: unverified assumption (D92, D93).
+- Status and owner: open; owner.
+- Trigger: the owner reads the roles differently from the build.
+- Impact: four behaviours were chosen by the build within the owner's
+  decision: (1) an exception the role already includes cannot exist, and
+  a role change removes the exceptions the new role includes (D92); (2) a
+  later demotion does not bring them back, so demoting a manager who was
+  once a mechanic with `manage_purchasing` leaves them with no extra
+  access; (3) a `manage_staff` holder who is not an admin acts on
+  mechanics only, also for renaming, deactivating and reactivating (D93);
+  (4) such a holder can still rename themselves, as before the roles. If
+  the owner wanted otherwise, people would have more or less access than
+  expected after a role change.
+- Evidence and confidence: high for what is built;
+  `20261006000200_staff_role_permissions.sql` (triggers
+  `staff_permissions_refuse_implied`, `staff_role_drop_implied_exceptions`),
+  `20261006000300_staff_role_administration.sql`;
+  `tests/db/staff-roles.test.ts` ("promoting a mechanic to manager drops
+  the exceptions the role implies, with history; … demoting brings
+  nothing back", "a mechanic with manage_staff acts on mechanics within
+  the ceiling, …" including the self-rename); the role-change sheet says
+  so beforehand (`roleChangeSummary` in `src/lib/auth/role-change.ts`).
+- Workaround or containment: the change-role sheet lists what is removed
+  and that changing back does not restore it; History records every
+  removal with the role change's reason.
+- Next action: the owner answers
+  [PRODUCT owner question 20](PRODUCT.md#open-assumptions-and-owner-questions).
+- Revisit trigger: the owner's answer.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-054 — The change-role sheet checks the role it showed, not the extra access
+
+- Category: accepted compromise (D92, D93).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: two admins work on the same person at once: one opens the
+  change-role sheet, the other changes that person's extra access before
+  the first confirms.
+- Impact: the sheet's "What changes" lines were worked out from the extra
+  access shown when the page loaded. The role itself is checked: the
+  Admin sends the role the sheet showed (`update_staff` `expected_role`),
+  and a role changed meanwhile is refused with "Someone changed their role
+  in the meantime. Reload and try again." (`staff_role_changed`). An
+  exception granted meanwhile is not checked, so the sheet may not list
+  it among what the new role removes; the role change still removes it
+  (D92) and History records that removal with the role change's reason.
+- Evidence and confidence: high; `update_staff` in
+  `20261006000300_staff_role_administration.sql`;
+  `tests/db/staff-roles.test.ts` ("a role change confirmed against a role
+  that changed meanwhile is refused …"); `ChangeRoleSheet` in
+  `src/app/(staff)/settings/staff/[staffId]/staff-controls.tsx`. Not
+  observed in use.
+- Why accepted: it needs two admins acting on one person within seconds;
+  nothing is lost silently (History has every removal), and removed extra
+  access can be granted again.
+- Workaround or containment: History on the person's page.
+- Next action: none planned.
+- Revisit trigger: the shop has several admins who administer staff at
+  the same time, or a removal is reported as unexpected.
+- Last checked: 2026-10-06 (staff roles, review fixes).

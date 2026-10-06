@@ -375,6 +375,26 @@ worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
   the click on "Void… the charge" right after "Charge added" did not open
   the reason field; the rerun passed unchanged), docs link check **pass**.
 
+Verification of the staff roles (2026-10-06, step 4 of 4, the integration
+review, on `feat/staff-roles` in the second worktree, database
+`bicii_dev_wt`, `E2E_PORT=3200`; one command at a time):
+
+- Review: `record_sale_refund` in
+  `20261006000200_staff_role_permissions.sql` diffed against
+  `20261004003500_sales.sql`: only the guard and its comment differ; no
+  `staff_role` literal `'staff'` remains in `supabase/`, `src/`, `tests/`
+  or `scripts/` (the `'staff'` left are `appointment_source` /
+  `cancelled_via` values, historic migrations and the legacy-label tests):
+  **pass**.
+- `npm run check`: **pass**. `npm run check:types`: **pass** (no diff).
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 113 files, 1680
+  tests (unit 57 / 737, database 56 / 943): **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, with the new 375 px side-scroll
+  checks in `roles.spec.ts`): 158 passed in 16.8 min, no failures, flaky
+  or skipped: **pass**.
+- Docs link check: 37 files / 690 links / 0 problems: **pass**.
+
 ## What is tested where
 
 ### Unit (SPEC §27.1)
@@ -387,7 +407,20 @@ worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
 - Appointment slot generation from shop hours + closures + capacity (pure
   function mirrored from the SQL, tested against the same fixtures).
 - Publication state machine transitions.
-- Permission resolution (`admin` implies all; inactive staff has none).
+- Permission resolution (`auth-helpers.test.ts`; D91: `admin` implies
+  all, `manager` all but `manage_staff`, `mechanic` none, exceptions on top;
+  inactive staff has none) and the refund role check (`consignment.test.ts`;
+  D94: an active admin or manager; a mechanic holding every permission as
+  exceptions cannot).
+- The Staff screens' role wording (`staff-roles-screens.test.ts`, D90-D93):
+  `describeStaffEvent` (src/lib/staff-events.ts) reads "Added as <Role>",
+  "Role changed from <From> to <To>" (the pre-D90 payload value "staff"
+  reads Mechanic) and "Extra access: <Permission> granted/removed";
+  `roleWithArticle` ("an Admin", "a Manager"); and `roleChangeSummary`
+  (src/lib/auth/role-change.ts): which exceptions a new role includes and
+  so removes (D92), which stay, and what is lost (permissions, Record
+  refunds, Admin settings), for mechanic to manager, manager to mechanic,
+  manager to admin and admin to manager.
 - Staff sign-in codes (PLAN D10, D70): `otp.test.ts` (6 digits, 10
   minutes, 60 s cooldown; `normaliseCode` drops spaces and hyphens from a
   pasted code and refuses anything else; `resendSecondsLeft` rounds up and
@@ -680,6 +713,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
+| Three staff roles (D90–D94) | `staff-roles.test.ts`. The enums are `admin \| manager \| mechanic` and the seven permissions in the app's order; `private.role_implies` equals `roleImplies()` from `src/lib/auth/permissions.ts` for every role × permission (parity), a null role implies nothing, and no API role may execute `role_implies` or `can_record_refunds`; `staff.role` and `create_staff`'s role default to `mechanic`. The role × permission matrix: for the admin, the seeded manager, the manager with a `manage_staff` exception, mechanic2, mechanic1 (`view_costs` exception), a throwaway mechanic granted each single permission in turn, a mechanic holding all seven as exceptions, an inactive manager and an inactive admin, `private.has_permission` and `my_staff_profile().permissions` give exactly the expected set, plus `can_record_refunds` and `is_admin`. One gate per family, called as each of them (42501 for refused callers, anything else for allowed ones with bogus ids): `work_order_yield`, rows of `product_costs` and `services_staff` (view_costs); `create_service` and a `categories` insert under RLS (manage_inventory); `adjust_stock`, `write_off_unit`; `consignor_payout_details`, `create_consignment_item`; `create_purchase_order`, `purchase_cost_defaults`; `financial_lines`; `staff_roster`, `staff_history`, `grant_permission`, `create_staff`, `set_staff_active`, `update_staff` (manage_staff); `record_sale_refund` (admin and manager only); `update_shop_settings`, `schedule_cult_commons_rate` (admin only). Exceptions (D92): granting a permission the role implies (manager + any of six, admin + any) is `permission_implied_by_role`, also for a direct superuser insert; an admin grants `manage_staff` to a manager, who then holds all seven; promoting a mechanic with `view_costs` + `manage_purchasing` to manager deletes both rows and appends `role_changed` then two `permission_revoked` events with the admin and the reason; a replayed role change appends nothing; demoting brings nothing back; promoting to admin drops every row, and a role change by SQL drops implied rows too; after the migrations and the seed no row is implied by its person's role; the roles migration's one-time clean-up (`private.drop_implied_exceptions()`, run by `20261006000200`) removes implied rows written before the roles (built with triggers off: an admin's `view_costs`, a manager's `adjust_stock`), each with a `permission_revoked` event with no actor and the fixed reason, keeps real exceptions (the manager's `manage_staff`, Marcus's `view_costs`), and a later demotion brings nothing back. `staff-concurrency.test.ts` (two committed connections, its own database): a direct insert that waits on a concurrent promotion is refused (`permission_implied_by_role`) once it commits, and a promotion that waits on a concurrent direct insert deletes that row once it commits (`permission_granted`, `role_changed`, `permission_revoked`, in that order); both fail if the refusal trigger's `FOR SHARE` is weakened to `FOR KEY SHARE` (checked once by hand). Administration (D93): only an admin invites a manager or an admin (a mechanic and a manager holding `manage_staff` invite mechanics only); a non-admin `manage_staff` holder grants only what they hold to a mechanic and is refused (42501) on a manager's or an admin's row for grant, revoke, rename, deactivate and role change, and on their own row; the admin renames, deactivates, reactivates and demotes a manager; nobody changes their own role; the last active admin cannot be demoted (55000); a role change whose `expected_role` is not the current role (a stale confirmation) is `staff_role_changed`, changes nothing and appends no event, and goes through with the current role; a role-change reason over 500 characters is `reason_too_long`. `sales.test.ts`: a manager records a refund; mechanics, with `view_financial_reports` or all seven exceptions, are refused (D94). `staff-history.test.ts`: promoting Marcus to admin appends `role_changed`, then the `permission_revoked` of his `view_costs` with the same actor and reason, then the rename. |
 | The Admin's sign-in limits (PLAN D72) | `sign-in-throttle.test.ts`: `note_sign_in_attempt` adds one per bucket per call (a bucket named twice counts once) and returns the counts; a new window starts a new count, windows are aligned, counters older than a day are deleted; 6 concurrent committed calls count 6; anon and staff get 42501 on the function and the table, the service role on the table; malformed arguments (no, 0 or 9 buckets, an empty, null or 201-character key, a window under 60 s, over 3600 s or null) are 22023. Live: `sign-in-throttle.stack.test.ts` (above). |
 | No seeded login has a usable password (PLAN D10) | `seed-logins.test.ts`: every seeded staff login and the seeded customer login store a bcrypt hash (cost 10) that is not the shared local password the seed used before email codes, and no two share a hash. |
 | Deactivation ends Auth sessions (PLAN D71) | `staff-sessions.test.ts`, with sessions and refresh tokens inserted for mechanic1 and mechanic2: the admin deactivating mechanic2 (with a reason) deletes mechanic2's sessions and refresh tokens (with and without a session) and leaves mechanic1's; a replayed deactivation (with or without a reason) neither errors nor deletes; reactivation deletes nothing; a `manage_staff` holder who is not an admin deactivating a non-admin has the same effect; a refused deactivation (P0001 `reason_required`) leaves the sessions intact; a direct superuser `update staff set active = false` revokes too (false over false and updates of other columns do not); the migration's first statement passes for the migration role and fails, naming RUNBOOK, for a role without DELETE on `auth.sessions`. Live (`staff-sessions.stack.test.ts`): a throwaway staff login (admin API without a password, then `create_staff` as the admin) signs in with a code and is deactivated by the admin; Auth then answers its access token with 403 `session_not_found` (supabase-js: `AuthSessionMissingError`), its refresh token gets `refresh_token_not_found`, PostgREST still accepts the unexpired token but `my_staff_profile` says `active = false` (the hosted window), and a fresh code still verifies at Auth while `my_staff_profile` says `active = false`, which the Admin's `verifyCode` and `requireStaff` refuse. |
@@ -861,6 +895,36 @@ disabled inside that one transaction (`sqlTransaction` in
 access", "You can't open this") and none of their data. The HTTP status
 is not asserted there: a page whose shell has started streaming keeps
 200 (Next's `forbidden()` docs).
+
+Staff roles spec (`roles.spec.ts`, D90-D94; every record it creates
+carries `tagFor(testInfo)`, seeded records are only read): **a manager**
+(the seeded Kavya Menon) sees the Money section on Today and the seeded
+job J-000002's Cost and Cult Commons, has no Staff row in Settings and a
+403 on `/settings/staff`, creates and stocks a product (manage_inventory,
+adjust_stock), sells it with the cost preview, records a partial refund
+with a reason ("Refund of $6.00 recorded"), and their profile shows the
+Manager badge, View costs, View financial reports and Record refunds but
+not Manage staff or Admin settings. **A mechanic** (mechanic2) sees no
+Money, no cost on J-000002, no Record refund on the seeded S-000004, a 403
+on `/settings/staff`, and a profile reading Mechanic and "Workshop access
+only". **An admin** finds their own row's role picker disabled with "You
+can't change your own role." and nothing extra to grant; invites a
+colleague (unique per project and run) with the Role picker offering
+Admin, Manager, Mechanic and Mechanic chosen; grants Extra access "Manage
+purchasing" (seven switches for a mechanic); changes the role to Manager
+through the sheet (it names the extra access the role includes, and
+focus starts on Cancel) with a reason; then sees "<name> is now a Manager", the Manager badge, one switch
+left (Manage staff) under "Included in the Manager role: …", and in
+History one "Role changed from Mechanic to Manager" with the admin and the
+reason and "Extra access: Manage purchasing removed" with the same reason;
+the list row reads "Every permission except Manage staff"; the colleague
+signs in and their profile shows Manager and Record refunds; the admin
+then deactivates them so no extra active staff remain. On the phone
+project that test runs at 375 px wide (an iPhone SE) and checks that the
+admin's own row, the invite form, the colleague's page and the change-role
+sheet do not scroll sideways (`expectNoSideScroll`); on the iPad at its own
+width. `staff.spec.ts`'s
+invite test also checks "They join as a Mechanic." and "Set extra access".
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
 tag made of the project name and a timestamp, so the phone and iPad runs and
@@ -1245,6 +1309,10 @@ database, signed in as the seeded admin and mechanic:
 
 `supabase/seed.sql` is both the demo dataset and the test fixture. Fixed
 UUIDs are exported from `tests/fixtures/ids.ts` so tests never query by name.
+Four staff logins (D90): `admin` (role admin), `manager` (Kavya Menon, role
+manager, no exceptions), `mechanic1` (role mechanic, `view_costs` as an
+exception) and `mechanic2` (role mechanic, none); tests that list or count
+staff expect all four.
 What each seeded record demonstrates is in DATA-MODEL.md §18. Tests that
 create their own workshop rows pick service and category names the seed
 does not use (active names are unique) and scope counts to their own job or

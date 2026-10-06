@@ -4,15 +4,16 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: `feat/auth-email-otp` after its integration with the main line
-and purchasing (2026-10-06; not deployed; on a developer machine at
+Applies to: `feat/staff-roles` (2026-10-06): `feat/auth-email-otp` after
+its integration with the main line and purchasing, plus the three staff
+roles admin, manager and mechanic (not deployed; on a developer machine at
 http://localhost:3000). Staff sign in with an emailed code.
 
 Last walkthrough: not walked through by a person. These flows are exercised
 by the E2E specs `tests/e2e/auth.spec.ts`, `workshop.spec.ts`,
 `workshop-board.spec.ts`, `inventory.spec.ts`, `inventory-publish.spec.ts`,
 `scan.spec.ts`, `appointments.spec.ts`, `appointment-settings.spec.ts`,
-`today.spec.ts`, `customers-bikes.spec.ts`, `staff.spec.ts`,
+`today.spec.ts`, `customers-bikes.spec.ts`, `staff.spec.ts`, `roles.spec.ts`,
 `consignment.spec.ts`, `consignment-journey.spec.ts`, `sales.spec.ts` and
 `purchasing.spec.ts`, on an iPhone 13 and an iPad viewport: 138 passed
 locally at the Phase 7 integration on 2026-10-05, and the latest green CI
@@ -53,8 +54,11 @@ If it fails:
 
 A link you opened before signing in takes you back there afterwards.
 
-Your own details, permissions and **Sign out** are under Settings → Your
-profile.
+Your own details, your role (Admin, Manager or Mechanic), what it lets you
+do and **Sign out** are under Settings → Your profile: the card **Your role
+and access** lists every permission you have, marks any given to you on top
+of your role as **Extra access**, and lists **Record refunds** for admins and
+managers.
 
 ## Routine tasks
 
@@ -277,7 +281,9 @@ profile.
 
 ### Refund a sale
 
-- Before you start: only an admin records a refund (D49).
+- Before you start: an admin or a manager records a refund (D94, amending
+  D49). A mechanic does not see **Record refund**, whatever extra access
+  they have.
 - Steps: open the sale (Sales, or search its S- number) → **Record
   refund**. The **Amount** starts at what is left to refund; change it for
   a partial refund. Press **Record refund of $x…**, answer "Why is it
@@ -482,23 +488,105 @@ profile.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
   at 0. Refunds and restocks are not taken off yet (Phase 9).
 
+### Invite a colleague
+
+- Before you start: you need Manage staff (an admin has it; anyone else
+  only as extra access). An admin invites an Admin, a Manager or a
+  Mechanic; anyone else invites Mechanics only (D93).
+- Steps: Settings → **Staff** → **Invite staff**. Enter **Name** and
+  **Email**. An admin picks the **Role** (Admin, Manager or Mechanic;
+  Mechanic is chosen first, and each role's one line is listed under the
+  picker). Anyone else sees "They join as a Mechanic." instead of a picker.
+  Press **Invite**.
+- Success looks like: "<email> can now sign in." and "They join as a
+  Mechanic." (or the role picked). The colleague opens the Admin, enters
+  that email and types the 6-digit code emailed to them; there is no
+  password to hand over. **Set extra access** (or **Open their page** for
+  an admin) opens their page.
+- If it fails: "An account with that email already exists."; "Only an
+  admin can invite a manager." (or an admin) when you are not an admin.
+  Covered by `tests/e2e/staff.spec.ts` and `tests/e2e/roles.spec.ts`.
+
+### Change someone's role
+
+- Before you start: admins only, and never your own role (D93). The shop
+  always keeps at least one active admin.
+- Steps: Settings → **Staff** → open the person. In the **Role** card pick
+  **Admin**, **Manager** or **Mechanic** and press **Change role…**. The
+  sheet "Change <name> to <Role>?" says what changes: what the new role
+  has (for example "Managers have every permission except Manage staff,
+  and can record refunds."), any extra access the new role already
+  includes ("Their extra access to … is included in the new role and will
+  be removed.") and anything they lose. Optionally answer **Why?** (up to
+  500 characters), then press **Change role**.
+- Success looks like: "<name> is now a <Role>"; the badge beside their name
+  shows the new role, the **Extra access** card offers only what the new
+  role does not include, and **History** reads "Role changed from <From>
+  to <To>" with your name and the reason, plus "Extra access: … removed"
+  for each exception the role now includes. Changing the role back later
+  does not restore removed extra access (D92).
+- If it fails: on your own row the picker is off with "You can't change
+  your own role."; "The shop must keep at least one active admin." when the
+  change would leave no active admin; "Someone changed their role in the
+  meantime. Reload and try again." when another admin changed it after you
+  opened the page (nothing changes; reload to see their current role and
+  what a change would do); anyone who is not an admin sees the
+  role read-only with "Only an admin changes roles." Covered by
+  `tests/e2e/roles.spec.ts`.
+
+### Give someone extra access
+
+- Before you start: you need Manage staff. An admin changes anyone's extra
+  access but their own; anyone else changes mechanics' only, only
+  permissions they hold themselves, never Manage staff and never their own
+  (D11, D93).
+- Steps: Settings → **Staff** → open the person → **Extra access**. The
+  card first says what the role includes ("Included in the Manager role:
+  …"); those are never offered as switches. Turn a switch on or off: it
+  applies at once.
+- Success looks like: "<Permission> granted" or "<Permission> removed";
+  History reads "Extra access: <Permission> granted" (or removed) with your
+  name; their profile marks it **Extra access**. An admin's card reads
+  "Admins have every permission; there is nothing extra to grant."; a
+  manager's offers only **Manage staff**; a mechanic's all seven.
+- If it fails: a switch you may not change is off with the reason under it
+  (for example "Only an admin changes an admin's or a manager's access.").
+  Covered by `tests/e2e/staff.spec.ts` and `tests/e2e/roles.spec.ts`.
+
 ## Roles and limits
+
+Everyone has one of three roles (D90, [ADR-021](decisions/ADR-021-staff-roles.md)),
+shown as a badge on Settings → Your profile and on Settings → Staff:
+
+| Role | What it lets you do |
+|---|---|
+| Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93) |
+| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings |
+| Mechanic | The workshop: what everyone can do (next paragraph). Anything more only as extra access |
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
 parts from stock, appointments and check-in, in-store sales, Scan, search,
 and read the schedule, appointment types, services and locations. Selling
 prices and sale totals are visible to all; costs are not.
 
-| You have | What changes for you |
+**Extra access (exceptions).** An admin can give one person a single
+permission on top of their role (D92): for example a mechanic who orders
+parts gets Manage purchasing alone, or a manager who invites colleagues gets
+Manage staff. A mechanic can have any of them; a manager only Manage staff
+(their role already includes the rest); an admin none. Your profile marks
+each one **Extra access**. Extra access never includes **Record refund**,
+which is for admins and managers only. Each permission, whether it comes
+from your role or as extra access:
+
+| Permission | What changes for you |
 |---|---|
-| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate and **Record refund** on a sale (D49) |
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
-| Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), permissions and deactivation (it ends their sessions at once), only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
+| Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), extra access and deactivation (it ends their sessions at once). Without the Admin role: mechanics only, only within your own permissions, never Manage staff and never your own row ([OPERATIONS.md](OPERATIONS.md#product-administration), D93) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
-| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history, D60), not job, sale, product-page or report costs (supplier last costs on a product's **Suppliers & orders** card need View costs) |
+| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history). A mechanic given it as extra access sees those costs on purchasing screens only, not job, sale, product-page or report costs (D60); a manager sees them everywhere through View costs |
 
 Without a permission, its buttons are absent and the figures are not sent
 to your screen at all. Opening a page you may not use shows "You can't open
@@ -508,8 +596,8 @@ that." Ask an admin.
 Everyone can open Consignment, its consignors and items, and the asking
 prices; who is owed what, payments and agreement photos need Manage
 consignments or View costs (D48). Anyone may record an in-store sale and
-see its total; its cost, yield and Cult Commons need View costs, and only
-an admin records a refund (D48, D49).
+see its total; its cost, yield and Cult Commons need View costs, and an
+admin or a manager records a refund (D48, D94).
 
 Everyone can open Purchasing, its orders and suppliers, and see what is
 ordered, received and still to come; costs on those screens need View

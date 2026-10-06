@@ -228,6 +228,7 @@ upload itself, below).
 | `CategoriesEditor` (`categories-card.tsx`) | manage_inventory: service categories with Rename (in place) and Archive, "New category", and archived ones with Unarchive. Written through the RLS client; never deleted. |
 | `ScheduleRateButton` / `CancelRateButton` | Admin, D21. Schedule: a percentage (up to 2 decimals, converted exactly to the 4 dp fraction, `percentToRate`) starting Now or Later (a Singapore `datetime-local`, never past), then a second step in place saying it applies to lines added from then on and never changes existing lines; its confirm button is disabled for 400 ms and focus starts on Back; the sheet's `newId()` rate key makes a retried "now" one rate. Cancel (a future rate only): "Cancel…" opens a confirmation with focus on "Keep it" and "Cancel rate" disabled for 400 ms. |
 | `StockBadge` (server or client, `stock-badge.tsx`) | A product's stock as a `Badge`: tone and words from `stockTone` / `stockLabel` (`src/lib/inventory.ts`): danger "Out of stock" or "−2 (recount needed)" (D23), waiting at or below the reorder point, done "34 in stock"; a unique product "2 available". `label` keeps the tone with other words: the part picker's "12 at Shop floor · 20 total", a part line's "37 left at Shop floor". |
+| `RoleBadge` (server or client, `role-badge.tsx`) | A staff member's role as a `Badge` with its word (D90): Admin (info), Manager (progress), Mechanic (neutral). Used on Settings → Your profile and Settings → Staff. Your profile's card "Your role and access" puts it beside the title, then the role's one line (`ROLE_DESCRIPTIONS`), then one checked row per effective permission (label and description; an exception on top of the role carries an `ExtraAccessBadge` "Extra access" in the waiting tone, the same component as the staff list, D92), "Record refunds" for admins and managers (D94) and, for admins, "Admin settings"; a mechanic with nothing extra reads "Workshop access only: …". History reads the pre-D90 value "staff" as Mechanic (`roleLabel`). |
 | `AdjustStockButton` / `AdjustStockSheet` | adjust_stock, counted products: location (`SegmentedControl`, each segment with its count, the default location first), Add / Remove, quantity with steppers, Adjustment / Damaged (Damaged disabled when adding), a required reason with quick-fill chips ("Stock count correction", "Found stock", "Damaged in workshop", "Opening stock count"), a unit cost when adding (view_costs only, optional), a live "Shop floor: 34 → 31" right under the quantity; a result below zero is shown there as an alert (the quantity marked invalid and described by it) and the submit disabled (insufficient_stock), so the reason is in view next to its cause on a phone. `newId()` request id made when the sheet opens. |
 | `StockTransferButton` / `StockTransferSheet` (`stock-transfer-sheet.tsx`) | manage_inventory: From (locations holding stock, with counts), To (the other active locations), quantity (or the unit, fixed) and an optional reason; "Move stock". Not `transfer-sheet.tsx`, the bike ownership transfer. Counted products from the product page; a unit from its own page while available or reserved. |
 | `ProductSheet`, `NewProductButton`, `EditProductButton` | manage_inventory. New: Quantity / Unique first (read-only afterwards), name, SKU, brand, category (`Select` of `product` categories), description, sale price, cost (view_costs only; on edit, empty keeps it), reorder point (counted only), Active. Unique adds the first unit on the same sheet (`UnitFields`: location, serial, "Condition (shown publicly when published)", unit sale price, unit cost with view_costs, and an optional "This is a complete bike" `SearchPicker` over shop bikes with no owner and no unit, saying customer bikes must be transferred first); both the product and the unit carry their own `newId()`, and a refused unit leaves the product, whose page offers Add unit (the swallowed failure is still logged, at error level when it is not a refusal). With Unique chosen and no active location, Add product is disabled (the unit fields show `NoActiveLocation`); Quantity stays possible. Creating opens the product. |
@@ -270,9 +271,38 @@ upload itself, below).
   your email" exactly as for any other address (D70). The code is never
   echoed back. Under the form: "No access? Ask an admin to invite or
   reactivate you in Settings → Staff." Full-width 56px primary buttons, 48px secondary ones.
-- **Invites** (Settings → Staff → Invite): the success view says "{email}
-  can now sign in." and how (the email, then the emailed code; no password
-  to hand over), with "Invite another" and "Set permissions".
+- **Invites** (Settings → Staff → Invite): an admin picks the Role in a
+  `SegmentedControl` (Admin, Manager, Mechanic; Mechanic chosen first) with
+  each role's one line listed under it, the chosen one in ink; anyone else
+  reads "They join as a Mechanic." (D93). The success view says "{email}
+  can now sign in.", "They join as a <Role>." and how (the email, then the
+  emailed code; no password to hand over), with "Invite another" and "Set
+  extra access" ("Open their page" for an admin).
+- **Staff roles** (Settings → Staff, D90-D93). The list shows each
+  person's `RoleBadge`, then a plain line for what the role includes ("All
+  permissions", "Every permission except Manage staff", "Workshop access
+  only"), then "· Extra:" and an `ExtraAccessBadge` per exception (the
+  waiting tone, which no role uses, so an exception never reads as a
+  role). The person
+  page opens with the **Role** card: the role's label and one line; for an
+  admin a `SegmentedControl` "Role" and an outline "Change role…" (off
+  until another role is picked; on their own row every segment is
+  disabled with "You can't change your own role." under it); others read
+  "Only an admin changes roles.". "Change role…" opens a `Sheet` "Change
+  <name> to <Role>?" listing what changes (`roleChangeSummary`: what the
+  new role has, exceptions it includes and so removes, what is lost), an
+  optional "Why?" textarea (`REASON_MAX_LENGTH`, 500) and "Change role",
+  disarmed for 400 ms (`useArmed`). Focus starts on Cancel, as for other
+  consequential confirmations whose reason is optional: the admin reads
+  what changes before the phone keyboard can cover it. The change is sent
+  with the role the sheet showed (`expected_role`); if someone changed it
+  meanwhile, nothing changes and the sheet says "Someone changed their
+  role in the meantime. Reload and try again." Any refusal shows as an
+  alert in the sheet; success toasts "<name> is now a <Role>". The **Extra access** card states "Included in
+  the <Role> role: …" in words and offers switches only for what the role
+  does not include. History lines come from `describeStaffEvent`
+  (src/lib/staff-events.ts): "Added as <Role>", "Role changed from <From>
+  to <To>", "Extra access: <Permission> granted/removed".
 
 ### Inventory
 
@@ -410,7 +440,7 @@ a refund changes only the status, D49):
 |---|---|
 | `RecordSaleButton` / `RecordSaleSheet` | "New sale" on `/sales`, "Sell" on the consignment item, unit and product pages (any staff, D48; a Sell entry point presets its item by searching its short ID). Lines: title, short ID, "3 in stock at Shop floor" (a unit: "At Shop floor"), "Consigned · <consignor>" (a consigned quantity row is one consignment and the line sends its `consignment_item_id`, D45), a money `NumberInput` prefilled with the database selling price (`unit_price`), a quantity stepper capped at what the row holds, Remove. `priceWarnings` under the price: "Below the asking price" for everyone, "Below cost: this sale loses money" for view_costs (D53; never blocks). Add item reveals the picker again; Customer (optional `CustomerPicker`, walk-in otherwise); "Sold earlier?" reveals a shop-time `datetime-local` (max now; NULL while closed or empty); Notes. A view_costs "Preview" (cost, yield, Cult Commons) per line and in total, through `previewSale` (`lineEconomics`). Footer: the Decimal running total and "Record sale · $X". The sale id is made when the sheet opens; errors show as an alert, the lines stay, and a unit sold meanwhile is outlined with "Already sold or taken. Remove this line.". A refusal is shown where it applies: Sold at, Customer and Notes carry their field errors (a time after the moment of submitting is caught in the sheet with "Enter a date and time that is not in the future."; the database's `sale_recognized_in_future` and `sale_before_stock` land on Sold at too), the first marked field takes the focus (`useFocusFirstInvalid`), and a refusal with no field scrolls the alert into view and focuses it. A preset whose search fails (a dropped connection) falls back to the picker with the "no longer available" note instead of "Finding the item…". Success: toast "S-000123 recorded" and the sale page. |
 | `SaleablePicker` | `SearchPicker` over `searchSaleableAction` (`saleable_stock`): U-, P- and C- numbers, SKU, serial, name. Each result: title and price, short ID, a `StockBadge` with where and how many, the consignor badge; a unit already on the sale is disabled. |
-| `RecordRefundButton` / `RefundSheet` | Admins only (`canRecordRefund`, D49), shown while something is left to refund. Amount defaults to `refundableAmount` and is capped at it; the info note "A refund does not put anything back in stock. If the item came back, restock it separately." (D7); the reason through `ReasonConfirm` ("Record refund of $5.00…" then "Refund $5.00"); the refund id is made when the sheet opens. |
+| `RecordRefundButton` / `RefundSheet` | Admins and managers only (`canRecordRefund`, D94 amending D49), shown while something is left to refund. Amount defaults to `refundableAmount` and is capped at it; the info note "A refund does not put anything back in stock. If the item came back, restock it separately." (D7); the reason through `ReasonConfirm` ("Record refund of $5.00…" then "Refund $5.00"); the refund id is made when the sheet opens. |
 | `RestockControl` | `ReasonConfirm` "Restock… U-000123" on a unit line still sold on this sale (`unit_sold_sale_line_id` = the line) and on the unit page's Restock card; for adjust_stock holders, and for a consigned unit only with manage_consignments too (D46). It always sends this line's id; "Back to" location segments (default: where it was sold) while confirming when there is more than one active location; a consigned unit says "It goes back on sale for the consignor and is no longer owed to them." |
 
 Pages: `/sales` (`PageHeader` "Sales" with New sale; range links Today /

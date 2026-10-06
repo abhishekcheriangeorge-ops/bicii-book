@@ -192,11 +192,11 @@ describe("staff_events: one event per change, with the actor", () => {
     expect(events[0]).toMatchObject({
       event_type: "created",
       actor_staff_id: STAFF.admin,
-      payload: { display_name: "Eddie", email: "eddie@bicii.test", role: "staff", active: true },
+      payload: { display_name: "Eddie", email: "eddie@bicii.test", role: "mechanic", active: true },
     });
   });
 
-  it("update_staff records role changes and renames", async () => {
+  it("update_staff records role changes and renames (D92: exceptions the new role implies go)", async () => {
     const { events } = await recording(AUTH_USER.admin, async (tx) => {
       await tx.query(
         "select public.update_staff($1, role => 'admin', reason => 'Runs the shop on Sundays')",
@@ -212,7 +212,16 @@ describe("staff_events: one event per change, with the actor", () => {
       expect.objectContaining({
         event_type: "role_changed",
         actor_staff_id: STAFF.admin,
-        payload: { role: { from: "staff", to: "admin" } },
+        payload: { role: { from: "mechanic", to: "admin" } },
+        reason: "Runs the shop on Sundays",
+      }),
+      // An admin implies view_costs, so Marcus's exception is removed in the
+      // same transaction, with the role change's actor and reason.
+      expect.objectContaining({
+        event_type: "permission_revoked",
+        permission: "view_costs",
+        actor_staff_id: STAFF.admin,
+        payload: { granted_by: STAFF.admin, granted_at: expect.any(String) },
         reason: "Runs the shop on Sundays",
       }),
       expect.objectContaining({
@@ -360,7 +369,7 @@ describe("update_staff", () => {
     ).rejects.toMatchObject({ code: "42501" });
     await expect(
       asStaff(conn, STAFF.admin, (tx) =>
-        tx.query("select public.update_staff($1, role => 'staff')", [STAFF.admin]),
+        tx.query("select public.update_staff($1, role => 'mechanic')", [STAFF.admin]),
       ),
     ).rejects.toMatchObject({ code: "42501" });
   });
@@ -400,13 +409,13 @@ describe("update_staff", () => {
       (tx) =>
         scalar<string>(
           tx,
-          "select (s).role::text from (select public.update_staff($1, role => 'staff') s) x",
+          "select (s).role::text from (select public.update_staff($1, role => 'mechanic') s) x",
           [STAFF.admin],
         ),
       (tx) =>
         tx.query("update public.staff set role = 'admin' where id = $1", [STAFF.mechanic1]).then(),
     );
-    expect(result).toBe("staff");
+    expect(result).toBe("mechanic");
   });
 });
 

@@ -17,6 +17,11 @@ single-permission exception. The owner was told and has not objected. The
 roles themselves are recorded in their own record (ADR-021, D90–D99) when
 that work lands.
 
+Since [ADR-021](ADR-021-staff-roles.md) (2026-10-06, built on
+`feat/staff-roles`): managers see purchase costs through their role's
+`view_costs`, and D60 now covers only the exception case, a mechanic
+granted `manage_purchasing` as extra access.
+
 Status update 2026-10-05 (integration with Phase 6): consignment-owned
 products (Phase 6, D45) are never purchased. The PO line and the low-stock
 draft already refused any product that is not shop-owned

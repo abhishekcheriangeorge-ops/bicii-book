@@ -46,7 +46,7 @@ async function reset() {
   log(`database ready in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   log(
     `seeded logins (sign in with an emailed code; read codes at ${MAIL_URL}): ` +
-      "admin@, mechanic1@, mechanic2@bicii.test",
+      "admin@, manager@, mechanic1@, mechanic2@bicii.test",
   );
 }
 
