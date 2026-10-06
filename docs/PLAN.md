@@ -700,59 +700,57 @@ distinct; E2E journey 3 labels step.
 Tests: daily_summary reconciles with financial_lines for seed; date-basis
 switch changes counts as expected.
 
-Built so far (step 1, database, 2026-10-06, `feat/p9-reporting`; D100–D105,
-[ADR-022](decisions/ADR-022-reporting.md)): migrations
-`20261006001000_report_periods` (enums `report_date_basis`, `report_grain`,
-`report_dimension`; `reporting.financial_lines` replaced with the same
-columns and the explicit `sa.source <> 'work_order'` exclusion; the view
-`reporting.report_lines`; `private.report_rows`,
-`private.report_foreign_rows`, `private.report_key`,
-`private.report_key_valid`, `private.report_require_range`; the RPCs
+Shipped (Phase 9, four steps, 2026-10-06, on `feat/p9-reporting` from
+`feat/staff-roles` 5c9fbc7; local, not pushed; decisions D100–D108,
+[ADR-022](decisions/ADR-022-reporting.md)). Migrations
+`20261006001000_report_periods` (enums `report_date_basis`,
+`report_grain`, `report_dimension`; `reporting.financial_lines` with the
+explicit `sa.source <> 'work_order'` exclusion; the view
+`reporting.report_lines`; `private.report_rows`, `report_foreign_rows`,
+`report_key`, `report_key_valid`, `report_require_range`; the RPCs
 `report_period_summary`, `report_period_series`, `report_breakdown`,
-`report_line_items`, `report_activity`, `report_activity_by_mechanic`;
-six period-report indexes) and `20261006001100_report_stock_value`
-(`report_stock_value`). No seed rows; `daily_summary`, `public.daily_summary`
-and `today_dashboard` are unchanged. Tests:
-`tests/db/period-reports.test.ts` on the March 2025 scenario in
-`tests/db/period-report-fixtures.ts`; timings from
-`scripts/bench/report-volume.sql` in DATA-MODEL §14. Steps 2 (screens and
-CSV), 3 (reconciliation, exceptions, D106–D108) and 4 (screens, links,
-closure) remain.
-
-Built so far (step 2, app, 2026-10-06, `feat/p9-reporting`): `/reports`
-(period and date-basis controls in the URL, figures, buckets, breakdown by
-the seven dimensions, stock at cost now, activity and jobs by mechanic),
-`/reports/lines` (one group's lines, keyset pages of 100;
-`view_financial_reports`, a real 403) and the CSV Route Handler
-`/reports/export` (kinds `series`, `breakdown`, `lines`, `stock_value`,
-`mechanics`; cost columns omitted without `view_costs`; 50,000 rows at
-most, R-057); `ComingSoon` placeholders at `/reports/exceptions` and
-`/reports/reconciliation` for step 4. Code: `src/lib/period-reports.ts`,
-`src/lib/csv.ts`, `src/lib/report-exports.ts`,
-`src/lib/domain/period-reports.ts`, `src/lib/domain/report-exports.ts`,
-`src/components/domain/reports/`. Tests: `tests/unit/period-reports.test.ts`,
-`csv.test.ts`, `report-exports.test.ts`,
-`tests/db/period-report-exports.stack.test.ts`, `tests/e2e/reports.spec.ts`.
-Steps 3 and 4 remain.
-
-Built so far (step 3, database, 2026-10-06, `feat/p9-reporting`; D106–D108,
-ADR-022): `20261006001200_stock_reconciliation`
-(`private.unit_expected_on_hand`, the views
-`reporting.unit_ledger_disposition`, `reporting.unit_reconciliation` and
-`reporting.stock_reconciliation`, the RPCs `report_stock_reconciliation`
-and `report_unit_reconciliation`; no `inventory_balances` cache, D106) and
-`20261006001300_operational_exceptions`
-(`shop_settings.consignment_settlement_alert_days` and
-`set_consignment_settlement_alert_days`, the Phase 10 placeholder
-`private.integration_exceptions()`, `reporting.operational_exceptions`
-extended with six columns and the kinds unit_state_mismatch,
-unsettled_consignment and integration_failed, currency_mismatch on sale
-lines, `private.exception_visible`, `public.operational_exceptions`
-recreated, `report_exception_counts`, `today_dashboard`'s exceptions_now
-filtered by visibility). The seed reconciles unchanged. Tests:
-`tests/db/stock-reconciliation.test.ts`,
-`tests/db/operational-exceptions.test.ts`; bench section 3 in
-`scripts/bench/report-volume.sql`. Step 4 (screens and links) remains.
+`report_line_items`, `report_activity`, `report_activity_by_mechanic`; six
+indexes), `…1100_report_stock_value` (`report_stock_value`),
+`…1200_stock_reconciliation` (`private.unit_expected_on_hand`; the views
+`reporting.unit_ledger_disposition`, `unit_reconciliation`,
+`stock_reconciliation`; the RPCs `report_stock_reconciliation`,
+`report_unit_reconciliation`) and `…1300_operational_exceptions`
+(`shop_settings.consignment_settlement_alert_days` and the admin RPC
+`set_consignment_settlement_alert_days`; `private.exception_visible`; the
+Phase 10 placeholder `private.integration_exceptions()`; Phase 5's
+`reporting.operational_exceptions` extended with six columns and the kinds
+unit_state_mismatch, unsettled_consignment and integration_failed, and
+currency_mismatch on sale lines; `public.operational_exceptions`
+recreated; `report_exception_counts`; Today's `exceptions_now` per caller).
+No seed rows; `daily_summary` and `today_dashboard` keep their signatures.
+Routes: `/reports` (period and date basis in the URL, figures, buckets,
+the breakdown by seven dimensions, stock at cost now, activity, jobs by
+mechanic, the Exceptions link with the caller's count), `/reports/lines`,
+`/reports/exceptions` (grouped exceptions, the admin's threshold sheet),
+`/reports/reconciliation` (Problems only / Everything, a product filter,
+products by location and unique items, links to the guarded fix) and the
+CSV Route Handler `/reports/export` (kinds `series`, `breakdown`, `lines`,
+`stock_value`, `mechanics`, `exceptions`, `stock`, `units`; cost columns
+only with View costs; refused rather than cut short, R-057). Phase 5's
+`ExceptionList` and exception helpers were extended, not rewritten; Today
+gained "See all exceptions" and a linked capped note; Inventory gained
+"Reconcile stock" and the product page "Check against the ledger". No
+`inventory_balances` cache: the bench measured the ledger fast enough
+(reconciliation 48–90 ms on 3,008 units), while Today and the exception
+counts miss their targets at a busy year's volume (R-059). Code:
+`src/lib/period-reports.ts`, `csv.ts`, `report-exports.ts`,
+`reconciliation.ts`, `src/lib/domain/period-reports.ts`,
+`report-exports.ts`, `reconciliation.ts`,
+`src/components/domain/reports/`. Tests: database
+`period-reports.test.ts`, `period-report-exports.stack.test.ts`,
+`stock-reconciliation.test.ts`, `operational-exceptions.test.ts`; unit
+`period-reports.test.ts`, `csv.test.ts`, `report-exports.test.ts`,
+`reconciliation.test.ts`, `exception-kinds.test.ts`,
+`today-components.test.tsx`; E2E `reports.spec.ts` and
+`exceptions.spec.ts`; bench `scripts/bench/report-volume.sql`
+(DATA-MODEL §14). Gate results in
+[ENGINEERING](ENGINEERING.md#validation) and [NOW](../NOW.md). Owner
+questions 12, 21 and 22 stay open.
 
 ### Phase 10 — Shopify
 
