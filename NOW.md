@@ -2,8 +2,9 @@
 
 Updated: 2026-10-06, `origin/main` (a1aebf6: purchasing PR #9, staff
 email sign-in PR #10, staff roles PR #13) merged into `feat/p8-labels`
-(a merge commit, no rebase), the labels risks renumbered R-075–R-077, gate on the merged
-tree below. Evidence checked: `git fetch`, `git status`,
+(a merge commit, no rebase), the labels risks renumbered R-075–R-077, the
+purchase order's "Print N labels" shortcut built (R-029 resolved), gate
+on the merged tree below. Evidence checked: `git fetch`, `git status`,
 `git log`, `git worktree list` and `git merge-base` (c791d4b before the
 merge) at the start; local gates on the merged tree (below). Earlier
 rows: their own gates as recorded.
@@ -30,10 +31,10 @@ rows: their own gates as recorded.
   ([DATA-MODEL "Authority"](docs/DATA-MODEL.md#authority-applied-state-and-implementation-status)).
   Under the roles every role prints labels and only an admin changes
   label templates, printers or the QR address (a manager is not an admin,
-  D91; `labels.test.ts` proves it for the seeded manager). Next commit:
-  the purchase order's receipts get "Print N labels" per received line
-  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
-  Committed locally, not pushed.
+  D91; `labels.test.ts` proves it for the seeded manager). Follow-up: the
+  purchase order's receipts offer "Print N labels" per received line
+  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+  resolved). Committed locally, not pushed.
 - Next action: the orchestrator pushes `feat/p8-labels` and opens its PR
   against `main`, answering the documentation-impact question of
   [.github/pull_request_template.md](.github/pull_request_template.md)
@@ -61,10 +62,9 @@ rows: their own gates as recorded.
   anonymous half of SPEC §31 is proven at the database (`labels.test.ts`:
   anon and staff read identical `reporting.public_items` rows) and shown
   to staff in "What the public sees" until Phase 11. New stock from a
-  purchase order is labelled from its product page until the follow-up
-  commit
-  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet));
-  untested on a real printer and iOS
+  purchase order is labelled from the order's receipts ("Print N labels",
+  [R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+  resolved at the merge); untested on a real printer and iOS
   ([R-075](docs/RISKS.md#r-075--label-output-is-unverified-on-a-real-label-printer-and-on-ios));
   print success is confirmed by hand
   ([R-076](docs/RISKS.md#r-076--print-success-is-confirmed-by-hand)).
@@ -98,7 +98,7 @@ a separate, label-triggered run. All listed results are success.
 | Journey label steps and Phase 8 closing docs (Phase 8 step 4: D9, D56–D59) | Yes, `feat/p8-labels` afaf288 (journey 3: ten identical labels through the PDF adapter; journey 4: one U- label for the consigned bike at the price "What the public sees" shows; shared `tests/e2e/label-helpers.ts`) and the closing docs commit with this update | Locally on the final tree: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 108 files / 1587 tests passed (after `npm run db:reset` and a devstack restart), `npm run test:e2e` 146 passed, 73 on phone and 73 on tablet, 0 failed (14.2 min; `npm run build` inside, pass), docs link check 35 files / 624 links / 0 problems (on the final docs) | Not deployed |
 | Phase 8 review fixes | Yes, `feat/p8-labels`, the commit with this update: the bike page asks for labels only after `notFound()` (an unknown bike is a 404 again) and `label_preview`'s P0002 is "unavailable" (`not_found`); the print view keeps only Back, status and Print / Open PDF sticky, the confirmation in the flow; printing from a `?print=1` deep link replaces its history entry, and `createPrintJobAction` refreshes; printers are a radio list in the sheet; "Did the label print correctly?" for one; the job page's printer name and type on separate rows; the template sheet's field errors on their fields after a change or Save; tests: a signed-in customer gets 403 from the PDF route and the print view, the default-printer and default-template races, the stack test independent of E2E residue, the unit label E2E on a unit it creates | Locally on the final tree: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 109 files / 1597 tests passed (before and right after an E2E run, on a `bicii_dev` holding its jobs), `npm run test:e2e` 150 passed, 75 on phone and 75 on tablet (13.3 min; `npm run build` inside, pass; a first run had 2 failures, the new unit label test asserting a condition the label truncates, fixed), the two new races fail with `create_print_job`'s retry cut to one attempt (migration restored), docs link check 35 files / 625 links / 0 problems | Not deployed |
 | Staff roles (D90–D94: admin, manager and mechanic; `private.role_implies`; "Extra access" exceptions; role administration; refunds for managers; seed `manager@bicii.test`; staff screens with the role picker and invites by role) | Yes, `feat/staff-roles`: 0657397, 28de036 (database), bfc5ea2, dd94665 (app model, guards, refunds, profile), ae9763b, 080a796 (staff screens, E2E), a5441dd and the evidence commit (integration review, documentation), then the review-fixes commit after b83ce42; local only, not pushed | Locally after the review fixes (one-time clean-up of implied exceptions in `20261006000200` via `private.drop_implied_exceptions()`; two-connection D92 race tests; `update_staff` `expected_role` with `staff_role_changed`; shared `REASON_MAX_LENGTH`; manager wording; `ExtraAccessBadge`; focus on Cancel; PLAN D11, R-052, R-054): `npm run db:reset` pass (`47\|20261006000300`), `npm run db:types` committed (the `expected_role` argument), `npm run check` pass, `npm run check:types` pass, `BICII_REQUIRE_STACK=1 npm test` 113 files / 1686 tests passed (unit 57 / 738, database 56 / 948; both new concurrency tests failed once by hand with the refusal trigger's lock weakened to `FOR KEY SHARE`, then the lock was restored), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.1 min, no failures, flaky or skipped), docs link check 37 files / 691 links / 0 problems. Before that, locally (database `bicii_dev_wt`) after the step 4 review fixes (a5441dd): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 113 files / 1680 tests passed (unit 57 / 737, database 56 / 943), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (16.8 min, no failures, flaky or skipped; it reset the database: 47 migrations, `47\|20261006000300`, seed applied), docs link check 37 files / 690 links / 0 problems. Earlier steps: step 1 112 / 1632 and 152 E2E; step 2 112 / 1669 and 152 E2E; step 3 113 / 1680 and 158 E2E, all passing | Not deployed |
-| Merge of `origin/main` (a1aebf6: purchasing, email sign-in, staff roles) into labels; labels risks R-075–R-077; the manager labels test | Yes, `feat/p8-labels`: the merge commit with this update (conflict resolutions, `sessionCookiesFor`, `createProduct`'s optional reorder point, the manager labels test, every document) | Locally on the merged tree with the follow-up (database `bicii_dev`): `npm run db:reset` pass (`48|20261006000300`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 129 files / 1900 tests passed (unit 70 / 904, database 59 / 996; 116 s, no skips), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 190 passed, 95 per project, 0 failed, flaky or skipped (20.2 min; build inside, pass), docs link check 38 files / 0 problems | Not deployed |
+| Merge of `origin/main` (a1aebf6: purchasing, email sign-in, staff roles) into labels; labels risks R-075–R-077; receipts' Print N labels (R-029); the manager labels test | Yes, `feat/p8-labels`: the merge commit (conflict resolutions, `sessionCookiesFor`, `createProduct`'s optional reorder point, the manager labels test, every document) and the follow-up commit with this update (`printLabelsPath` and the receipt link, the journey 3 step, docs) | Locally on the merged tree with the follow-up (database `bicii_dev`): `npm run db:reset` pass (`48|20261006000300`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 129 files / 1900 tests passed (unit 70 / 904, database 59 / 996; 116 s, no skips), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 190 passed, 95 per project, 0 failed, flaky or skipped (20.2 min; build inside, pass), docs link check 38 files / 0 problems | Not deployed |
 | Shopify (Phase 10) | Yes, on its own branch `feat/p10-shopify` (stacked on labels; not part of this branch) | See that branch's NOW.md | Not deployed |
 | Phase 9 reporting, public-site integration, hardware adapter | No (reporting is being built on `feat/p9-reporting`) | Not built here | Not deployed |
 

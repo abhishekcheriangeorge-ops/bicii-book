@@ -723,10 +723,12 @@ of SPEC §31 (a scan opens the public page) is proven at the database:
 gets identical rows for the same short ID. Staff see that row through the
 existing "What the public sees" panel until Phase 11 serves
 `/q/[shortId]` on the public site and creates `public.public_item`; this
-phase adds no anonymous RPC, client or route. Deferred: the purchase
-receive screen's "Print N labels" shortcut, now that Phase 7 is on this
-branch, follows the merge of `main`
-([RISKS R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
+phase adds no anonymous RPC, client or route. Built at the merge of
+`main` into `feat/p8-labels` (2026-10-06): the purchase order's receipts
+offer "Print N labels" per received line, the product's print sheet at
+the received count, since receiving returns to the order
+([RISKS R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+resolved; journey 3 in `tests/e2e/purchasing.spec.ts`).
 
 ### Phase 9 — Reporting and reconciliation
 

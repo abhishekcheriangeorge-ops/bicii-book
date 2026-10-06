@@ -1352,7 +1352,9 @@ product (reorder point 20, cost 12.00) and a tagged supplier; an order of
 actual cost of $12.50 ("Differs"), the default location, the commit
 button DOUBLE-CLICKED; the order shows the toast "Received 18 items. 2
 still to come.", Partially received and "18 of 20 received · 2 to come"
-with one receipt; the product shows 18 in stock before and after a reload,
+with one receipt, whose line's "Print 18 labels" opens the product's
+print sheet at 18 (closed without printing; R-029); the product shows 18
+in stock before and after a reload,
 exactly one `Received +18` movement, the supplier with "Last cost $12.50"
 and "On order: 2"; one part used on a job → 17; `/purchasing/reorder` for
 the supplier lists it ticked with on order 2 and "Suggested 21", and

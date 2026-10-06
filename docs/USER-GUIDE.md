@@ -382,7 +382,10 @@ managers.
 - Success looks like: "Received 18 items. 2 still to come.", the order
   Partially received with "18 of 20 received · 2 to come", or Received when
   everything has come. The stock goes up once, and the product's cost and
-  the supplier's last cost become the actual cost (D5, D63).
+  the supplier's last cost become the actual cost (D5, D63). Each line of
+  the order's **Receipts** has **Print N labels** (N = the count received):
+  it opens the product's print sheet at that count, for anyone signed in
+  (`tests/e2e/purchasing.spec.ts`, journey 3).
 - If it fails: more than is to come is refused; raise the line's ordered
   quantity on the order first (D65). If the connection drops, the screen
   checks whether the delivery was recorded and either shows it or offers
@@ -484,9 +487,10 @@ managers.
   Labels show the name, brand, price, condition (units), the bike's size
   and colour or serial number, the SKU and the short ID: never a cost, a
   consignor, an owner or a note. New stock from a purchase order is
-  labelled from its product or unit page (the receiving screen has no
-  label shortcut yet,
-  [R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
+  labelled from the order's **Receipts**: **Print N labels** on a received
+  line opens the product's print sheet at the received count
+  ([R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+  resolved).
 - If it fails: a printed or failed job cannot be printed again as it was:
   its print view shows what happened and **Print again**, which opens the
   record's print sheet ("Print again · …", same count and printer) for a

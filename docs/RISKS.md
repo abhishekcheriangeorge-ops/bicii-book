@@ -778,22 +778,28 @@ URLs, or customer data in this file.
 ## R-029 — The purchase receive screen has no "Print N labels" shortcut yet
 
 - Category: compromise (integration deferred).
-- Status and owner: open; build agent (the follow-up to the merge of
-  `main` into `feat/p8-labels`).
+- Status and owner: resolved at the merge of `main` into `feat/p8-labels`
+  (2026-10-06); build agent. The heading is kept so links stay valid.
 - Trigger: staff receive a purchase order and want labels for what came in.
-- Impact: Phase 8 built labels where purchasing (Phase 7) did not exist,
-  so the receive screen has no shortcut to print one label per received
-  unit, or N for a quantity line. Purchasing is now on this branch (the
-  merge of `main` into `feat/p8-labels`, 2026-10-06), but the merge
-  changed no screen: staff open the product from the order's line and
-  print from its Labels card instead (one more step).
-- Evidence and confidence: high; `src/app/(staff)/purchasing/receive/[id]/`
-  has no print control; journey 3's receiving step
-  (`tests/e2e/purchasing.spec.ts`) prints nothing.
-- Workaround or containment: print from the product or unit page.
-- Next action: add the shortcut where receiving lands, with an E2E step
-  in journey 3.
-- Revisit trigger: the follow-up commit.
+- Impact: Phase 8 built labels where purchasing (Phase 7) did not exist.
+  Now that both are on this branch, receiving returns to the order, and
+  every line of the order's **Receipts** has "Print N labels" (N = the
+  quantity received): the product page with its print sheet open at that
+  count (`printLabelsPath`, the `?print=1&qty=N` deep link the record pages
+  already read). A purchase line is always a counted product (D62), so the
+  label is the product's; above 500 the sheet prints 500 and says how many
+  remain (D56). Nothing is printed until staff press Print, so a receipt
+  never creates a print job by itself. The lost-response banner of the
+  receive screen ("This delivery was recorded …") links to the order, where
+  the shortcut is.
+- Evidence and confidence: high; `src/app/(staff)/purchasing/(browse)/orders/[id]/page.tsx`,
+  `src/lib/printing/links.ts` (`tests/unit/printing/job.test.ts` "links");
+  journey 3's receiving step in `tests/e2e/purchasing.spec.ts` clicks
+  "Print 18 labels" on the receipt and finds the sheet at "Print 18
+  labels".
+- Workaround or containment: none needed.
+- Next action: none.
+- Revisit trigger: receiving gains unique items (a unit per label, D57).
 - Last checked: 2026-10-06.
 
 ## R-030 — A wrong delivery cannot be reversed, only adjusted
