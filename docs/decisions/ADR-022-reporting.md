@@ -3,10 +3,10 @@
 Date: 2026-10-06 (built on `feat/p9-reporting`, branched from
 `feat/staff-roles` at 5c9fbc7). Status: D100–D105 accepted, build defaults
 for the owner to confirm ([PRODUCT owner question 21](../PRODUCT.md#open-assumptions-and-owner-questions));
-D102 is the build default for the unanswered owner question 12. Step 1 of
-4 (the database) is built; the screens and CSV (step 2), reconciliation and
-exceptions (step 3, D106–D108, recorded here when built) and the closure
-(step 4) follow. Decision owner: Abhishek Cherian George (owner) for
+D102 is the build default for the unanswered owner question 12. Steps 1
+(the database) and 2 (the `/reports` and `/reports/lines` screens and the
+CSV export) of 4 are built; reconciliation and exceptions (step 3,
+D106–D108, recorded here when built) and the closure (step 4) follow. Decision owner: Abhishek Cherian George (owner) for
 business meaning; defaults proposed by the build agent and the
 orchestrator's Phase 9 brief.
 
@@ -90,7 +90,9 @@ once) 76 ms. A test proves the two agree at the day-boundary instants.
 ## Consequences
 
 - A past period's figures can change after a reopen, a back-dated sale or
-  a back-dated receipt (R-055); an exported CSV (step 2) is a snapshot.
+  a back-dated receipt (R-055); an exported CSV (step 2) is a snapshot
+  taken at export time, at most 50,000 rows, refused (409) when the line
+  counts move between its pages (R-057).
 - Refunds never reduce gross, yield or Cult Commons in any report; a
   heavily refunded week shows full gross with a refunds figure beside it
   (R-021, owner question 12).

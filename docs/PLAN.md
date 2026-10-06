@@ -719,6 +719,22 @@ and `today_dashboard` are unchanged. Tests:
 CSV), 3 (reconciliation, exceptions, D106–D108) and 4 (screens, links,
 closure) remain.
 
+Built so far (step 2, app, 2026-10-06, `feat/p9-reporting`): `/reports`
+(period and date-basis controls in the URL, figures, buckets, breakdown by
+the seven dimensions, stock at cost now, activity and jobs by mechanic),
+`/reports/lines` (one group's lines, keyset pages of 100;
+`view_financial_reports`, a real 403) and the CSV Route Handler
+`/reports/export` (kinds `series`, `breakdown`, `lines`, `stock_value`,
+`mechanics`; cost columns omitted without `view_costs`; 50,000 rows at
+most, R-057); `ComingSoon` placeholders at `/reports/exceptions` and
+`/reports/reconciliation` for step 4. Code: `src/lib/period-reports.ts`,
+`src/lib/csv.ts`, `src/lib/report-exports.ts`,
+`src/lib/domain/period-reports.ts`, `src/lib/domain/report-exports.ts`,
+`src/components/domain/reports/`. Tests: `tests/unit/period-reports.test.ts`,
+`csv.test.ts`, `report-exports.test.ts`,
+`tests/db/period-report-exports.stack.test.ts`, `tests/e2e/reports.spec.ts`.
+Steps 3 and 4 remain.
+
 ### Phase 10 — Shopify
 
 - Migrations: integration_events, shopify_product_sync,

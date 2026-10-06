@@ -491,6 +491,39 @@ managers.
   at 0. Refunds and restocks are not taken off (D102: the period reports
   show refunds beside gross instead).
 
+### Read reports
+
+- Steps: **Reports** (More on a phone, the rail on an iPad). Choose
+  **Day**, **Week** (Monday to Sunday) or **Month**, step with the arrows
+  (or `[` and `]` on a keyboard), tap the dates to pick another day, or
+  **Custom** for any range up to two years. **Today** comes back to now.
+- Choose the **Date basis** (View financial reports): **Sale date** is the
+  financial figure (jobs on the day they were completed, sales on the day
+  they were paid); **Check-in**, **Completed** and **Collected** count
+  jobs only, on that day. So one job shows on different days: checked in
+  Monday, completed Wednesday, collected Friday. A job that is not
+  finished shows only on Check-in, and a reopened job leaves its old
+  completion day until it is completed again (D100, D101).
+- Success looks like: Gross sales and the counts at the top; with View
+  costs also Direct costs, Yield, Cult Commons and BICII after Cult
+  Commons. Below: the period day by day (or week by week), the
+  **Breakdown** by job or sale, product, category, service, mechanic,
+  ownership or channel (tap a row for the job, the sale or its lines),
+  **Stock at cost now** (stock at this moment, whatever period you chose)
+  and **Activity** (jobs, appointments and stock, for everyone).
+- Refunds are shown beside gross sales, "Refunds recorded: … — not
+  deducted from the figures above", and never change gross, yield or Cult
+  Commons (D102, a build default the owner is asked to confirm).
+- **Export CSV** downloads the table beside it. On an iPhone or iPad
+  app it opens in a new window: use Share → Save to Files. The file is a
+  snapshot of the moment you export; costs are in it only if you have
+  View costs.
+- If it fails: "Too many rows to export" means choose a shorter range;
+  "Figures changed while exporting" means try again
+  ([R-057](RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export)).
+  "Costs, yield and Cult Commons need the View costs permission" and
+  "… need the View financial reports permission" mean ask an admin.
+
 ### Invite a colleague
 
 - Before you start: you need Manage staff (an admin has it; anyone else
@@ -584,7 +617,7 @@ from your role or as extra access:
 | Permission | What changes for you |
 |---|---|
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
-| View financial reports | The Money section on Today (costs inside it also need View costs) |
+| View financial reports | The Money section on Today, and on Reports the figures, date basis, breakdown, line drill-down, stock at cost now and their CSV exports (costs inside them also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
 | Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), extra access and deactivation (it ends their sessions at once). Without the Admin role: mechanics only, only within your own permissions, never Manage staff and never your own row ([OPERATIONS.md](OPERATIONS.md#product-administration), D93) |
@@ -606,8 +639,12 @@ Everyone can open Purchasing, its orders and suppliers, and see what is
 ordered, received and still to come; costs on those screens need View
 costs or Manage purchasing (D60).
 
-Not available yet: **Labels** and **Reports** show "Phase 8 (QR and
-labels)" and "Phase 9 (Reporting)"
-([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
-There is no reschedule, no customer messaging and no data export. Help:
-ask the owner or an admin.
+Everyone can open Reports and see Activity and jobs by mechanic, and
+export that list; sales, yield and Cult Commons figures need View
+financial reports, and costs inside them View costs (D30).
+
+Not available yet: **Labels** shows "Phase 8 (QR and labels)", and the
+**Exceptions** and **Stock reconciliation** links on Reports show "Phase 9
+step 4" ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
+There is no reschedule and no customer messaging; the only data exports
+are the report CSVs. Help: ask the owner or an admin.

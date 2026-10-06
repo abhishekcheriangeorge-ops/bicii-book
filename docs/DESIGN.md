@@ -154,9 +154,12 @@ The pattern every Server Action form follows (`staffAction` +
 - A loading boundary makes the response stream, which commits it to HTTP
   200 before the page runs (Next docs, `loading.js` "Status Codes"): a page
   under it that calls `forbidden()` or `notFound()` shows the right UI with
-  a 200. So permission-gated subtrees (`/settings/staff`, later `/reports`)
-  have none, nor do the group root (`/`) and `/settings` (whose subtree
-  includes `/settings/staff`), keeping their real 403s.
+  a 200. So permission-gated subtrees (`/settings/staff`, `/reports`) have
+  none, nor do the group root (`/`) and `/settings` (whose subtree includes
+  `/settings/staff`), keeping their real 403s. `/reports` has no
+  `loading.tsx` anywhere: `/reports/lines` answers a real 403 without View
+  financial reports, and `/reports` streams each section in its own
+  `<Suspense>` after `requireStaff()` instead ([Reports](#reports)).
 - Every nav link (tab bar, rail) marks its icon while its navigation is
   pending (`LinkPending`, `useLinkStatus`), which also covers the sections
   without a `loading.tsx`.
@@ -879,3 +882,82 @@ tones and sentences in `src/lib/purchasing.ts`, form schemas in
 | `ProductPurchasingCard` (server) | The product page's "Suppliers & orders", above. |
 | `ReceiveForm` (`receive-form.tsx`, on `/purchasing/receive/[id]`) | Step 4. A focused page outside `(browse)` (manage_purchasing, real 403): "Receive PO-…", the supplier, a back link, "Received in the last 24 hours" (this PO's receipts of the last 24 hours: the time for today's, the date and time for an earlier day's), then the form. ONE controlled client component, not a form action (React never resets what was typed), running the pure state machine in `src/lib/receive-form.ts` (`receiveReducer`, unit-tested): `starting` → `editing` → `submitting` → done, or `checking` → `recorded` / `notRecorded`, or back to `editing` on a definite refusal, or `closed`. **Key lifecycle:** the receipt's idempotency key is `newId()` when the form first mounts, stored with the values and a `pending` flag in sessionStorage under `bicii:receive:<poId>` (every access in try/catch; the page works without storage); `pending` is set BEFORE the call. A stored key (pending or not) is looked up (`purchase_receipt_by_key`) before anything is editable. The key survives definite refusals (nothing was written under it) and retries; a NEW key comes only with fresh values ("Receive another delivery", whose defaults are the new outstanding quantities); never a new key with old values. **Unknown outcome** (the action threw: network lost, response aborted, or an unexplained failure): the error toast "We could not confirm the receipt. Checking whether it was recorded…" (dismissed once answered), the form read-only with "Checking whether this delivery was recorded…"; found → `recorded`: "This delivery was recorded at 10:42 am by Asha Admin (18 items)", Open PO-… (the receipt's own PO if it differs) and "Receive another delivery"; not found → "It was not recorded. Retrying is safe: it will not be received twice." with Retry (same key, same values; editing allowed, key kept); lookup failed → still read-only with "Check again". `purchase_receipt_key_reused` is treated as found. Definite refusals: `purchase_over_receipt` → editing, `router.refresh()` for the new outstanding numbers and per-line messages; `purchase_order_closed` → the closed state; the D64 date codes → on the Received field. Submitting: inputs read-only, the commit button `aria-busy` and disabled (a ref also drops a second tap before the re-render), "Still confirming…" after 20 s. Success: storage cleared, toast "Received 18 items. 2 still to come." or "Order fully received.", `router.push` to the order. **Lines:** stacked cards on a phone and an upright iPad, a grid with column headers (Product · Ordered · Received · To come · Receive now · Unit cost · Location) once the card is 56rem wide (container query); each line a `role="group"` named by its product. Receive now: `NumberInput` quantity with steppers clamped 0..outstanding, defaulting to the outstanding quantity; more typed shows "Only 2 still to come. Raise the ordered quantity on the order first." (D65) and blocks the commit. Actual unit cost: money, 0 allowed, prefilled with the PO cost, hint "Ordered at $12.00" and a neutral "Differs" badge. Location: a native select (locations are few) following the form-level "Receive into" (default: Phase 4's `defaultLocation()`, or the last one chosen on this device, localStorage `bicii:receive-into`). Lines at 0 are dimmed and not sent; "All to come" and "Clear all". **Duplicate delivery note (D65):** a reference matching one of this PO's receipts (trimmed, case-insensitive) shows "DN-5531 was already recorded at 10:42 am by Asha Admin (18 items)" with a "This is a different delivery" checkbox; the commit stays disabled until it is ticked. **Shop-time date:** a `datetime-local` showing now (shop time, `toShopLocal`); `receivedAt` is sent only when changed (`fromShopLocal(...).toISOString()`), else the server uses now(); min = max(now − 30 days, submitted_at), max = now (D64); the server stays authoritative. **Footer:** sticky above the tab bar and home indicator, ONE row at every width (the summary takes what the button leaves): "N items on M lines", a value preview (lib/money; never authoritative) and "Receive N items" (the explicit commit, no confirm step, SPEC §22; md on a phone, lg from sm). A page with a sticky footer (`data-sticky-footer`, here and on Reorder) gets a root `scroll-padding-bottom` of the footer plus the tab bar (globals.css, `html:has(...)`), so a focused field scrolls clear of them (WCAG 2.4.11). A received or cancelled PO shows the closed state instead ("This order is fully received. Extra or late units go on a new order." with "Start a new order for this supplier", the preset `PurchaseOrderSheet`; or "This order was cancelled."), both linking back. |
 | `ReorderList` (`reorder-list.tsx`, on `/purchasing/reorder`) | Step 4 (D66; manage_purchasing, real 403; `PurchasingNav` shows Reorder to manage_purchasing holders; Reorder links also on the Inventory "Low stock" filter and Today's low-stock tile). `SupplierPicker` at the top, required to create, preset from `?supplier=` (choosing one replaces the URL, and the list is remounted keyed by supplier). "Below reorder point" from `reorder_suggestions` (shop-owned products only; a consigned product below its reorder point never appears, D62): each row a 44px `Checkbox` row with the name, P- id, SKU and the supplier's SKU when linked; "On hand 3 / reorder at 10", "On order 2", "Suggested 15" or "Covered by open orders"; badges "Preferred" / "Preferred supplier: …" and "In draft PO-…"; for cost-visible staff the draft's default cost and where it comes from. Rows linked to the chosen supplier with a suggestion above 0 start ticked. Sticky footer "Create draft order (N products)" (full width and allowed to wrap on a phone, so the page never scrolls sideways): `create_purchase_order_from_low_stock` with an id made when the list mounts (a double tap opens the same draft), then the draft, where quantities and costs are edited before Submit. Empty: "Nothing is below its reorder point." with "Shop-owned counted products at or below their reorder point appear here. Consigned stock is never reordered." The Today and Inventory Reorder links follow the general low-stock count, so with only consigned products low they lead to this empty list. |
+
+### Reports
+
+Phase 9 (SPEC §19.2, §21, §22; PLAN D30, D100–D105;
+[ADR-022](decisions/ADR-022-reporting.md)). `/reports` and `/reports/lines`,
+components in `src/components/domain/reports/` (`report-controls.tsx`
+client, `report-sections.tsx` server), reads in
+`src/lib/domain/period-reports.ts` over the step 1 RPCs, the vocabulary,
+period model and URL state in `src/lib/period-reports.ts`, the CSV export
+table in `src/lib/report-exports.ts`.
+
+- **Period and basis live in the URL** (`period, date, from, to, basis,
+  by`, and the cursors `after_total, after_key` on `/reports`, `after_at,
+  after_id` on `/reports/lines`). `ReportControls`, sticky under the app
+  header: the Period segmented control (Day, Week, Month, Custom), a
+  stepper ("Previous week" / "Next week", 44 px; Next is disabled when the
+  next period would start after today), the range as a button (a native
+  date picker for day, week and month; the Custom sheet for a range) and a
+  ghost Today when the period does not contain today. `[` and `]` step
+  the period when focus is not in a text field. The Custom sheet checks
+  the range with the database's own messages (`report_range_invalid`,
+  `report_range_too_long`) and keeps the values on an error. Weeks are ISO
+  (Monday–Sunday), months calendar months, days shop days. Every change is
+  `router.replace` in a transition (scroll and focus kept, a spinner on
+  the control), like `SearchField`. `BasisControl` (Sale date, Check-in,
+  Completed, Collected, D100) shows the basis's description under it and
+  changes only `basis`; changing it keeps the period and `by`.
+- **Tiles and cost gating.** The figures are `dl/dt/dd` tiles (Today's
+  `StatTile` and `MoneyTile`), two columns on a phone and six across at
+  `lg`: Gross sales and "Jobs · sales · lines" always; Direct costs,
+  Yield (danger and the word "Loss" when negative), Cult Commons ("Sum of
+  30% of each line's positive yield") and BICII after Cult Commons with
+  View costs only. A withheld figure (NULL from the database, D30) is
+  hidden, never shown as 0; without View costs one line says so. On the
+  sale basis a second row adds consignment sales and, with View costs,
+  new consignor liability, settlements paid and received from suppliers;
+  refunds are their own line, "Refunds recorded: $x (n) — not deducted
+  from the figures above" (D102). Lines in another currency are a warning
+  linking to `/reports/exceptions` (D104). Without View financial reports
+  the financial part is one sentence and there is no basis control.
+- **Buckets.** Not for a single day: one row per day, ISO week or month
+  (`autoGrain`: days up to 31, weeks up to 184, else months), partial
+  buckets marked, with a thin `aria-hidden` bar whose width is the
+  bucket's gross over the largest gross (two database strings divided
+  with `toDecimal` for presentation only; the value is in text).
+- **Breakdown rows versus the table.** A link strip of the dimensions
+  (`aria-current` on the chosen one; it changes only `by`). Phones get
+  `RowList` rows (label, detail, gross on the right; with View costs
+  "Yield $x · CC $y", a loss in danger-deep); from `md` a dense table
+  (caption, `th scope`, sticky header, tabular numbers; Qty for products;
+  Cost, Yield, Cult Commons and After CC with View costs) scrolling inside
+  its own box. 25 groups a page, "Showing the top 25" and "Show more"
+  with the keyset cursor. A job or sale group opens its page; every other
+  group opens `/reports/lines`. An empty period says "Nothing recorded for
+  this period on the <basis> basis." and, on Sale date and Completed,
+  "Jobs not completed yet only show on the Check-in basis."
+- **Now versus the period.** "Stock at cost now" (D105) is a figure for
+  this moment whatever period is chosen, and says so: quantity on hand and
+  units per ownership, shop-owned items without a cost ("n items have no
+  cost and are not valued"), and with View costs the shop-owned value;
+  consigned and customer-owned stock is counted, never valued. Activity
+  (everyone) counts each job on its own date (D31), appointments by the
+  day they were booked for (D41), and lists jobs by lead mechanic (D103;
+  inactive staff marked, lead-less jobs "Unassigned").
+- **Export links** are plain `<a target="_blank" rel="noopener">` with an
+  `aria-label` naming the table ("Export CSV: breakdown by Job / sale"),
+  never `next/link`, whose prefetch would run the export. `_blank` because
+  in the iOS standalone PWA a download in the app's own window replaces
+  the app with the file; a new window opens Safari's viewer, with Share
+  and Save to Files (SPEC §22, ADR-001 A7).
+- **No loading.tsx under `/reports`** ([Loading](#loading)):
+  `requireStaff()` / `requireStaff('view_financial_reports')` runs before
+  anything streams, then each section streams in its own `<Suspense>`
+  with a `SectionSkeleton`; a failed section says so in place
+  (`SectionLoader`). `/reports/lines` reads its header group before
+  streaming, so an unknown key is a real not-found.
+- **Step 4 placeholders.** `/reports/exceptions` and
+  `/reports/reconciliation` are `ComingSoon` ("Phase 9 step 4") behind
+  `requireStaff()`, so the links at the bottom of `/reports` never 404.

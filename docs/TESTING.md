@@ -686,6 +686,25 @@ review, on `feat/staff-roles` in the second worktree, database
   page exists). `segmented-control.test.tsx`: `value={null}` checks
   nothing, submits nothing and keeps one Tab stop on the first enabled
   segment.
+- Period reports (Phase 9 step 2; D100–D105): `period-reports.test.ts`
+  checks the vocabulary built from the generated enums and the cost-gated
+  columns (D30); ISO Monday–Sunday weeks (a Sunday anchor included),
+  month ends (29 February 2028), year boundaries, `shiftPeriod` by the
+  first of the month (31 January → 1 February), `shiftRange`, the
+  `autoGrain` thresholds (1 / 31 / 32 / 184 / 185 days), the range and
+  bucket labels, `parseReportParams` defaults and fallbacks for every
+  invalid value, custom ranges refused with `BUSINESS_ERRORS`'
+  `report_range_invalid` / `report_range_too_long` (731 days pass, 732
+  do not), a today taken at 23:30 UTC being the next Singapore day,
+  `reportHref` keeping parameters but dropping cursors, and the breakdown
+  row links. `csv.test.ts`: BOM, CRLF, RFC 4180 quoting, nulls as empty
+  fields, the formula-injection quote on text cells only (a negative
+  money cell stays `-50.00`), shop-local datetimes, unicode names.
+  `report-exports.test.ts`: the export kind table (every financial kind
+  needs View financial reports, `mechanics` any staff, `manage_purchasing`
+  alone never opens a financial export, D60), cost-gated columns dropped
+  without View costs, the TOTAL row written from the summary, the file
+  name and link.
 
 ### Database (SPEC §27.2 and §23)
 
@@ -804,6 +823,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Snapshots, restatement, refunds, currency, mechanic (Phase 9; SPEC §23; D21, D101–D104) | `period-reports.test.ts`: new catalogue prices and costs and a 50% Cult Commons rate leave March 2025 unchanged, archived services, products and staff appear by name; reopening job B, voiding its loss line and completing it on 11 March moves it (200.00 / 0.00 / 200.00 / 60.00); a manager's refund counts on its recording day in `refunds_total` / `refund_count` and changes no gross, cost, yield or Cult Commons (restocked line kept), NULL on other bases; a USD line is excluded and counted in `excluded_foreign_line_count`; the by-mechanic breakdown and `report_activity_by_mechanic` credit the lead, 'unassigned' and 'not_workshop'; `report_activity` for the week |
 | Purchases and stock value (Phase 9; D105, D60) | `period-reports.test.ts`: a receipt today adds 1 receipt, 4 units and 30.00 purchases (deltas); `report_stock_value` adds 50.00 for +4 at 12.50, counts a NULL-cost product as uncosted and does not value it, values a 0.00 cost at 0, ignores a location below zero, counts a consigned unit and never values it |
 | Report arguments and access (Phase 9; D30, D91, D92) | `period-reports.test.ts`: reversed or NULL bounds `report_range_invalid`, 732 days `report_range_too_long` (731 pass) on all six ranged RPCs; bad keys, keys of another dimension and half or conflicting cursors `report_key_invalid`; a mechanic with only `view_financial_reports` as an exception (granted by the admin) gets gross, counts, refunds and consignment counts with every cost column NULL, full figures with `view_costs` added, as do a manager and the admin; mechanic1 (view_costs only) and mechanic2 get 42501 from the financial RPCs and may read activity; a customer gets 42501 from all seven; anon has no EXECUTE; no report RPC returns a float; each period-report column leads a valid index |
+| The app's report reads and export pagers (Phase 9 step 2; D30, D100) | `period-report-exports.stack.test.ts` (through PostgREST on the devstack, as the app calls it): walking `report_breakdown` two groups at a time with the cursor passed back as received visits every group once, in one page's order (job, product and mechanic); the breakdown export's groups add up to the summary's `line_count` and end with the summary's own TOTAL row; the lines export of the period and of J-000013 number their counts, newest first; mechanic1 (View costs only) and mechanic2 get 42501 from the summary; the by-mechanic rows are for any staff, the lead-less one "Unassigned" |
 
 ### End-to-end (SPEC §27.3)
 
@@ -915,6 +935,31 @@ disabled inside that one transaction (`sqlTransaction` in
 access", "You can't open this") and none of their data. The HTTP status
 is not asserted there: a page whose shell has started streaming keeps
 200 (Next's `forbidden()` docs).
+
+Period reports spec (`reports.spec.ts`, Phase 9 step 2, D30,
+D100–D105; read-only, on the seeded Phase 5 history counted from the seed's
+anchor with `anchorDay(n)`, asserting J-000013's membership, never
+emptiness or totals): **an admin** opens Reports from More (phone) or the
+rail (iPad) on Week and Sale date with a Gross sales amount and a Yield
+tile; on `?period=day&date=anchorDay(4)` steps Previous day and Next day
+once each, and the page has no horizontal scroll; J-000013 is in the Job /
+sale breakdown only under Check-in on anchorDay(4), under Completed and
+Sale date on anchorDay(3) and under Collected on anchorDay(2), each basis
+change keeping `period` and `by` in the URL; the Custom sheet refuses a
+reversed range in place (values kept), then 2020-01-01 to 2020-01-07 on
+Completed shows both empty-state sentences. **The drill-down**: the
+J-000013 row opens `/jobs/<id>`; Product then the wheelset row opens
+`/reports/lines` with a J-000013 line and a back link keeping the basis.
+**The export**: the breakdown's Export CSV link has `target=_blank` and
+`rel=noopener`; `page.request.get` returns 200, `text/csv`,
+`attachment; filename="bicii-breakdown-completion-<day>_<day>.csv"` and
+`no-store`; the body starts with the BOM, its header includes `cost`, and
+it has the J-000013 row and a TOTAL row. **A manager** sees Yield and Cult
+Commons (the role implies View costs, D91). **mechanic2** sees Activity
+and the permission sentence, no Gross sales and no basis control; the
+breakdown export answers 403 "Forbidden", `/reports/lines` the 403 screen
+with a 403 status (no `loading.tsx` above it), and `kind=mechanics` a
+200 CSV.
 
 Staff roles spec (`roles.spec.ts`, D90-D94; every record it creates
 carries `tagFor(testInfo)`, seeded records are only read): **a manager**
