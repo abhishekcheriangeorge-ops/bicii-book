@@ -33,13 +33,23 @@ import {
   updateUnitSchema,
   writeOffUnitSchema,
 } from "@/lib/inventory-forms";
+import {
+  describeRun,
+  productSyncStatus,
+  requestProductSync,
+  setPublishOnline,
+} from "@/lib/domain/shopify";
+import { defaultDeps } from "@/lib/integrations/shopify/deps";
+import { runJobById } from "@/lib/integrations/shopify/queue";
+import { productIdSchema, publishOnlineSchema } from "@/lib/shopify-forms";
 
 /**
  * Inventory actions (SPEC §11, §12, §22, §23; src/lib/domain/inventory.ts).
  * Product and unit details and transfers need manage_inventory; stock
  * adjustments and write-offs need adjust_stock; entering a cost needs
  * view_costs as well (SPEC §4.2). The RPCs, RLS and triggers check every
- * one again; these validate the input and refresh the page.
+ * one again; these validate the input and refresh the page. Phase 10 adds
+ * Publish online and Sync now (manage_inventory) at the end.
  */
 
 type Staff = Parameters<typeof hasPermission>[0];
@@ -261,4 +271,44 @@ export const searchShopBikes = staffAction(
   searchSchema,
   { name: "inventory.search_shop_bikes" },
   async ({ q }, { supabase }) => (q ? findShopBikes(supabase, q) : []),
+);
+
+/**
+ * Publish online on or off (Phase 10; D84, D86; manage_inventory). When the
+ * RPC queued a sync it returns that job's id, and the action runs exactly
+ * that job (runJobById with the service-role deps): staff without admin
+ * never read the queue. Returns the status after the run, so the card's
+ * toast can say what happened.
+ */
+export const setPublishOnlineAction = staffAction(
+  publishOnlineSchema,
+  { name: "shopify.set_publish_online", permission: "manage_inventory" },
+  async ({ productId, publish }, { supabase, correlationId }) => {
+    const result = await setPublishOnline(supabase, productId, publish);
+    if (result.jobId) await runJobById(result.jobId, defaultDeps(correlationId));
+    const after = await productSyncStatus(supabase, productId);
+    refresh();
+    return {
+      publishOnline: result.publishOnline,
+      syncStatus: after.syncStatus,
+      message: after.syncStatus === "error" ? after.lastError : null,
+    };
+  },
+);
+
+/** Sync now (manage_inventory): queue a full push and run that job (D86, D87). */
+export const syncNowAction = staffAction(
+  productIdSchema,
+  { name: "shopify.sync_now", permission: "manage_inventory" },
+  async ({ productId }, { supabase, correlationId }) => {
+    const jobId = await requestProductSync(supabase, productId);
+    const outcome = await runJobById(jobId, defaultDeps(correlationId));
+    const report = await describeRun(
+      supabase,
+      { kind: "product_sync", productId, eventId: null },
+      outcome,
+    );
+    refresh();
+    return report;
+  },
 );

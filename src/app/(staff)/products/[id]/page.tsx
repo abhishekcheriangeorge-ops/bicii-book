@@ -13,6 +13,7 @@ import { EditProductButton } from "@/components/domain/product-sheet";
 import { PUBLIC_PREVIEW_ID } from "@/components/domain/public-preview";
 import { PublicationControls } from "@/components/domain/publication-card";
 import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
+import { OnlineCard } from "@/components/domain/shopify/online-card";
 import { ShortId } from "@/components/domain/short-id";
 import { SplitToUniqueButton } from "@/components/domain/split-to-unique-sheet";
 import { StockBadge } from "@/components/domain/stock-badge";
@@ -29,6 +30,8 @@ import { CONSIGNED_STOCK_NOTE, consignmentStatusPill } from "@/lib/consignment";
 import { consignmentsForProduct } from "@/lib/domain/consignment";
 import { getProduct, listLocations, listProductCategories } from "@/lib/domain/inventory";
 import { getLabelContext, resolvePrintPreset } from "@/lib/domain/labels";
+import { getProductOnline } from "@/lib/domain/shopify";
+import { shopifyConnection } from "@/lib/integrations/shopify/client";
 import {
   publicationLabel,
   publicationTone,
@@ -40,6 +43,7 @@ import { describeProductEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
 import { parsePrintParams } from "@/lib/printing/print-sheet";
 import { qrUrl } from "@/lib/qr";
+import { publishBlockedReason, relativeAgo } from "@/lib/shopify";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -65,6 +69,9 @@ const plain = (n: number) => signedQuantity(n).replace(/^\+/, "");
  * Phase 8: Print label (any staff) in the header of a counted product and
  * the Labels card (D56–D59); a unique product's labels are its units'
  * (D57). `?print=1&qty=N&reprint={job}` opens the print sheet preset.
+ * Phase 10: the "Online (Shopify)" card (every staff member sees the sync
+ * status; manage_inventory switches Publish online and runs Sync now;
+ * D84, D86).
  */
 export default async function ProductPage({ params, searchParams }: PageProps<"/products/[id]">) {
   const staff = await requireStaff();
@@ -83,13 +90,14 @@ export default async function ProductPage({ params, searchParams }: PageProps<"/
   // D50: consigned stock moves only through intake, sale, restock, a job,
   // return to the consignor and transfers.
   const consigned = product.ownershipType === "consignment";
-  const [qr, consignments, labels, preset] = await Promise.all([
+  const [qr, consignments, labels, preset, online] = await Promise.all([
     qrUrl(product.shortId),
     consigned ? consignmentsForProduct(supabase, product.id) : Promise.resolve([]),
     getLabelContext(supabase, { kind: "product", entityId: product.id }),
     searchParams.then((sp) =>
       resolvePrintPreset(supabase, "product", product.id, parsePrintParams(sp)),
     ),
+    getProductOnline(supabase, product.id),
   ]);
 
   const archived = product.archivedAt !== null;
@@ -393,6 +401,24 @@ export default async function ProductPage({ params, searchParams }: PageProps<"/
           canManage={manage}
         />
       </Card>
+
+      <OnlineCard
+        productId={product.id}
+        online={online}
+        syncedAgo={online.lastPushedAt ? relativeAgo(online.lastPushedAt) : null}
+        blockedReason={publishBlockedReason({
+          canManage: manage,
+          publishOnline: online.publishOnline,
+          publicationStatus: product.publicationStatus,
+          ownershipType: product.ownershipType,
+          archived,
+          // A unique product's online price is its oldest unit's (D81): the
+          // database decides; a counted one needs its selling price.
+          hasPrice: !counted || product.salePrice !== null,
+        })}
+        canManage={manage}
+        fakeMode={shopifyConnection().mode === "fake"}
+      />
 
       <Card title="Photos">
         <PhotoGrid
