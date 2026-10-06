@@ -8,7 +8,13 @@ import {
   printStatusLabel,
   printStatusTone,
 } from "@/lib/printing/job";
-import { pdfPath, printViewPath, recordPath, reprintPath } from "@/lib/printing/links";
+import {
+  pdfPath,
+  printLabelsPath,
+  printViewPath,
+  recordPath,
+  reprintPath,
+} from "@/lib/printing/links";
 
 import { PRINT_STATUSES, PRINT_TRANSITIONS } from "../../fixtures/print-transitions";
 
@@ -76,6 +82,7 @@ describe("links", () => {
     expect(reprintPath({ id, kind: "product", entityId: entity, quantity: 10 })).toBe(
       `/products/${entity}?print=1&qty=10&reprint=${id}`,
     );
+    expect(printLabelsPath("product", entity, 18)).toBe(`/products/${entity}?print=1&qty=18`);
     expect(printViewPath(id)).toBe(`/print/labels/${id}`);
     expect(pdfPath(id)).toBe(`/api/labels/${id}/pdf`);
   });

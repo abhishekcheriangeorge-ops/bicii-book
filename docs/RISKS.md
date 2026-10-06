@@ -248,26 +248,36 @@ URLs, or customer data in this file.
   purchasing (#9), staff email sign-in (#10) and the staff roles (#13)
   are merged into `main` (`a1aebf6` on 2026-10-06). Labels (Phase 8,
   `feat/p8-labels`) and Shopify (Phase 10, `feat/p10-shopify`, stacked on
-  labels) are not: `origin/main` is merged into `feat/p10-shopify` (a merge
-  commit, no rebase; local only until pushed) with every conflict resolved
-  keeping both sides: the seed runs Phase 7's part after Phase 6's and
-  before Phase 8's and Phase 10's (Phase 7 creates no products, so the
-  Phase 10 short IDs P-000027 … P-000033 are unchanged); the labels risks
-  that collided with purchasing's R-030–R-032 became R-075–R-077; the
-  owner questions of labels and Shopify became rows 21–25 after main's
-  15–20; the service role's allow-list gained `note_sign_in_attempt`;
-  and the labels E2E's signed-in customer gets its session through the
-  API, because the login form now signs non-staff out (D70).
-- Evidence and confidence: high; `git merge-base` before the merge
-  (c791d4b), the merge commit's parents (7fb9c1a and a1aebf6); the gates on
-  the merged tree are in [NOW.md](../NOW.md).
+  labels) are not. Each merged `origin/main` on its own (merge commits, no
+  rebase), and `feat/p8-labels` (with its "Print N labels" follow-up) is
+  then merged into `feat/p10-shopify` (2026-10-06; local only until
+  pushed), so `feat/p10-shopify` holds main, labels and Shopify. Every
+  conflict kept both sides: the seed runs Phase 7's part after Phase 6's
+  and before Phase 8's print jobs and Phase 10's Shopify part (Phase 7
+  creates no products, so the Phase 10 short IDs P-000027 … P-000033 are
+  unchanged); the labels risks that collided with purchasing's
+  R-030–R-032 are R-075–R-077; the owner questions of labels and Shopify
+  are rows 21–25 after main's 15–20; the API-surface allow-list holds the
+  label, Shopify and purchasing grants; the service role's allow-list
+  gained `note_sign_in_attempt`; and the labels E2E's signed-in customer
+  gets its session through the API, because the login form now signs
+  non-staff out (D70). No function, view, policy, grant, trigger or type
+  is defined both by a labels or Shopify migration and by a purchasing,
+  sign-in or roles migration ([DATA-MODEL](DATA-MODEL.md#authority-applied-state-and-implementation-status)
+  "Authority"), so no reconciling migration was needed for the merge.
+  Reporting (Phase 9) is on its own branch.
+- Evidence and confidence: high; `git merge-base --all` before the merge
+  (a1aebf6 and 3f09d22), the merge commit's parents; the gates on the
+  merged tree are in [NOW.md](../NOW.md).
 - Workaround or containment: each integration reruns every gate on the
   merged tree.
 - Next action: push `feat/p8-labels` and `feat/p10-shopify` (the latter
-  now contains labels and main), open the Shopify PR against `main` (or
-  labels first, then Shopify), let CI and the `e2e` label run, and merge.
+  contains labels and main), open the labels PR against `main` and then
+  the Shopify PR (or the Shopify PR alone, which contains labels), let CI
+  and the `e2e` label run, and merge.
 - Revisit trigger: the labels or Shopify PR merges.
-- Last checked: 2026-10-06 (the merge of `main` into `feat/p10-shopify`).
+- Last checked: 2026-10-06 (the merge of `feat/p8-labels` into
+  `feat/p10-shopify`).
 
 ## R-010 — E2E is not a required check, and branch protection is unverified
 
@@ -790,33 +800,34 @@ URLs, or customer data in this file.
 - Workaround or containment: none needed.
 - Next action: none; each phase uses only its own range.
 - Revisit trigger: a phase exhausts its range.
-- Last checked: 2026-10-06 (the merge of `main` into `feat/p10-shopify`).
+- Last checked: 2026-10-06 (the merge of `feat/p8-labels` into
+  `feat/p10-shopify`).
 
 ## R-029 — The purchase receive screen has no "Print N labels" shortcut yet
 
 - Category: compromise (integration deferred).
-- Status and owner: open; build agent (a follow-up after the labels and
-  Shopify pull request).
+- Status and owner: resolved at the merge of `main` into `feat/p8-labels`
+  (2026-10-06); build agent. The heading is kept so links stay valid.
 - Trigger: staff receive a purchase order and want labels for what came in.
-- Impact: Phase 8 built labels where purchasing (Phase 7) did not exist,
-  so the receive screen has no shortcut to print one label per received
-  unit, or N for a quantity line. Purchasing is now on this branch (the
-  merge of `main` into `feat/p10-shopify`, 2026-10-06), but the merge
-  changed no screen: staff open the product from the order's line and
-  print from its Labels card instead (one more step). Split-off units
-  (Phase 4) and consignment intake (Phase 6) already land on, or link to,
-  the unit page.
-- Evidence and confidence: high; `src/app/(staff)/purchasing/receive/[id]/`
-  has no print control; journey 3's label step prints from the product
-  page after an opening stock count (`tests/e2e/inventory.spec.ts`), and
-  journey 3's receiving step (`tests/e2e/purchasing.spec.ts`) prints
-  nothing.
-- Workaround or containment: print from the product or unit page.
-- Next action: after the labels and Shopify pull request merges, add the
-  shortcut to the receive screen's success state, calling
-  `create_print_job` per received line (quantity = received quantity, 1–500
-  per D56), with an E2E step in journey 3.
-- Revisit trigger: the labels and Shopify pull request merges.
+- Impact: Phase 8 built labels where purchasing (Phase 7) did not exist.
+  Now that both are on this branch, receiving returns to the order, and
+  every line of the order's **Receipts** has "Print N labels" (N = the
+  quantity received): the product page with its print sheet open at that
+  count (`printLabelsPath`, the `?print=1&qty=N` deep link the record pages
+  already read). A purchase line is always a counted product (D62), so the
+  label is the product's; above 500 the sheet prints 500 and says how many
+  remain (D56). Nothing is printed until staff press Print, so a receipt
+  never creates a print job by itself. The lost-response banner of the
+  receive screen ("This delivery was recorded …") links to the order, where
+  the shortcut is.
+- Evidence and confidence: high; `src/app/(staff)/purchasing/(browse)/orders/[id]/page.tsx`,
+  `src/lib/printing/links.ts` (`tests/unit/printing/job.test.ts` "links");
+  journey 3's receiving step in `tests/e2e/purchasing.spec.ts` clicks
+  "Print 18 labels" on the receipt and finds the sheet at "Print 18
+  labels".
+- Workaround or containment: none needed.
+- Next action: none.
+- Revisit trigger: receiving gains unique items (a unit per label, D57).
 - Last checked: 2026-10-06.
 
 ## R-030 — A wrong delivery cannot be reversed, only adjusted

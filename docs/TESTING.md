@@ -983,6 +983,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Print jobs are snapshots, history and RPC-only (Phase 8; SPEC §2, §23) | `labels.test.ts`: renaming and repricing the product leaves the job's content unchanged while `label_preview` shows the new values; template and printer snapshots; a replay with the same id → the same row and one row, another quantity, record or printer → `print_job_conflict`, a replay without a printer after the default moved → the original job; staff insert/update/delete → 42501; owner update of quantity or content and delete → `print_job_immutable`; archived product, unit (and a unit whose product is archived) and bike keep their jobs readable while new jobs, previews and reprints → `label_entity_archived`; a reprint of another record → `print_job_reprint_mismatch`. |
 | Print job status machine (Phase 8; D59) | `labels.test.ts`, table-driven from `tests/fixtures/print-transitions.ts`: `private.print_job_transition_allowed` for all 16 pairs; `set_print_job_status` from each status to each: allowed moves stamp `rendered_at` / `completed_at` and `status_changed_by` = the caller, same status is a no-op (a failed job keeps its first error), the rest `print_job_transition_invalid` (also for the owner, by the trigger); failed without, with a blank or with a 501-character error → `print_job_error_required` / `reason_too_long`. |
 | Templates and printers: staff read, admins write (Phase 8) | `labels.test.ts`: mechanic2 reads the three built-in templates and two profiles, insert → 42501, update affects 0 rows, `set_default_*` → 42501; the admin inserts and renames (trimmed, `created_by` set); `is_default` and delete → 42501; switching off a default → `*_default_required`; `set_default_*` leaves one default per kind / one printer and refuses an inactive target; inactive printer or template and a template of another kind refused by `create_print_job`; no default for a kind → `label_template_missing`; kind / adapter changes → `*_immutable`; `bluetooth` and `network_raw` → 23514 `printer_profiles_adapter_available`; config v1; width / height checks; `label_mm` rejects NaN. Layout v1 from `tests/fixtures/label-layouts.ts` (shared with step 2's zod schema): every case through `private.label_layout_problem`, and every invalid one through an admin insert → `label_layout_invalid` with the sentence as DETAIL. |
+| A manager prints labels but is not a labels admin (Phase 8 under the staff roles; D91) | `labels.test.ts` "a manager prints labels but writes no template, printer or QR address (D91)": the seeded manager creates a print job (`requested_by` = the manager) and marks it printed, reads the three templates, and gets 42501 inserting a template or a printer, 0 rows renaming a template, 42501 from both `set_default_*` RPCs and from `update_shop_settings(public_site_url)`; the merge of `main` into `feat/p8-labels` added it |
 | Customers and anonymous visitors read nothing about labels (Phase 8; SPEC §4.2) | `labels.test.ts`: a linked customer reads 0 rows from `label_templates`, `printer_profiles`, `print_jobs` and gets 42501 from the five label RPCs; anon has no privilege on the tables and cannot execute the functions (also `meta.test.ts`'s allow-lists). |
 | Labels under concurrency (Phase 8; SPEC §25) | `labels-concurrency.test.ts` (committed, real connections; each case proves the second call waits on a lock): the same print job from two devices → one job, the second returns the first's row; another quantity → `print_job_conflict`, one row; two admins making different templates (and printers) default → exactly one default, the second's target, no 23505; printed and failed at once → one wins, the other `print_job_transition_invalid`; a print naming no printer (no template) while an admin moves the default waits on `set_default_*`'s row locks and then uses the NEW default (adapter `pdf`; the new template's snapshot), which only `create_print_job`'s two-attempt `for share` read makes pass (checked by cutting the loop to one attempt: both cases fail). |
 | The labels domain module against the devstack (Phase 8 step 2) | `labels-domain.stack.test.ts` (skips without the devstack unless `BICII_REQUIRE_STACK=1`): `getPrintJob` maps the seeded queued job from its snapshots (payload `${SHOP.publicSiteUrl}/q/P-000011`, PDF printer, 58 × 40 template, requester), keeps the failed job's reason and the reprint link; `listPrintJobs` filters To confirm, Failed, a short ID (any case) and a name, and pages by `(created_at, id)` without gaps; `listJobsFor` returns two jobs the test creates (and confirms) on `BIKE.tanTarmac` newest first, and the seeded unit's two jobs in order within a limit of 50: nothing assumes the seeded jobs are a record's newest, so jobs that E2E runs leave in `bicii_dev` cannot turn it red (they did, until the Phase 8 review); `getLabelContext` offers the counted product (default template and printer first, last printed price), and returns `unique_product`, `archived` and, for an id that does not exist, `not_found` without throwing, and `publication: null` for a bike; `getReprintPreset` only for the same record (with the reprinted job's price); `resolvePrintPreset` turns `?print=1&qty=…&reprint=…` into the sheet's preset (null without `print=1`; another record's job opens the sheet without the link); one job created replay-safely as mechanic2, marked rendered then printed, and refused failed afterwards. |
@@ -1492,7 +1493,9 @@ product (reorder point 20, cost 12.00) and a tagged supplier; an order of
 actual cost of $12.50 ("Differs"), the default location, the commit
 button DOUBLE-CLICKED; the order shows the toast "Received 18 items. 2
 still to come.", Partially received and "18 of 20 received · 2 to come"
-with one receipt; the product shows 18 in stock before and after a reload,
+with one receipt, whose line's "Print 18 labels" opens the product's
+print sheet at 18 (closed without printing; R-029); the product shows 18
+in stock before and after a reload,
 exactly one `Received +18` movement, the supplier with "Last cost $12.50"
 and "On order: 2"; one part used on a job → 17; `/purchasing/reorder` for
 the supplier lists it ticked with on order 2 and "Suggested 21", and
@@ -1510,18 +1513,19 @@ state; mechanic2 gets a real 403 on `/purchasing/receive/<PO-000002>` and
 `/purchasing/reorder` and sees no Receive or Reorder link; the admin sees
 Receive on an open PO, "Submit the order before receiving" on a draft,
 and Reorder on the Inventory low-stock filter. Phase 4's journey-3 spec
-still seeds its stock by an opening count; Phase 8 adds the labels step.
+still seeds its stock by an opening count and prints its labels from the
+product page.
 
-E2E residue and Today's low-stock list (the merge of `main` into
-`feat/p10-shopify`): `bicii_dev` is reset once per run, and Today lists
+E2E residue and Today's low-stock list (found merging `main` into labels,
+first on `feat/p10-shopify`): `bicii_dev` is reset once per run, and Today lists
 only the first five low-stock products by shortfall, where
 `today.spec.ts` expects the seeded hydraulic hose, cable kit and sealant.
 `createProduct` (`tests/e2e/helpers.ts`) therefore sets a reorder point
 only when a test passes one: the purchasing spec's two products need
 theirs (one per project, shortfall 3); the labels spec's product no
 longer has one. With both, the tablet run's Today list had seven
-candidates and dropped the sealant (the first gate run on the merged tree:
-199 passed, 1 failed).
+candidates and dropped the sealant (the first gate run on that merged
+tree: 199 passed, 1 failed).
 
 Phase 8 step 2 (`print-view.spec.ts`, phone and iPad, READ-ONLY on the
 seeded print jobs: it never clicks Print, Open PDF or a confirmation).

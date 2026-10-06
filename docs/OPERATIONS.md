@@ -418,9 +418,10 @@ cleanup.
   machine; it has no effect anywhere else.
 - **Paused state:** nothing hosted runs, so nothing costs money for the
   Admin itself; GitHub plan and Actions billing were not checked (unknown).
-  The stack and Phase 6 are merged into `main`; purchasing (PR #9) and
-  email sign-in (PR #10, which contains purchasing) are integrated but
-  unmerged, and labels and Shopify are on their own branches
+  The stack, Phase 6, purchasing (PR #9), email sign-in (PR #10) and the
+  staff roles (PR #13) are merged into `main`; labels (`feat/p8-labels`)
+  holds `main` at `a1aebf6` and waits for its PR; Shopify and reporting are
+  on their own branches
   ([R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 
 ## Responsibility boundaries

@@ -58,6 +58,7 @@ import { customerClaims, linkCustomerLogin } from "./customer-fixtures";
 import { actAs, connect, inTransaction, isolatedDatabase, scalar } from "./harness";
 import {
   ADMIN,
+  MANAGER,
   MECHANIC2,
   makeProduct,
   makeUniqueWithUnit,
@@ -974,6 +975,42 @@ describe.skipIf(!isolatedDatabase())("templates and printer profiles", () => {
       await failsWith(
         tx,
         () => tx.query("delete from public.label_templates where id = $1", [small.id]),
+        denied,
+      );
+    });
+  });
+
+  // Staff roles (D90, D91): a manager holds every permission except
+  // manage_staff, but is not an admin. Printing needs only an active staff
+  // member; templates, printers and the QR address stay role admin
+  // (private.require_admin / private.is_admin, which the roles migrations
+  // left as role = 'admin').
+  it("a manager prints labels but writes no template, printer or QR address (D91)", async () => {
+    await inTx(async (tx) => {
+      await actAs(tx, MANAGER);
+      const job = await createPrintJob(tx, {
+        kind: "product",
+        entityId: PRODUCT.barTape,
+        quantity: 3,
+      });
+      expect(job.requested_by).toBe(STAFF.manager);
+      expect((await setJobStatus(tx, job.id, "printed")).status).toBe("printed");
+      expect(await scalar<number>(tx, "select count(*)::int from public.label_templates")).toBe(3);
+      const denied = { code: "42501" };
+      await failsWith(tx, () => insertTemplate(tx, productTemplate("Manager's template")), denied);
+      await failsWith(tx, () => insertProfile(tx, randomUUID(), "Manager's printer"), denied);
+      const t = await tx.query("update public.label_templates set name = 'Renamed' where id = $1", [
+        LABEL_TEMPLATE.product,
+      ]);
+      expect(t.rowCount).toBe(0);
+      await failsWith(tx, () => setDefaultTemplate(tx, LABEL_TEMPLATE.product), denied);
+      await failsWith(tx, () => setDefaultProfile(tx, PRINTER_PROFILE.pdf), denied);
+      await failsWith(
+        tx,
+        () =>
+          tx.query("select public.update_shop_settings(public_site_url => $1)", [
+            "https://elsewhere.example",
+          ]),
         denied,
       );
     });

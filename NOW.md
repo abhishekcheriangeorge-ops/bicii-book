@@ -1,49 +1,56 @@
 # Current state
 
-Updated: 2026-10-06, `origin/main` (a1aebf6: purchasing PR #9, staff
-email sign-in PR #10, staff roles PR #13) merged into `feat/p10-shopify`
-(labels and Shopify; a merge commit, no rebase), the labels risks
-renumbered R-075–R-077, gate green on the merged tree (below). Evidence
-checked: `git fetch`, `git status`, `git log`, `git worktree list` and
-`git merge-base` (c791d4b before the merge) at the start; local gates on
-the merged tree (below). Earlier rows: their own gates as recorded.
+Updated: 2026-10-06, `feat/p8-labels` (01cb3da: `origin/main` a1aebf6
+merged into labels, then labels' "Print N labels" on purchase receipts)
+merged into `feat/p10-shopify` (a merge commit, no rebase; Shopify had
+already merged `origin/main` at 3109818), gate on the integrated tree
+below. Evidence checked: `git fetch`, `git status`, `git log`,
+`git worktree list` and `git merge-base --all` (a1aebf6 and 3f09d22
+before the merge) at the start; local gates on the merged tree (below).
+Earlier rows: their own gates as recorded.
 
 ## Return in two minutes
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
 - Current objective: Phase 8 (labels) and Phase 10 (Shopify) are
-  complete with their review fixes, and `feat/p10-shopify` now also holds
-  everything on `origin/main` (a1aebf6): purchasing, staff email sign-in
-  and the three staff roles. The merge (the commit with this update) kept both sides of every
-  conflict: the seed runs Phase 7's part after Phase 6's and before
-  Phase 8's and Phase 10's (Phase 7 creates no products, so Phase 10's
-  P-000027 … P-000033 and S-000005 are unchanged); the labels risks
-  numbered R-030–R-032 before the ranges existed collided with
-  purchasing's and are now R-075–R-077 (AGENTS.md's RISKS ranges name
-  them); the labels and Shopify owner questions became rows 21–25 after
-  main's 15–20; the service role's allow-list (`SERVICE_ROLE_FUNCTIONS`)
-  gained `note_sign_in_attempt`; `SIGN_IN_LIMIT_MULTIPLIER` and the Shopify
-  variables share `env.ts` and the E2E env; and the labels E2E's signed-in
-  customer gets its session from the API (`sessionCookiesFor`), because
-  the login form now signs non-staff out (D70). Under the roles a manager
-  holds `manage_inventory` (Publish online, Sync now) but is not an
-  admin, so the Shopify screens and Labels and printers stay admin-only
-  (ADR-020's merge note, D86, D91). Committed locally, not pushed.
-- Next action: the orchestrator pushes `feat/p10-shopify` (it has no
-  upstream yet; it contains `feat/p8-labels` and `origin/main`) and opens
-  its PR against `main` (or the labels PR first, then this one), answering
-  the documentation-impact question of
-  [.github/pull_request_template.md](.github/pull_request_template.md)
-  (the merge changed AGENTS, PLAN, PRODUCT, USER-GUIDE, DESIGN,
-  ARCHITECTURE, DATA-MODEL, TESTING, ENGINEERING, OPERATIONS, RUNBOOK,
-  RISKS, decisions/README, ADR-014, ADR-017, ADR-020 and NOW), and runs CI
-  with the `e2e` label. The owner answers D89's OPEN points and confirms
-  D80–D88 (rows 23–25 of the
+  complete with their review fixes, and `feat/p10-shopify` holds them
+  with everything on `origin/main` (a1aebf6): purchasing, staff email
+  sign-in and the three staff roles. Main was merged into each branch on
+  its own, then `feat/p8-labels` into `feat/p10-shopify` (the merge
+  commit with this update). Every conflict kept both sides: the seed runs
+  Phase 7's part after Phase 6's and before Phase 8's print jobs and Phase
+  10's Shopify part (Phase 7 creates no products, so Phase 10's P-000027 …
+  P-000033 and S-000005 are unchanged); the labels risks numbered
+  R-030–R-032 before the ranges existed collided with purchasing's and
+  are R-075–R-077 (AGENTS.md's RISKS ranges name them); the labels and
+  Shopify owner questions are rows 21–25 after main's 15–20;
+  `tests/fixtures/api-surface.ts` holds the label, Shopify and purchasing
+  grants; the service role's allow-list (`SERVICE_ROLE_FUNCTIONS`) gained
+  `note_sign_in_attempt`; and the labels E2E's signed-in customer gets its
+  session from the API (`sessionCookiesFor`), because the login form now
+  signs non-staff out (D70). No database object is defined both by a
+  labels or Shopify migration (`20261004003800` to `20261004004100`) and
+  by a later `20261005…`/`20261006…` migration
+  ([DATA-MODEL "Authority"](docs/DATA-MODEL.md#authority-applied-state-and-implementation-status)),
+  so the label and Shopify guards follow the roles unchanged: every role
+  prints labels; a manager holds `manage_inventory` (Publish online, Sync
+  now, product-sync retries) but is not an admin, so Labels and printers
+  and the Shopify settings stay admin-only (D86, D91). Labels' follow-up
+  is here too: the purchase order's receipts offer "Print N labels" per
+  received line
+  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+  resolved). Committed locally, not pushed.
+- Next action: the orchestrator pushes `feat/p8-labels` and
+  `feat/p10-shopify` (no upstream yet; it contains `feat/p8-labels` and
+  `origin/main`) and opens the PRs against `main` (labels first, then
+  Shopify, or the Shopify PR alone), answering the documentation-impact
+  question of
+  [.github/pull_request_template.md](.github/pull_request_template.md),
+  and runs CI with the `e2e` label. The owner answers D89's OPEN points
+  and confirms D80–D88 (rows 23–25 of the
   [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions))
-  and the label defaults (row 21). After it merges, the purchase receive
-  screen gets its "Print N labels" shortcut
-  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
+  and the label defaults (row 21).
 - Before any hosted deploy of this release: configure SMTP and run the
   REQUIRED password reset in
   [RUNBOOK](docs/RUNBOOK.md#hosted-supabase-projects-staging-and-production)
@@ -106,11 +113,10 @@ the merged tree (below). Earlier rows: their own gates as recorded.
   while the job is open, and are confirmed printed or failed by staff. The
   anonymous half of SPEC §31 is proven at the database (`labels.test.ts`:
   anon and staff read identical `reporting.public_items` rows) and shown
-  to staff in "What the public sees" until Phase 11. Deferred: the
-  purchase receive screen's "Print N labels" shortcut (purchasing is
-  now on this branch; the shortcut follows the PR)
-  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet));
-  untested on a real printer and iOS
+  to staff in "What the public sees" until Phase 11. New stock from a
+  purchase order is labelled from the order's receipts ("Print N labels",
+  [R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+  resolved at the merge); untested on a real printer and iOS
   ([R-075](docs/RISKS.md#r-075--label-output-is-unverified-on-a-real-label-printer-and-on-ios));
   print success is confirmed by hand
   ([R-076](docs/RISKS.md#r-076--print-success-is-confirmed-by-hand)).
@@ -150,7 +156,9 @@ a separate, label-triggered run. All listed results are success.
 | Phase 10 review fixes (D81, D84, D86, D87) | Yes, `feat/p10-shopify` da13884 (database: one effect across webhook ids, a dismissal is final, `earlier_delivery_skipped`, Buy online only on what Shopify sells, refunds named after their order), 4b60fb9 (runner claim window inside `maxDuration`, the live adapter off in Preview without `SHOPIFY_ALLOW_PREVIEW`, best-effort runs after committed writes), 2723548 (Shopify admin-only in More and the rail, the queue sheet on the live row, the offline reason, footer buttons and focus in the link sheets), 4f8efa8 (E2E), and the docs commit with this update (RUNBOOK Preview, Hobby and rotation; PLAN §4 and D84/D87; ADR-020; R-040, R-045, R-047, R-049) | Locally on the final tree: `npm run db:reset` pass (41 migrations to `20261004004100`, seed applied; devstack restarted), `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 126 files / 1898 tests passed, `npm run build` pass, `npm run test:e2e` 160 passed, 80 per project, 0 failed, 0 flaky (15.3 min; build inside, pass), docs link check 36 files / 728 links / 0 problems | Not deployed |
 | Staff roles (D90–D94: admin, manager and mechanic; `private.role_implies`; "Extra access" exceptions; role administration; refunds for managers; seed `manager@bicii.test`; staff screens with the role picker and invites by role) | Yes, `feat/staff-roles`: 0657397, 28de036 (database), bfc5ea2, dd94665 (app model, guards, refunds, profile), ae9763b, 080a796 (staff screens, E2E), a5441dd and the evidence commit (integration review, documentation), then the review-fixes commit after b83ce42; local only, not pushed | Locally after the review fixes (one-time clean-up of implied exceptions in `20261006000200` via `private.drop_implied_exceptions()`; two-connection D92 race tests; `update_staff` `expected_role` with `staff_role_changed`; shared `REASON_MAX_LENGTH`; manager wording; `ExtraAccessBadge`; focus on Cancel; PLAN D11, R-052, R-054): `npm run db:reset` pass (`47\|20261006000300`), `npm run db:types` committed (the `expected_role` argument), `npm run check` pass, `npm run check:types` pass, `BICII_REQUIRE_STACK=1 npm test` 113 files / 1686 tests passed (unit 57 / 738, database 56 / 948; both new concurrency tests failed once by hand with the refusal trigger's lock weakened to `FOR KEY SHARE`, then the lock was restored), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.1 min, no failures, flaky or skipped), docs link check 37 files / 691 links / 0 problems. Before that, locally (database `bicii_dev_wt`) after the step 4 review fixes (a5441dd): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 113 files / 1680 tests passed (unit 57 / 737, database 56 / 943), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (16.8 min, no failures, flaky or skipped; it reset the database: 47 migrations, `47\|20261006000300`, seed applied), docs link check 37 files / 690 links / 0 problems. Earlier steps: step 1 112 / 1632 and 152 E2E; step 2 112 / 1669 and 152 E2E; step 3 113 / 1680 and 158 E2E, all passing | Not deployed |
 | Merge of `origin/main` (a1aebf6: purchasing, email sign-in, staff roles) into labels and Shopify; labels risks R-075–R-077 | Yes, `feat/p10-shopify`, the merge commit with this update (with the conflict resolutions, `sessionCookiesFor`, the service-role allow-list and every document) | Locally on the merged tree (database `bicii_dev`): `npm run db:reset` pass (`51\|20261006000300`, seed applied; devstack restarted with its mail catcher), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 146 files / 2200 tests passed (106 s, no skips), `npm run build` pass, `npm run test:e2e` 200 passed, 100 per project, 0 failed, flaky or skipped (20.3 min; build inside, pass; a first run had 1 failure, tablet `today.spec.ts` "Today shows low stock": the labels spec's and the purchasing spec's leftover low-stock products together pushed the seeded sealant off Today's five rows; `createProduct` now sets a reorder point only when asked and the labels spec sets none, TESTING), docs link check 39 files / 868 links / 0 problems | Not deployed |
-| Phase 9 reporting, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Merge of `origin/main` (a1aebf6: purchasing, email sign-in, staff roles) into labels; labels risks R-075–R-077; receipts' Print N labels (R-029); the manager labels test | Yes, `feat/p8-labels`: the merge commit (conflict resolutions, `sessionCookiesFor`, `createProduct`'s optional reorder point, the manager labels test, every document) and the follow-up commit with this update (`printLabelsPath` and the receipt link, the journey 3 step, docs) | Locally on the merged tree with the follow-up (database `bicii_dev`): `npm run db:reset` pass (`48|20261006000300`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 129 files / 1900 tests passed (unit 70 / 904, database 59 / 996; 116 s, no skips), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 190 passed, 95 per project, 0 failed, flaky or skipped (20.2 min; build inside, pass), docs link check 38 files / 0 problems | Not deployed |
+| Merge of `feat/p8-labels` (main merged into labels, and its receipts' Print N labels, R-029) into Shopify; Shopify refund jobs follow the roles (D94) | Yes, `feat/p10-shopify`: the merge commit and the follow-up commit with this update | GATE_PLACEHOLDER | Not deployed |
+| Phase 9 reporting, public-site integration, hardware adapter | No (reporting is being built on `feat/p9-reporting`) | Not built here | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -159,31 +167,27 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 - `main` on origin (a1aebf6) holds PRs #1–#11 and #13: the stack through
   appointments, the docs stack, Phase 6, purchasing, staff email sign-in
   and the staff roles. The local `main` ref is stale; use `origin/main`.
-- `feat/p10-shopify` (head: the merge commit with this update): stacked on
-  `feat/p8-labels` (3f09d22), with `origin/main` (a1aebf6) merged in on
-  2026-10-06; Phase 10 complete, committed locally, not pushed (`git for-each-ref` shows no `origin/feat/p10-shopify`): ef1a613,
-  8ea4dbd, 792ce96 (step 1), 4196a90, 8ec0fba (step 2), 92b3335, c56143b,
-  37f4c37, 27a7be8, 3f5970b (step 3), 132a1ae, 3892eeb, 3407fec, 92e4aa6
-  (step 4), da13884, 4b60fb9, 2723548, 4f8efa8 and the docs commit with
-  this update (review fixes).
-- `feat/p8-labels` (3f09d22, equal to `origin/feat/p8-labels` on
-  2026-10-06; the rest of this entry is as of Phase 8): stacked on
-  `feat/p6-consignment` (c791d4b, equal to `origin/feat/p6-consignment`
-  on 2026-10-06); Phase 8 complete and pushed by the orchestrator. Step 1:
+- `feat/p10-shopify` (head: the follow-up commit with this update, on the
+  merge of `feat/p8-labels` 01cb3da into 3109818, 2026-10-06): stacked on
+  `feat/p8-labels`, so it holds `origin/main` (a1aebf6, merged into both
+  branches), labels with their Print N labels follow-up, and Phase 10.
+  Committed locally, not pushed (`git for-each-ref` shows no
+  `origin/feat/p10-shopify`; origin holds only the auto-save
+  `wip/feat/p10-shopify`). Phase 10: ef1a613, 8ea4dbd, 792ce96 (step 1),
+  4196a90, 8ec0fba (step 2), 92b3335, c56143b, 37f4c37, 27a7be8, 3f5970b
+  (step 3), 132a1ae, 3892eeb, 3407fec, 92e4aa6 (step 4), da13884, 4b60fb9,
+  2723548, 4f8efa8, 7fb9c1a (review fixes), 3109818 (merge of `main`).
+- `feat/p8-labels` (01cb3da: the merge of `origin/main` a1aebf6 into
+  3f09d22 and the Print N labels follow-up, 2026-10-06): committed
+  locally, not pushed (`origin/feat/p8-labels` is 3f09d22, the end of
+  Phase 8 with its review fixes). Stacked on `feat/p6-consignment`
+  (c791d4b, now in `main`). Step 1:
   1294e36, 2c4f6a3, c5de022; step 2: 967b99b, cd4bbb6, 9608931; step 3:
-  41c1a5c, abe7e6c; step 4: afaf288 and 0dc6a41; review fixes: the
-  commit with this update. Origin
+  41c1a5c, abe7e6c; step 4: afaf288 and 0dc6a41; review fixes: 3f09d22.
+  Origin
   holds an older orchestrator auto-save, `wip/feat/p8-labels` (889294d,
   not reviewed).
-- `feat/p6-consignment` (pushed by the orchestrator; as of Phase 8 the
-  entry read: committed locally, not pushed): stacked on `feat/docs-stack` (34783d6 decisions D44–D53, step 1's commits, step 2's
-  2d2ba0c and 2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and d8ba313,
-  step 4's 67b1607, b65484a, 543760f, eccd687 and a8967c7, the review
-  fixes 32f19e6, and the documentation follow-up commit with this
-  update). There is no origin branch of that name;
-  origin holds an orchestrator auto-save, `wip/feat/p6-consignment`
-  (ed7d27e, a snapshot of uncommitted work, not reviewed). The
-  orchestrator pushes it and opens its PR on top of `feat/docs-stack`.
+- `feat/p6-consignment` (c791d4b): merged into `main` (PR #11).
 - Parallel track: a second worktree of this clone (`/home/user/bicii-book-wt`,
   see `git worktree list`) builds Phase 9 reporting on
   `feat/p9-reporting` with its own database `bicii_dev_wt` and ports; this

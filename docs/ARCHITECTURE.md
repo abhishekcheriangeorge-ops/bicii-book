@@ -471,8 +471,9 @@ All records: [decisions/README.md](decisions/README.md).
 - [R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6):
   the stack is merged; purchasing is integrated with `main` on its branch
   and waits for its PR; email sign-in is integrated on top of it
-  (`feat/auth-email-otp`, PR #10, merged after #9); labels and Shopify are
-  on their own branches.
+  (`feat/auth-email-otp`, PR #10, merged after #9); labels
+  (`feat/p8-labels`) holds `main` at `a1aebf6` and waits for its PR;
+  Shopify is on its own branch.
 - [R-035](RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset)
   to [R-039](RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified):
   what email sign-in leaves open (the pre-deploy password reset, Auth's

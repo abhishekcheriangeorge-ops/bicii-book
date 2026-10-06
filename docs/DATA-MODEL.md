@@ -61,18 +61,32 @@ sort after every `20261004…` file; staff email sign-in, integrated on
 `20261005006000_sign_in_throttle`, which sort after purchasing's and
 create only new objects: no function, view, policy, grant or trigger they
 define is also defined by a main-line or purchasing migration; staff
-roles, on `feat/staff-roles`, added `20261006000100_staff_role_values`,
+roles added `20261006000100_staff_role_values`,
 `20261006000200_staff_role_permissions` and
 `20261006000300_staff_role_administration`, which sort after both and
 replace, with the same signatures, `private.has_permission`,
 `public.my_staff_profile`, `public.record_sale_refund`, `create_staff`,
 `private.authorize_permission_change`, `grant_permission`,
 `set_staff_active` and `update_staff`, D90–D94. The labels and Shopify
-migrations sort before the purchasing, sign-in and roles ones and define
-no function that those also define, so the label and Shopify guards
-(`private.has_permission`, `private.is_admin`) follow the roles unchanged:
-a manager holds `manage_inventory` (Publish online, Sync now) by role,
-while `require_admin` stays role `admin` only (D91).
+migrations sort before the purchasing, sign-in and roles ones, and no
+function, view, policy, grant, trigger or type that
+`20261004003800_labels.sql` or `20261004003900` to `20261004004100`
+(Shopify) creates or replaces is created or replaced by any of them
+(checked at the merge of `main` into `feat/p8-labels`, and again at the
+merge of `feat/p8-labels` into `feat/p10-shopify`, 2026-10-06, by
+matching every `create`, `create or replace`, `drop`, `alter`, `grant` and
+`revoke` target of those four files against the `20261005…` and
+`20261006…` files): the labels migration's only change to an existing
+object is `shop_settings_public_site_url_check`, and the Shopify
+migrations' are new columns on `products`, `customers` and `sales`,
+which no later migration touches. So the label and Shopify guards
+(`private.require_staff`, `private.require_admin`, `private.is_staff`,
+`private.is_admin`, `private.has_permission`) follow the roles unchanged:
+every role prints labels, and label templates, printers and the QR
+address stay role `admin` only (D91; a manager is not an admin;
+`tests/db/labels.test.ts` proves both for a manager); a manager holds
+`manage_inventory` (Publish online, Sync now) by role, while the Shopify
+settings stay `require_admin` (D86, D91).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
