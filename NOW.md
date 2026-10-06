@@ -1,7 +1,7 @@
 # Current state
 
-Updated: 2026-10-06, Phase 10 (Shopify) step 2 of 4 complete (the
-outbound product-sync database side), on `feat/p10-shopify` (stacked on
+Updated: 2026-10-06, Phase 10 (Shopify) step 3 of 4 complete (the
+integration service layer), on `feat/p10-shopify` (stacked on
 `feat/p8-labels` at 3f09d22). Evidence checked: `git status`, `git log`, `git worktree list`
 and `git for-each-ref refs/heads refs/remotes` at the start and end of the
 step; local gates on the final tree (below). Earlier rows: their own gates
@@ -20,13 +20,19 @@ as recorded.
   fixtures, `tests/db/shopify-webhooks.test.ts`, docs) and 792ce96. Step 2
   is done: 4196a90 (`20261004004100_shopify_product_sync.sql`, the seed's
   trigger flush, types, db-errors, api-surface,
-  `tests/db/shopify-sync.test.ts`, docs, R-045, R-046) plus the commit
-  with this update. Committed locally, not pushed.
-- Next action: Phase 10 step 3, the service layer
-  (`src/lib/integrations/shopify/`: HMAC verification, the webhook route
-  calling `record_shopify_webhook`, the cron behind CRON_SECRET, and the
-  sync worker that claims a job, reads `product_sync_state`, calls
-  Shopify's Admin API and reports `record_product_sync_result`).
+  `tests/db/shopify-sync.test.ts`, docs, R-045, R-046) and 8ec0fba. Step 3
+  is done: 92b3335 (adapters, HMAC, gids, env), c56143b (desired state,
+  sync and queue runners), 37f4c37 (webhook and cron routes, `vercel.json`,
+  proxy matcher, E2E env, the live-stack test, docs, R-047–R-049), 27a7be8
+  (log fix) plus the commit with this update. Committed locally, not
+  pushed.
+- Next action: Phase 10 step 4, the screens: Publish online and the sync
+  status on the product page (running the job id `set_publish_online` /
+  `request_product_sync` return through `runJobById`), the admin queue
+  (retry, dismiss), the event inspector, variant and customer links, the
+  `/shopify` settings showing `shopifyConnection()`, and E2E journey 5
+  (a signed `orders/paid` POST to `/api/shopify/webhooks` with the
+  fixtures' secret, which `playwright.config.mts` already sets).
   `origin/feat/p8-labels` now
   equals 3f09d22 (pushed by the orchestrator); its PR answers the
   documentation-impact question (for Phase 8 see
@@ -34,6 +40,20 @@ as recorded.
   The owner answers rows 17–19 of the
   [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions)
   (D89 tax basis and Shopify POS; confirm D80–D88).
+- Phase 10 step 3 in one line: every Shopify call is in
+  `src/lib/integrations/shopify/` behind the `ShopifyAdmin` interface (the
+  GraphQL adapter pinned to 2026-10, or the in-memory fake with
+  `SHOPIFY_ADAPTER=fake`, never in production); `POST
+  /api/shopify/webhooks` checks the HMAC on the raw bytes, stores every
+  delivery (rejected ones as body-less evidence; 413/503/401/400/500/200),
+  then runs the event's job and up to 5 due jobs in `after()`; `GET
+  /api/cron/integrations` (Vercel cron every 5 minutes, bearer
+  `CRON_SECRET`) runs up to 25; `runProductSync` pushes only when the
+  desired-state hash changed, at `product_sync_state.sale_price` exactly,
+  defers while an order is in flight and once when Shopify's count moved,
+  then overwrites (D83). Nothing verified against a real store
+  ([R-047](docs/RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store);
+  RUNBOOK "Shopify: verify before go-live"). No screens yet.
 - Phase 10 step 2 in one line: the online price is
   `private.shopify_online_price` (through `private.selling_price`, so a
   consigned item sells online at its asking price; 0 is a price); staff
@@ -45,8 +65,7 @@ as recorded.
   every staff member the status (the open job to admins only); and
   `reporting.public_items.buy_online_url` is the storefront's
   `/products/<handle>` only for an available, published, synced,
-  BICII-created listing (D84; the rule Phase 11 reads). No screen, route
-  or Shopify API call yet.
+  BICII-created listing (D84; the rule Phase 11 reads).
 - Phase 10 step 1 in one line: every webhook is stored before processing
   (deduplicated on its webhook id; rejected deliveries kept as body-less
   evidence, D88); a paid order becomes one online sale through Phase 6's
@@ -106,7 +125,8 @@ a separate, label-triggered run. All listed results are success.
 | Phase 8 review fixes | Yes, `feat/p8-labels`, the commit with this update: the bike page asks for labels only after `notFound()` (an unknown bike is a 404 again) and `label_preview`'s P0002 is "unavailable" (`not_found`); the print view keeps only Back, status and Print / Open PDF sticky, the confirmation in the flow; printing from a `?print=1` deep link replaces its history entry, and `createPrintJobAction` refreshes; printers are a radio list in the sheet; "Did the label print correctly?" for one; the job page's printer name and type on separate rows; the template sheet's field errors on their fields after a change or Save; tests: a signed-in customer gets 403 from the PDF route and the print view, the default-printer and default-template races, the stack test independent of E2E residue, the unit label E2E on a unit it creates | Locally on the final tree: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 109 files / 1597 tests passed (before and right after an E2E run, on a `bicii_dev` holding its jobs), `npm run test:e2e` 150 passed, 75 on phone and 75 on tablet (13.3 min; `npm run build` inside, pass; a first run had 2 failures, the new unit label test asserting a condition the label truncates, fixed), the two new races fail with `create_print_job`'s retry cut to one attempt (migration restored), docs link check 35 files / 625 links / 0 problems | Not deployed |
 | Shopify inbound database (Phase 10 step 1: D80–D89) | Database only, `feat/p10-shopify` ef1a613 (decisions), 8ea4dbd (migrations `20261004003900`, `20261004004000`, seed, types, fixtures, tests, docs); no route, service layer or screens | Locally on the final tree: `npm run db:reset` pass (`40\|20261004004000`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check:types` pass (no diff), `npm run check` pass, `npm test` 111 files / 1666 tests passed (incl. `shopify-webhooks.test.ts` 61 tests, `meta.test.ts`, `shopify-fixtures.test.ts`), `npm run test:e2e` 152 passed on phone and tablet (16.4 min; build inside, pass; run beside the parallel track's E2E), docs link check 36 files / 666 links / 0 problems | Not deployed |
 | Shopify outbound database (Phase 10 step 2: D81, D83, D84, D86, D87) | Database only, `feat/p10-shopify` 4196a90 (migration `20261004004100_shopify_product_sync`, seed, types, fixtures, tests, docs); no service layer, route or screens | Locally on the final tree: `npm run db:reset` pass (`41\|20261004004100`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check:types` pass (no diff, after staging), `npm run check` pass, `npm test` 112 files / 1694 tests passed (incl. `shopify-sync.test.ts` 28 tests, `shopify-webhooks.test.ts`, `inventory-publication.test.ts` with the new column, `labels.test.ts`, `meta.test.ts`), docs link check 37 files / 670 links / 0 problems (with this update); `npm run test:e2e` not run (no screen changed) | Not deployed |
-| Phase 9 reporting, Shopify service layer and screens (Phase 10 steps 3–4), public-site integration, hardware adapter | No | Not built | Not deployed |
+| Shopify service layer (Phase 10 step 3: D81, D83, D84, D87, D88) | Yes, `feat/p10-shopify` 92b3335, c56143b, 37f4c37, 27a7be8: `src/lib/integrations/shopify/` (config, ids, hmac, admin, graphql-admin, fake-admin, fake-ids, client, desired-state, deps, sync, queue, webhooks, cron), `src/app/api/shopify/webhooks/route.ts`, `src/app/api/cron/integrations/route.ts`, `vercel.json`, the proxy matcher, `SHOPIFY_ADAPTER` / `CRON_SECRET` in env.ts; no migration, no screen | Locally on the final tree: `npm run check` pass; `npm test` 123 files / 1849 tests passed (unit 71 / 878, db 52 / 971; with `BICII_REQUIRE_STACK=1`, so `shopify.stack.test.ts` ran, both on the persisted `bicii_dev` and again right after E2E reset it); `npm run build` pass; `npm run test:e2e` 150 passed on phone and tablet, 0 failed (15.0 min; build inside; same 150 tests as the Phase 8 review, no spec changed); a manual smoke of the built app on a scratch port: cron 401 without the bearer and 200 with the summary, a signed webhook 200 then `duplicate: true`, a bad HMAC 401, GET 405; docs link check 36 files / 711 links / 0 problems; `db:reset`, `db:types`, `check:types` not run (no migration) | Not deployed |
+| Phase 9 reporting, Shopify screens (Phase 10 step 4), public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -117,10 +137,10 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   drafts, pushed and equal to origin.
 - `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
 - `feat/p10-shopify` (head: the commit with this update): stacked on
-  `feat/p8-labels` (3f09d22); Phase 10 steps 1 and 2 committed locally,
-  not pushed (`git for-each-ref` shows no `origin/feat/p10-shopify`):
-  ef1a613, 8ea4dbd, 792ce96 (step 1), 4196a90 and the commit with this
-  update (step 2).
+  `feat/p8-labels` (3f09d22); Phase 10 steps 1–3 committed locally, not
+  pushed (`git for-each-ref` shows no `origin/feat/p10-shopify`): ef1a613,
+  8ea4dbd, 792ce96 (step 1), 4196a90, 8ec0fba (step 2), 92b3335, c56143b,
+  37f4c37, 27a7be8 and the commit with this update (step 3).
 - `feat/p8-labels` (3f09d22, equal to `origin/feat/p8-labels` on
   2026-10-06; the rest of this entry is as of Phase 8): stacked on
   `feat/p6-consignment` (c791d4b, equal to `origin/feat/p6-consignment`
@@ -177,5 +197,12 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-045](docs/RISKS.md#r-045--the-buy-online-link-follows-overall-availability-not-online-stock)
   (Buy online follows overall availability, not online stock) and
   [R-046](docs/RISKS.md#r-046--the-product-sync-queue-is-coarse) (a
-  shop-wide in-flight check; no-op syncs of unpublished products).
+  shop-wide in-flight check; no-op syncs of unpublished products; one
+  2-minute deferral per online order); from step 3,
+  [R-047](docs/RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)
+  (the GraphQL documents and error codes are unverified),
+  [R-048](docs/RISKS.md#r-048--the-rejected-delivery-limit-is-per-server-instance)
+  (the rejected limit is per instance) and
+  [R-049](docs/RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)
+  (jobs wait for the cron, a webhook or staff; Hobby crons are daily).
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).
