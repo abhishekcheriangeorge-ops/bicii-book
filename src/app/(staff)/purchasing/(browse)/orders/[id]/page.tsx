@@ -22,6 +22,7 @@ import { requireStaff } from "@/lib/auth/session";
 import { formatDateTime } from "@/lib/dates";
 import { getPurchaseOrder } from "@/lib/domain/purchasing";
 import { formatMoney } from "@/lib/money";
+import { printLabelsPath } from "@/lib/printing/links";
 import { canManagePurchasing, formatExpected } from "@/lib/purchasing";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -35,7 +36,10 @@ export const metadata: Metadata = { title: "Purchase order" };
  * for manage_purchasing; the lines with their progress and, for
  * cost-visible staff only, unit costs, line totals, the totals card and
  * the history. A fully received order is closed: a calm note and "New
- * order for <supplier>" instead of editing.
+ * order for <supplier>" instead of editing. Each receipt line has "Print N
+ * labels" (any staff, Phase 8): the product page with the print sheet open
+ * at the received count (R-029). Receiving returns here, so this is the
+ * receive screen's success state.
  */
 export default async function PurchaseOrderPage({ params }: PageProps<"/purchasing/orders/[id]">) {
   const staff = await requireStaff();
@@ -228,6 +232,13 @@ export default async function PurchaseOrderPage({ params }: PageProps<"/purchasi
                           value={rl.product.shortId}
                         />
                         <span className="text-dust-500">to {rl.location}</span>
+                        <Link
+                          href={printLabelsPath("product", rl.product.id, rl.quantity)}
+                          aria-label={`Print ${rl.quantity} ${rl.quantity === 1 ? "label" : "labels"} for ${rl.product.name}`}
+                          className="inline-flex min-h-tap items-center font-semibold underline underline-offset-4"
+                        >
+                          Print {rl.quantity} {rl.quantity === 1 ? "label" : "labels"}
+                        </Link>
                         {rl.costs ? (
                           <span className="ml-auto text-dust-700 tabular-nums">
                             {money(rl.costs.unitCostActual)} each · {money(rl.costs.receivedTotal)}

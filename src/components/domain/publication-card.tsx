@@ -20,8 +20,8 @@ import {
   type TrackingType,
 } from "@/lib/inventory";
 
-import { CopyText } from "./copy-text";
 import { PublicPreviewPanel } from "./public-preview";
+import { QrLabelUrl } from "./qr-label-url";
 
 const STATUS_NOTES: Record<PublicationStatus, string> = {
   draft: "Not listed anywhere yet. Make it internal to get it ready for publishing.",
@@ -46,7 +46,8 @@ const DONE: Record<PublicationStatus, string> = {
  * product without an available unit) as buttons, disabled for 400 ms after
  * each change because the next move lands where the last one was; the
  * requirement checklist with Publish disabled until all are met, naming
- * what is missing; the QR URL with Copy; and what the public sees. The
+ * what is missing; the QR URL with Copy (or "QR address not set", D9); and
+ * what the public sees. The
  * database decides every move; its refusals show their mapped message.
  * Only for manage_inventory holders (others see the status and preview).
  */
@@ -57,6 +58,7 @@ export function PublicationControls({
   availableUnits,
   requirements,
   qrUrl,
+  isAdmin,
   preview,
   canManage,
 }: {
@@ -65,7 +67,9 @@ export function PublicationControls({
   trackingType: TrackingType;
   availableUnits: number;
   requirements: PublicationRequirements;
-  qrUrl: string;
+  /** From src/lib/qr.ts; null while the shop's public website address is not set (D9). */
+  qrUrl: string | null;
+  isAdmin: boolean;
   preview: PublicPreview | null;
   canManage: boolean;
 }) {
@@ -154,10 +158,7 @@ export function PublicationControls({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-1">
-        <h3 className="font-display text-xs font-bold tracking-wide uppercase">QR label URL</h3>
-        <CopyText value={qrUrl} label="QR label URL" />
-      </div>
+      <QrLabelUrl value={qrUrl} isAdmin={isAdmin} />
 
       <PublicPreviewPanel preview={preview} />
     </div>

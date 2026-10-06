@@ -3,9 +3,9 @@
  * PLAN D9). Pure, so the scanner and its tests share it.
  *
  * Recognised, as a record to open through the /q resolver:
- *   - `{base}/q/{shortId}` for every accepted public QR base (today
- *     [NEXT_PUBLIC_PUBLIC_SITE_URL]; Phase 8 adds the database QR base,
- *     shop_settings.public_site_url, through src/lib/qr.ts);
+ *   - `{base}/q/{shortId}` for every accepted public QR base (the
+ *     database QR base, shop_settings.public_site_url, and the
+ *     environment's public site URL: scanBases in src/lib/qr.ts);
  *   - `{adminOrigin}/q/{shortId}`, the Admin's own /q route;
  *   - a bare short ID in any case ("p-000123").
  *
@@ -46,4 +46,18 @@ export function interpretScan(
 export function truncateScan(text: string, max = 60): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
+ * The accepted public scan bases (scanBases, src/lib/qr.ts): the database
+ * QR base when usable, then the environment's public site URL, trailing
+ * slashes dropped, without duplicates.
+ */
+export function mergeScanBases(dbBase: string | null, envBase: string | null): string[] {
+  const bases: string[] = [];
+  for (const b of [dbBase, envBase]) {
+    const clean = b?.trim().replace(/\/+$/, "") ?? "";
+    if (clean && !bases.includes(clean)) bases.push(clean);
+  }
+  return bases;
 }

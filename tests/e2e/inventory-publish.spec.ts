@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { BIKE, PRODUCT, UNIT, UNIT_SHORT_ID } from "../fixtures/ids";
+import { BIKE, PRODUCT, SHOP, UNIT, UNIT_SHORT_ID } from "../fixtures/ids";
 import { section, signIn, tagFor, toast } from "./helpers";
 
 /**
@@ -65,7 +65,10 @@ test("a product is published once it has a public photo, shows what the public s
   );
   const preview = card.getByRole("region", { name: "What the public sees" });
   await expect(preview).toContainText("Not public. Anonymous scans show nothing.");
-  await expect(card.getByLabel("QR label URL", { exact: true })).toHaveText(/\/q\/P-\d{6}$/);
+  // D9: the database QR base (shop_settings.public_site_url), not the environment's.
+  await expect(card.getByLabel("QR label URL", { exact: true })).toHaveText(
+    new RegExp(`^${SHOP.publicSiteUrl.replace(/[.]/g, "\\.")}/q/P-\\d{6}$`),
+  );
 
   // A photo through the camera control, made public in the viewer.
   await page.getByLabel("Choose photos").setInputFiles(PHOTO);

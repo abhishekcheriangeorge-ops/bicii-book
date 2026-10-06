@@ -59,3 +59,79 @@ describe("NumberInput quantity", () => {
     expect(screen.getByRole("button", { name: "Increase" })).toBeDisabled();
   });
 });
+
+function Offset({ initial }: { initial: string }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <NumberInput
+      kind="decimal"
+      stepper
+      step={0.5}
+      minValue={-5}
+      maxValue={5}
+      aria-label="Offset"
+      value={value}
+      onValueChange={setValue}
+    />
+  );
+}
+
+describe("NumberInput decimal stepper", () => {
+  const offset = () => screen.getByLabelText("Offset");
+
+  it("steps by `step` on the decimal keypad, through zero to negatives", () => {
+    render(<Offset initial="0.5" />);
+    expect(offset()).toHaveAttribute("inputmode", "decimal");
+    press("Decrease");
+    expect(offset()).toHaveValue("0");
+    press("Decrease");
+    expect(offset()).toHaveValue("-0.5");
+    press("Increase");
+    press("Increase");
+    press("Increase");
+    expect(offset()).toHaveValue("1");
+  });
+
+  it("starts from an empty field as 0", () => {
+    render(<Offset initial="" />);
+    press("Increase");
+    expect(offset()).toHaveValue("0.5");
+  });
+
+  it("rounds to the step's decimals and clamps to min and max", () => {
+    render(<Offset initial="1.24" />);
+    press("Increase");
+    expect(offset()).toHaveValue("1.7");
+    fireEvent.change(offset(), { target: { value: "4.8" } });
+    press("Increase");
+    expect(offset()).toHaveValue("5");
+    expect(screen.getByRole("button", { name: "Increase" })).toBeDisabled();
+    fireEvent.change(offset(), { target: { value: "-4.9" } });
+    press("Decrease");
+    expect(offset()).toHaveValue("-5");
+    expect(screen.getByRole("button", { name: "Decrease" })).toBeDisabled();
+  });
+
+  it("a whole-number step keeps whole numbers", () => {
+    function Whole() {
+      const [value, setValue] = useState("2");
+      return (
+        <NumberInput
+          kind="decimal"
+          stepper
+          aria-label="Whole"
+          value={value}
+          onValueChange={setValue}
+        />
+      );
+    }
+    render(<Whole />);
+    press("Increase");
+    expect(screen.getByLabelText("Whole")).toHaveValue("3");
+  });
+
+  it("without `stepper` a decimal field has no buttons", () => {
+    render(<NumberInput kind="decimal" aria-label="Rate" defaultValue="1" />);
+    expect(screen.queryByRole("button", { name: "Increase" })).toBeNull();
+  });
+});

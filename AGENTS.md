@@ -71,9 +71,9 @@ The repository follows
      reporting, D120–D139 public site, D140+ later. Records: ADR-017
      labels, ADR-018 purchasing, ADR-019 email sign-in, ADR-020 Shopify,
      ADR-021 staff roles, ADR-022 reporting, ADR-023 public site. RISKS:
-     R-028–R-029 labels, R-030–R-034 purchasing, R-035–R-039 email sign-in,
-     R-040–R-049 Shopify, R-050–R-054 roles, R-055–R-064 reporting,
-     R-065–R-074 public site.
+     R-028–R-029 labels (its later entries R-075–R-077), R-030–R-034
+     purchasing, R-035–R-039 email sign-in, R-040–R-049 Shopify,
+     R-050–R-054 roles, R-055–R-064 reporting, R-065–R-074 public site.
 3. Record problems, shortcuts and uncertainty with evidence in
    `docs/RISKS.md`. There is one backlog: the PLAN phases, the RISKS next
    actions and NOW.md.
