@@ -22,7 +22,7 @@ import { refundSchema, restockSchema, saleSchema } from "@/lib/sales-forms";
  *   restockUnitAction     adjust_stock; a consigned unit also needs
  *                         manage_consignments, which the database checks
  *                         (D46)
- *   recordRefundAction    admins only (D49)
+ *   recordRefundAction    admins and managers (D94)
  *
  * Ids are made when a sheet or confirmation opens, so a retry has one effect.
  */
@@ -57,9 +57,10 @@ export const restockUnitAction = staffAction(
   },
 );
 
+/** Refunds are recorded by an admin or a manager (D94, private.can_record_refunds()). */
 export const recordRefundAction = staffAction(
   refundSchema,
-  { name: "sales.record_refund", admin: true },
+  { name: "sales.record_refund", roles: ["admin", "manager"] },
   async (input, { supabase }) => {
     await recordSaleRefund(supabase, input);
     refresh();

@@ -126,9 +126,9 @@ describe("API surface (tests/fixtures/api-surface.ts)", () => {
     expect(await reachableFunctions("authenticated")).toEqual([...AUTHENTICATED_FUNCTIONS].sort());
   });
 
-  // Phase 10: the service role gets exactly the Shopify webhook and queue
-  // RPCs, and nothing in private (the purge and the exceptions helper are
-  // owner-only).
+  // The service role gets exactly the sign-in counter (PLAN D72) and the
+  // Phase 10 Shopify webhook and queue RPCs, and nothing in private (the
+  // purge and the exceptions helper are owner-only).
   it("service_role can execute exactly the allow-listed functions in public", async () => {
     expect(await reachableFunctions("service_role")).toEqual([...SERVICE_ROLE_FUNCTIONS].sort());
     const { rows } = await conn.query<{ fn: string }>(

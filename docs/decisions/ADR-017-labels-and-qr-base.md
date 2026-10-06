@@ -37,7 +37,7 @@ through the PDF adapter and journey 4 one U- label for a consigned bike
 whose price equals the unit's "What the public sees" price
 (`tests/e2e/inventory.spec.ts`, `tests/e2e/consignment-journey.spec.ts`).
 The rows stay build defaults until the owner confirms them
-([PRODUCT owner question 15](../PRODUCT.md#open-assumptions-and-owner-questions)).
+([PRODUCT owner question 21](../PRODUCT.md#open-assumptions-and-owner-questions)).
 
 ## Context
 
@@ -138,4 +138,4 @@ row.
   [R-012](../RISKS.md#r-012--label-printer-hardware-is-unknown),
   [R-013](../RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address),
   [R-028](../RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted)
-  to [R-031](../RISKS.md#r-031--print-success-is-confirmed-by-hand).
+  to [R-076](../RISKS.md#r-076--print-success-is-confirmed-by-hand).

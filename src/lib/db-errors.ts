@@ -6,6 +6,7 @@
  *
  * Pure (no server imports) so it is unit-tested directly.
  */
+import { formatMoney } from "./money";
 
 /** The shape PostgREST (supabase-js PostgrestError) and node-postgres share. */
 export type DbErrorLike = {
@@ -52,6 +53,10 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   reason_too_long: "Keep the reason under 500 characters.",
   staff_history_append_only: "Staff history cannot be changed.",
   staff_permission_immutable: "Remove the permission and grant the new one instead.",
+  // Staff roles (D92): an exception the person's role already implies.
+  permission_implied_by_role: "Their role already includes that.",
+  // Staff roles: update_staff's expected_role no longer matches (stale page).
+  staff_role_changed: "Someone changed their role in the meantime. Reload and try again.",
   // Customers and bikes (Phase 1)
   customer_archived: "That customer is archived. Unarchive them first.",
   bike_archived: "That bike is archived. Unarchive it before changing its owner or stocking it.",
@@ -324,6 +329,45 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   shopify_product_archived: "Unarchive the product before publishing it online.",
   shopify_price_missing: "Set a sale price before publishing it online.",
   shopify_not_published: "Publish the product online first.",
+  // Purchasing (Phase 7)
+  supplier_archived: "That supplier is archived. Unarchive it first.",
+  supplier_has_open_orders: "This supplier still has open orders. Receive or cancel them first.",
+  purchase_order_conflict: "That order clashes with another one. Start the order again.",
+  purchase_order_number_immutable: "An order keeps its number for life.",
+  purchase_order_supplier_locked: "The supplier can only change while the order is a draft.",
+  purchase_order_closed:
+    "This order is closed: it has been fully received or cancelled. Extra units go on a new order.",
+  purchase_order_not_submitted: "Submit the order before receiving against it.",
+  purchase_order_needs_lines: "An order needs at least one line. Add one, or cancel the order.",
+  purchase_line_conflict: "That line clashes with another one. Refresh the order and try again.",
+  purchase_line_below_received:
+    "More than that has already been received. The ordered quantity can't go below it.",
+  purchase_line_unique_product:
+    "Unique items are registered one by one in Stock, not ordered on a purchase order.",
+  purchase_line_not_shop_owned: "Only shop-owned products can be ordered from a supplier.",
+  purchase_line_product_inactive: "That product is inactive or archived. Reactivate it first.",
+  purchase_line_duplicate_product:
+    "That product is already on this order. Change its line instead.",
+  purchase_line_has_receipts:
+    "Part of this line has been received, so it can't be removed. Lower its quantity instead.",
+  purchase_currency_mismatch: "That product is priced in another currency than this order.",
+  purchase_receipt_key_reused:
+    "This submission was already recorded. Check the order before receiving again.",
+  purchase_receipt_empty: "Enter at least one received line.",
+  purchase_receipt_quantity_invalid: "Enter a whole number of units received, at least 1.",
+  purchase_receipt_cost_invalid: `Enter a unit cost between ${formatMoney("0")} and ${formatMoney("99999.99")}.`,
+  purchase_receipt_line_foreign: "That line is not on this order. Refresh the order and try again.",
+  purchase_receipt_line_duplicate:
+    "The same order line appears twice for one location. Combine them into one.",
+  purchase_over_receipt:
+    "That is more than is still to come on this order. Check the counts, or raise the ordered quantity first.",
+  purchase_receipt_in_future: "The delivery date can't be in the future.",
+  purchase_receipt_too_old: "A delivery can be back-dated by at most 30 days.",
+  purchase_receipt_before_submission: "The delivery date is before the order was submitted.",
+  purchase_receipt_immutable:
+    "A recorded delivery can't be changed. Correct the stock with an adjustment.",
+  purchase_order_history_append_only: "Purchase order history can't be changed.",
+  reorder_nothing_selected: "Choose at least one product to order.",
 };
 
 /** 23505 unique violations by constraint name. */
@@ -424,6 +468,23 @@ export const UNIQUE_ERRORS: Record<string, string> = {
   integration_retry_queue_product_running_key:
     "That product is syncing right now. Try again in a moment.",
   integration_audit_events_pkey: "That integration history entry has already been recorded.",
+  // Purchasing (Phase 7)
+  suppliers_pkey: "That supplier has already been saved.",
+  suppliers_name_active_key: "A supplier with that name already exists.",
+  supplier_products_pkey: "That supplier is already linked to this product.",
+  supplier_products_one_preferred:
+    "Someone else changed the preferred supplier at the same time. Try again.",
+  purchase_orders_pkey: "That order has already been saved.",
+  purchase_orders_po_number_key: "That order number is already taken. Try again.",
+  purchase_order_lines_pkey: "That line has already been saved.",
+  purchase_order_lines_product_once:
+    "That product is already on this order. Change its line instead.",
+  purchase_receipts_pkey: "That delivery has already been recorded.",
+  purchase_receipts_idempotency_key_key:
+    "This submission was already recorded. Check the order before receiving again.",
+  purchase_receipt_lines_pkey: "That delivery line has already been recorded.",
+  purchase_receipt_lines_purchase_receipt_id_line_number_key:
+    "That delivery line has already been recorded.",
 };
 
 /** 23514 check violations by constraint name. */
@@ -721,6 +782,42 @@ export const CHECK_ERRORS: Record<string, string> = {
   sale_lines_shopify_line_item_id_format: "That is not a valid Shopify line ID.",
   sale_lines_shopify_line_part_check: "Only a split Shopify line has a part.",
   sale_refunds_shopify_refund_id_format: "That is not a valid Shopify refund ID.",
+  // Purchasing (Phase 7)
+  suppliers_name_check: "Enter a supplier name under 200 characters.",
+  suppliers_contact_name_check: "Keep the contact name under 200 characters.",
+  suppliers_email_check: "Enter a valid email address.",
+  suppliers_phone_check: "Keep the phone number under 40 characters.",
+  suppliers_website_check:
+    "Enter a website starting with http:// or https://, under 300 characters.",
+  suppliers_account_reference_check: "Keep the account number under 100 characters.",
+  suppliers_notes_check: "Keep the notes under 10,000 characters.",
+  supplier_products_supplier_sku_check: "Keep the supplier's SKU under 100 characters.",
+  supplier_products_lead_days_check: "Lead time must be between 0 and 365 days.",
+  supplier_products_last_unit_cost_check: "Costs can't be negative.",
+  supplier_products_currency_check: "Use a three-letter currency code.",
+  purchase_orders_po_number_format: "An order number looks like PO-000123.",
+  purchase_orders_supplier_reference_check: "Keep the supplier's reference under 100 characters.",
+  purchase_orders_currency_check: "Use a three-letter currency code.",
+  purchase_orders_notes_check: "Keep the notes under 2,000 characters.",
+  purchase_orders_cancellation_reason_check: "Keep the reason under 500 characters.",
+  purchase_orders_submitted_shape:
+    "The order's dates don't match its status. Refresh and try again.",
+  purchase_orders_received_shape:
+    "The order's dates don't match its status. Refresh and try again.",
+  purchase_orders_cancelled_shape: "A cancelled order needs the time and the reason.",
+  purchase_order_lines_quantity_ordered_check: "Order between 1 and 100,000 units.",
+  purchase_order_lines_unit_cost_check: `Unit cost must be between ${formatMoney("0")} and ${formatMoney("99999.99")}.`,
+  purchase_order_lines_currency_check: "Use a three-letter currency code.",
+  purchase_order_lines_notes_check: "Keep the line notes under 500 characters.",
+  purchase_order_events_payload_object: "That order history entry is not consistent.",
+  purchase_order_events_reason_check: "Keep the reason under 500 characters.",
+  purchase_receipts_reference_check: "Keep the delivery note reference under 100 characters.",
+  purchase_receipts_notes_check: "Keep the notes under 2,000 characters.",
+  purchase_receipt_lines_quantity_received_check: "Receive between 1 and 100,000 units.",
+  purchase_receipt_lines_unit_cost_actual_check: `Unit cost must be between ${formatMoney("0")} and ${formatMoney("99999.99")}.`,
+  purchase_receipt_lines_currency_check: "Use a three-letter currency code.",
+  inventory_movements_purchase_received_has_receipt_line:
+    "Stock from a supplier is received through its purchase order.",
 };
 
 /** Other fixed SQLSTATEs our RPCs raise on purpose. */

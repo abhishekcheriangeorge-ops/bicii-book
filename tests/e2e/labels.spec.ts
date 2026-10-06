@@ -2,15 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import {
-  BIKE,
-  CUSTOMER_LOGIN,
-  PRINT_JOB,
-  PRODUCT,
-  PRODUCT_SHORT_ID,
-  SEED_PASSWORD,
-} from "../fixtures/ids";
+import { BIKE, CUSTOMER_LOGIN, PRINT_JOB, PRODUCT, PRODUCT_SHORT_ID } from "../fixtures/ids";
 import { E2E_PUBLIC_SITE_URL } from "../fixtures/public-site";
+import { sessionCookiesFor } from "./api";
 import { createProduct, section, signIn, tagFor, toast } from "./helpers";
 import { QR_BASE, labelPayloads as payloads } from "./label-helpers";
 
@@ -109,7 +103,6 @@ test("browser print produces 10 identical labels", async ({ page }, testInfo) =>
     sku: `LBL-${tag}`,
     price: "19.90",
     cost: "8",
-    reorderPoint: "2",
   });
 
   await openPrintSheet(page);
@@ -308,13 +301,15 @@ test("signed-out visitors cannot open print views or PDFs", async ({ browser }) 
   await context.close();
 });
 
-test("a signed-in customer gets a 403, not a print view or a PDF", async ({ page }) => {
+test("a signed-in customer gets a 403, not a print view or a PDF", async ({ page }, testInfo) => {
   // proxy.ts only redirects signed-out visitors: this reaches the handlers'
   // own staff checks (requireStaff, authorizeStaff) with a real session.
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(CUSTOMER_LOGIN.chloe.email);
-  await page.getByLabel("Password").fill(SEED_PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  // The login form signs a customer out straight after the code (D70), so
+  // the session is made through the API and handed to the browser.
+  const cookies = await sessionCookiesFor(CUSTOMER_LOGIN.chloe.email);
+  const url = String(testInfo.project.use.baseURL);
+  await page.context().addCookies(cookies.map((cookie) => ({ ...cookie, url })));
+  await page.goto("/");
   await expect(page).not.toHaveURL(/\/login/);
 
   const pdf = await page.request.get(`/api/labels/${PRINT_JOB.productQueued}/pdf`);

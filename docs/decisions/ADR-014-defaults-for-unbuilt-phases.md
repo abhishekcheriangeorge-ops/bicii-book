@@ -15,6 +15,11 @@ and unit status change only through `restock_unit`; evidence in
 `tests/db/sales.test.ts` and `tests/e2e/sales.spec.ts` (a partial refund
 leaves the stock unchanged). Online refunds remain Phase 10's.
 
+Status update 2026-10-05 (D5): implemented by Phase 7, integrated onto the
+main line from `feat/p7-purchasing`, and refined by D63 ("latest" is by
+receipt `received_at`; 0 is a known cost), see
+[ADR-018](ADR-018-purchasing.md).
+
 Status update 2026-10-06 (D7): applied to online refunds by Phase 10 (D85,
 [ADR-020](ADR-020-shopify.md)): `process_shopify_refund` writes one
 `sale_refunds` row (capped like D49) and nothing else; Shopify's restock

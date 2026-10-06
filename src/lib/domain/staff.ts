@@ -1,14 +1,12 @@
 import "server-only";
 
+import { LoginExistsError, createStaffLogin, deleteStaffLogin } from "@/lib/admin/staff-logins";
 import {
-  LoginExistsError,
-  WeakPasswordError,
-  createStaffLogin,
-  deleteStaffLogin,
-} from "@/lib/admin/staff-logins";
-import {
+  ROLE_LABELS,
+  invitableRoles,
   isPermissionKey,
   permissionChangeBlocker,
+  roleChangeBlocker,
   type PermissionKey,
   type StaffDTO,
   type StaffRole,
@@ -34,7 +32,7 @@ export type StaffMember = {
   email: string;
   role: StaffRole;
   active: boolean;
-  /** Granted rows only; admins hold every permission by role. */
+  /** Exceptions only (staff_permissions rows, D92); the role implies the rest (D91). */
   grantedPermissions: PermissionKey[];
 };
 
@@ -96,16 +94,16 @@ export async function listStaffHistory(
 }
 
 export type InviteInput = { displayName: string; email: string; role: StaffRole };
-export type InviteResult = { staffId: string; email: string; temporaryPassword: string };
+export type InviteResult = { staffId: string; email: string; role: StaffRole };
 
 /**
  * Invite a colleague: create their Supabase Auth login (service-role admin
- * API, src/lib/admin) with a one-time temporary password, then link the
- * staff row through create_staff AS THE INVITING USER, so the database
- * checks manage_staff (and admin-only for admins) itself and records the
- * `created` event with the inviter as actor. If linking fails the login is
- * deleted again. The password is returned once for the inviter to hand
- * over; it is not stored or logged.
+ * API, src/lib/admin) with no credential, then link the staff row through
+ * create_staff AS THE INVITING USER, so the database checks manage_staff
+ * (and admin-only for admins and managers, D93) itself and records the `created` event with
+ * the inviter as actor. If linking fails the login is deleted again. The
+ * invitee signs in with a code emailed to them (PLAN D10); the inviter
+ * never holds a credential for the new login (D11).
  */
 export async function inviteStaff(
   supabase: ServerSupabase,
@@ -113,12 +111,12 @@ export async function inviteStaff(
   input: InviteInput,
   onCleanupError: (err: unknown, userId: string) => void,
 ): Promise<InviteResult> {
-  if (input.role === "admin" && actor.role !== "admin") {
-    throw new DomainError("Only an admin can invite another admin.", {
-      role: ["Only an admin can invite another admin."],
-    });
+  // create_staff (D93): only an admin invites an admin or a manager.
+  if (!invitableRoles(actor).includes(input.role)) {
+    const message = `Only an admin can invite ${input.role === "admin" ? "an" : "a"} ${ROLE_LABELS[input.role].toLowerCase()}.`;
+    throw new DomainError(message, { role: [message] });
   }
-  let login: { userId: string; temporaryPassword: string };
+  let login: { userId: string };
   try {
     login = await createStaffLogin({ email: input.email, displayName: input.displayName });
   } catch (err) {
@@ -126,13 +124,6 @@ export async function inviteStaff(
       throw new DomainError("An account with that email already exists.", {
         email: ["An account with that email already exists."],
       });
-    }
-    if (err instanceof WeakPasswordError) {
-      // Not the user's input: the project's password rules are stricter
-      // than the generated password (RUNBOOK "Hosted Supabase projects").
-      throw new DomainError(
-        "Supabase Auth refused the temporary password. Ask an admin to check the project's password rules.",
-      );
     }
     throw err;
   }
@@ -146,7 +137,7 @@ export async function inviteStaff(
       }),
     );
     if (!row) throw new Error("create_staff returned no row");
-    return { staffId: row.id, email: input.email, temporaryPassword: login.temporaryPassword };
+    return { staffId: row.id, email: input.email, role: row.role };
   } catch (err) {
     await deleteStaffLogin(login.userId).catch((cleanupError) =>
       onCleanupError(cleanupError, login.userId),
@@ -177,7 +168,32 @@ export async function setPermission(
   );
 }
 
-export const REASON_MAX = 500;
+/**
+ * Change someone's role (RPC update_staff; PLAN D90, D93): admins only,
+ * never their own, and the last active admin stays (55000). The change
+ * appends role_changed with the optional reason, and drops the exceptions
+ * the new role implies, each with a permission_revoked event (D92). The
+ * cheap refusals become precise messages here; the database decides.
+ * `expected` is the role the confirmation showed: if someone changed it
+ * meanwhile, the database refuses (staff_role_changed) and nothing changes.
+ */
+export async function setRole(
+  supabase: ServerSupabase,
+  actor: StaffDTO,
+  input: { staffId: string; role: StaffRole; expected: StaffRole; reason?: string },
+): Promise<void> {
+  const reason = input.reason?.trim() || undefined;
+  const blocker = roleChangeBlocker(actor, { staffId: input.staffId, role: input.role });
+  if (blocker) throw new DomainError(blocker);
+  unwrap(
+    await supabase.rpc("update_staff", {
+      target_staff_id: input.staffId,
+      role: input.role,
+      expected_role: input.expected,
+      reason,
+    }),
+  );
+}
 
 /**
  * Deactivate (reason required: SPEC §22) or reactivate (reason optional)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useState } from "react";
 
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -10,84 +10,50 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { useFocusFirstInvalid } from "@/components/ui/use-focus-invalid";
 import type { ActionResult } from "@/lib/actions";
+import { ROLE_DESCRIPTIONS, ROLE_LABELS, type StaffRole } from "@/lib/auth/permissions";
+import { roleWithArticle } from "@/lib/auth/role-change";
+import { cn } from "@/lib/cn";
 
 import { inviteStaff, type InviteResult } from "../actions";
 
 type State = ActionResult<InviteResult> | null;
 
-type CopyState = "idle" | "copied" | "failed";
-
-function TemporaryPassword({ result, onAnother }: { result: InviteResult; onAnother: () => void }) {
-  const [copy, setCopy] = useState<CopyState>("idle");
-  const passwordRef = useRef<HTMLParagraphElement>(null);
-
-  // "Copied" only after the clipboard write resolved. In an insecure
-  // context (plain-http LAN URL) navigator.clipboard does not exist, and
-  // the write can be refused; then say so and select the text for a manual
-  // copy, because this password is never shown again.
-  const copyPassword = async () => {
-    try {
-      if (!navigator.clipboard) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(result.temporaryPassword);
-      setCopy("copied");
-    } catch {
-      setCopy("failed");
-      const node = passwordRef.current;
-      const selection = window.getSelection();
-      if (node && selection) {
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    }
-  };
+/** The invite went through: their role, how the colleague signs in, and what next. */
+function Invited({ result, onAnother }: { result: InviteResult; onAnother: () => void }) {
   return (
     <div className="flex flex-col gap-4">
-      <p role="status" className="flex items-center gap-2 font-medium">
-        <CheckIcon className="size-5 text-done-deep" />
+      <p role="status" className="flex items-center gap-2 font-medium break-all">
+        <CheckIcon className="size-5 shrink-0 text-done-deep" />
         {result.email} can now sign in.
       </p>
-      <div className="flex flex-col gap-2 rounded-xl bg-waiting-soft p-4">
-        <p className="eyebrow text-waiting-deep">Temporary password: shown once</p>
-        <p
-          ref={passwordRef}
-          className="font-mono text-xl font-bold tracking-wide break-all select-all"
-          data-testid="temporary-password"
-        >
-          {result.temporaryPassword}
-        </p>
-        <p className="text-sm text-waiting-deep">
-          Give it to them in person. It is not stored and cannot be shown again. They should change
-          it after signing in.
-        </p>
-      </div>
-      <p role="status" className="text-sm font-medium text-danger-deep empty:hidden">
-        {copy === "failed"
-          ? "Couldn't copy here. The password is selected: copy it by hand before leaving this page."
-          : ""}
+      <p className="text-dust-700">They join as {roleWithArticle(result.role)}.</p>
+      <p className="text-dust-700">
+        They open BICII Admin, enter this email and type the 6-digit code we email them. No password
+        needed.
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={copyPassword}>
-          {copy === "copied" ? "Copied" : "Copy password"}
-        </Button>
         <Button variant="ghost" onClick={onAnother}>
           Invite another
         </Button>
         <ButtonLink href={`/settings/staff/${result.staffId}`} variant="solid">
-          Set permissions
+          {result.role === "admin" ? "Open their page" : "Set extra access"}
         </ButtonLink>
       </div>
     </div>
   );
 }
 
-function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () => void }) {
+/**
+ * `roles` is what the inviter may invite (invitableRoles, mirroring
+ * create_staff, D93): an admin picks Admin, Manager or Mechanic (Mechanic
+ * chosen first); anyone else invites a Mechanic, with no picker.
+ */
+function Form({ roles, onDone }: { roles: readonly StaffRole[]; onDone: () => void }) {
   const [state, formAction] = useActionState<State, FormData>(inviteStaff, null);
-  const [role, setRole] = useState<"staff" | "admin">("staff");
+  const [role, setRole] = useState<StaffRole>("mechanic");
   const formRef = useFocusFirstInvalid(state);
 
-  if (state?.ok) return <TemporaryPassword result={state.data} onAnother={onDone} />;
+  if (state?.ok) return <Invited result={state.data} onAnother={onDone} />;
 
   const errors = state && !state.ok ? state.fieldErrors : undefined;
   // React resets the fields after every submission; render what was typed
@@ -114,7 +80,7 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
           defaultValue={values?.email ?? ""}
         />
       </Field>
-      {canInviteAdmin ? (
+      {roles.length > 1 ? (
         <div className="flex flex-col gap-1.5">
           <span
             aria-hidden="true"
@@ -122,26 +88,34 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
           >
             Role
           </span>
-          <SegmentedControl
+          <SegmentedControl<StaffRole>
             label="Role"
             value={role}
-            onValueChange={(v) => setRole(v as "staff" | "admin")}
-            options={[
-              { value: "staff", label: "Staff" },
-              { value: "admin", label: "Admin" },
-            ]}
+            onValueChange={setRole}
+            options={roles.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
           />
           {errors?.role?.[0] ? (
             <p className="text-sm font-medium text-danger-deep">{errors.role[0]}</p>
           ) : null}
-          <p className="text-sm text-dust-500">
-            {role === "admin"
-              ? "Admins have every permission, including staff and money."
-              : "Staff start with workshop access; add permissions afterwards."}
-          </p>
+          <ul aria-label="Roles" className="mt-1 flex flex-col gap-1 text-sm">
+            {roles.map((r) => (
+              <li key={r} className={cn(r === role ? "text-ink" : "text-dust-500")}>
+                <span className="font-medium">{ROLE_LABELS[r]}</span>: {ROLE_DESCRIPTIONS[r]}.
+              </li>
+            ))}
+          </ul>
         </div>
-      ) : null}
-      <input type="hidden" name="role" value={role} />
+      ) : (
+        <p className="text-dust-700">
+          They join as a Mechanic. Only an admin invites an admin or a manager.
+          {errors?.role?.[0] ? (
+            <span className="mt-1 block text-sm font-medium text-danger-deep">
+              {errors.role[0]}
+            </span>
+          ) : null}
+        </p>
+      )}
+      <input type="hidden" name="role" value={roles.length > 1 ? role : "mechanic"} />
       <div>
         <SubmitButton pendingLabel="Inviting…">Invite</SubmitButton>
       </div>
@@ -149,8 +123,8 @@ function Form({ canInviteAdmin, onDone }: { canInviteAdmin: boolean; onDone: () 
   );
 }
 
-/** Remounts the form for "Invite another", clearing the shown password. */
-export function InviteForm({ canInviteAdmin }: { canInviteAdmin: boolean }) {
+/** Remounts the form for "Invite another", starting clean. */
+export function InviteForm({ roles }: { roles: readonly StaffRole[] }) {
   const [round, setRound] = useState(0);
-  return <Form key={round} canInviteAdmin={canInviteAdmin} onDone={() => setRound((r) => r + 1)} />;
+  return <Form key={round} roles={roles} onDone={() => setRound((r) => r + 1)} />;
 }

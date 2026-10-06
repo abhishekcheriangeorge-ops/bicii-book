@@ -4,17 +4,20 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: `feat/p8-labels` at the end of Phase 8 (not deployed; on a
-developer machine at http://localhost:3000; this branch has no purchasing
-and signs staff in with a password).
+Applies to: `feat/p10-shopify` (2026-10-06): Phase 8 labels and Phase 10
+Shopify, merged with the main line at `a1aebf6` (staff email sign-in,
+purchasing and the three staff roles admin, manager and mechanic); not
+deployed; on a developer machine at http://localhost:3000. Staff sign in
+with an emailed code.
 
 Last walkthrough: not walked through by a person. These flows are exercised
 by the E2E specs in `tests/e2e/` (among them `auth`, `workshop`,
 `workshop-board`, `inventory`, `inventory-publish`, `scan`,
 `appointments`, `appointment-settings`, `today`, `customers-bikes`,
-`staff`, `consignment`, `consignment-journey`, `sales`, `print-view` and
-`labels`), on an iPhone 13 and an iPad viewport: 146 passed locally on
-2026-10-05 at the end of Phase 8; the latest green CI run is
+`staff`, `roles`, `consignment`, `consignment-journey`, `sales`,
+`purchasing`, `print-view`, `labels` and `shopify`), on an iPhone 13 and
+an iPad viewport (counts and dates in [NOW.md](../NOW.md)); the latest
+green CI run is
 [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
 Where a step below is not covered by a spec, it says so.
 
@@ -22,24 +25,41 @@ Where a step below is not covered by a spec, it says so.
 
 1. Open the Admin (on a developer machine: http://localhost:3000). You see
    **Staff sign in**.
-2. Enter your **Email** and **Password** and press **Sign in**. On a
-   developer machine only, the seeded logins work (listed with their
-   password in
-   [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application));
-   a real shop has its own logins, created by an admin.
-3. **Today** opens with a greeting and today's date. On a phone the tabs at
+2. Enter your **Email** and press **Email me a code**. The screen says
+   **Check your email**.
+3. Open the email "Your BICII sign-in code" and type the 6-digit **Code**,
+   then press **Sign in**. The code works once, for 10 minutes; only the
+   newest code works. No password is needed, and there is none. On a
+   developer machine only, the seeded logins work and their codes are read
+   from the devstack's mail catcher
+   ([ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application));
+   a real shop has its own logins, created by an admin's invite.
+4. **Today** opens with a greeting and today's date. On a phone the tabs at
    the bottom are Today, Jobs, Scan, Inventory and More (Customers, Bikes,
    Appointments, Settings and the rest); on an iPad every section is in the
    rail on the left.
 
-If it fails: "That email and password don't match. Try again." (check both;
-the message is the same for an unknown email). "Too many attempts. Wait a
-minute and try again." "Sign-in is unavailable right now. Try again in a
-minute." (the service is down; tell whoever runs the system). A link you
-opened before signing in takes you back there afterwards.
+If it fails:
 
-Your own details, permissions, password change and **Sign out** are under
-Settings → Your profile.
+- No email: check the address and your spam folder, wait a minute, then
+  press **Send a new code** (it unlocks 60 seconds after the last one) or
+  **Use a different email**. The screen says "Check your email" for every
+  address, also one without a login, so a typo shows no error.
+- "That code is wrong or has expired. Check your latest email or send a new
+  code." (an older code stops working when a new one is sent).
+- "This email doesn't have access to BICII Admin. Ask an admin to invite or
+  reactivate you." (the code was right, but you are not active staff).
+- "Too many attempts. Wait a minute and try again."
+- "Sign-in is unavailable right now. Try again in a minute." (the service
+  is down; tell whoever runs the system).
+
+A link you opened before signing in takes you back there afterwards.
+
+Your own details, your role (Admin, Manager or Mechanic), what it lets you
+do and **Sign out** are under Settings → Your profile: the card **Your role
+and access** lists every permission you have, marks any given to you on top
+of your role as **Extra access**, and lists **Record refunds** for admins and
+managers.
 
 ## Routine tasks
 
@@ -262,7 +282,9 @@ Settings → Your profile.
 
 ### Refund a sale
 
-- Before you start: only an admin records a refund (D49).
+- Before you start: an admin or a manager records a refund (D94, amending
+  D49). A mechanic does not see **Record refund**, whatever extra access
+  they have.
 - Steps: open the sale (Sales, or search its S- number) → **Record
   refund**. The **Amount** starts at what is left to refund; change it for
   a partial refund. Press **Record refund of $x…**, answer "Why is it
@@ -316,6 +338,75 @@ Settings → Your profile.
   count can't go below zero by hand; check the number." (Save stays
   disabled). "Give a reason for this stock change." "Choose two different
   locations." "That location is inactive. Choose another or reactivate it."
+
+### Order from a supplier
+
+- Before you start: you need **Manage purchasing**. Only counted,
+  shop-owned, active products can be ordered (D62): unique items are
+  registered one by one in Stock, and consigned stock comes in through
+  **Receive item** in Consignment, never on an order.
+- Steps:
+  - **Purchasing** → **Suppliers** → **New supplier** for someone new:
+    **Name**, **Contact name**, **Phone**, **Email**, **Website**,
+    **Account reference** (BICII's account number with them), then
+    **Create supplier**.
+  - On the supplier's page, **New order** (the supplier is fixed), or
+    **Purchasing** → **New order** and pick the supplier. Optionally a
+    **Supplier reference** and an expected date; **Create order** opens
+    the draft.
+  - **Add line**: search the product (each option shows on hand and on
+    order), then **Quantity** and **Unit cost**, prefilled from the
+    supplier's last cost or the product's cost when there is one;
+    **Add line**. Change a line with its **Change line** button.
+  - **Submit order** when it is sent to the supplier.
+- Success looks like: the order's `PO-` number and the status Submitted;
+  the product page's **Suppliers & orders** card shows "On order".
+- If it fails: "Only shop-owned products can be ordered from a supplier."
+  (a consigned or customer-owned product); "That product is already on
+  this order. Change its line instead."; "An order needs at least one
+  line." To stop an order, **Cancel order…** with a reason (D61): what was
+  already received stays in stock.
+
+### Receive a delivery
+
+- Before you start: you need **Manage purchasing**; the order is submitted
+  (a draft says "Submit the order before receiving").
+- Steps:
+  - Open the order (scan or type its `PO-` number) → **Receive**.
+  - For each line, **Receive now** (it starts at what is still to come)
+    and the **Actual unit cost** from the supplier's note ("Differs" shows
+    when it is not the ordered cost; 0 is allowed for free goods);
+    **Receive into** a location (each line can go somewhere else).
+  - **Delivery note reference**, **Received** (now unless the note is older;
+    at most 30 days back, D64) and **Notes**.
+  - Press **Receive N items** once.
+- Success looks like: "Received 18 items. 2 still to come.", the order
+  Partially received with "18 of 20 received · 2 to come", or Received when
+  everything has come. The stock goes up once, and the product's cost and
+  the supplier's last cost become the actual cost (D5, D63).
+- If it fails: more than is to come is refused; raise the line's ordered
+  quantity on the order first (D65). If the connection drops, the screen
+  checks whether the delivery was recorded and either shows it or offers
+  **Retry**, which never receives twice. A delivery note already recorded
+  on this order asks you to tick **This is a different delivery**. A wrong
+  count after receiving is corrected with **Adjust stock** and a reason;
+  a fully received order is closed, so extra units go on a new order.
+
+### Reorder low stock
+
+- Before you start: you need **Manage purchasing**.
+- Steps: **Purchasing** → **Reorder** (also from the Inventory low-stock
+  filter and Today's low-stock tile). Choose the **Supplier**; products
+  linked to it start ticked, each with on hand, on order and a suggested
+  quantity (twice the reorder point less what is on hand and on order,
+  D66). Press **Create draft order (N products)**.
+- Success looks like: a draft order with those lines at the supplier's
+  last cost; check quantities and costs, then **Submit order**.
+- Only shop-owned products are listed. A consigned product below its
+  reorder point still counts on Today and the Inventory low-stock filter,
+  but it is never reordered here: more of it comes from its consignor
+  through intake. If only consigned products are low, the list says
+  "Nothing is below its reorder point."
 
 ### Publish a product
 
@@ -581,7 +672,81 @@ Settings → Your profile.
   signature did not match is **Rejected** and keeps no body; nothing was
   recorded from it.
 
+### Invite a colleague
+
+- Before you start: you need Manage staff (an admin has it; anyone else
+  only as extra access). An admin invites an Admin, a Manager or a
+  Mechanic; anyone else invites Mechanics only (D93).
+- Steps: Settings → **Staff** → **Invite staff**. Enter **Name** and
+  **Email**. An admin picks the **Role** (Admin, Manager or Mechanic;
+  Mechanic is chosen first, and each role's one line is listed under the
+  picker). Anyone else sees "They join as a Mechanic." instead of a picker.
+  Press **Invite**.
+- Success looks like: "<email> can now sign in." and "They join as a
+  Mechanic." (or the role picked). The colleague opens the Admin, enters
+  that email and types the 6-digit code emailed to them; there is no
+  password to hand over. **Set extra access** (or **Open their page** for
+  an admin) opens their page.
+- If it fails: "An account with that email already exists."; "Only an
+  admin can invite a manager." (or an admin) when you are not an admin.
+  Covered by `tests/e2e/staff.spec.ts` and `tests/e2e/roles.spec.ts`.
+
+### Change someone's role
+
+- Before you start: admins only, and never your own role (D93). The shop
+  always keeps at least one active admin.
+- Steps: Settings → **Staff** → open the person. In the **Role** card pick
+  **Admin**, **Manager** or **Mechanic** and press **Change role…**. The
+  sheet "Change <name> to <Role>?" says what changes: what the new role
+  has (for example "Managers have every permission except Manage staff,
+  and can record refunds."), any extra access the new role already
+  includes ("Their extra access to … is included in the new role and will
+  be removed.") and anything they lose. Optionally answer **Why?** (up to
+  500 characters), then press **Change role**.
+- Success looks like: "<name> is now a <Role>"; the badge beside their name
+  shows the new role, the **Extra access** card offers only what the new
+  role does not include, and **History** reads "Role changed from <From>
+  to <To>" with your name and the reason, plus "Extra access: … removed"
+  for each exception the role now includes. Changing the role back later
+  does not restore removed extra access (D92).
+- If it fails: on your own row the picker is off with "You can't change
+  your own role."; "The shop must keep at least one active admin." when the
+  change would leave no active admin; "Someone changed their role in the
+  meantime. Reload and try again." when another admin changed it after you
+  opened the page (nothing changes; reload to see their current role and
+  what a change would do); anyone who is not an admin sees the
+  role read-only with "Only an admin changes roles." Covered by
+  `tests/e2e/roles.spec.ts`.
+
+### Give someone extra access
+
+- Before you start: you need Manage staff. An admin changes anyone's extra
+  access but their own; anyone else changes mechanics' only, only
+  permissions they hold themselves, never Manage staff and never their own
+  (D11, D93).
+- Steps: Settings → **Staff** → open the person → **Extra access**. The
+  card first says what the role includes ("Included in the Manager role:
+  …"); those are never offered as switches. Turn a switch on or off: it
+  applies at once.
+- Success looks like: "<Permission> granted" or "<Permission> removed";
+  History reads "Extra access: <Permission> granted" (or removed) with your
+  name; their profile marks it **Extra access**. An admin's card reads
+  "Admins have every permission; there is nothing extra to grant."; a
+  manager's offers only **Manage staff**; a mechanic's all seven.
+- If it fails: a switch you may not change is off with the reason under it
+  (for example "Only an admin changes an admin's or a manager's access.").
+  Covered by `tests/e2e/staff.spec.ts` and `tests/e2e/roles.spec.ts`.
+
 ## Roles and limits
+
+Everyone has one of three roles (D90, [ADR-021](decisions/ADR-021-staff-roles.md)),
+shown as a badge on Settings → Your profile and on Settings → Staff:
+
+| Role | What it lets you do |
+|---|---|
+| Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93), Settings → **Labels and printers** (the QR address, printers, label templates) and **More → Shopify** (settings, the queue, events, linking variants and customers, D86) |
+| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings, Labels and printers, or Shopify |
+| Mechanic | The workshop: what everyone can do (next paragraph). Anything more only as extra access |
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
 parts from stock, appointments and check-in, in-store sales, Scan, search,
@@ -589,16 +754,24 @@ printing labels (and confirming or failing print jobs), and read the
 schedule, appointment types, services and locations. Selling prices and
 sale totals are visible to all; costs are not.
 
-| You have | What changes for you |
+**Extra access (exceptions).** An admin can give one person a single
+permission on top of their role (D92): for example a mechanic who orders
+parts gets Manage purchasing alone, or a manager who invites colleagues gets
+Manage staff. A mechanic can have any of them; a manager only Manage staff
+(their role already includes the rest); an admin none. Your profile marks
+each one **Extra access**. Extra access never includes **Record refund**,
+which is for admins and managers only. Each permission, whether it comes
+from your role or as extra access:
+
+| Permission | What changes for you |
 |---|---|
-| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate, **Record refund** on a sale (D49), Settings → **Labels and printers** (the QR address, printers, label templates) and **More → Shopify** (settings, the queue, events, linking variants and customers, D86) |
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
 | Manage inventory | New and edited products and units, **Transfer**, publication, **Publish online** and **Sync now**, services, categories and locations; with Adjust stock also **Split off as unique item** |
-| Manage staff | Settings → Staff: invite, permissions and deactivation, only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
+| Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), extra access and deactivation (it ends their sessions at once). Without the Admin role: mechanics only, only within your own permissions, never Manage staff and never your own row ([OPERATIONS.md](OPERATIONS.md#product-administration), D93) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
-| Manage purchasing | Nothing yet on this branch |
+| Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history). A mechanic given it as extra access sees those costs on purchasing screens only, not job, sale, product-page or report costs (D60); a manager sees them everywhere through View costs |
 
 Without a permission, its buttons are absent and the figures are not sent
 to your screen at all. Opening a page you may not use shows "You can't open
@@ -608,10 +781,14 @@ that." Ask an admin.
 Everyone can open Consignment, its consignors and items, and the asking
 prices; who is owed what, payments and agreement photos need Manage
 consignments or View costs (D48). Anyone may record an in-store sale and
-see its total; its cost, yield and Cult Commons need View costs, and only
-an admin records a refund (D48, D49).
+see its total; its cost, yield and Cult Commons need View costs, and an
+admin or a manager records a refund (D48, D94).
 
-Not available yet: **Purchasing** and **Reports** show
-"Arrives in Phase 7 (Purchasing)" and "Phase 9 (Reporting)" ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
+Everyone can open Purchasing, its orders and suppliers, and see what is
+ordered, received and still to come; costs on those screens need View
+costs or Manage purchasing (D60).
+
+Not available yet: **Reports** shows "Phase 9 (Reporting)"
+([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 There is no reschedule, no customer messaging and no data export. Help:
 ask the owner or an admin.

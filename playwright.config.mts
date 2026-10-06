@@ -4,11 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 import {
   ANON_KEY,
-  DEFAULT_DB_NAME,
   GATEWAY_URL,
   SERVICE_ROLE_KEY,
-  databaseUrl,
-  withDatabase,
+  devDatabaseUrl,
 } from "./scripts/devstack/config.mjs";
 import { E2E_PUBLIC_SITE_URL } from "./tests/fixtures/public-site";
 import { SHOPIFY_TEST_SECRET, SHOPIFY_TEST_SHOP } from "./tests/fixtures/shopify";
@@ -69,7 +67,7 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
       NEXT_PUBLIC_PUBLIC_SITE_URL: E2E_PUBLIC_SITE_URL,
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
-      DATABASE_URL: withDatabase(databaseUrl(), DEFAULT_DB_NAME),
+      DATABASE_URL: devDatabaseUrl(),
       LOG_LEVEL: process.env.LOG_LEVEL ?? "warn",
       // Phase 10: the in-memory Shopify (never production), the fixtures'
       // webhook secret and shop, and the cron bearer (no real values).
@@ -77,6 +75,10 @@ export default defineConfig({
       SHOPIFY_WEBHOOK_SECRET: SHOPIFY_TEST_SECRET,
       SHOPIFY_SHOP_DOMAIN: SHOPIFY_TEST_SHOP,
       CRON_SECRET: "bicii-e2e-cron-secret",
+      // The suite signs in hundreds of times from one address, past the
+      // Admin's own sign-in limits (PLAN D72), as the devstack raises
+      // Auth's. The limits themselves are covered by unit and stack tests.
+      SIGN_IN_LIMIT_MULTIPLIER: "1000",
     },
   },
 });

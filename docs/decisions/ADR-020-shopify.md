@@ -11,6 +11,18 @@ the brief's fifteen working labels are merged into these ten rows
 D88, TAX and TEST into D89). Applies D7 to online refunds
 ([ADR-014](ADR-014-defaults-for-unbuilt-phases.md)).
 
+Status update 2026-10-06 (the merge of `main` into `feat/p10-shopify`):
+D86 reads unchanged under the staff roles
+([ADR-021](ADR-021-staff-roles.md), D91). "Admin" in D86 is the role
+`admin` (`private.is_admin()` / `require_admin()`, which the roles kept
+for admin-only things): a manager is not an admin, so the Shopify
+screens, the queue, the event inspector, the links and the settings stay
+admin-only; a manager holds `manage_inventory` by role, so Publish online,
+Sync now and product-sync retries are a manager's too; a mechanic needs
+`manage_inventory` as extra access for them. The service role's allow-list
+gained `note_sign_in_attempt` (email sign-in, D72) beside the Shopify
+RPCs. No Shopify migration, RPC or test changed in the merge.
+
 Status update 2026-10-06 (Phase 10 step 1): the inbound database side of
 D80, D82, D85–D89 is built and tested
 (`supabase/migrations/20261004003900_shopify_integration.sql`,
@@ -77,7 +89,7 @@ rule that nets no refund (D49). Those are reused unchanged in meaning.
 | D86 SHOP-ACCESS | Integration administration (inspector, queue, dismiss, links, settings, integration exception rows) admin-only (payloads hold PII); `manage_inventory` publishes, syncs and retries product-sync jobs; all staff see sync status; customers linked only by an admin with a reason, never by email; a link applies to later orders | Accepted: build default, owner to confirm | RLS and RPC guards, `link_shopify_customer`, `private.integration_exceptions` (step 1) |
 | D87 SHOP-RETRY | Transient failures back off 1 minute doubling to 6 hours, at most 8 attempts, then needs attention; business failures need attention at once; a waiting refund re-queues when its order lands and closes when the order is dismissed; recording an order closes its other open deliveries (`duplicate_order`); a dismissal is final for the order or refund (its other deliveries close with it, a later delivery under any webhook id is `earlier_delivery_skipped`); a 5-minute cron behind `CRON_SECRET` plus a few due jobs after each webhook, each runner claiming a job only while its worst case fits `maxDuration` | Accepted: build default, owner to confirm | `private.integration_backoff`, `claim_integration_jobs`, the processors and `dismiss_integration_job` (step 1); cron and route step 3 |
 | D88 SHOP-REJECTED | Rejected deliveries kept as evidence (capped headers, size, SHA-256; never the body), never in the dedupe key, one row per bad body with a count; not stored above 30/min/instance; 413 over 1 MiB; purged only by the owner-only `private.purge_integration_events` (≥ 30 days), never failed or pending events, no cron | Accepted: build default, owner to confirm | `record_shopify_webhook`, `integration_events` constraints and immutability trigger, the purge function (step 1); rate limit and 413 in the route (step 3) |
-| D89 SHOP-TAX-TEST | Tax-inclusive prices recorded when `taxes_included`; tax-exclusive orders with tax refused; test deliveries stored but skipped unless `accept_test_orders` (admin + reason + audit; dev/E2E seed only); `source_name` 'pos' orders skipped | OPEN for the owner: tax basis and Shopify POS ([PRODUCT questions 17 and 18](../PRODUCT.md#open-assumptions-and-owner-questions)); the rest accepted | `process_shopify_order_paid`, `record_shopify_webhook` (step 1) |
+| D89 SHOP-TAX-TEST | Tax-inclusive prices recorded when `taxes_included`; tax-exclusive orders with tax refused; test deliveries stored but skipped unless `accept_test_orders` (admin + reason + audit; dev/E2E seed only); `source_name` 'pos' orders skipped | OPEN for the owner: tax basis and Shopify POS ([PRODUCT questions 23 and 24](../PRODUCT.md#open-assumptions-and-owner-questions)); the rest accepted | `process_shopify_order_paid`, `record_shopify_webhook` (step 1) |
 
 Full text: [PLAN §6](../PLAN.md#6-open-decisions-for-the-owner).
 

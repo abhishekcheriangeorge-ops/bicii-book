@@ -1,50 +1,56 @@
 # Current state
 
-Updated: 2026-10-06, Phase 10 (Shopify) review fixes on
-`feat/p10-shopify` (stacked on `feat/p8-labels` at 3f09d22): all 20
-confirmed findings fixed (commits da13884, 4b60fb9, 2723548, 4f8efa8 and
-the docs commit with this update), gate green on the final tree (below). Evidence checked: `git status`, `git log`, `git worktree list`
-and `git for-each-ref refs/heads refs/remotes` at the start and end of the
-step; local gates on the final tree (below). Earlier rows: their own gates
-as recorded.
+Updated: 2026-10-06, `origin/main` (a1aebf6: purchasing PR #9, staff
+email sign-in PR #10, staff roles PR #13) merged into `feat/p10-shopify`
+(labels and Shopify; a merge commit, no rebase), the labels risks
+renumbered R-075–R-077, gate green on the merged tree (below). Evidence
+checked: `git fetch`, `git status`, `git log`, `git worktree list` and
+`git merge-base` (c791d4b before the merge) at the start; local gates on
+the merged tree (below). Earlier rows: their own gates as recorded.
 
 ## Return in two minutes
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
-- Current objective: Phase 10 (Shopify) and its review fixes are complete
-  and await the PR; first next action: the orchestrator pushes
-  `feat/p10-shopify` and opens its PR;
-  it was built in four steps
-  ([PLAN Phase 10](docs/PLAN.md#phase-10--shopify), decisions D80–D89 in
-  [ADR-020](docs/decisions/ADR-020-shopify.md)). Step 1 is done: ef1a613
-  (the decision ranges per track, D80–D89, R-028 resolved), 8ea4dbd
-  (`20261004003900_shopify_integration.sql`,
-  `20261004004000_shopify_order_processing.sql`, the Phase 10 seed, types,
-  fixtures, `tests/db/shopify-webhooks.test.ts`, docs) and 792ce96. Step 2
-  is done: 4196a90 (`20261004004100_shopify_product_sync.sql`, the seed's
-  trigger flush, types, db-errors, api-surface,
-  `tests/db/shopify-sync.test.ts`, docs, R-045, R-046) and 8ec0fba. Step 3
-  is done: 92b3335 (adapters, HMAC, gids, env), c56143b (desired state,
-  sync and queue runners), 37f4c37 (webhook and cron routes, `vercel.json`,
-  proxy matcher, E2E env, the live-stack test, docs, R-047–R-049), 27a7be8
-  (log fix) and 3f5970b. Committed locally, not pushed.
-- Step 4 is done: 132a1ae (the product page's Online card, Publish online
-  and Sync now), 3892eeb (the admin `/shopify` screens, the queue, the
-  event inspector, the links, Today's `integration_failed` row, Shopify in
-  More, the linked customer on an online sale's page, unit tests, DESIGN,
-  USER-GUIDE), 3407fec (`tests/e2e/shopify.spec.ts`, TESTING) and the
-  closing docs commit with this update. Committed locally, not pushed.
-- Next action: the orchestrator pushes `feat/p10-shopify` and opens its PR
-  against `main`, answering the documentation-impact question of
+- Current objective: Phase 8 (labels) and Phase 10 (Shopify) are
+  complete with their review fixes, and `feat/p10-shopify` now also holds
+  everything on `origin/main` (a1aebf6): purchasing, staff email sign-in
+  and the three staff roles. The merge (the commit with this update) kept both sides of every
+  conflict: the seed runs Phase 7's part after Phase 6's and before
+  Phase 8's and Phase 10's (Phase 7 creates no products, so Phase 10's
+  P-000027 … P-000033 and S-000005 are unchanged); the labels risks
+  numbered R-030–R-032 before the ranges existed collided with
+  purchasing's and are now R-075–R-077 (AGENTS.md's RISKS ranges name
+  them); the labels and Shopify owner questions became rows 21–25 after
+  main's 15–20; the service role's allow-list (`SERVICE_ROLE_FUNCTIONS`)
+  gained `note_sign_in_attempt`; `SIGN_IN_LIMIT_MULTIPLIER` and the Shopify
+  variables share `env.ts` and the E2E env; and the labels E2E's signed-in
+  customer gets its session from the API (`sessionCookiesFor`), because
+  the login form now signs non-staff out (D70). Under the roles a manager
+  holds `manage_inventory` (Publish online, Sync now) but is not an
+  admin, so the Shopify screens and Labels and printers stay admin-only
+  (ADR-020's merge note, D86, D91). Committed locally, not pushed.
+- Next action: the orchestrator pushes `feat/p10-shopify` (it has no
+  upstream yet; it contains `feat/p8-labels` and `origin/main`) and opens
+  its PR against `main` (or the labels PR first, then this one), answering
+  the documentation-impact question of
   [.github/pull_request_template.md](.github/pull_request_template.md)
-  (docs changed: PLAN, PRODUCT, USER-GUIDE, DESIGN, ARCHITECTURE,
-  DATA-MODEL, TESTING, ENGINEERING, OPERATIONS, RUNBOOK, RISKS, ADR-020,
-  NOW). The orchestrator reports PRs #1–#8 and #11 merged into `main` on
-  2026-10-06 (its statement; locally `origin/main` is 6042e6e "Merge pull
-  request #11 from …/feat/p6-consignment" as of the last fetch). The owner
-  answers D89's OPEN points and confirms D80–D88 (rows 17–19 of the
-  [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions)).
+  (the merge changed AGENTS, PLAN, PRODUCT, USER-GUIDE, DESIGN,
+  ARCHITECTURE, DATA-MODEL, TESTING, ENGINEERING, OPERATIONS, RUNBOOK,
+  RISKS, decisions/README, ADR-014, ADR-017, ADR-020 and NOW), and runs CI
+  with the `e2e` label. The owner answers D89's OPEN points and confirms
+  D80–D88 (rows 23–25 of the
+  [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions))
+  and the label defaults (row 21). After it merges, the purchase receive
+  screen gets its "Print N labels" shortcut
+  ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet)).
+- Before any hosted deploy of this release: configure SMTP and run the
+  REQUIRED password reset in
+  [RUNBOOK](docs/RUNBOOK.md#hosted-supabase-projects-staging-and-production)
+  ([R-035](docs/RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset),
+  [R-039](docs/RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)),
+  and choose the Vercel plan for the 5-minute cron
+  ([R-049](docs/RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)).
 - Phase 10 step 4 in one line: every staff member sees a product's
   Shopify status on its page; manage_inventory switches **Publish online**
   and runs **Sync now** (the action runs only the job id the RPC returned);
@@ -101,13 +107,13 @@ as recorded.
   anonymous half of SPEC §31 is proven at the database (`labels.test.ts`:
   anon and staff read identical `reporting.public_items` rows) and shown
   to staff in "What the public sees" until Phase 11. Deferred: the
-  purchase receive screen's "Print N labels" shortcut, until Phase 7 is
-  integrated
+  purchase receive screen's "Print N labels" shortcut (purchasing is
+  now on this branch; the shortcut follows the PR)
   ([R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet));
   untested on a real printer and iOS
-  ([R-030](docs/RISKS.md#r-030--label-output-is-unverified-on-a-real-label-printer-and-on-ios));
+  ([R-075](docs/RISKS.md#r-075--label-output-is-unverified-on-a-real-label-printer-and-on-ios));
   print success is confirmed by hand
-  ([R-031](docs/RISKS.md#r-031--print-success-is-confirmed-by-hand)).
+  ([R-076](docs/RISKS.md#r-076--print-success-is-confirmed-by-hand)).
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -118,15 +124,15 @@ a separate, label-triggered run. All listed results are success.
 
 | Capability | Implemented | Verified and how | Deployed |
 |---|---|---|---|
-| Foundation and staff sign-in (password) | Yes, PR #2 9106a01 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37207471211), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37207644142/job/111452093165) | Not deployed |
+| Foundation and staff sign-in (password until the email sign-in integration) | Yes, PR #2 9106a01 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37207471211), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37207644142/job/111452093165) | Not deployed |
 | Customers, bikes, photos | Yes, PR #3 74fff3e | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37216112124), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37216116874/job/111476852853) | Not deployed |
 | Workshop jobs | Yes, PR #4 8763e6b | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37231006487), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37231011044/job/111520439511) | Not deployed |
 | Inventory | Yes, PR #5 9922441 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262357001), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262379042/job/111612114525) | Not deployed |
 | Today and financial engine | Yes, PR #6 d3e2101 | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262369366), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37262380782/job/111612119938) | Not deployed |
 | Appointments | Yes, PR #7 b34bbcd | [CI](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625), [e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521); locally `npm test` 82 files / 1186 tests, `npm run check`, `check:types`, `test:e2e` 106 passed | Not deployed |
-| Docs stack | Yes, `feat/docs-stack` | Locally: docs link check, 33 files / 476 links, 0 problems; `npm run check` pass (after the review fixes) | Not deployed |
-| Purchasing (Phase 7) | On `feat/p7-purchasing` 7fed53f (local and origin equal: pushed; at the end of Phase 8 step 4) | Not verified here | Not deployed |
-| Staff email OTP | On `feat/auth-email-otp`, checked out in the worktree `bicii-book-wt` (local 35d7a63, origin 4b3eadd at the end of Phase 8 step 4) | Not verified here | Not deployed |
+| Docs stack | Yes, merged in PR #8 (fbf8240; on `origin/main` 6042e6e) | Locally: docs link check, 33 files / 476 links, 0 problems; `npm run check` pass (after the review fixes) | Not deployed |
+| Purchasing (Phase 7: suppliers, purchase orders, receiving, reorder; D60–D66) | Yes, `feat/p7-purchasing`: built through a0fc1d2 (pushed), integrated with `main` in the merge 06979ec, the documentation commit 6f71dd4 and the integration review fixes after it (local only) | Locally on the integrated branch (database `bicii_dev_wt`): `npm run db:reset` pass (42 migrations, `42\|20261005000500`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 102 files / 1517 tests passed (unit 52 / 643, database 50 / 874), `npm run build` pass, `npm run test:e2e` 138 passed on phone and tablet (16.8 min, no failures, flaky or skipped), docs link check 35 files / 595 links / 0 problems. After the integration review fixes (reorder suggestions shop-owned only; product-page supplier costs need view_costs; docs): `npm run db:reset` pass (`42\|20261005000500`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 102 files / 1518 tests passed (the strengthened consigned-reorder test failed against the unfixed migration), `npm run build` pass, `npm run test:e2e` 138 passed on phone and tablet (15.0 min, no failures, flaky or skipped), docs link check 35 files / 596 links / 0 problems | Not deployed |
+| Staff email sign-in (one-time codes, D10, D70–D72: sessions end on deactivation, the Admin's own sign-in limits, a generic devstack mail catcher) | Yes, `feat/auth-email-otp`: built through 4b3eadd (pushed), integrated with main and purchasing in the merge 38db51b, the documentation commit 35d7a63 and the integration review fixes after it (local only) | Locally on the integrated branch (database `bicii_dev_wt`): `npm run db:reset` pass (44 migrations, `44\|20261005006000`, seed applied), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `BICII_REQUIRE_STACK=1 npm test` 111 files / 1585 tests passed (unit 56 / 686, database 55 / 899), `npm run build` pass, `npm run test:e2e` 152 passed on phone and tablet (18.2 min, no failures, flaky or skipped; run before the new `seed-logins.test.ts` and the docs), docs link check 36 files / 641 links / 0 problems. After the integration review fixes (PLAN D11 and ADR-005 status wording, Chloe's seeded login in DATA-MODEL, the service-role key named as required for every sign-in in .env.example, env.ts, ARCHITECTURE, RUNBOOK, OPERATIONS and R-039, the sign-in throttle's logged `cause`, ENGINEERING's Validation evidence, the seed comment): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 111 files / 1585 tests passed, `npm run build` pass, `npm run test:e2e` 152 passed on phone and tablet (15.7 min; a first run while the other worktree's E2E shared the CPUs had 1 failure, the phone consignment journey's "Void…" click lost right after "Charge added", which passed on the rerun), docs link check 36 files / 644 links / 0 problems | Not deployed |
 | Consignment core and consigned job parts (Phase 6 step 1: D44, D45, D48, D50–D52) | Database only, `feat/p6-consignment` 13fe3f3, fe6ac53, 365bdd7; no screens yet | Locally on 365bdd7: `npm run db:reset` pass (34 migrations, `34\|20261004003400`), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 86 files / 1225 tests passed; `test:e2e` not run (no screen changed); docs link check 34 files / 506 links / 0 problems | Not deployed |
 | Sales, restocks, refunds, settlements, consignor ledgers, sale reporting, read RPCs, search, Phase 6 seed (Phase 6 step 2: D44, D46–D49) | Database only, `feat/p6-consignment` 2d2ba0c, 2c402b2; no screens yet | Locally at 2c402b2 + docs: `npm run db:reset` pass (37 migrations, latest `20261004003700`, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 89 files / 1298 tests passed, `npm run build` pass, `npm run test:e2e` 106 passed (phone and tablet, 9.7 min), docs link check 34 files / 509 links / 0 problems | Not deployed |
 | Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
@@ -142,19 +148,20 @@ a separate, label-triggered run. All listed results are success.
 | Shopify service layer (Phase 10 step 3: D81, D83, D84, D87, D88) | Yes, `feat/p10-shopify` 92b3335, c56143b, 37f4c37, 27a7be8: `src/lib/integrations/shopify/` (config, ids, hmac, admin, graphql-admin, fake-admin, fake-ids, client, desired-state, deps, sync, queue, webhooks, cron), `src/app/api/shopify/webhooks/route.ts`, `src/app/api/cron/integrations/route.ts`, `vercel.json`, the proxy matcher, `SHOPIFY_ADAPTER` / `CRON_SECRET` in env.ts; no migration, no screen | Locally on the final tree: `npm run check` pass; `npm test` 123 files / 1849 tests passed (unit 71 / 878, db 52 / 971; with `BICII_REQUIRE_STACK=1`, so `shopify.stack.test.ts` ran, both on the persisted `bicii_dev` and again right after E2E reset it); `npm run build` pass; `npm run test:e2e` 150 passed on phone and tablet, 0 failed (15.0 min; build inside; same 150 tests as the Phase 8 review, no spec changed); a manual smoke of the built app on a scratch port: cron 401 without the bearer and 200 with the summary, a signed webhook 200 then `duplicate: true`, a bad HMAC 401, GET 405; docs link check 36 files / 711 links / 0 problems; `db:reset`, `db:types`, `check:types` not run (no migration) | Not deployed |
 | Shopify screens, Today's integration row, journey 5 (Phase 10 step 4: D80–D89) | Yes, `feat/p10-shopify` 132a1ae, 3892eeb, 3407fec and the closing docs commit: the product page's Online (Shopify) card; `/shopify`, `/shopify/queue`, `/shopify/products`, `/shopify/events`, `/shopify/events/[id]` (admins); `src/lib/domain/shopify.ts`, `src/lib/shopify.ts`, `src/lib/shopify-forms.ts`, `src/components/domain/shopify/`; `integration_failed` in `src/lib/reports.ts`; no migration | Locally on the final tree: `npm run check` pass; `npm test` 124 files / 1873 tests passed (unit 72 / 902; `BICII_REQUIRE_STACK=1`; before and after E2E reset `bicii_dev`); `npm run test:e2e` 160 passed, 80 per project, 0 failed (15.0 min; `npm run build` inside, pass; `shopify.spec.ts` 5 × 2; earlier runs of that spec alone failed on test timing — a streamed product page read too early, a click not yet navigated — and on a retry path that assumed the in-memory Shopify survived a server restart; all fixed in the spec); docs link check 36 files / 724 links / 0 problems; `db:reset`, `db:types`, `check:types` not run (no migration). **Correction (review):** that `test:e2e` count is not reproducible on this step's tree: the overview test failed every time on tablet (a strict-mode locator matched the rail's and the More list's Shopify links), so the real result was 159 passed, 1 failed; fixed in 4f8efa8 | Not deployed |
 | Phase 10 review fixes (D81, D84, D86, D87) | Yes, `feat/p10-shopify` da13884 (database: one effect across webhook ids, a dismissal is final, `earlier_delivery_skipped`, Buy online only on what Shopify sells, refunds named after their order), 4b60fb9 (runner claim window inside `maxDuration`, the live adapter off in Preview without `SHOPIFY_ALLOW_PREVIEW`, best-effort runs after committed writes), 2723548 (Shopify admin-only in More and the rail, the queue sheet on the live row, the offline reason, footer buttons and focus in the link sheets), 4f8efa8 (E2E), and the docs commit with this update (RUNBOOK Preview, Hobby and rotation; PLAN §4 and D84/D87; ADR-020; R-040, R-045, R-047, R-049) | Locally on the final tree: `npm run db:reset` pass (41 migrations to `20261004004100`, seed applied; devstack restarted), `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 126 files / 1898 tests passed, `npm run build` pass, `npm run test:e2e` 160 passed, 80 per project, 0 failed, 0 flaky (15.3 min; build inside, pass), docs link check 36 files / 728 links / 0 problems | Not deployed |
+| Staff roles (D90–D94: admin, manager and mechanic; `private.role_implies`; "Extra access" exceptions; role administration; refunds for managers; seed `manager@bicii.test`; staff screens with the role picker and invites by role) | Yes, `feat/staff-roles`: 0657397, 28de036 (database), bfc5ea2, dd94665 (app model, guards, refunds, profile), ae9763b, 080a796 (staff screens, E2E), a5441dd and the evidence commit (integration review, documentation), then the review-fixes commit after b83ce42; local only, not pushed | Locally after the review fixes (one-time clean-up of implied exceptions in `20261006000200` via `private.drop_implied_exceptions()`; two-connection D92 race tests; `update_staff` `expected_role` with `staff_role_changed`; shared `REASON_MAX_LENGTH`; manager wording; `ExtraAccessBadge`; focus on Cancel; PLAN D11, R-052, R-054): `npm run db:reset` pass (`47\|20261006000300`), `npm run db:types` committed (the `expected_role` argument), `npm run check` pass, `npm run check:types` pass, `BICII_REQUIRE_STACK=1 npm test` 113 files / 1686 tests passed (unit 57 / 738, database 56 / 948; both new concurrency tests failed once by hand with the refusal trigger's lock weakened to `FOR KEY SHARE`, then the lock was restored), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.1 min, no failures, flaky or skipped), docs link check 37 files / 691 links / 0 problems. Before that, locally (database `bicii_dev_wt`) after the step 4 review fixes (a5441dd): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 113 files / 1680 tests passed (unit 57 / 737, database 56 / 943), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (16.8 min, no failures, flaky or skipped; it reset the database: 47 migrations, `47\|20261006000300`, seed applied), docs link check 37 files / 690 links / 0 problems. Earlier steps: step 1 112 / 1632 and 152 E2E; step 2 112 / 1669 and 152 E2E; step 3 113 / 1680 and 158 E2E, all passing | Not deployed |
+| Merge of `origin/main` (a1aebf6: purchasing, email sign-in, staff roles) into labels and Shopify; labels risks R-075–R-077 | Yes, `feat/p10-shopify`, the merge commit with this update (with the conflict resolutions, `sessionCookiesFor`, the service-role allow-list and every document) | Locally on the merged tree (database `bicii_dev`): `npm run db:reset` pass (`51\|20261006000300`, seed applied; devstack restarted with its mail catcher), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 146 files / 2200 tests passed (106 s, no skips), `npm run build` pass, `npm run test:e2e` 200 passed, 100 per project, 0 failed, flaky or skipped (20.3 min; build inside, pass; a first run had 1 failure, tablet `today.spec.ts` "Today shows low stock": the labels spec's and the purchasing spec's leftover low-stock products together pushed the seeded sealant off Today's five rows; `createProduct` now sets a reorder point only when asked and the labels spec sets none, TESTING), docs link check 39 files / 868 links / 0 problems | Not deployed |
 | Phase 9 reporting, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
 ## Work location and continuation
 
-- PR stack: `main` (1594c78) ← `docs/build-plan` (#1) ← `feat/m1.1-foundation`
-  (#2) ← … ← `feat/p2-appointments` (#7) ← `feat/docs-stack`. #1–#7 are open
-  drafts, pushed and equal to origin.
-- `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
-- `feat/p10-shopify` (head: the commit with this update): stacked on
-  `feat/p8-labels` (3f09d22); Phase 10 complete, committed locally, not
-  pushed (`git for-each-ref` shows no `origin/feat/p10-shopify`): ef1a613,
+- `main` on origin (a1aebf6) holds PRs #1–#11 and #13: the stack through
+  appointments, the docs stack, Phase 6, purchasing, staff email sign-in
+  and the staff roles. The local `main` ref is stale; use `origin/main`.
+- `feat/p10-shopify` (head: the merge commit with this update): stacked on
+  `feat/p8-labels` (3f09d22), with `origin/main` (a1aebf6) merged in on
+  2026-10-06; Phase 10 complete, committed locally, not pushed (`git for-each-ref` shows no `origin/feat/p10-shopify`): ef1a613,
   8ea4dbd, 792ce96 (step 1), 4196a90, 8ec0fba (step 2), 92b3335, c56143b,
   37f4c37, 27a7be8, 3f5970b (step 3), 132a1ae, 3892eeb, 3407fec, 92e4aa6
   (step 4), da13884, 4b60fb9, 2723548, 4f8efa8 and the docs commit with
@@ -177,15 +184,12 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   origin holds an orchestrator auto-save, `wip/feat/p6-consignment`
   (ed7d27e, a snapshot of uncommitted work, not reviewed). The
   orchestrator pushes it and opens its PR on top of `feat/docs-stack`.
-- Parallel track: a second worktree of this clone (`bicii-book-wt`, see
-  `git worktree list`; on `feat/staff-roles` at 2026-10-06) with its own
-  database builds purchasing, email OTP and staff roles. `feat/p7-purchasing` (7fed53f, equal to origin) and
-  `feat/auth-email-otp` (local 35d7a63, origin 4b3eadd: the local branch
-  is ahead or differs; owned by that track) at the end of Phase 8 step 4; purchasing forks from PR #6 (no
-  appointments); both are merged in a later integration step
-  ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
-- Local-only artifacts (git-ignored): `.env.local`, `.devstack/`,
-  `test-results/`.
+- Parallel track: a second worktree of this clone (`/home/user/bicii-book-wt`,
+  see `git worktree list`) builds Phase 9 reporting on
+  `feat/p9-reporting` with its own database `bicii_dev_wt` and ports; this
+  checkout never touches it.
+- Local-only artifacts (git-ignored): `.env.local`, `.devstack/` (with
+  `.devstack/mail/`, the mail catcher's codes), `test-results/`.
 
 ## Attention and links
 
@@ -193,7 +197,7 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-001](docs/RISKS.md#r-001--nothing-is-deployed),
   [R-002](docs/RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery),
   [R-003](docs/RISKS.md#r-003--the-devstack-differs-from-hosted-supabase).
-  Next in play: the PR stack integration
+  Next in play: the labels and Shopify PR
   ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 - Decisions needed: [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions);
   Phase 6 adds rows 9 (confirm D44–D55; D54 and D55 came from the review),
@@ -205,12 +209,18 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-021](docs/RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)),
   13 (D55: should backdating an in-store sale more than a few days need
   a permission?,
-  [R-027](docs/RISKS.md#r-027--a-sale-can-be-backdated-without-limit-by-any-staff-member));
-  Phase 8 adds rows 15 (confirm D56–D59 and the D9 base: no fallback, and
-  changing the address orphans printed labels,
+  [R-027](docs/RISKS.md#r-027--a-sale-can-be-backdated-without-limit-by-any-staff-member))
+  and 14 (consignor data retention,
+  [R-026](docs/RISKS.md#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history));
+  Phase 7 adds rows 15–17, email sign-in 18–19 and the staff roles 20
+  (main's numbering, unchanged by the merge); Phase 8 adds rows 21
+  (confirm D56–D59 and the D9 base: no fallback, and changing the address
+  orphans printed labels,
   [R-013](docs/RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address))
-  and 16 (the next main-line decision range,
-  [R-028](docs/RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted)).
+  and 22 (the decision ranges, answered,
+  [R-028](docs/RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted));
+  Phase 10 adds rows 23 and 24 (D89: tax basis, Shopify POS) and 25
+  (confirm D80–D88).
 - Phase 10 risks: R-040–R-044 (step 1) and, from step 2,
   [R-045](docs/RISKS.md#r-045--the-buy-online-link-follows-overall-availability-not-online-stock)
   (Buy online follows overall availability, not online stock) and

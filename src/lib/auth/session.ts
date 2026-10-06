@@ -14,6 +14,7 @@ import {
   isPermissionKey,
   type PermissionKey,
   type StaffDTO,
+  type StaffRole,
 } from "./permissions";
 
 export type { StaffDTO } from "./permissions";
@@ -64,6 +65,15 @@ async function readStaff(supabase: ServerSupabase): Promise<StaffDTO | null> {
 }
 
 /**
+ * The staff record of whoever `supabase` is signed in as (readStaff), for
+ * the sign-in action: right after a code is verified, it admits only
+ * active staff (PLAN D70). Null when the login is not staff.
+ */
+export async function readStaffProfile(supabase: ServerSupabase): Promise<StaffDTO | null> {
+  return readStaff(supabase);
+}
+
+/**
  * The verified signed-in user, or null.
  *
  * Memoised with React cache(), which deduplicates only while a Server
@@ -85,20 +95,31 @@ export const getStaff = cache(async (): Promise<StaffDTO | null> => {
 });
 
 export type StaffRequirement = {
-  /** Required permission (admins have all). */
+  /** Required permission (from the role or an exception, PLAN D91). */
   permission?: PermissionKey;
-  /** Require role admin. */
+  /**
+   * Require role admin: the admin-only settings (shop settings, hours,
+   * closures, appointment types, Cult Commons rates), mirroring
+   * private.require_admin().
+   */
   admin?: boolean;
+  /**
+   * Require one of these roles, for rules decided by role rather than by
+   * permission, e.g. refunds for admins and managers (D94,
+   * private.can_record_refunds()). No exception satisfies it.
+   */
+  roles?: readonly StaffRole[];
 };
 
 function guard(
   session: Session | null,
   staff: StaffDTO | null,
-  { permission, admin }: StaffRequirement,
+  { permission, admin, roles }: StaffRequirement,
 ): StaffDTO {
   if (!session) redirect("/login");
   if (!staff || !staff.active) forbidden();
   if (admin && staff.role !== "admin") forbidden();
+  if (roles && !roles.includes(staff.role)) forbidden();
   if (permission && !hasPermission(staff, permission)) forbidden();
   return staff;
 }

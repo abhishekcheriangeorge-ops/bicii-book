@@ -42,10 +42,10 @@ memory):
   React 19.2, TypeScript 5 strict, Tailwind 4 CSS-first config. Same versions
   as the public site so the two repos can share conventions and, later, a
   package.
-- Supabase: Postgres, Auth (email/password for staff and customers), Storage,
-  RLS. Migrations via the Supabase CLI (`supabase/migrations/*.sql`), typed
-  client via `supabase gen types typescript` committed to
-  `src/lib/database.types.ts`.
+- Supabase: Postgres, Auth (email one-time codes for staff, D10; customer
+  sign-in is decided in Phase 11), Storage, RLS. Migrations via the
+  Supabase CLI (`supabase/migrations/*.sql`), typed client via
+  `supabase gen types typescript` committed to `src/lib/database.types.ts`.
 - `@supabase/ssr` for cookie-based sessions in Server Components, Server
   Actions, Route Handlers and `proxy.ts`. `@supabase/supabase-js` with the
   service-role key only inside `src/lib/admin/` (Supabase Auth admin API, e.g.
@@ -107,6 +107,13 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
   through RLS, and throw `redirect('/login')` or `forbidden()` as appropriate.
   `experimental.authInterrupts` is on so `forbidden.tsx` / `unauthorized.tsx`
   render 403/401.
+- `/login` (PLAN D10, D70, D72) calls Supabase Auth from Server Actions, so
+  Auth sees the Admin's server as the caller and its per-IP limits are one
+  bucket for everyone. The login actions therefore count each code request
+  and verification per client address and per email before asking Auth
+  (`src/lib/admin/sign-in-throttle.ts`, counters in Postgres through the
+  service-role-only `note_sign_in_attempt`), and show Auth's per-address
+  refusals exactly like an unknown address.
 - Authorization is enforced three times and must agree: RLS policies on
   tables, `private.require_permission()` at the top of each RPC, and
   `requireStaff(permission)` in the action. The first two are what matter;

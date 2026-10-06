@@ -185,10 +185,10 @@ describe("public.my_staff_profile()", () => {
 
   it("staff: granted permissions only", async () => {
     expect(await asStaff(conn, STAFF.mechanic1, profile)).toEqual([
-      { id: STAFF.mechanic1, role: "staff", active: true, permissions: ["view_costs"] },
+      { id: STAFF.mechanic1, role: "mechanic", active: true, permissions: ["view_costs"] },
     ]);
     expect(await asStaff(conn, STAFF.mechanic2, profile)).toEqual([
-      { id: STAFF.mechanic2, role: "staff", active: true, permissions: [] },
+      { id: STAFF.mechanic2, role: "mechanic", active: true, permissions: [] },
     ]);
   });
 
@@ -199,7 +199,9 @@ describe("public.my_staff_profile()", () => {
       await tx.query("set local role authenticated");
       return profile(tx);
     });
-    expect(rows).toEqual([{ id: STAFF.mechanic1, role: "staff", active: false, permissions: [] }]);
+    expect(rows).toEqual([
+      { id: STAFF.mechanic1, role: "mechanic", active: false, permissions: [] },
+    ]);
   });
 
   it("non-staff user: no rows; anon: not executable", async () => {

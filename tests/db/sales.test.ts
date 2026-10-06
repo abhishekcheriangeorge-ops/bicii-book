@@ -38,6 +38,7 @@ import { customerClaims, linkCustomerLogin } from "./customer-fixtures";
 import { actAs, connect, inTransaction, isolatedDatabase, scalar } from "./harness";
 import {
   ADMIN,
+  MANAGER,
   MECHANIC1,
   MECHANIC2,
   addPart,
@@ -1199,7 +1200,7 @@ describe.skipIf(!isolatedDatabase())("restock_unit (D46, D29, D44)", () => {
   });
 });
 
-describe.skipIf(!isolatedDatabase())("Refunds are financial only (D7, D49)", () => {
+describe.skipIf(!isolatedDatabase())("Refunds are financial only (D7, D49, D94)", () => {
   it("partially refunded, then refunded; stock and units untouched; capped at the sale total (refund_exceeds_sale); a reason is required", async () => {
     await inTx(async (tx) => {
       const productId = await quantityProduct(tx);
@@ -1240,13 +1241,22 @@ describe.skipIf(!isolatedDatabase())("Refunds are financial only (D7, D49)", () 
     });
   });
 
-  it("only admins refund (D49): mechanic1 and a view_financial_reports-only member are refused; a replay returns the refund; another payload is sale_refund_conflict", async () => {
+  it("only admins and managers refund (D94 amends D49): mechanics are refused, even with view_financial_reports or every permission as exceptions; a replay returns the refund; another payload is sale_refund_conflict", async () => {
     await inTx(async (tx) => {
       const productId = await quantityProduct(tx);
       const sale = await recordSale(tx, { lines: [{ product_id: productId, quantity: 1 }] });
       await ownerMode(tx);
       const reports = await staffWith(tx, ["view_financial_reports"]);
-      for (const claims of [MECHANIC1, MECHANIC2, reports.claims]) {
+      const everything = await staffWith(tx, [
+        "view_costs",
+        "manage_inventory",
+        "adjust_stock",
+        "manage_consignments",
+        "manage_purchasing",
+        "manage_staff",
+        "view_financial_reports",
+      ]);
+      for (const claims of [MECHANIC1, MECHANIC2, reports.claims, everything.claims]) {
         await actAs(tx, claims);
         await failsWith(tx, () => refund(tx, { saleId: sale.sale_id, amount: "5.00" }), {
           code: "42501",
@@ -1279,6 +1289,12 @@ describe.skipIf(!isolatedDatabase())("Refunds are financial only (D7, D49)", () 
       await failsWith(tx, () => refund(tx, { saleId: randomUUID(), amount: "1.00" }), {
         code: "P0002",
       });
+      // A manager records a refund by role (D94), within the same cap.
+      await actAs(tx, MANAGER);
+      expect(
+        await refund(tx, { saleId: sale.sale_id, amount: "1.00", reason: "Goodwill" }),
+      ).toMatchObject({ amount: "1.00", recorded_by: STAFF.manager });
+      expect(await saleStatus(tx, sale.sale_id)).toBe("partially_refunded");
     });
   });
 });

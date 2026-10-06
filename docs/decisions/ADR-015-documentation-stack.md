@@ -45,7 +45,10 @@ Further rules:
 
 - Decision numbers: new main-line PLAN §6 rows take D43–D59; D60 and up are
   used by the purchasing track (`feat/p7-purchasing` has D60–D66) and are
-  never reused here.
+  never reused here. Status update 2026-10-06: numbers, records and risk
+  entries are now allocated per track (AGENTS.md item 2, PLAN §6); the
+  purchasing track's D60–D66 kept their numbers at its integration, with
+  ADR-018 and R-030–R-034.
 - Backlog: there is no issue tracker in use (0 GitHub issues on
   2026-10-05). The backlog is the PLAN §2 phases plus the next actions in
   RISKS, with NOW naming the next action.

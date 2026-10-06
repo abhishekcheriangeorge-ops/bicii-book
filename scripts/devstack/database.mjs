@@ -11,6 +11,7 @@ import path from "node:path";
 import pg from "pg";
 
 import {
+  GATEWAY_URL,
   JWT_SECRET,
   PATHS,
   databaseName,
@@ -113,7 +114,7 @@ export async function runAuthMigrations(url) {
     cwd: PATHS.authDir,
     env: {
       ...authEnv(url),
-      API_EXTERNAL_URL: "http://127.0.0.1:54321/auth/v1",
+      API_EXTERNAL_URL: `${GATEWAY_URL}/auth/v1`,
       GOTRUE_SITE_URL: "http://localhost:3000",
     },
     label: "Supabase Auth migrations",

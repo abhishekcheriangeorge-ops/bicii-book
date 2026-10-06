@@ -12,6 +12,7 @@ import { HeaderPrintLabel, LabelsCard } from "@/components/domain/labels-card";
 import { EditProductButton } from "@/components/domain/product-sheet";
 import { PUBLIC_PREVIEW_ID } from "@/components/domain/public-preview";
 import { PublicationControls } from "@/components/domain/publication-card";
+import { ProductPurchasingCard } from "@/components/domain/purchasing/product-purchasing-card";
 import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
 import { OnlineCard } from "@/components/domain/shopify/online-card";
 import { ShortId } from "@/components/domain/short-id";
@@ -32,6 +33,7 @@ import { getProduct, listLocations, listProductCategories } from "@/lib/domain/i
 import { getLabelContext, resolvePrintPreset } from "@/lib/domain/labels";
 import { getProductOnline } from "@/lib/domain/shopify";
 import { shopifyConnection } from "@/lib/integrations/shopify/client";
+import { getProductPurchasing } from "@/lib/domain/purchasing";
 import {
   publicationLabel,
   publicationTone,
@@ -81,10 +83,12 @@ export default async function ProductPage({ params, searchParams }: PageProps<"/
   const manage = hasPermission(staff, "manage_inventory");
   const canAdjust = hasPermission(staff, "adjust_stock");
   const supabase = await createClient();
-  const [product, locations, categories] = await Promise.all([
+  const [product, locations, categories, purchasing] = await Promise.all([
     getProduct(supabase, id, { viewCosts }),
     listLocations(supabase),
     manage ? listProductCategories(supabase) : Promise.resolve([]),
+    // Purchasing (Phase 7): suppliers and orders for this product.
+    getProductPurchasing(supabase, id, staff),
   ]);
   if (!product) notFound();
   // D50: consigned stock moves only through intake, sale, restock, a job,
@@ -387,6 +391,14 @@ export default async function ProductPage({ params, searchParams }: PageProps<"/
         publicPreviewId={PUBLIC_PREVIEW_ID}
         units={product.units.map((u) => ({ id: u.id, shortId: u.shortId }))}
       />
+      {/* Purchasing (Phase 7): shop-owned counted products are bought on purchase orders (D62). */}
+      {counted && product.ownershipType === "shop_owned" ? (
+        <ProductPurchasingCard
+          product={{ id: product.id, name: product.name, shortId: product.shortId }}
+          purchasing={purchasing}
+          canManage={hasPermission(staff, "manage_purchasing") && !archived}
+        />
+      ) : null}
 
       <Card title="Publication">
         <PublicationControls

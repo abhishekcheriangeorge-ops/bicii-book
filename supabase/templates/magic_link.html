@@ -1,0 +1,45 @@
+<!-- Supabase Auth email template (magic_link). Codes only (PLAN D10, D70): there
+     is deliberately no ConfirmationURL link, because a link opens in
+     the mail app's browser, not in the installed app. Keep any other run of
+     six or more digits out of this file: tests read the first one as the code. -->
+<html>
+  <body
+    style="
+      margin: 0;
+      padding: 24px;
+      background: #f4f4f2;
+      font-family: -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      color: #222;
+    "
+  >
+    <div
+      style="
+        max-width: 480px;
+        margin: 0 auto;
+        padding: 32px 24px;
+        background: #fff;
+        border-radius: 12px;
+      "
+    >
+      <h1 style="margin: 0 0 16px; font-size: 20px; font-weight: 600">Your BICII sign-in code</h1>
+      <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.5">
+        Enter this code on the BICII Admin sign-in screen:
+      </p>
+      <p
+        style="
+          margin: 0 0 24px;
+          font-size: 32px;
+          font-weight: 700;
+          letter-spacing: 6px;
+          font-family: ui-monospace, Menlo, Consolas, monospace;
+        "
+      >
+        {{ .Token }}
+      </p>
+      <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5">It expires in 10 minutes.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #555">
+        If you didn't ask for this code, you can ignore this email.
+      </p>
+    </div>
+  </body>
+</html>

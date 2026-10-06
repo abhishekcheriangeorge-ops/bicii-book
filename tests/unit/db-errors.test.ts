@@ -106,6 +106,17 @@ describe("mapDbError", () => {
     expect(mapDbError(pgrst("P0002", "staff 123 not found"))).toMatchObject({ kind: "not_found" });
   });
 
+  it("maps the staff roles errors: an implied exception and a role changed meanwhile", () => {
+    expect(mapDbError(pgrst("P0001", "permission_implied_by_role")).message).toBe(
+      "Their role already includes that.",
+    );
+    expect(mapDbError(pgrst("P0001", "staff_role_changed"))).toMatchObject({
+      kind: "business",
+      reason: "staff_role_changed",
+      message: "Someone changed their role in the meantime. Reload and try again.",
+    });
+  });
+
   it("maps the workshop's business errors, unique indexes and checks (Phase 3)", () => {
     expect(mapDbError(pgrst("P0001", "work_order_transition_invalid"))).toMatchObject({
       kind: "business",
@@ -285,6 +296,45 @@ describe("mapDbError", () => {
         ),
       ),
     ).toEqual({ message: "That overlaps with another entry.", kind: "conflict", code: "23P01" });
+  });
+
+  it("maps the purchasing business errors, unique keys and checks (Phase 7)", () => {
+    expect(mapDbError(pgrst("P0001", "purchase_over_receipt"))).toMatchObject({
+      kind: "business",
+      reason: "purchase_over_receipt",
+      message:
+        "That is more than is still to come on this order. Check the counts, or raise the ordered quantity first.",
+    });
+    expect(mapDbError(pgrst("P0001", "purchase_receipt_key_reused")).message).toBe(
+      "This submission was already recorded. Check the order before receiving again.",
+    );
+    expect(mapDbError(pgrst("P0001", "purchase_order_closed")).message).toBe(
+      "This order is closed: it has been fully received or cancelled. Extra units go on a new order.",
+    );
+    expect(mapDbError(pgrst("P0001", "supplier_has_open_orders")).message).toBe(
+      "This supplier still has open orders. Receive or cancel them first.",
+    );
+    expect(mapDbError(pgrst("P0001", "purchase_receipt_before_submission")).message).toBe(
+      "The delivery date is before the order was submitted.",
+    );
+    expect(
+      mapDbError({ code: "23505", message: "dup", constraint: "suppliers_name_active_key" }),
+    ).toMatchObject({ kind: "duplicate", message: "A supplier with that name already exists." });
+    expect(
+      mapDbError(
+        pgrst(
+          "23514",
+          'new row for relation "purchase_order_lines" violates check constraint "purchase_order_lines_unit_cost_check"',
+        ),
+      ).message,
+    ).toMatch(/^Unit cost must be between \S*0\.00 and \S*99,999\.99\.$/);
+    expect(
+      mapDbError({
+        code: "23514",
+        message: "check",
+        constraint: "inventory_movements_purchase_received_has_receipt_line",
+      }).message,
+    ).toBe("Stock from a supplier is received through its purchase order.");
   });
 
   it("maps numeric overflow (22003) to a plain message", () => {

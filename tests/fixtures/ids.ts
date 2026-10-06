@@ -3,27 +3,31 @@
  * IDs, never by name (TESTING.md "Seed data"). Keep in sync with the seed.
  */
 
-/** Local-only password shared by every seeded login. */
-export const SEED_PASSWORD = "bicii-dev-password";
-
 /** auth.users.id of each seeded login. */
 export const AUTH_USER = {
   admin: "a0000000-0000-4000-8000-000000000001",
   mechanic1: "a0000000-0000-4000-8000-000000000002",
   mechanic2: "a0000000-0000-4000-8000-000000000003",
+  manager: "a0000000-0000-4000-8000-000000000004",
 } as const;
 
-/** public.staff.id. admin: role admin. mechanic1: view_costs. mechanic2: no permissions. */
+/**
+ * public.staff.id (D90). admin: role admin. manager: role manager, no
+ * exceptions. mechanic1: role mechanic, view_costs as an exception.
+ * mechanic2: role mechanic, no exceptions.
+ */
 export const STAFF = {
   admin: "5a000000-0000-4000-8000-000000000001",
   mechanic1: "5a000000-0000-4000-8000-000000000002",
   mechanic2: "5a000000-0000-4000-8000-000000000003",
+  manager: "5a000000-0000-4000-8000-000000000004",
 } as const;
 
 export const STAFF_EMAIL = {
   admin: "admin@bicii.test",
   mechanic1: "mechanic1@bicii.test",
   mechanic2: "mechanic2@bicii.test",
+  manager: "manager@bicii.test",
 } as const;
 
 export type SeedStaff = keyof typeof STAFF;
@@ -239,9 +243,11 @@ export const PRODUCT_CATEGORY = {
  *   brakePads 34 SF; gp5000Tyre 12 SF; roadTube 40 SF + 20 WS;
  *   marathonRacer 6 SF (one consumed by INVENTORY_JOB, then reversed);
  *   bromptonTube 12 SF (15 opening, one on INVENTORY_JOB, two sold on
- *   Phase 6's S-000002); chainX11 8 SF;
- *   cassette 3 SF; cableKit 2 SF (low, reorder 4); hydraulicHose 1 SF (low,
- *   reorder 5); chainLube 18 SF; barTape 7 SF; sealant 1 SF + 1 WS (low,
+ *   Phase 6's S-000002); chainX11 26 SF (8 opening + 18 received on
+ *   PO-000002, Phase 7); cassette 7 SF (3 + 4 received on PO-000001);
+ *   cableKit 2 SF (low, reorder 4); hydraulicHose 1 SF (low, reorder 5);
+ *   chainLube 28 SF (18 + 10 received on PO-000002); barTape 7 SF;
+ *   sealant 1 SF + 1 WS (low,
  *   reorder 3); colnago, brompton, surly 1 SF each (their units);
  *   chainX10Archived none.
  * reporting.low_stock lists exactly cableKit, hydraulicHose and sealant.
@@ -533,9 +539,10 @@ export const APPOINTMENT = {
 export type SeedAppointment = keyof typeof APPOINTMENT;
 
 /**
- * The one seeded customer login (Phase 2): Chloe Lim, password
- * SEED_PASSWORD, linked to CUSTOMER.chloe (E2E journey 2, customer-access
- * tests). Tests must not link another login to CUSTOMER.chloe.
+ * The one seeded customer login (Phase 2): Chloe Lim, linked to
+ * CUSTOMER.chloe (E2E journey 2, customer-access tests). Like the staff
+ * logins she has no usable password (PLAN D10): tests sign her in with an
+ * email code (tests/e2e/api.ts signInApi). Tests must not link another login to CUSTOMER.chloe.
  */
 export const CUSTOMER_LOGIN = {
   chloe: {
@@ -1016,4 +1023,85 @@ export const SHOPIFY_ORDER = {
     gid: "gid://shopify/Order/7000001002",
     name: "#1002",
   },
+} as const;
+
+/**
+ * Purchasing (Phase 7): public.suppliers.id. The seed links them to Phase 4
+ * products with set_supplier_product (supplier SKU, lead days, preferred):
+ *   veloParts   Velo Parts Asia Pte Ltd (Kenneth Lim, sales@veloparts.test,
+ *               +65 6123 4501, account BICII-0042): cassette, chainX11,
+ *               chainLube, cableKit, hydraulicHose (preferred) and
+ *               gp5000Tyre (not preferred).
+ *   tropicTyre  Tropic Tyre & Tube Co (Siti Rahman, orders@tropictyre.test,
+ *               +65 6234 5502, account TT-1187): gp5000Tyre and roadTube
+ *               (preferred).
+ *   oldSpoke    Old Spoke Trading: archived 15 days ago; no links, no POs.
+ * sealant (low stock) has no supplier.
+ */
+export const SUPPLIER = {
+  veloParts: "d7000000-0000-4000-8000-000000000001",
+  tropicTyre: "d7000000-0000-4000-8000-000000000002",
+  oldSpoke: "d7000000-0000-4000-8000-000000000003",
+} as const;
+
+/**
+ * public.purchase_orders.id (Phase 7), created in this order through the
+ * RPCs by Asha Admin (SGD), so PO_NUMBER is PO-000001 .. PO-000005:
+ *   receivedInFull    veloParts, ref SO-7702, expected 9 days ago; created
+ *                     12 days ago, submitted 11, received in full 9 days ago
+ *                     at 14:00 (delivery note DN-5402): received.
+ *   partial           veloParts, ref SO-7781, SPEC §14's example: expected
+ *                     yesterday; created 6 days ago, submitted 5, one
+ *                     delivery 3 days ago at 11:30 (DN-5531):
+ *                     partially_received, 2 chains outstanding, overdue.
+ *   awaitingDelivery  tropicTyre, created and submitted 2 days ago, expected
+ *                     in 3 days, nothing received: submitted.
+ *   draft             veloParts, created yesterday, a draft for the
+ *                     low-stock cableKit and hydraulicHose.
+ *   cancelled         tropicTyre, created and submitted yesterday, cancelled
+ *                     at seed time: 'Supplier out of stock until next
+ *                     quarter'.
+ * On order (reporting.product_on_order): gp5000Tyre 6, chainX11 2.
+ */
+export const PURCHASE_ORDER = {
+  receivedInFull: "d7100000-0000-4000-8000-000000000001",
+  partial: "d7100000-0000-4000-8000-000000000002",
+  awaitingDelivery: "d7100000-0000-4000-8000-000000000003",
+  draft: "d7100000-0000-4000-8000-000000000004",
+  cancelled: "d7100000-0000-4000-8000-000000000005",
+} as const;
+
+export type SeedPurchaseOrder = keyof typeof PURCHASE_ORDER;
+
+export const PO_NUMBER: Record<SeedPurchaseOrder, string> = {
+  receivedInFull: "PO-000001",
+  partial: "PO-000002",
+  awaitingDelivery: "PO-000003",
+  draft: "PO-000004",
+  cancelled: "PO-000005",
+};
+
+/**
+ * public.purchase_order_lines.id (Phase 7): product, ordered x unit cost
+ * (each the product's default_direct_cost), received at the Shop floor.
+ */
+export const PURCHASE_ORDER_LINE = {
+  receivedInFullCassette: "d7200000-0000-4000-8000-000000000001", // cassette 4 x 68.00, received 4 (3 -> 7 on hand)
+  partialChain: "d7200000-0000-4000-8000-000000000002", // chainX11 20 x 24.00, received 18 (8 -> 26)
+  partialLube: "d7200000-0000-4000-8000-000000000003", // chainLube 10 x 7.00, received 10 (18 -> 28)
+  awaitingTyres: "d7200000-0000-4000-8000-000000000004", // gp5000Tyre 6 x 52.00, received 0 (12 on hand)
+  draftCableKit: "d7200000-0000-4000-8000-000000000005", // cableKit 6 x 16.00 (its D66 suggestion; 2 on hand)
+  draftHose: "d7200000-0000-4000-8000-000000000006", // hydraulicHose 9 x 12.00 (its D66 suggestion; 1 on hand)
+  cancelledTubes: "d7200000-0000-4000-8000-000000000007", // roadTube 20 x 3.80, cancelled (60 on hand)
+} as const;
+
+/**
+ * purchase_receipts.idempotency_key (Phase 7): receivedInFull is PO-000001's
+ * one receipt (line receivedInFullCassette x 4); partial is PO-000002's
+ * (partialChain x 18 and partialLube x 10, in that order, DN-5531). Both at
+ * the Shop floor with the PO lines' costs.
+ */
+export const RECEIPT_KEY = {
+  receivedInFull: "d7300000-0000-4000-8000-000000000001",
+  partial: "d7300000-0000-4000-8000-000000000002",
 } as const;

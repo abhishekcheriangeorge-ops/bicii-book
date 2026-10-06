@@ -24,15 +24,17 @@ export default async function SettingsPage() {
     {
       href: "/settings/profile",
       label: "Your profile",
-      description: "Role, permissions, password and sign out",
+      description: "Your role, what you can do, and sign out",
       icon: UserIcon,
     },
+    // Admins, and anyone granted Manage staff as an exception; a manager's
+    // role does not include it (D91).
     ...(hasPermission(staff, "manage_staff")
       ? [
           {
             href: "/settings/staff",
             label: "Staff",
-            description: "Invite staff, permissions and access",
+            description: "Invite staff, roles, extra access and deactivation",
             icon: UsersIcon,
           },
         ]

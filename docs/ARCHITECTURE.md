@@ -2,7 +2,11 @@
 
 Owner: the build agent, reviewed by the product owner (Abhishek Cherian
 George). Implementation inspected: `c6bf6d0` on 2026-10-05 (application code
-identical to `b34bbcd`, the head of PR #7).
+identical to `b34bbcd`, the head of PR #7); the Phase 6 and Phase 7 rows were
+added at their phases, Phase 7's at its integration with the main line on
+`feat/p7-purchasing`, the staff email sign-in rows at its integration
+on `feat/auth-email-otp` (2026-10-06), and the staff roles rows on
+`feat/staff-roles` (2026-10-06, ADR-021).
 
 This page describes the system as it is built. The decision of record is
 [ADR-001](ADR-001-architecture.md), whose body stays as written in PR #1;
@@ -31,6 +35,7 @@ flowchart LR
   app -. "Admin API (GraphQL)" .-> shopify
   cron["Vercel cron<br/>(vercel.json, not set up)"] -. "bearer" .-> app
   printer["Label printer<br/>(browser print / PDF since Phase 8;<br/>hardware adapter Phase 12)"] --- app
+  auth --> mail["Email (SMTP)<br/>sign-in codes; hosted provider not set up"]
 ```
 
 Dashed lines are planned or not yet connected (the Shopify layer is
@@ -38,7 +43,8 @@ built and tested only against its in-memory fake). Nothing is deployed: there is
 hosted Supabase project and no Vercel project
 ([R-001](RISKS.md#r-001--nothing-is-deployed)). Locally and in CI the
 Supabase services run without Docker on the devstack
-([ADR-002](decisions/ADR-002-devstack.md)): Auth on :9999, PostgREST on
+([ADR-002](decisions/ADR-002-devstack.md)): a local mail catcher on :8025
+(SMTP :2525) that receives Auth's emails, Auth on :9999, PostgREST on
 :3001, Storage on :5000 behind a gateway on :54321, and Postgres 16.
 
 Installed versions (from `package.json` and `node_modules`, 2026-10-05):
@@ -276,17 +282,20 @@ PostgREST with the fake Shopify.
 | Responsibility | Location | Dependency | Failure consequence |
 |---|---|---|---|
 | Staff screens and Server Actions | `src/app/(staff)/` (`page.tsx`, `actions.ts` per area) | domain modules, `requireStaff` | the screen or action errors; data stays consistent because the database enforces the rules |
-| Sign-in | `src/app/(auth)/login/` | Supabase Auth (email + password on this branch) | staff cannot sign in |
+| Sign-in | `src/app/(auth)/login/` (`requestCode`, `verifyCode`), [src/lib/auth/otp.ts](../src/lib/auth/otp.ts), [sign-in-errors.ts](../src/lib/auth/sign-in-errors.ts) | Supabase Auth email codes (`signInWithOtp` without creating users, `verifyOtp`; D10, D70), SMTP | staff cannot sign in |
+| Sign-in limits | [src/lib/auth/sign-in-limits.ts](../src/lib/auth/sign-in-limits.ts), [src/lib/admin/sign-in-throttle.ts](../src/lib/admin/sign-in-throttle.ts) | `note_sign_in_attempt` (service role, so `SUPABASE_SERVICE_ROLE_KEY`; D72) | sign-in says it is unavailable for everyone; the error log's `cause` says why (`no_service_role_key`, `rpc_error` with its code, `request_failed`) |
+| Session revocation | trigger `staff_revoke_sessions` (`20261005005000_staff_session_revocation.sql`) | `auth.sessions`, `auth.refresh_tokens` (D71) | a deactivated device can refresh, but every guard still refuses it |
 | Session refresh and redirect | [src/proxy.ts](../src/proxy.ts) | `@supabase/ssr` | stale sessions, missing `x-request-id`; it is not the guard |
-| Staff guard | [src/lib/auth/session.ts](../src/lib/auth/session.ts) (`requireStaff`, `requireAdmin`, `authorizeStaff`) | `my_staff_profile` | pages and actions refuse to run |
+| Staff guard | [src/lib/auth/session.ts](../src/lib/auth/session.ts) (`requireStaff`, `requireAdmin`, `authorizeStaff` with `permission`, `admin` or `roles`), [src/lib/auth/permissions.ts](../src/lib/auth/permissions.ts) (roles, `roleImplies`, the blockers) | `my_staff_profile` | pages and actions refuse to run |
 | Action wrapper | [src/lib/actions.ts](../src/lib/actions.ts) (`staffAction`, `ActionResult`) | zod, `db-errors`, logger | inconsistent errors or lost form values |
 | Domain modules (server-only) | [src/lib/domain/](../src/lib/domain/) | RLS-scoped client, RPCs | the feature fails; rules still hold in SQL |
 | Consignment (Phase 6) | [src/lib/domain/consignment.ts](../src/lib/domain/consignment.ts) (consignors, items, intake, terms, charges, returns, settlements over `list_consignors`, `consignor_statement`, `consignor_payout_details` and the step 1–2 RPCs); screens `src/app/(staff)/consignment/` (`page.tsx` with `?view=consignors\|items`, `consignors/[id]`, `items/[id]`, `actions.ts`); sheets in `src/components/domain/` (consignor, intake, charge, settlement, item controls); pure rules in [src/lib/consignment.ts](../src/lib/consignment.ts) (labels, `autoAllocate`, `allocationProblems`, `paidAtFromDate`) and [consignment-forms.ts](../src/lib/consignment-forms.ts); access mirrors `canViewConsignmentMoney` / `canViewSaleCosts` / `canRecordRefund` in [permissions.ts](../src/lib/auth/permissions.ts) (D48, D49) | RLS-scoped client; the consignment RPCs and the ledger views behind them | consignors cannot be paid or items received; owed, paid and outstanding stay correct because they are derived in SQL (D46). A consignor's totals are summed in the domain module from the item rows, which is how `reporting.consignor_ledger` defines them |
 | Sales (Phase 6) | [src/lib/domain/sales.ts](../src/lib/domain/sales.ts) (`listSales`, `getSale`, `saleForUnit`, `searchSaleable`, `recordRetailSale`, `restockUnit`, `recordSaleRefund` over `list_sales`, `sale_lines_detail`, `saleable_stock`, `record_retail_sale`, `restock_unit`, `record_sale_refund`); screens `src/app/(staff)/sales/` (`page.tsx`, `[id]/page.tsx`, `actions.ts`); `RecordSaleSheet` / `SaleablePicker` and `RefundSheet` / `RestockControl` in `src/components/domain/`; pure rules in [src/lib/sales.ts](../src/lib/sales.ts) (`previewSale` over `lineEconomics`, `priceWarnings`, `saleRange`, `refundableAmount`, status words) and [sales-forms.ts](../src/lib/sales-forms.ts); Sell on the consignment item, unit and product pages | RLS-scoped client; the sale RPCs; `private.sell_line` in the database is the single sale-line writer that Phase 10 reuses with `online_sale` | no sale can be recorded; stock, units, consignment and the reports stay consistent because every effect is inside `record_retail_sale` |
+| Purchasing (Phase 7) | [src/lib/domain/purchasing.ts](../src/lib/domain/purchasing.ts) (orders, lines, receipts, `receivePurchase` with the lookup `findReceiptByKey`, reorder, the product page's `getProductPurchasing`) and [suppliers.ts](../src/lib/domain/suppliers.ts); screens `src/app/(staff)/purchasing/` (the `(browse)` group: orders, `orders/[id]`, suppliers, `suppliers/[id]`; outside it, manage_purchasing only with a real 403, `receive/[id]` and `reorder`); components in `src/components/domain/purchasing/`; pure rules in [src/lib/purchasing.ts](../src/lib/purchasing.ts), [purchasing-forms.ts](../src/lib/purchasing-forms.ts) and [receive-form.ts](../src/lib/receive-form.ts) (the Receive screen's idempotency state machine); cost visibility mirrors `private.can_view_purchase_costs()` (D60) | RLS-scoped client; the purchasing RPCs and `reporting.purchase_order_progress` / `product_on_order` | nothing can be ordered or received; a delivery is still recorded once per submission key and stock moves only through `receive_purchase` |
 | Consigned job parts (D44) | `searchParts` in [inventory.ts](../src/lib/domain/inventory.ts) (consigned units and the FIFO-head consignment of quantity stock, D45), `loadParts` in [lines.ts](../src/lib/domain/lines.ts) (a line's consignment) | `consignor_statement` for the FIFO head and the cost preview | the part sheet does not offer consigned stock; `add_inventory_line` still applies D44 |
 | Labels and the QR base (Phase 8; D9, D56–D59, [ADR-017](decisions/ADR-017-labels-and-qr-base.md)) | Database (step 1): `20261004003800_labels.sql` — `private.qr_payload` (the only payload source, from `shop_settings.public_site_url`, no fallback), `private.label_content` (the only label text, price through `private.selling_price`), `label_templates`, `printer_profiles`, `print_jobs` and the five label RPCs. App (step 2): [src/lib/qr.ts](../src/lib/qr.ts) (`getQrBase`, `qrUrl`, `scanBases`: every DISPLAYED QR URL from the same column, "QR address not set" when unusable); [src/lib/printing/](../src/lib/printing/) (pure: zod schemas with the database's layout rule, `composeLabel` — the one layout engine — `LabelSvg`, the status machine, links; `adapters/`: `browser` → `LabelSheet`, `pdf` → pdf-lib, server only); [src/lib/domain/labels.ts](../src/lib/domain/labels.ts) (print job DTO from the snapshots, history, `getLabelContext`, reprint preset, admin template, printer and address writes); actions in `src/app/(staff)/labels/actions.ts` and `settings/labels/actions.ts`; the print view `src/app/(print)/print/labels/[jobId]` (outside the shell), the PDF Route Handler `src/app/api/labels/[jobId]/pdf/route.ts`, and the print history `/labels`, `/labels/[jobId]`. Screens (step 3): the record pages' Labels card and print sheet ([labels-card.tsx](../src/components/domain/labels-card.tsx), [print-label.tsx](../src/components/domain/print-label.tsx), over `getLabelContext` and `resolvePrintPreset`, which read the deep link `?print=1&qty=N&reprint={job}` from each page's awaited `searchParams`) and Settings → Labels and printers (`/settings/labels`, admins only, no `loading.tsx`, [label-settings.tsx](../src/components/domain/label-settings.tsx)). Journeys (step 4): the label steps of journeys 3 and 4. The staff view of what an anonymous scan returns is the existing `PublicPreviewPanel` over `reporting.public_items`; Phase 8 adds no anonymous RPC, client or route (Phase 11 creates `public.public_item`) | Postgres; `shop_settings.public_site_url` | nothing prints while the address is unset (`public_site_url_invalid`), and record pages say "QR address not set"; printed labels keep their address ([R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address)) |
 | Supabase clients | [server.ts](../src/lib/supabase/server.ts), [browser.ts](../src/lib/supabase/browser.ts), [service.ts](../src/lib/supabase/service.ts) | anon key + session; service-role key (server only) | no data access |
-| Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API) | `SUPABASE_SERVICE_ROLE_KEY` | staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
+| Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API, created without a password; the sign-in counters) | `SUPABASE_SERVICE_ROLE_KEY` (required in every deployment) | without it, or with a wrong one, nobody can sign in (every code request and verification is counted with it first, D72; sign-in says it is unavailable and the error log names the cause) and staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
 | Shopify integration layer (Phase 10 step 3; D80–D89, [ADR-020](decisions/ADR-020-shopify.md)) | [src/lib/integrations/shopify/](../src/lib/integrations/shopify/): `config.ts` (pinned API version, topics, limits), `ids.ts` (gids, handles), `hmac.ts`, `admin.ts` (the `ShopifyAdmin` interface and `ShopifyError`), `graphql-admin.ts` (live), `fake-admin.ts` / `fake-ids.ts` (in memory), `client.ts` (`getShopifyAdmin`, `shopifyConnection`), `desired-state.ts` (pure), `deps.ts` (`IntegrationDeps`), `sync.ts` (`runProductSync`), `queue.ts` (`runJob`, `runJobById`, `runDueJobs`), `webhooks.ts` (`handleShopifyWebhook`), `cron.ts` (`handleCronRequest`); routes [api/shopify/webhooks](../src/app/api/shopify/webhooks/route.ts) (POST, HMAC) and [api/cron/integrations](../src/app/api/cron/integrations/route.ts) (GET, bearer), both Node runtime with `maxDuration` 60, both outside the proxy matcher; [vercel.json](../vercel.json) cron every 5 minutes | the service-role client and the Shopify RPCs (DATA-MODEL §16); `SHOPIFY_*`, `CRON_SECRET` | webhooks are refused or not stored (Shopify retries for a while); syncs wait in the queue with a human message; no sale or stock is ever recorded outside the RPCs |
 | Shopify screens (Phase 10 step 4; D84, D86) | [src/lib/domain/shopify.ts](../src/lib/domain/shopify.ts) (reads over the RLS client: `getProductOnline` for any staff, `getShopifyOverview`, `listSyncedProducts`, `listQueue`, `getQueueJob`, `listEvents`, `getEvent` for admins; writes only through the staff RPCs; `describeRun` reads back a job's result for the toast); [src/lib/shopify.ts](../src/lib/shopify.ts) (pure words and tones) and [shopify-forms.ts](../src/lib/shopify-forms.ts); Publish online and Sync now in `src/app/(staff)/inventory/actions.ts` (manage_inventory) and the admin actions in `src/app/(staff)/shopify/actions.ts`, which run only the job id an RPC returned through `runJobById` with the service-role deps; the product page's `OnlineCard`; `/shopify`, `/shopify/queue`, `/shopify/products`, `/shopify/events`, `/shopify/events/[id]` (admins only, no `loading.tsx`); components in `src/components/domain/shopify/`; Today's `integration_failed` row through `src/lib/reports.ts` | RLS-scoped client and the staff RPCs; the integration layer for running a job | the screens error; online orders keep being stored and processed by the routes and the cron |
 | Error mapping | [src/lib/db-errors.ts](../src/lib/db-errors.ts) | P0001 codes, constraint names | users see the generic error |
@@ -294,7 +303,7 @@ PostgREST with the fake Shopify.
 | PWA shell | [public/sw.js](../public/sw.js), [src/app/manifest.ts](../src/app/manifest.ts) | browser | no install or offline page |
 | Schema, rules, RLS, RPCs | [supabase/migrations/](../supabase/migrations/) | Postgres | the authority for every invariant ([DATA-MODEL](DATA-MODEL.md#authority-applied-state-and-implementation-status)) |
 | Synthetic demo data | [supabase/seed.sql](../supabase/seed.sql) | migrations | tests and demos lose their fixtures |
-| Docker-free Supabase | [scripts/devstack/](../scripts/devstack/), [supabase/devstack/roles.sql](../supabase/devstack/roles.sql) | pinned Auth, PostgREST, Storage binaries | no local or CI backend ([R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase)) |
+| Docker-free Supabase | [scripts/devstack/](../scripts/devstack/), [supabase/devstack/roles.sql](../supabase/devstack/roles.sql), [supabase/templates/](../supabase/templates/) | pinned Auth, PostgREST, Storage binaries; a generic mail catcher (`mailcatcher.mjs`) | no local or CI backend ([R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase)) |
 | CI | [ci.yml](../.github/workflows/ci.yml) (check, test, build), [e2e.yml](../.github/workflows/e2e.yml) (Playwright, label `e2e`, nightly, manual) | GitHub Actions | regressions merge unseen ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) |
 
 ## Why this design
@@ -316,6 +325,10 @@ reasoning is ADR-001's; the "small team" point is inferred.
 | Customers through `my_*` RPCs, anonymous through explicit projections | [ADR-003](decisions/ADR-003-customer-access.md) |
 | Cult Commons per line with a rate snapshot | [ADR-004](decisions/ADR-004-cult-commons.md) |
 | One shop time zone and currency in SQL | [ADR-012](decisions/ADR-012-shop-time-zone-and-currency.md) |
+| Consignment and in-store sales | [ADR-016](decisions/ADR-016-consignment-and-sales.md) |
+| Purchasing: cost visibility, last cost, receipts, reorder | [ADR-018](decisions/ADR-018-purchasing.md) |
+| Staff sign in with emailed one-time codes; deactivation ends sessions; the Admin's own sign-in limits | [ADR-019](decisions/ADR-019-staff-email-sign-in.md) |
+| Three staff roles (admin, manager, mechanic) with per-person exceptions; refunds for admins and managers | [ADR-021](decisions/ADR-021-staff-roles.md) |
 
 All records: [decisions/README.md](decisions/README.md).
 
@@ -329,7 +342,15 @@ All records: [decisions/README.md](decisions/README.md).
 - Authorization happens in three places: RLS on every table, guards in the
   RPCs (`private.require_staff`, `private.require_permission`,
   `private.require_admin`) and `requireStaff` in the app. The first two are
-  the ones that matter; the app check gives friendly redirects.
+  the ones that matter; the app check gives friendly redirects. A person's
+  permissions are what their role implies (`private.role_implies`: admin
+  all, manager all but `manage_staff`, mechanic none) plus their
+  exceptions; the app mirrors that rule in `roleImplies`
+  (`src/lib/auth/permissions.ts`) and a database test proves the two agree.
+  Rules decided by role rather than permission use `private.is_admin()`
+  (admin-only settings) or `private.can_record_refunds()` (admin or
+  manager), mirrored by `{ admin: true }` and `{ roles: [...] }` in the
+  app's guards ([ADR-021](decisions/ADR-021-staff-roles.md)).
 - Who reaches which data: staff-only base tables; customers only through
   security definer `my_*` RPCs; anonymous visitors only through
   `reporting.public_items`, `public_appointment_types`, `public_shop_hours`
@@ -372,6 +393,21 @@ All records: [decisions/README.md](decisions/README.md).
   transfers and `saleable_stock` read it under the product's stock lock,
   so a consignor is charged only for stock that was where it was sold
   ([ADR-016](decisions/ADR-016-consignment-and-sales.md)).
+- Purchasing (Phase 7): a delivery is one `receive_purchase` call with a
+  client-made idempotency key per submission; a replay returns the first
+  receipt, and a lost response is resolved by looking the key up
+  (`purchase_receipt_by_key`) before any retry. Stock enters the ledger
+  through `private.record_receipt_movement`, beside `record_movement` and
+  Phase 6's `record_linked_movement`; Phase 6's movement rules still apply,
+  and purchasing holds shop-owned counted products only (D62), so consigned
+  stock never arrives on a PO. Lock order: the PO row, then
+  `private.lock_stock` per product in ascending id, then products and
+  supplier links (the header of `20261005000100_suppliers.sql`). Purchase
+  costs are for `view_costs` or `manage_purchasing` through definer
+  `*_staff` views ([ADR-018](decisions/ADR-018-purchasing.md)).
+- Search: `staff_search` is one function replaced whole by each phase that
+  adds a kind; the latest (`20261005000400_purchasing_search.sql`) carries
+  every kind, and a DB test checks it against `SEARCH_KINDS`.
 - Labels (Phase 8, [ADR-017](decisions/ADR-017-labels-and-qr-base.md)):
   the QR base is `shop_settings.public_site_url` only. The database
   computes every printed payload (`private.qr_payload` into
@@ -418,11 +454,11 @@ All records: [decisions/README.md](decisions/README.md).
 
 | Concern | Measured fact | Assumption or unknown | Revisit trigger |
 |---|---|---|---|
-| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2 and the review fixes: intake, returns, parts, completions, sales, settlements, refunds and restocks; each case proves the second call waits on a lock) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on 2026-10-05 on `feat/p6-consignment` (89 files, 1298 tests) | Behaviour under real shop load | First hosted use |
+| Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2 and the review fixes: intake, returns, parts, completions, sales, settlements, refunds and restocks; each case proves the second call waits on a lock), `purchasing-concurrency` (Phase 7: the same receipt key twice, two keys racing for one line, a receipt against a quantity change or a job part, opposite-order receipts, racing preferred links) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on `feat/p7-purchasing` at the Phase 7 integration (102 files, 1517 tests) and again after its review fixes (102 files, 1518 tests), every concurrency file above included | Behaviour under real shop load | First hosted use |
 | Load and latency | Not measured | Single shop, a few staff | Slow screens reported, or Phase 9 reports |
 | Upload size | 20 MiB per object on both buckets (`file_size_limit` 20971520); photos are scaled to at most 2048 px and re-encoded as JPEG in the browser first (`prepare-photo.ts`) | Hosted Storage limits per plan | Hosted project created |
 | Hosted behaviour | None: everything runs on the devstack | Platform roles, Auth settings and versions may differ | [R-001](RISKS.md#r-001--nothing-is-deployed), [R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase) |
-| Labels | Payloads are exactly `{public_site_url}/q/{short_id}` on the print view and in the PDF (`tests/e2e/print-view.spec.ts`, journey 3: ten identical link URIs); the QR decodes to the payload (`tests/unit/printing/label-svg.test.tsx`, ZXing); `reporting.public_items` returns identical rows to anon and to staff (`tests/db/labels.test.ts`) | Output on a real label printer and on iOS AirPrint is untested ([R-030](RISKS.md#r-030--label-output-is-unverified-on-a-real-label-printer-and-on-ios)); print success is confirmed by hand ([R-031](RISKS.md#r-031--print-success-is-confirmed-by-hand)) | First printer purchased, or Phase 12 |
+| Labels | Payloads are exactly `{public_site_url}/q/{short_id}` on the print view and in the PDF (`tests/e2e/print-view.spec.ts`, journey 3: ten identical link URIs); the QR decodes to the payload (`tests/unit/printing/label-svg.test.tsx`, ZXing); `reporting.public_items` returns identical rows to anon and to staff (`tests/db/labels.test.ts`) | Output on a real label printer and on iOS AirPrint is untested ([R-075](RISKS.md#r-075--label-output-is-unverified-on-a-real-label-printer-and-on-ios)); print success is confirmed by hand ([R-076](RISKS.md#r-076--print-success-is-confirmed-by-hand)) | First printer purchased, or Phase 12 |
 | Recovery | No backup or restore exercised | Unknown plan tier | [R-002](RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery) |
 
 ## Where an incoming engineer should look
@@ -433,14 +469,19 @@ All records: [decisions/README.md](decisions/README.md).
   nothing hosted, nothing recoverable yet, and the local platform is a
   re-creation.
 - [R-009](RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6):
-  the open PR stack and the parallel purchasing branch.
-- [R-004](RISKS.md#r-004--staff-sign-in-change-pending-email-otp): an owner
-  change not yet on this line (email OTP is on the parallel track); the D27
+  the stack is merged; purchasing is integrated with `main` on its branch
+  and waits for its PR; email sign-in is integrated on top of it
+  (`feat/auth-email-otp`, PR #10, merged after #9); labels and Shopify are
+  on their own branches.
+- [R-035](RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset)
+  to [R-039](RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified):
+  what email sign-in leaves open (the pre-deploy password reset, Auth's
+  password grant, hosted SMTP); the D27
   change ([R-007](RISKS.md#r-007--consigned-stock-cannot-be-a-job-part-yet))
   was built in Phase 6 step 1.
 - [R-018](RISKS.md#r-018--four-sections-are-placeholder-pages):
-  purchasing and reports are placeholders by design, not defects
-  (consignment and sales were built in Phase 6, labels in Phase 8).
+  Reports is a placeholder by design, not a defect (consignment and sales
+  were built in Phase 6, purchasing in Phase 7, labels in Phase 8).
 - The lock order and the single helpers in
   [DATA-MODEL §7](DATA-MODEL.md#7-inventory-movement-ledger) before touching
   any stock path: work order → line → stock → bikes → units → consignment

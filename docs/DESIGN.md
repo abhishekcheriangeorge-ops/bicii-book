@@ -63,7 +63,7 @@ Server components unless they need state or browser APIs.
 
 | Component | Notes |
 |---|---|
-| `Button`, `ButtonLink`, `SubmitButton` | solid / outline / accent / ghost / danger; sm / md / lg; `pending` sets aria-busy, disables, shows a spinner; press-compress. `SubmitButton` (client) reads `useFormStatus`. |
+| `Button`, `ButtonLink`, `SubmitButton` | solid / outline / accent / ghost / danger; sm / md / lg; `pending` sets aria-busy, disables, shows a spinner; press-compress. Labels never wrap unless `wrap` is set (a long label in a phone-width footer or card, e.g. with `w-full sm:w-auto`), so a long label never widens the page. `SubmitButton` (client) reads `useFormStatus`. |
 | `IconButton` | `aria-label` is required by type. |
 | `Field` (client) | Label, hint, error, required marker. Provides context so the control inside gets `id`, `aria-describedby` (error, hint), `aria-invalid`, `required`. |
 | `Input`, `Textarea`, `NumberInput` (client) | `NumberInput` is `type="text"` + `inputMode` (decimal for money, numeric for a whole-number quantity); values stay strings — parse with `lib/money`. Optional −/+ steppers. A quantity with `decimals` (job lines and intake services take 2, for 1.5 hours of labour) gets the decimal keypad, and its steppers add or take 1 in decimal arithmetic, keeping the fraction. Kind `decimal` with `stepper` moves by `step` (default 1; printer offsets use 0.5 mm), rounded to the step's decimals, clamped to `minValue`/`maxValue`, never "-0": the steppers are how an iPhone enters a negative value (its decimal keypad has no minus key). |
@@ -268,6 +268,7 @@ upload itself, below).
 | `CategoriesEditor` (`categories-card.tsx`) | manage_inventory: service categories with Rename (in place) and Archive, "New category", and archived ones with Unarchive. Written through the RLS client; never deleted. |
 | `ScheduleRateButton` / `CancelRateButton` | Admin, D21. Schedule: a percentage (up to 2 decimals, converted exactly to the 4 dp fraction, `percentToRate`) starting Now or Later (a Singapore `datetime-local`, never past), then a second step in place saying it applies to lines added from then on and never changes existing lines; its confirm button is disabled for 400 ms and focus starts on Back; the sheet's `newId()` rate key makes a retried "now" one rate. Cancel (a future rate only): "Cancel…" opens a confirmation with focus on "Keep it" and "Cancel rate" disabled for 400 ms. |
 | `StockBadge` (server or client, `stock-badge.tsx`) | A product's stock as a `Badge`: tone and words from `stockTone` / `stockLabel` (`src/lib/inventory.ts`): danger "Out of stock" or "−2 (recount needed)" (D23), waiting at or below the reorder point, done "34 in stock"; a unique product "2 available". `label` keeps the tone with other words: the part picker's "12 at Shop floor · 20 total", a part line's "37 left at Shop floor". |
+| `RoleBadge` (server or client, `role-badge.tsx`) | A staff member's role as a `Badge` with its word (D90): Admin (info), Manager (progress), Mechanic (neutral). Used on Settings → Your profile and Settings → Staff. Your profile's card "Your role and access" puts it beside the title, then the role's one line (`ROLE_DESCRIPTIONS`), then one checked row per effective permission (label and description; an exception on top of the role carries an `ExtraAccessBadge` "Extra access" in the waiting tone, the same component as the staff list, D92), "Record refunds" for admins and managers (D94) and, for admins, "Admin settings"; a mechanic with nothing extra reads "Workshop access only: …". History reads the pre-D90 value "staff" as Mechanic (`roleLabel`). |
 | `AdjustStockButton` / `AdjustStockSheet` | adjust_stock, counted products: location (`SegmentedControl`, each segment with its count, the default location first), Add / Remove, quantity with steppers, Adjustment / Damaged (Damaged disabled when adding), a required reason with quick-fill chips ("Stock count correction", "Found stock", "Damaged in workshop", "Opening stock count"), a unit cost when adding (view_costs only, optional), a live "Shop floor: 34 → 31" right under the quantity; a result below zero is shown there as an alert (the quantity marked invalid and described by it) and the submit disabled (insufficient_stock), so the reason is in view next to its cause on a phone. `newId()` request id made when the sheet opens. |
 | `StockTransferButton` / `StockTransferSheet` (`stock-transfer-sheet.tsx`) | manage_inventory: From (locations holding stock, with counts), To (the other active locations), quantity (or the unit, fixed) and an optional reason; "Move stock". Not `transfer-sheet.tsx`, the bike ownership transfer. Counted products from the product page; a unit from its own page while available or reserved. |
 | `ProductSheet`, `NewProductButton`, `EditProductButton` | manage_inventory. New: Quantity / Unique first (read-only afterwards), name, SKU, brand, category (`Select` of `product` categories), description, sale price, cost (view_costs only; on edit, empty keeps it), reorder point (counted only), Active. Unique adds the first unit on the same sheet (`UnitFields`: location, serial, "Condition (shown publicly when published)", unit sale price, unit cost with view_costs, and an optional "This is a complete bike" `SearchPicker` over shop bikes with no owner and no unit, saying customer bikes must be transferred first); both the product and the unit carry their own `newId()`, and a refused unit leaves the product, whose page offers Add unit (the swallowed failure is still logged, at error level when it is not a refusal). With Unique chosen and no active location, Add product is disabled (the unit fields show `NoActiveLocation`); Quantity stays possible. Creating opens the product. |
@@ -289,6 +290,67 @@ upload itself, below).
 | `NewLocationButton`, `EditLocationButton`, `LocationActiveSwitch` (`location-controls.tsx`) | Settings → Locations (manage_inventory): a sheet with name, kind (`Select`: Shop floor, Workshop, Storage, Off-site) and sort order, the new location's `newId()` as its key; the Active `Switch` applies at once with `useOptimistic` and a toast, and a location still holding stock snaps back with the `location_has_stock` error toast. |
 | `CameraPermission` (`camera-permission.tsx`) | The camera's state when there is no picture: Phase 0's messages (checking, allow, allowed, blocked with the iPhone Settings path, unsupported) plus "needs a secure connection" and "would not start", with "Allow camera" / "Try again" where pressing helps. `cameraErrorState` maps getUserMedia errors onto them. |
 | `Scanner` (`scanner.tsx`) | The Scan screen; see "Scanning" below. |
+
+### Sign-in
+
+- **`/login`** (`src/app/(auth)/login/`, PLAN D10, D70): two steps on one
+  page, no navigation between them, so it behaves the same in a browser
+  tab and in the installed app (codes, never links). Step 1: Email
+  (`autocomplete="email"`, email keyboard) and "Email me a code". Step 2:
+  "Check your email", "If {email} belongs to BICII staff, we've emailed a
+  6-digit code. It expires in 10 minutes." (identical for unknown and staff
+  emails), Code (`inputMode="numeric"`, `autocomplete="one-time-code"` so
+  iOS offers the code from Mail; a pasted "123 456" is accepted), "Sign
+  in", "Send a new code" (disabled with a live "Send a new code in 0:59"
+  countdown for 60 s after each send, counted on the device's clock; a
+  resend says "We've sent a new code." in a polite status) and "Use a
+  different email" (back to step 1, email kept). One action state for both
+  steps (`signInStep` routes on `intent`), every form carries `next`.
+  Errors show in one `role="alert"` above the step. Only an error about
+  what was typed marks the field `aria-invalid` and points its
+  `aria-describedby` at the alert: an email that is not an email, an
+  email without access ("This email doesn't have access to BICII Admin.
+  Ask an admin to invite or reactivate you."), a missing or malformed
+  code, a refused code. "Too many attempts. Wait a minute and try again."
+  and "Sign-in is unavailable right now…" mark nothing, because retyping
+  cannot help. Focus goes to Code when step 2 opens or a code is refused,
+  and to Email after an error there, either way. Asking again for an
+  address Auth will not email yet (its per-address interval) shows "Check
+  your email" exactly as for any other address (D70). The code is never
+  echoed back. Under the form: "No access? Ask an admin to invite or
+  reactivate you in Settings → Staff." Full-width 56px primary buttons, 48px secondary ones.
+- **Invites** (Settings → Staff → Invite): an admin picks the Role in a
+  `SegmentedControl` (Admin, Manager, Mechanic; Mechanic chosen first) with
+  each role's one line listed under it, the chosen one in ink; anyone else
+  reads "They join as a Mechanic." (D93). The success view says "{email}
+  can now sign in.", "They join as a <Role>." and how (the email, then the
+  emailed code; no password to hand over), with "Invite another" and "Set
+  extra access" ("Open their page" for an admin).
+- **Staff roles** (Settings → Staff, D90-D93). The list shows each
+  person's `RoleBadge`, then a plain line for what the role includes ("All
+  permissions", "Every permission except Manage staff", "Workshop access
+  only"), then "· Extra:" and an `ExtraAccessBadge` per exception (the
+  waiting tone, which no role uses, so an exception never reads as a
+  role). The person
+  page opens with the **Role** card: the role's label and one line; for an
+  admin a `SegmentedControl` "Role" and an outline "Change role…" (off
+  until another role is picked; on their own row every segment is
+  disabled with "You can't change your own role." under it); others read
+  "Only an admin changes roles.". "Change role…" opens a `Sheet` "Change
+  <name> to <Role>?" listing what changes (`roleChangeSummary`: what the
+  new role has, exceptions it includes and so removes, what is lost), an
+  optional "Why?" textarea (`REASON_MAX_LENGTH`, 500) and "Change role",
+  disarmed for 400 ms (`useArmed`). Focus starts on Cancel, as for other
+  consequential confirmations whose reason is optional: the admin reads
+  what changes before the phone keyboard can cover it. The change is sent
+  with the role the sheet showed (`expected_role`); if someone changed it
+  meanwhile, nothing changes and the sheet says "Someone changed their
+  role in the meantime. Reload and try again." Any refusal shows as an
+  alert in the sheet; success toasts "<name> is now a <Role>". The **Extra access** card states "Included in
+  the <Role> role: …" in words and offers switches only for what the role
+  does not include. History lines come from `describeStaffEvent`
+  (src/lib/staff-events.ts): "Added as <Role>", "Role changed from <From>
+  to <To>", "Extra access: <Permission> granted/removed".
 
 ### Inventory
 
@@ -426,7 +488,7 @@ a refund changes only the status, D49):
 |---|---|
 | `RecordSaleButton` / `RecordSaleSheet` | "New sale" on `/sales`, "Sell" on the consignment item, unit and product pages (any staff, D48; a Sell entry point presets its item by searching its short ID). Lines: title, short ID, "3 in stock at Shop floor" (a unit: "At Shop floor"), "Consigned · <consignor>" (a consigned quantity row is one consignment and the line sends its `consignment_item_id`, D45), a money `NumberInput` prefilled with the database selling price (`unit_price`), a quantity stepper capped at what the row holds, Remove. `priceWarnings` under the price: "Below the asking price" for everyone, "Below cost: this sale loses money" for view_costs (D53; never blocks). Add item reveals the picker again; Customer (optional `CustomerPicker`, walk-in otherwise); "Sold earlier?" reveals a shop-time `datetime-local` (max now; NULL while closed or empty); Notes. A view_costs "Preview" (cost, yield, Cult Commons) per line and in total, through `previewSale` (`lineEconomics`). Footer: the Decimal running total and "Record sale · $X". The sale id is made when the sheet opens; errors show as an alert, the lines stay, and a unit sold meanwhile is outlined with "Already sold or taken. Remove this line.". A refusal is shown where it applies: Sold at, Customer and Notes carry their field errors (a time after the moment of submitting is caught in the sheet with "Enter a date and time that is not in the future."; the database's `sale_recognized_in_future` and `sale_before_stock` land on Sold at too), the first marked field takes the focus (`useFocusFirstInvalid`), and a refusal with no field scrolls the alert into view and focuses it. A preset whose search fails (a dropped connection) falls back to the picker with the "no longer available" note instead of "Finding the item…". Success: toast "S-000123 recorded" and the sale page. |
 | `SaleablePicker` | `SearchPicker` over `searchSaleableAction` (`saleable_stock`): U-, P- and C- numbers, SKU, serial, name. Each result: title and price, short ID, a `StockBadge` with where and how many, the consignor badge; a unit already on the sale is disabled. |
-| `RecordRefundButton` / `RefundSheet` | Admins only (`canRecordRefund`, D49), shown while something is left to refund. Amount defaults to `refundableAmount` and is capped at it; the info note "A refund does not put anything back in stock. If the item came back, restock it separately." (D7); the reason through `ReasonConfirm` ("Record refund of $5.00…" then "Refund $5.00"); the refund id is made when the sheet opens. |
+| `RecordRefundButton` / `RefundSheet` | Admins and managers only (`canRecordRefund`, D94 amending D49), shown while something is left to refund. Amount defaults to `refundableAmount` and is capped at it; the info note "A refund does not put anything back in stock. If the item came back, restock it separately." (D7); the reason through `ReasonConfirm` ("Record refund of $5.00…" then "Refund $5.00"); the refund id is made when the sheet opens. |
 | `RestockControl` | `ReasonConfirm` "Restock… U-000123" on a unit line still sold on this sale (`unit_sold_sale_line_id` = the line) and on the unit page's Restock card; for adjust_stock holders, and for a consigned unit only with manage_consignments too (D46). It always sends this line's id; "Back to" location segments (default: where it was sold) while confirming when there is more than one active location; a consigned unit says "It goes back on sale for the consignor and is no longer owed to them." |
 
 Pages: `/sales` (`PageHeader` "Sales" with New sale; range links Today /
@@ -804,6 +866,67 @@ slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
   (`src/lib/recent-searches.ts`: every access in try/catch, at most eight,
   newest first) when a query is submitted or a result opened, and shown
   before anything is typed. They never reach the server.
+
+### Purchasing
+
+Phase 7 (SPEC §14, §21; PLAN D60–D66). Screens under `/purchasing`,
+components in `src/components/domain/purchasing/`, reads in
+`src/lib/domain/purchasing.ts` and `src/lib/domain/suppliers.ts`, labels,
+tones and sentences in `src/lib/purchasing.ts`, form schemas in
+`src/lib/purchasing-forms.ts`.
+
+- **Route group and the 403 rule.** The browsing screens live in the route
+  group `src/app/(staff)/purchasing/(browse)/` (no URL segment): `/purchasing`
+  (orders), `/purchasing/orders/[id]`, `/purchasing/suppliers` and
+  `/purchasing/suppliers/[id]`. The group's `layout.tsx` adds
+  `PurchasingNav` (the layout is not async: the staff read deciding whether
+  Reorder shows sits under `<Suspense>`, so the nav and skeleton stream at
+  once; every page calls `requireStaff()` itself), its `loading.tsx` the
+  list skeleton, and each record
+  route has its own `loading.tsx`. There is no `loading.tsx` at
+  `/purchasing` itself: a loading boundary there would sit above the
+  manage_purchasing pages beside the group (receiving and reorder, step 4)
+  and turn their `forbidden()` into a 200 (see "Loading"). Those pages go
+  outside `(browse)`. Unknown or malformed ids render not-found.
+- **Cost gating (D60).** Purchase costs (line unit costs and totals,
+  receipt costs, PO totals, supplier last costs, cost defaults, PO history)
+  are for `view_costs` or `manage_purchasing` (`canSeePurchaseCosts`,
+  mirroring `private.can_view_purchase_costs`). The domain reads them only
+  from the `*_staff` views and only for those staff; the DTO otherwise has
+  no `costs`, `totals` or `history` key. Every write needs
+  manage_purchasing; controls a staff member cannot use are not rendered.
+  Totals are `purchase_order_totals_staff`'s, never summed in TypeScript.
+- **Closed orders (D61, D65).** Received and cancelled orders have no
+  editing. A received order shows "Fully received … Extra or late units go
+  on a new order." and, for manage_purchasing, "New order for <supplier>"
+  (the preset sheet; full width and wrapping on a phone, so a long name
+  never widens the page). Cancelling is final and keeps what arrived.
+- **Product page.** Shop-owned counted products get a "Suppliers & orders"
+  card (consigned products show their Consignments card instead, D62)
+  (`ProductPurchasingCard`): supplier links (each with "Last cost $x ·
+  date" for `view_costs` holders only: the product page is not a
+  purchasing screen, so `manage_purchasing` alone shows no cost here,
+  D60), "On order: N"
+  (`reporting.product_on_order`: submitted and partially received only),
+  the open orders holding the product, and Add supplier for
+  manage_purchasing.
+
+| Component | Notes |
+|---|---|
+| `PurchasingNav` (`purchasing-nav.tsx`) | Orders · Suppliers as links in a scrolling pill row, `aria-current` on the active one (Orders also on `/purchasing/orders/*`), 44px targets, inset focus ring. Step 4 adds Reorder with its page. |
+| `PurchaseOrderStatusPill` (server) | Draft (info), Submitted (waiting), Partially received (progress), Received (done), Cancelled (danger); always with its text. |
+| `QuantityProgress` (server) | `role="progressbar"` with `aria-valuenow` = received, `aria-valuemax` = ordered and `aria-valuetext`, plus the same words visibly: "18 of 20 received · 2 to come", "20 of 20 received", "18 of 20 received · 2 cancelled" (`progressText`). A cancelled remainder is hatched, never "to come". A draft (its `status`) reads "15 items · not submitted": nothing is to come until it is sent, as `product_on_order` leaves drafts out (D66); the order list and a supplier's orders use the same words. |
+| `PurchaseOrderSheet`, `NewPurchaseOrderButton`, `EditPurchaseOrderButton` | New order or Edit details; body mounted only while open. New: `newId()` made on open is the order's id and idempotency key; the supplier is picked (`SupplierPicker`) or PRESET with the `supplier` prop (a supplier's page, a received order's "New order for …", step 4's closed receive page), expected date (native date input), supplier reference, notes; Create opens the draft. Edit: the supplier is fixed once submitted, with why. The server sets the currency. |
+| `PurchaseOrderLines` | The order's lines: one DOM with explicit table roles ("Order lines"), stacked rows on a phone and an upright iPad, a dense table (`text-dense`, `tabular-nums`) once its card is 42rem wide (a container query, as `LineTable`: the card, not the screen). Product (P- link, SKU, on hand), `QuantityProgress`, expected date or a solid danger "Overdue" badge, and only for cost-visible staff unit cost and line total. On an open order a manage_purchasing row is a button ("Change line: …") opening the line sheet. |
+| `PurchaseOrderLineSheet`, `AddPurchaseOrderLineButton` | Add: `PurchaseProductPicker`, the unit cost prefilled from `purchase_cost_defaults` with a hint naming its source (supplier's last cost / product cost / none); a cost typed meanwhile wins. Both: quantity with steppers, never below what was received (`minimumQuantity`), unit cost 0–99,999.99 (0 is a known cost, D24 as amended), the line's expected date, notes, a live line total, and an optional reason once submitted. Edit: Remove line, two steps (a reason unless draft, `ReasonConfirm`), disabled with why once part of the line arrived. The line id is the idempotency key. |
+| `SubmitOrderButton`, `CancelOrderControl` (`purchase-order-actions.tsx`) | Submit: one explicit button with a pending state, no confirm, armed 400 ms after it appears. Cancel: `ReasonConfirm` (required reason, the confirm moved and re-keyed, 400 ms guard, "Keep order") saying that items already received stay in stock and that cancelling is final; it sits in its own "Cancel order" card at the bottom. |
+| `SupplierSheet`, `NewSupplierButton`, `EditSupplierButton` | Name, contact name, phone, email, website (https:// added when left out), account reference, notes; `newId()` key; values echoed back on failure; Create opens the supplier. |
+| `SupplierProductSheet`, `AddSupplierProductButton`, `EditSupplierProductButton` | A supplier–product link: the supplier fixed and the product picked (supplier page), or the product fixed and the supplier picked (product page); supplier SKU, lead days, a Preferred switch whose hint says it replaces another preferred supplier; edit adds Remove link (two steps, no reason: a link is a relationship). Never the last cost: receiving sets it (D63). |
+| `SupplierPicker` | `SearchPicker` over active suppliers (`staff_search` kind `supplier`) through `searchSuppliers`. |
+| `PurchaseProductPicker` | `SearchPicker` over orderable products (D62: quantity-tracked, shop-owned, active, unarchived) through `searchPurchasableProducts`; each option "On hand N · On order M · P-000123"; products already on the order are shown but not choosable. Not the job-only `searchParts`. |
+| `ProductPurchasingCard` (server) | The product page's "Suppliers & orders", above. |
+| `ReceiveForm` (`receive-form.tsx`, on `/purchasing/receive/[id]`) | Step 4. A focused page outside `(browse)` (manage_purchasing, real 403): "Receive PO-…", the supplier, a back link, "Received in the last 24 hours" (this PO's receipts of the last 24 hours: the time for today's, the date and time for an earlier day's), then the form. ONE controlled client component, not a form action (React never resets what was typed), running the pure state machine in `src/lib/receive-form.ts` (`receiveReducer`, unit-tested): `starting` → `editing` → `submitting` → done, or `checking` → `recorded` / `notRecorded`, or back to `editing` on a definite refusal, or `closed`. **Key lifecycle:** the receipt's idempotency key is `newId()` when the form first mounts, stored with the values and a `pending` flag in sessionStorage under `bicii:receive:<poId>` (every access in try/catch; the page works without storage); `pending` is set BEFORE the call. A stored key (pending or not) is looked up (`purchase_receipt_by_key`) before anything is editable. The key survives definite refusals (nothing was written under it) and retries; a NEW key comes only with fresh values ("Receive another delivery", whose defaults are the new outstanding quantities); never a new key with old values. **Unknown outcome** (the action threw: network lost, response aborted, or an unexplained failure): the error toast "We could not confirm the receipt. Checking whether it was recorded…" (dismissed once answered), the form read-only with "Checking whether this delivery was recorded…"; found → `recorded`: "This delivery was recorded at 10:42 am by Asha Admin (18 items)", Open PO-… (the receipt's own PO if it differs) and "Receive another delivery"; not found → "It was not recorded. Retrying is safe: it will not be received twice." with Retry (same key, same values; editing allowed, key kept); lookup failed → still read-only with "Check again". `purchase_receipt_key_reused` is treated as found. Definite refusals: `purchase_over_receipt` → editing, `router.refresh()` for the new outstanding numbers and per-line messages; `purchase_order_closed` → the closed state; the D64 date codes → on the Received field. Submitting: inputs read-only, the commit button `aria-busy` and disabled (a ref also drops a second tap before the re-render), "Still confirming…" after 20 s. Success: storage cleared, toast "Received 18 items. 2 still to come." or "Order fully received.", `router.push` to the order. **Lines:** stacked cards on a phone and an upright iPad, a grid with column headers (Product · Ordered · Received · To come · Receive now · Unit cost · Location) once the card is 56rem wide (container query); each line a `role="group"` named by its product. Receive now: `NumberInput` quantity with steppers clamped 0..outstanding, defaulting to the outstanding quantity; more typed shows "Only 2 still to come. Raise the ordered quantity on the order first." (D65) and blocks the commit. Actual unit cost: money, 0 allowed, prefilled with the PO cost, hint "Ordered at $12.00" and a neutral "Differs" badge. Location: a native select (locations are few) following the form-level "Receive into" (default: Phase 4's `defaultLocation()`, or the last one chosen on this device, localStorage `bicii:receive-into`). Lines at 0 are dimmed and not sent; "All to come" and "Clear all". **Duplicate delivery note (D65):** a reference matching one of this PO's receipts (trimmed, case-insensitive) shows "DN-5531 was already recorded at 10:42 am by Asha Admin (18 items)" with a "This is a different delivery" checkbox; the commit stays disabled until it is ticked. **Shop-time date:** a `datetime-local` showing now (shop time, `toShopLocal`); `receivedAt` is sent only when changed (`fromShopLocal(...).toISOString()`), else the server uses now(); min = max(now − 30 days, submitted_at), max = now (D64); the server stays authoritative. **Footer:** sticky above the tab bar and home indicator, ONE row at every width (the summary takes what the button leaves): "N items on M lines", a value preview (lib/money; never authoritative) and "Receive N items" (the explicit commit, no confirm step, SPEC §22; md on a phone, lg from sm). A page with a sticky footer (`data-sticky-footer`, here and on Reorder) gets a root `scroll-padding-bottom` of the footer plus the tab bar (globals.css, `html:has(...)`), so a focused field scrolls clear of them (WCAG 2.4.11). A received or cancelled PO shows the closed state instead ("This order is fully received. Extra or late units go on a new order." with "Start a new order for this supplier", the preset `PurchaseOrderSheet`; or "This order was cancelled."), both linking back. |
+| `ReorderList` (`reorder-list.tsx`, on `/purchasing/reorder`) | Step 4 (D66; manage_purchasing, real 403; `PurchasingNav` shows Reorder to manage_purchasing holders; Reorder links also on the Inventory "Low stock" filter and Today's low-stock tile). `SupplierPicker` at the top, required to create, preset from `?supplier=` (choosing one replaces the URL, and the list is remounted keyed by supplier). "Below reorder point" from `reorder_suggestions` (shop-owned products only; a consigned product below its reorder point never appears, D62): each row a 44px `Checkbox` row with the name, P- id, SKU and the supplier's SKU when linked; "On hand 3 / reorder at 10", "On order 2", "Suggested 15" or "Covered by open orders"; badges "Preferred" / "Preferred supplier: …" and "In draft PO-…"; for cost-visible staff the draft's default cost and where it comes from. Rows linked to the chosen supplier with a suggestion above 0 start ticked. Sticky footer "Create draft order (N products)" (full width and allowed to wrap on a phone, so the page never scrolls sideways): `create_purchase_order_from_low_stock` with an id made when the list mounts (a double tap opens the same draft), then the draft, where quantities and costs are edited before Submit. Empty: "Nothing is below its reorder point." with "Shop-owned counted products at or below their reorder point appear here. Consigned stock is never reordered." The Today and Inventory Reorder links follow the general low-stock count, so with only consigned products low they lead to this empty list. |
 
 ### Shopify
 
