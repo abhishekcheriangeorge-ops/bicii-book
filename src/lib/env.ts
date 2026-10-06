@@ -25,39 +25,96 @@ export const publicEnvSchema = z.object({
 });
 
 /** Server only. Never import the result into a Client Component. */
-export const serverEnvSchema = z.object({
-  /**
-   * Not used by the app (it never connects to Postgres directly). Listed so
-   * a malformed value is reported; the scripts and tests read it from the
-   * shell, not from .env.local (.env.example "Tooling").
-   */
-  DATABASE_URL: z
-    .string()
-    .regex(/^postgres(ql)?:\/\//, { error: "must be a postgres:// connection string" })
-    .optional(),
-  /**
-   * Service role (bypasses RLS): src/lib/admin/** and src/lib/integrations/**
-   * only; never in a client bundle. Optional so tooling and the build run
-   * without it, but every deployment needs it: every staff sign-in counts
-   * its attempt with it first (PLAN D72), so without it, or with a wrong
-   * one, nobody can sign in; inviting staff needs it too.
-   */
-  SUPABASE_SERVICE_ROLE_KEY: nonEmpty.optional(),
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  /**
-   * Raises every sign-in limit of the Admin's own (PLAN D72) by this
-   * factor. Tests only (Playwright sets 1000); 1 everywhere else.
-   */
-  SIGN_IN_LIMIT_MULTIPLIER: z.coerce
-    .number({ error: "must be a whole number from 1 to 100000" })
-    .int({ error: "must be a whole number from 1 to 100000" })
-    .min(1, { error: "must be a whole number from 1 to 100000" })
-    .max(100_000, { error: "must be a whole number from 1 to 100000" })
-    .default(1),
-  SHOPIFY_SHOP_DOMAIN: nonEmpty.optional(),
-  SHOPIFY_ADMIN_TOKEN: nonEmpty.optional(),
-  SHOPIFY_WEBHOOK_SECRET: nonEmpty.optional(),
-});
+export const serverEnvSchema = z
+  .object({
+    /**
+     * Not used by the app (it never connects to Postgres directly). Listed so
+     * a malformed value is reported; the scripts and tests read it from the
+     * shell, not from .env.local (.env.example "Tooling").
+     */
+    DATABASE_URL: z
+      .string()
+      .regex(/^postgres(ql)?:\/\//, { error: "must be a postgres:// connection string" })
+      .optional(),
+    /**
+     * Service role (bypasses RLS): src/lib/admin/** and src/lib/integrations/**
+     * only; never in a client bundle. Optional so tooling and the build run
+     * without it, but every deployment needs it: every staff sign-in counts
+     * its attempt with it first (PLAN D72), so without it, or with a wrong
+     * one, nobody can sign in; inviting staff needs it too.
+     */
+    SUPABASE_SERVICE_ROLE_KEY: nonEmpty.optional(),
+    LOG_LEVEL: z
+      .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+      .default("info"),
+    /**
+     * Raises every sign-in limit of the Admin's own (PLAN D72) by this
+     * factor. Tests only (Playwright sets 1000); 1 everywhere else.
+     */
+    SIGN_IN_LIMIT_MULTIPLIER: z.coerce
+      .number({ error: "must be a whole number from 1 to 100000" })
+      .int({ error: "must be a whole number from 1 to 100000" })
+      .min(1, { error: "must be a whole number from 1 to 100000" })
+      .max(100_000, { error: "must be a whole number from 1 to 100000" })
+      .default(1),
+    /** Phase 10 (RUNBOOK "Shopify"): the shop's own myshopify.com domain. */
+    SHOPIFY_SHOP_DOMAIN: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/, {
+        error: "must be the shop's <name>.myshopify.com domain, lower case",
+      })
+      .optional(),
+    /** The custom app's Admin API access token (live adapter). Secret. */
+    SHOPIFY_ADMIN_TOKEN: nonEmpty.optional(),
+    /** The webhook signing secret (HMAC on /api/shopify/webhooks). Secret. */
+    SHOPIFY_WEBHOOK_SECRET: nonEmpty.optional(),
+    /**
+     * 'fake' = the in-memory Shopify (local development and E2E only; never
+     * production); 'live' or unset = the GraphQL adapter when the domain and
+     * token are set, else Shopify is off.
+     */
+    SHOPIFY_ADAPTER: z.enum(["live", "fake"]).optional(),
+    /**
+     * 'true' only when a Preview deployment's SHOPIFY_* variables belong to a
+     * separate Shopify development store (RUNBOOK "Vercel environment setup").
+     * Without it the live adapter is off in Preview (VERCEL_ENV=preview), so
+     * a preview build on the staging database can never push into the live
+     * store (its handles bicii-<short id> collide with production's).
+     */
+    SHOPIFY_ALLOW_PREVIEW: z.enum(["true"]).optional(),
+    /** Bearer secret of /api/cron/integrations (the Vercel cron sends it). Secret. */
+    CRON_SECRET: nonEmpty.optional(),
+    /** Set by Vercel (production | preview | development); read to refuse the fake in production. */
+    VERCEL_ENV: z.string().optional(),
+  })
+  .superRefine((env, ctx) => {
+    if (env.SHOPIFY_ADAPTER === "fake" && env.SHOPIFY_ADMIN_TOKEN) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SHOPIFY_ADAPTER"],
+        message: "fake cannot be combined with SHOPIFY_ADMIN_TOKEN; unset one of them",
+      });
+    }
+    if (env.SHOPIFY_ADAPTER === "fake" && env.VERCEL_ENV === "production") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SHOPIFY_ADAPTER"],
+        message: "the fake Shopify must never run in production",
+      });
+    }
+    if (env.SHOPIFY_ADAPTER === "live") {
+      for (const key of ["SHOPIFY_SHOP_DOMAIN", "SHOPIFY_ADMIN_TOKEN"] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message: "is required when SHOPIFY_ADAPTER=live",
+          });
+        }
+      }
+    }
+  });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

@@ -54,3 +54,78 @@ describe("env", () => {
     }
   });
 });
+
+describe("Shopify and cron variables (Phase 10)", () => {
+  const TOKEN = "shpat_placeholder";
+
+  it("accepts nothing at all (Shopify off) and a lower-case myshopify.com domain", () => {
+    expect(parseServerEnv({}).SHOPIFY_ADAPTER).toBeUndefined();
+    expect(
+      parseServerEnv({ SHOPIFY_SHOP_DOMAIN: "bicii-test.myshopify.com" }).SHOPIFY_SHOP_DOMAIN,
+    ).toBe("bicii-test.myshopify.com");
+  });
+
+  it("refuses a shop domain that is not <name>.myshopify.com", () => {
+    for (const domain of [
+      "https://bicii.myshopify.com",
+      "Bicii.myshopify.com",
+      "bicii.com",
+      "-bicii.myshopify.com",
+      "bicii.myshopify.com/admin",
+    ]) {
+      expect(() => parseServerEnv({ SHOPIFY_SHOP_DOMAIN: domain })).toThrow(/SHOPIFY_SHOP_DOMAIN/);
+    }
+  });
+
+  it("accepts fake for local development and E2E", () => {
+    const env = parseServerEnv({
+      SHOPIFY_ADAPTER: "fake",
+      SHOPIFY_SHOP_DOMAIN: "bicii-test.myshopify.com",
+      SHOPIFY_WEBHOOK_SECRET: "s",
+      CRON_SECRET: "c",
+    });
+    expect(env.SHOPIFY_ADAPTER).toBe("fake");
+    expect(env.CRON_SECRET).toBe("c");
+  });
+
+  it("refuses fake together with an Admin token", () => {
+    expect(() => parseServerEnv({ SHOPIFY_ADAPTER: "fake", SHOPIFY_ADMIN_TOKEN: TOKEN })).toThrow(
+      /SHOPIFY_ADAPTER: fake cannot be combined with SHOPIFY_ADMIN_TOKEN/,
+    );
+  });
+
+  it("refuses fake in Vercel production, not in preview", () => {
+    expect(() => parseServerEnv({ SHOPIFY_ADAPTER: "fake", VERCEL_ENV: "production" })).toThrow(
+      /must never run in production/,
+    );
+    expect(parseServerEnv({ SHOPIFY_ADAPTER: "fake", VERCEL_ENV: "preview" }).SHOPIFY_ADAPTER).toBe(
+      "fake",
+    );
+  });
+
+  it("requires the domain and token for live", () => {
+    let message = "";
+    try {
+      parseServerEnv({ SHOPIFY_ADAPTER: "live" });
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain("SHOPIFY_SHOP_DOMAIN: is required when SHOPIFY_ADAPTER=live");
+    expect(message).toContain("SHOPIFY_ADMIN_TOKEN: is required when SHOPIFY_ADAPTER=live");
+    expect(
+      parseServerEnv({
+        SHOPIFY_ADAPTER: "live",
+        SHOPIFY_SHOP_DOMAIN: "bicii.myshopify.com",
+        SHOPIFY_ADMIN_TOKEN: TOKEN,
+      }).SHOPIFY_ADAPTER,
+    ).toBe("live");
+  });
+
+  it("refuses an unknown adapter and treats blank values as unset", () => {
+    expect(() => parseServerEnv({ SHOPIFY_ADAPTER: "mock" })).toThrow(/SHOPIFY_ADAPTER/);
+    expect(parseServerEnv({ SHOPIFY_ADAPTER: "", CRON_SECRET: "" })).toMatchObject({
+      SHOPIFY_ADAPTER: undefined,
+      CRON_SECRET: undefined,
+    });
+  });
+});

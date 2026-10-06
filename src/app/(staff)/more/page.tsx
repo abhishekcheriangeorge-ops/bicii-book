@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { MORE_ITEMS } from "@/components/shell/nav";
+import { moreItemsFor } from "@/components/shell/nav";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowLink, RowList } from "@/components/ui/row-list";
@@ -9,13 +9,13 @@ import { requireStaff } from "@/lib/auth/session";
 export const metadata: Metadata = { title: "More" };
 
 export default async function MorePage() {
-  await requireStaff();
+  const staff = await requireStaff();
   return (
     <>
       <PageHeader title="More" />
       <nav aria-label="More sections">
         <RowList>
-          {MORE_ITEMS.map((item) => {
+          {moreItemsFor(staff.role === "admin").map((item) => {
             const Icon = item.icon;
             return (
               <RowLink key={item.href} href={item.href}>

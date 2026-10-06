@@ -15,6 +15,7 @@ import {
   AUTHENTICATED_FUNCTIONS,
   AUTHENTICATED_RELATIONS,
   DEFINER_VIEWS,
+  SERVICE_ROLE_FUNCTIONS,
 } from "../fixtures/api-surface";
 import { connect } from "./harness";
 
@@ -123,6 +124,37 @@ describe("API surface (tests/fixtures/api-surface.ts)", () => {
 
   it("authenticated can execute exactly the allow-listed functions", async () => {
     expect(await reachableFunctions("authenticated")).toEqual([...AUTHENTICATED_FUNCTIONS].sort());
+  });
+
+  // The service role gets exactly the sign-in counter (PLAN D72) and the
+  // Phase 10 Shopify webhook and queue RPCs, and nothing in private (the
+  // purge and the exceptions helper are owner-only).
+  it("service_role can execute exactly the allow-listed functions in public", async () => {
+    expect(await reachableFunctions("service_role")).toEqual([...SERVICE_ROLE_FUNCTIONS].sort());
+    const { rows } = await conn.query<{ fn: string }>(
+      `select p.oid::regprocedure::text as fn
+         from pg_proc p
+         join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'private'
+          and has_function_privilege('service_role', p.oid, 'EXECUTE')
+        order by 1`,
+    );
+    expect(rows.map((r) => r.fn)).toEqual([]);
+  });
+
+  it("no API role can execute private.integration_exceptions or private.purge_integration_events", async () => {
+    for (const fn of [
+      "private.integration_exceptions()",
+      "private.purge_integration_events(interval)",
+    ]) {
+      for (const role of ["anon", "authenticated", "service_role"]) {
+        const { rows } = await conn.query<{ ok: boolean }>(
+          "select has_function_privilege($1, $2::regprocedure, 'EXECUTE') as ok",
+          [role, fn],
+        );
+        expect({ fn, role, ok: rows[0].ok }).toEqual({ fn, role, ok: false });
+      }
+    }
   });
 
   it("anon holds exactly the allow-listed privileges on tables, views and sequences", async () => {

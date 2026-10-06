@@ -4,6 +4,7 @@ import { PhotoUploadsProvider } from "@/components/domain/photo-uploads";
 import { AppHeader } from "@/components/shell/app-header";
 import { ProfileChip, ProfileChipSkeleton } from "@/components/shell/profile-chip";
 import { SideRail } from "@/components/shell/side-rail";
+import { StaffSideRail } from "@/components/shell/staff-side-rail";
 import { TabBar } from "@/components/shell/tab-bar";
 
 /**
@@ -28,7 +29,9 @@ export default function StaffLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <SideRail />
+        <Suspense fallback={<SideRail />}>
+          <StaffSideRail />
+        </Suspense>
         <div className="flex min-w-0 flex-1 flex-col">
           <AppHeader
             profile={

@@ -20,6 +20,12 @@ main line from `feat/p7-purchasing`, and refined by D63 ("latest" is by
 receipt `received_at`; 0 is a known cost), see
 [ADR-018](ADR-018-purchasing.md).
 
+Status update 2026-10-06 (D7): applied to online refunds by Phase 10 (D85,
+[ADR-020](ADR-020-shopify.md)): `process_shopify_refund` writes one
+`sale_refunds` row (capped like D49) and nothing else; Shopify's restock
+claims stay in the event's result; evidence in
+`tests/db/shopify-webhooks.test.ts` ("Refunds are financial only").
+
 ## Context
 
 The plan had to choose defaults for three phases that are not built on this

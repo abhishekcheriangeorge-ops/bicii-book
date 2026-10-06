@@ -4,9 +4,10 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: `feat/p8-labels` (2026-10-06): Phase 8 labels merged with
-the main line at `a1aebf6` (staff email sign-in, purchasing and the three
-staff roles admin, manager and mechanic); not deployed; on a developer machine at http://localhost:3000. Staff sign in
+Applies to: `feat/p10-shopify` (2026-10-06): Phase 8 labels and Phase 10
+Shopify, merged with the main line at `a1aebf6` (staff email sign-in,
+purchasing and the three staff roles admin, manager and mechanic); not
+deployed; on a developer machine at http://localhost:3000. Staff sign in
 with an emailed code.
 
 Last walkthrough: not walked through by a person. These flows are exercised
@@ -14,7 +15,7 @@ by the E2E specs in `tests/e2e/` (among them `auth`, `workshop`,
 `workshop-board`, `inventory`, `inventory-publish`, `scan`,
 `appointments`, `appointment-settings`, `today`, `customers-bikes`,
 `staff`, `roles`, `consignment`, `consignment-journey`, `sales`,
-`purchasing`, `print-view` and `labels`), on an iPhone 13 and
+`purchasing`, `print-view`, `labels` and `shopify`), on an iPhone 13 and
 an iPad viewport (counts and dates in [NOW.md](../NOW.md)); the latest
 green CI run is
 [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
@@ -600,6 +601,103 @@ website's account pages go live when the owner switches them on,
   **New consignor liability** (also View costs) opens Consignment.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
   at 0. Refunds and restocks are not taken off yet (Phase 9).
+- Admins also see **Shopify needs attention** rows under Needs attention:
+  an online order or product sync BICII could not finish, with the reason;
+  the row opens it in the Shopify queue
+  ([Fix a Shopify order](#fix-a-shopify-order-that-needs-attention-admins)).
+
+### Online orders from Shopify
+
+- What happens: a paid Shopify order becomes a sale with source **Online**
+  in Sales, at Shopify's prices after discounts (a 3 × $40 line with $20
+  off is recorded as 2 × $33.33 and 1 × $33.34), dated when Shopify took
+  the order. The stock comes from the online location (the Shop floor), and
+  the product's movements show it as **Sold online**. Shopify sending the
+  same order twice, or under a new webhook id, still records one sale.
+- A refund made in Shopify marks the sale Partly refunded or Refunded, like
+  an in-store refund: the stock and the item's status do not change; use
+  **Restock…** on the sale if the item came back.
+- A Shopify customer becomes a BICII customer only when an admin links
+  them; a matching email is never enough.
+
+### Publish a product online
+
+- Who: staff with Manage inventory (everyone else sees the status, and the
+  switch says "Needs Manage inventory").
+- Steps: open the product → **Online (Shopify)** → switch on **Publish
+  online**. The toast says "Published online"; the card then shows
+  **Synced**, when, and the **Online quantity** at the online location.
+- It needs: the product public (Publication card), a price ($0 counts),
+  not archived and not customer-owned. When something is missing the reason
+  sits beside the switch, for example "Make the product public first."
+- Afterwards every stock, price, name or public-photo change is sent once,
+  automatically. **Sync now** sends it again; on a failed sync the card
+  shows the reason in red above it.
+- If the product later stops being public, is archived or made inactive,
+  the switch stays on but the card says why it is not listed, for example
+  "Not listed: the product is not public. It goes back online when you
+  publish it again."; Shopify has it as a draft until then.
+- If the change is saved but the sync cannot run straight away, the toast
+  says "Saved. The sync runs from the queue in a moment."
+- Switching it off hides the product in Shopify (draft, quantity 0). A
+  product linked to one made in Shopify says "Linked to a product made in
+  Shopify: BICII sends price and stock only" and never gets a Buy-online
+  link.
+- **Shopify details** (folded) shows the Shopify product and variant IDs to
+  copy. **Test Shopify** on the card means the app is talking to the
+  pretend Shopify used for testing.
+
+### Fix a Shopify order that needs attention (admins)
+
+- Where: Today → **Needs attention** shows a **Shopify needs attention**
+  row with the order and the problem in words; it opens **More → Shopify →
+  Queue** on that item. The queue's **Needs attention** list has them all.
+- Nothing was recorded for the order, so nothing has to be undone.
+- An unknown product ("… is not linked to a BICII product"): tap the item →
+  **Link to a BICII product** for the line → search the product by name or
+  P- number → give a reason → **Link and retry**. The toast says
+  "Recorded as S-000123"; later orders for that Shopify variant sell the
+  same product. A custom Shopify line has no product to link: record it by
+  hand if needed, then dismiss.
+- Too little stock, a unit already sold in the shop, or an order taxed on
+  top: fix the stock (or record it by hand) and tap **Retry**, or refund
+  the order in Shopify and **Dismiss…** it with a reason. Dismissing an
+  order also closes refunds of it that are waiting, and any other delivery
+  of the same order. A dismissal is final: if Shopify sends the order (or
+  a dismissed refund) again, it is not recorded ("Earlier delivery
+  closed, not recorded"), so dismiss only an order you refunded or
+  recorded by hand.
+- The item's sheet follows the item: after **Retry** it shows the new
+  status, attempt count and reason, and it closes by itself when the item
+  is done. It cannot be closed while a retry or a link is being saved.
+- Shopify is listed under More (and on the iPad rail) for admins only.
+- Items under **Waiting** are retried automatically (1 minute, doubling, up
+  to 8 tries); **Recent** shows what was done or dismissed in the last 7
+  days. **Open event** shows what Shopify sent.
+
+### Link a Shopify customer (admins)
+
+- Steps: **More → Shopify → Events** → open the order → **Customer** →
+  **Link to a BICII customer**. Customers with the same email are listed
+  first as "Candidate — same email is not proof"; any customer can be
+  searched. Give a reason (how you know it is them) → **Link customer**.
+- The link applies to later orders. Sales already recorded are not changed;
+  the toast says how many earlier online sales show the customer through
+  their Shopify ID.
+
+### Shopify settings and events (admins)
+
+- **More → Shopify**: the connection (Live, Test (fake) or Not connected),
+  the shop, the API version and the webhook address to give Shopify; the
+  online location; the storefront address (used for the Buy online link on
+  public item pages); and **Record Shopify test orders as sales**, which
+  needs a reason to change and shows a warning while it is on. Setup and
+  recovery: [RUNBOOK "Shopify"](RUNBOOK.md#shopify).
+- **Events** lists every webhook, searchable by order name (which also
+  finds the order's refunds, named "Refund … of #1042") or webhook id
+  and filterable (Failed, Rejected, Processed, Skipped). A delivery whose
+  signature did not match is **Rejected** and keeps no body; nothing was
+  recorded from it.
 
 ### Invite a colleague
 
@@ -673,8 +771,8 @@ shown as a badge on Settings → Your profile and on Settings → Staff:
 
 | Role | What it lets you do |
 |---|---|
-| Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93), and Settings → **Labels and printers** (the QR address, printers, label templates) |
-| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings or Labels and printers |
+| Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93), Settings → **Labels and printers** (the QR address, printers, label templates) and **More → Shopify** (settings, the queue, events, linking variants and customers, D86) |
+| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings, Labels and printers, or Shopify |
 | Mechanic | The workshop: what everyone can do (next paragraph). Anything more only as extra access |
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
@@ -697,7 +795,7 @@ from your role or as extra access:
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
-| Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
+| Manage inventory | New and edited products and units, **Transfer**, publication, **Publish online** and **Sync now**, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), extra access and deactivation (it ends their sessions at once). Without the Admin role: mechanics only, only within your own permissions, never Manage staff and never your own row ([OPERATIONS.md](OPERATIONS.md#product-administration), D93) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
 | Manage purchasing | **Purchasing**: new and edited suppliers and their product links, **New order**, lines, **Submit order**, **Cancel order…**, **Receive**, **Reorder**; sees purchase costs on purchasing screens (line, receipt and last costs, order totals and history). A mechanic given it as extra access sees those costs on purchasing screens only, not job, sale, product-page or report costs (D60); a manager sees them everywhere through View costs |
