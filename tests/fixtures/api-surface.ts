@@ -181,6 +181,14 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   // staff (no costs); the one-tap draft needs manage_purchasing
   "public.create_purchase_order_from_low_stock(uuid, uuid, uuid[])",
   "public.reorder_suggestions(uuid)",
+  // Period reporting (Phase 9): financial RPCs need view_financial_reports, cost-derived columns NULL without view_costs (D30); activity for active staff
+  "public.report_activity(date, date)",
+  "public.report_activity_by_mechanic(date, date)",
+  "public.report_breakdown(date, date, report_date_basis, report_dimension, integer, text, numeric, text)",
+  "public.report_line_items(date, date, report_date_basis, report_dimension, text, integer, timestamp with time zone, uuid)",
+  "public.report_period_series(date, date, report_date_basis, report_grain)",
+  "public.report_period_summary(date, date, report_date_basis)",
+  "public.report_stock_value()",
 ];
 
 /**

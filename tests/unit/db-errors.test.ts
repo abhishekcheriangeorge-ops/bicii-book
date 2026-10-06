@@ -247,6 +247,19 @@ describe("mapDbError", () => {
     });
   });
 
+  it("maps the period report errors (Phase 9, D100)", () => {
+    expect(mapDbError(pgrst("P0001", "report_range_too_long"))).toMatchObject({
+      kind: "business",
+      reason: "report_range_too_long",
+      message: "Reports cover at most two years. Choose a shorter range.",
+    });
+    expect(mapDbError(pgrst("P0001", "report_key_invalid"))).toMatchObject({
+      kind: "business",
+      reason: "report_key_invalid",
+      message: "That report row no longer exists. Go back and pick it again.",
+    });
+  });
+
   it("maps the appointment, check-in (D40) and schedule errors, keys, checks and the exclusion backstop (Phase 2)", () => {
     expect(mapDbError(pgrst("P0001", "appointment_capacity_exceeded"))).toEqual({
       message: "That time has just filled up. Pick another time.",

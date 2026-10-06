@@ -494,7 +494,12 @@ URLs, or customer data in this file.
 
 - Category: deliberate shortcut.
 - Status and owner: accepted (D49, build default, owner to confirm);
-  owner, with Phase 9's refund-reporting row (working name DR5).
+  owner, with Phase 9's refund-reporting row (working name DR5). Since
+  2026-10-06 decided as build default D102 REPORT-REFUNDS (Phase 9 step 1,
+  [ADR-022](decisions/ADR-022-reporting.md)): refunds are reported as
+  their own figure beside gross, never netted, with no Cult Commons
+  claw-back; owner question 12 is still open, so the risk stays accepted
+  until the owner confirms or changes D102.
 - Trigger: an admin or a manager records a refund on a sale
   (`record_sale_refund`, D94), or
   staff restock a sold unit (`restock_unit`).
@@ -510,7 +515,13 @@ URLs, or customer data in this file.
   `supabase/migrations/20261004003700_consignment_reporting.sql` subtracts
   nothing; `tests/db/consignment-reporting.test.ts` asserts that S-000002
   keeps its full 28.00 entry after its 14.00 refund, and `SEED_DAYS` day 4
-  includes it (passed in `npm test` on 2026-10-05).
+  includes it (passed in `npm test` on 2026-10-05). Since 2026-10-06 the
+  period reports show `refunds_total` and `refund_count` beside gross on
+  the sale basis (`report_period_summary`, `report_period_series`);
+  `tests/db/period-reports.test.ts` ("Refunds are reported separately
+  (D102)") proves a manager's refund counts on the day it is recorded and
+  leaves the sale's gross, cost, yield and Cult Commons (restocked line
+  included) unchanged.
 - Workaround or containment: refunds and restocks show on the sale, in
   `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
   ledger; refunds are for admins and managers (D94) and capped at the sale
@@ -519,10 +530,15 @@ URLs, or customer data in this file.
   not change these figures yet", the Sales list marks Partly refunded /
   Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
   refund on the sale and in the list.
-- Next action: Phase 9 decides the refund-reporting row (DR5) for retail
-  and online refunds together.
-- Revisit trigger: the first real refund, or Phase 9's reports.
-- Last checked: 2026-10-05, the migration and tests above.
+- Next action: was "Phase 9 decides the refund-reporting row (DR5) for
+  retail and online refunds together" (done as D102, 2026-10-06). Now:
+  Phase 9 step 2 shows "refunds recorded" beside gross on the report
+  screens; the owner answers question 12 (netting, claw-back); Phase 10's
+  online refunds (D85) report through D102 when integrated.
+- Revisit trigger: the first real refund, the owner's answer to question
+  12, or Phase 10's integration.
+- Last checked: 2026-10-06, `20261006001000_report_periods.sql` and
+  `tests/db/period-reports.test.ts`.
 
 ## R-022 — Agreement photos are hidden by the app, not by the database
 
@@ -1115,3 +1131,57 @@ URLs, or customer data in this file.
 - Revisit trigger: the shop has several admins who administer staff at
   the same time, or a removal is reported as unexpected.
 - Last checked: 2026-10-06 (staff roles, review fixes).
+
+## R-055 — Past report periods change after a reopen, a back-dated sale or a back-dated receipt
+
+- Category: deliberate design (D101 REPORT-RESTATEMENT).
+- Status and owner: accepted (build default, owner to confirm, owner
+  question 21); owner.
+- Trigger: a completed job is reopened (D15) and completed again on a
+  later day; a sale is recorded with an earlier `recognized_at` (D55); a
+  purchase receipt is back-dated (D64, up to 30 days); a settlement is
+  reversed (D47).
+- Impact: a period report run twice can give different figures for the
+  same past days: the reopened job leaves its old completion day, the
+  back-dated sale or receipt joins its past day, a reversed settlement
+  leaves `settlements_paid_total`. There is no period close and no stored
+  total (SPEC §19.2, §30), so nothing records what a report said before.
+- Evidence and confidence: high; the report RPCs read source records only
+  (`20261006001000_report_periods.sql`); `tests/db/period-reports.test.ts`
+  ("Voids restate the period (D101, D15, D32)") moves job B from Fri 7
+  March to 11 March after a reopen and a void.
+- Workaround or containment: an exported CSV (Phase 9 step 2) is a
+  snapshot taken at export time; job and sale histories show every reopen,
+  void and date; back-dated receipts are limited to 30 days (D64).
+- Next action: step 2 labels the export with the time it was taken; the
+  owner confirms D101 or asks for a period close (a new decision).
+- Revisit trigger: an accountant or the owner needs closed periods, or a
+  report is disputed after a restatement.
+- Last checked: 2026-10-06 (Phase 9 step 1).
+
+## R-056 — Stock value uses each product's last cost, not the cost of the units on hand
+
+- Category: deliberate simplification (D105, D5, D63).
+- Status and owner: accepted (build default, owner to confirm, owner
+  question 21); owner.
+- Trigger: a quantity product's cost changes between deliveries (a receipt
+  sets `products.default_direct_cost` to the latest cost, D63).
+- Impact: `report_stock_value` values every unit of a quantity product on
+  hand at its last cost, so after a price change the value differs from
+  what was actually paid for the stock still on the shelf (higher after a
+  rise, lower after a fall). Products with a NULL cost are counted in
+  `uncosted_items` and not valued, so the value is understated until a
+  cost is set; consigned and customer-owned stock is never valued.
+  Locations below zero count as 0.
+- Evidence and confidence: high; `20261006001100_report_stock_value.sql`;
+  `tests/db/period-reports.test.ts` ("report_stock_value: last cost x
+  positive on-hand ..."). The ledger has no cost layers, so FIFO or average
+  cost is not derivable without a new design.
+- Workaround or containment: the stock value is labelled "at last cost"
+  (step 2); unique units use their own cost; purchase receipts keep the
+  actual cost of each delivery (`purchase_receipt_lines.unit_cost_actual`).
+- Next action: the owner confirms D105 or asks for average or FIFO cost (a
+  new decision and a ledger change).
+- Revisit trigger: stock value is used for accounts or insurance, or costs
+  move a lot between deliveries.
+- Last checked: 2026-10-06 (Phase 9 step 1).

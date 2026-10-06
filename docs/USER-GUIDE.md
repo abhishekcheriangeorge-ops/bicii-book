@@ -292,8 +292,10 @@ managers.
   refunded or Refunded and lists the refund with its reason. Nothing goes
   back into stock: if the item came back, restock it (below) (D7).
 - If it fails: "That's more than is left to refund on this sale." The
-  financial reports still count the sale in full until Phase 9 decides
-  how refunds are reported ([R-021](RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)).
+  financial reports still count the sale in full: the period reports
+  (Phase 9, screens to come) show refunds as "refunds recorded" beside
+  gross sales on the day the refund is recorded, never taken off (D102, a
+  build default; [R-021](RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)).
 
 ### Restock an item that came back
 
@@ -486,7 +488,8 @@ managers.
   opens that day's sales (the jobs are under Jobs completed);
   **New consignor liability** (also View costs) opens Consignment.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
-  at 0. Refunds and restocks are not taken off yet (Phase 9).
+  at 0. Refunds and restocks are not taken off (D102: the period reports
+  show refunds beside gross instead).
 
 ### Invite a colleague
 

@@ -4675,6 +4675,175 @@ export type Database = {
           supplier_sku: string;
         }[];
       };
+      report_activity: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          appointments_arrived: number;
+          appointments_cancelled: number;
+          appointments_no_show: number;
+          appointments_scheduled: number;
+          jobs_cancelled: number;
+          jobs_checked_in: number;
+          jobs_collected: number;
+          jobs_completed: number;
+          jobs_open_at_end: number;
+          jobs_ready_for_collection: number;
+          jobs_started: number;
+          median_hours_to_collect: number;
+          median_hours_to_complete: number;
+          parts_consumed_lines: number;
+          parts_consumed_qty: number;
+          parts_returned_qty: number;
+          purchase_receipts: number;
+          purchase_units_received: number;
+          significant_stock_adjustments: number;
+          stock_adjustments: number;
+        }[];
+      };
+      report_activity_by_mechanic: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          active: boolean;
+          display_name: string;
+          jobs_checked_in: number;
+          jobs_collected: number;
+          jobs_completed: number;
+          jobs_open_now: number;
+          staff_id: string;
+        }[];
+      };
+      report_breakdown: {
+        Args: {
+          p_after_key?: string;
+          p_after_sale_total?: number;
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_dimension?: Database["public"]["Enums"]["report_dimension"];
+          p_from: string;
+          p_key?: string;
+          p_max_rows?: number;
+          p_to: string;
+        };
+        Returns: {
+          cost_total: number;
+          cult_commons_share: number;
+          detail: string;
+          entity_id: string;
+          entity_type: string;
+          first_at: string;
+          job_count: number;
+          key: string;
+          label: string;
+          last_at: string;
+          line_count: number;
+          quantity: number;
+          sale_count: number;
+          sale_total: number;
+          yield_after_cc: number;
+          yield_total: number;
+        }[];
+      };
+      report_line_items: {
+        Args: {
+          p_after_at?: string;
+          p_after_id?: string;
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_dimension?: Database["public"]["Enums"]["report_dimension"];
+          p_from: string;
+          p_key?: string;
+          p_max_rows?: number;
+          p_to: string;
+        };
+        Returns: {
+          basis_at: string;
+          category_name: string;
+          channel: string;
+          cost_pending: boolean;
+          cost_total: number;
+          cult_commons_share: number;
+          currency: string;
+          description: string;
+          document_id: string;
+          document_number: string;
+          line_type: string;
+          mechanic_name: string;
+          ownership_type: string;
+          quantity: number;
+          sale_total: number;
+          source: string;
+          source_line_id: string;
+          unit_sale_price: number;
+          yield_total: number;
+        }[];
+      };
+      report_period_series: {
+        Args: {
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_from: string;
+          p_grain?: Database["public"]["Enums"]["report_grain"];
+          p_to: string;
+        };
+        Returns: {
+          bucket_end: string;
+          bucket_start: string;
+          consignment_sales: number;
+          consignment_sales_total: number;
+          cost_total: number;
+          cult_commons_share: number;
+          job_count: number;
+          line_count: number;
+          loss_line_count: number;
+          new_consignor_liability: number;
+          partial: boolean;
+          refunds_total: number;
+          sale_count: number;
+          sale_total: number;
+          settlements_paid_total: number;
+          yield_after_cc: number;
+          yield_total: number;
+        }[];
+      };
+      report_period_summary: {
+        Args: {
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_from: string;
+          p_to: string;
+        };
+        Returns: {
+          basis: Database["public"]["Enums"]["report_date_basis"];
+          consignment_sales: number;
+          consignment_sales_total: number;
+          cost_pending_lines: number;
+          cost_total: number;
+          cult_commons_share: number;
+          currency: string;
+          excluded_foreign_line_count: number;
+          from_date: string;
+          job_count: number;
+          line_count: number;
+          loss_line_count: number;
+          new_consignor_liability: number;
+          purchases_received_total: number;
+          refund_count: number;
+          refunds_total: number;
+          sale_count: number;
+          sale_total: number;
+          settlements_paid_total: number;
+          to_date: string;
+          yield_after_cc: number;
+          yield_total: number;
+        }[];
+      };
+      report_stock_value: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          currency: string;
+          ownership_type: string;
+          quantity_on_hand: number;
+          uncosted_items: number;
+          units_in_stock: number;
+          value_at_cost: number;
+        }[];
+      };
       restock_unit: {
         Args: { location_id?: string; reason?: string; sale_line_id: string; unit_id: string };
         Returns: Database["public"]["CompositeTypes"]["unit_status_result"];
@@ -5709,6 +5878,10 @@ export type Database = {
         | "cancelled";
       purchase_order_status:
         "draft" | "submitted" | "partially_received" | "received" | "cancelled";
+      report_date_basis: "sale" | "check_in" | "completion" | "collection";
+      report_dimension:
+        "job" | "product" | "category" | "service" | "mechanic" | "ownership" | "channel";
+      report_grain: "day" | "week" | "month";
       sale_source: "retail" | "online_shopify" | "work_order";
       sale_status: "recorded" | "partially_refunded" | "refunded" | "voided";
       schedule_entity: "shop_settings" | "shop_hours" | "closure_override" | "appointment_type";
@@ -6175,6 +6348,47 @@ export type Database = {
           },
         ];
       };
+      report_lines: {
+        Row: {
+          bicii_yield_after_cc: number | null;
+          bike_id: string | null;
+          category_id: string | null;
+          channel: string | null;
+          checked_in_at: string | null;
+          collected_at: string | null;
+          completed_at: string | null;
+          consignment_item_id: string | null;
+          cost_pending: boolean | null;
+          cost_total: number | null;
+          cult_commons_rate: number | null;
+          cult_commons_share: number | null;
+          currency: string | null;
+          customer_id: string | null;
+          description: string | null;
+          document_id: string | null;
+          document_number: string | null;
+          entry_key: string | null;
+          entry_kind: string | null;
+          inventory_unit_id: string | null;
+          is_loss: boolean | null;
+          lead_mechanic_id: string | null;
+          line_type: string | null;
+          ownership_type: string | null;
+          product_id: string | null;
+          quantity: number | null;
+          recognised: boolean | null;
+          recognized_at: string | null;
+          recognized_day: string | null;
+          sale_total: number | null;
+          service_id: string | null;
+          source: string | null;
+          source_line_id: string | null;
+          unit_direct_cost: number | null;
+          unit_sale_price: number | null;
+          yield_total: number | null;
+        };
+        Relationships: [];
+      };
       stock_levels: {
         Row: {
           last_movement_at: string | null;
@@ -6459,6 +6673,17 @@ export const Constants = {
         "cancelled",
       ],
       purchase_order_status: ["draft", "submitted", "partially_received", "received", "cancelled"],
+      report_date_basis: ["sale", "check_in", "completion", "collection"],
+      report_dimension: [
+        "job",
+        "product",
+        "category",
+        "service",
+        "mechanic",
+        "ownership",
+        "channel",
+      ],
+      report_grain: ["day", "week", "month"],
       sale_source: ["retail", "online_shopify", "work_order"],
       sale_status: ["recorded", "partially_refunded", "refunded", "voided"],
       schedule_entity: ["shop_settings", "shop_hours", "closure_override", "appointment_type"],

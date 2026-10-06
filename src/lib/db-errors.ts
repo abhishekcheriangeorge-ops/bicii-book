@@ -245,6 +245,9 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   settlement_already_reversed: "That settlement has already been reversed.",
   // Reporting (Phase 5; Phase 9 reuses it)
   report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
+  // Period reports (Phase 9, D100)
+  report_range_too_long: "Reports cover at most two years. Choose a shorter range.",
+  report_key_invalid: "That report row no longer exists. Go back and pick it again.",
   // Appointments and schedule (Phase 2)
   appointment_slot_misaligned: "Pick one of the listed times.",
   appointment_outside_hours: "The shop is not open for the whole of that time.",

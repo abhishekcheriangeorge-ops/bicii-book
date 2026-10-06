@@ -162,6 +162,29 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c "import sys; sys.path.insert(0,
 Clone the toolkit and create the venv outside this repository, or the
 checker would scan the toolkit's own Markdown too.
 
+### Report volume bench
+
+`scripts/bench/report-volume.sql` (Phase 9) generates a year of synthetic
+data (about 15,000 jobs, 50,000 work-order lines, 10,000 sale lines,
+100,000 movements, 2,000 receipt lines) and times the period-report RPCs
+with `EXPLAIN (ANALYZE, BUFFERS)`. It is a measurement, not a test, and it
+writes rows, so run it only on a throwaway clone of the worktree's
+database, never on `bicii_dev` or `bicii_dev_wt` themselves (with
+`PGHOST`, `PGUSER` and `PGPASSWORD` set for the local server):
+
+```sh
+createdb bicii_bench_wt
+pg_dump --no-owner bicii_dev_wt | psql -q bicii_bench_wt
+psql -v ON_ERROR_STOP=1 -f scripts/bench/report-volume.sql bicii_bench_wt
+dropdb bicii_bench_wt
+```
+
+Targets: a month under 300 ms, a year under 1.5 s, a line-items page under
+100 ms, `report_stock_value` under 300 ms. The latest timings are in
+[DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting)
+(2026-10-06: every target met). Phase 9 step 3 appends the reconciliation
+and exception timings to the same script.
+
 ## Changing the system
 
 Read [AGENTS.md](../AGENTS.md) first. Conventions that are not obvious
@@ -173,8 +196,9 @@ from the code:
   `20261004…` main line (through labels and Shopify), `20261005…`
   purchasing and staff email sign-in, `20261006000100`–`20261006000900`
   staff roles, `20261006001000` and up reporting, `20261007…` public site.
-  The latest file today is `20261005006000_sign_in_throttle.sql` (staff
-  email sign-in, after purchasing's `20261005000100`–`20261005000500`). A
+  The latest file on `feat/p9-reporting` is
+  `20261006001100_report_stock_value.sql` (Phase 9, after the staff roles'
+  `20261006000100`–`20261006000300`). A
   migration that replaces a function another track also replaces (as
   `staff_search`) must carry both tracks' behaviour. Never edit an applied
   migration; add a new one (nothing is hosted yet, so a track's own
