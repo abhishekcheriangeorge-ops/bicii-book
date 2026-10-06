@@ -155,6 +155,20 @@ any status through allowed moves), `addServiceLine`, `addManualLine`,
 `failsWith` / `tryAndUndo` run a call in a savepoint so one transaction can
 check many refusals.
 
+Phase 9 helpers (`tests/db/period-report-fixtures.ts`): `buildPeriodScenario`
+builds, inside the test's transaction, the March 2025 week the period-report
+tests assert (3 March 2025 is a Monday; Singapore time): jobs A–E through
+Phase 5's `insertJob` (which takes an optional `leadMechanicId`, set through
+a lead assignment at check-in), with their own services SV200, SV120, SV80
+(cost 0.00) and a quantity product QP (50.00 / 30.00), a free 0.00 / 0.00
+line, a voided line, a loss line, a cancelled job and a midnight completion;
+a consigned bike received 20 February, sold as S1 on Tuesday (1,000.00 /
+500.00 / 500.00 / 150.00) and settled 200.00 on Thursday, through the real
+RPCs as the admin. `PERIOD_EXPECTED` holds the literal figures, worked out
+by hand and never recomputed with the code under test. The scenario
+consumes J-, B-, C-, P-, U- and S- sequence values, so those tests skip in
+existing-database mode.
+
 Phase 2 helpers (`tests/db/appointment-fixtures.ts`): booking tests set
 the schedule they need as the owner inside their rolled-back transaction
 (`standardSchedule`, `setSettings`, `setHours` replaces every weekly row
@@ -689,6 +703,50 @@ review, on `feat/staff-roles` in the second worktree, database
   page exists). `segmented-control.test.tsx`: `value={null}` checks
   nothing, submits nothing and keeps one Tab stop on the first enabled
   segment.
+- Period reports (Phase 9 step 2; D100–D105): `period-reports.test.ts`
+  checks the vocabulary built from the generated enums and the cost-gated
+  columns (D30); ISO Monday–Sunday weeks (a Sunday anchor included),
+  month ends (29 February 2028), year boundaries, `shiftPeriod` by the
+  first of the month (31 January → 1 February), `shiftRange`, the
+  `autoGrain` thresholds (1 / 31 / 32 / 184 / 185 days), the range and
+  bucket labels, `parseReportParams` defaults and fallbacks for every
+  invalid value, custom ranges refused with `BUSINESS_ERRORS`'
+  `report_range_invalid` / `report_range_too_long` (731 days pass, 732
+  do not), a today taken at 23:30 UTC being the next Singapore day,
+  `reportHref` keeping parameters but dropping cursors, and the breakdown
+  row links. `csv.test.ts`: BOM, CRLF, RFC 4180 quoting, nulls as empty
+  fields, the formula-injection quote on text cells only (a negative
+  money cell stays `-50.00`), shop-local datetimes, unicode names.
+  `report-exports.test.ts`: the export kind table (every financial kind
+  needs View financial reports, `mechanics` any staff, `manage_purchasing`
+  alone never opens a financial export, D60), cost-gated columns dropped
+  without View costs, the TOTAL row written from the summary, the file
+  name and link.
+- Exceptions and reconciliation (Phase 9 step 4; D106–D108):
+  `reconciliation.test.ts` reads `20261006001200_stock_reconciliation.sql`
+  and proves `UNIT_ISSUE_CODES` and `STOCK_ISSUE_CODES` are exactly the
+  codes of its two `… end::text as issue` expressions, in order, that
+  `unsettled_consignment` is the exceptions view's own issue, that every
+  code has a sentence (and no other key does), that every disposition
+  the view derives has a label, and covers the reconciliation URL
+  (`all=1`, a valid `product` only), the exception sections' order and
+  grouping (unknown kinds under "Other"), the counts' total, the capped
+  note and the threshold sentence. `exception-kinds.test.ts`: a pill
+  label for every kind the view emits (Phase 5's five and Phase 9's
+  three; integration_failed "Shopify needs attention", Phase 10's
+  wording), an unknown kind still renders, the impossible-state and
+  unsettled-consignment sentences (the database's amount, never $0.00
+  when it is NULL), and `exceptionHref` for `consignment_item` and `sale`
+  (and, since Shopify and reporting met on `main`, the Shopify queue on the job for `integration_job`, R-058). `report-exports.test.ts` adds the
+  snapshot kinds (`exceptions`, `stock`, `units` for any staff, no cost
+  column, the brief's exception columns, a formula-like detail quoted)
+  and the snapshot file name. `today-components.test.tsx`: Today's
+  `ExceptionList` renders a Phase 5 row with identical markup with and
+  without `moreHref`, the capped note links to `/reports/exceptions`, and
+  the detailed row shows Critical, the age, no repeated detail and the
+  secondary link after the row's link. `reports.test.ts`' later-kind case
+  now uses `purchase_overdue` (identical to Phase 10's change), since
+  `integration_failed` has a label.
 
 Phase 8 step 2 (labels and the QR base; `tests/unit/printing/`, the
 files that run sharp, ZXing or pdf-lib declare `// @vitest-environment
@@ -970,7 +1028,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Financial reports gated (D30) | `reporting-access.test.ts` "Mechanic permission boundaries" and "Customers cannot read internal data": mechanic2 → `financial_lines` / `work_order_yield` 42501, counts with every money column NULL (`can_see_financials` false), `value_at_cost` NULL; mechanic1 (view_costs) → `financial_lines` 42501, `work_order_yield` works, summary money NULL; mechanic2 + view_financial_reports → rows and gross sales with every cost column NULL (`can_see_costs` false); admin → everything; customers, anon and inactive staff → 42501 from all seven RPCs; selecting the four Phase 5 reporting views as anon or authenticated → 42501. |
 | Today flows vs snapshot (D31) | `reporting.test.ts`: inserting a job with today's check-in, start, line and completion raises today's flows by exactly those milestones and the money by its line; the `*_now` counts equal direct status counts grouped as `BOARD_GROUPS`, D20 overdue via `isOverdue` and `low_stock` rows; a past day has `is_today` false and every `*_now` NULL; tomorrow → `report_range_invalid`. Range rules: `daily_summary` from > to and 367 days raise, 366 pass; `financial_lines` 31 pass, 32 and from > to raise; null bounds mean today. |
 | Significant adjustments (D33) | `reporting.test.ts`: `private.is_significant_adjustment` cases (−6, +5, −1, 4 × 24.99 vs 4 × 25.00, a unit, 2 × 60.00, non-adjustment types false); `stock_adjustments_on(TEST_DAY)` over owner-inserted movements returns the day's six (00:00 and 23:59:59 in, the neighbouring days out), newest first, with `significant`, `actor_name` and `reason` for mechanic2 and `value_at_cost` NULL; the admin sees \|delta\| × unit cost (snapshot, else product default, else 0). |
-| Operational exceptions incl. 7-day overdue boundary (D34, D20) | `reporting.test.ts`: an open job checked in exactly `OVERDUE_AFTER_DAYS` days ago is not `overdue_job`, one second earlier is; a collected job checked in 30 days ago is neither; `work_order_activity.is_overdue` equals `isOverdue` for the same rows; a ready job completed 7 shop days ago is `uncollected_job`, 6 days ago not; a forced negative on-hand is `negative_stock` (danger, all danger rows first); an owner-held unit with no live line is `unit_hold_stale`, a unit held by `add_inventory_line` on an open job is not; a completed USD job's line is `currency_mismatch` and out of the day's totals; `exceptions_now` equals the row count; max_rows clamped to 1..200. |
+| Operational exceptions incl. 7-day overdue boundary (D34, D20) | `reporting.test.ts`: an open job checked in exactly `OVERDUE_AFTER_DAYS` days ago is not `overdue_job`, one second earlier is; a collected job checked in 30 days ago is neither; `work_order_activity.is_overdue` equals `isOverdue` for the same rows; a ready job completed 7 shop days ago is `uncollected_job`, 6 days ago not; a forced negative on-hand is `negative_stock` (danger, all danger rows first); an owner-held unit with no live line is `unit_hold_stale`, a unit held by `add_inventory_line` on an open job is not; a completed USD job's line is `currency_mismatch` and out of the day's totals; `exceptions_now` equals the row count; max_rows clamped to 1..200. Phase 9 step 3 appended six columns to the RPC's result (a documented contract change): `OPERATIONAL_EXCEPTIONS_COLUMNS` in `reporting-fixtures.ts` lists them after Phase 5's nine, and every other Phase 5 assertion is unchanged. |
 | Seeded history reconciles (Phase 5; SPEC §10 examples, SEED_DAYS) | `reporting-seed.test.ts` (reads only; days counted back from the seed's anchor, `seedToday()`): H1–H4 (and H5's rounding) through `work_order_yield` (admin) and Σ `financial_lines(anchor−6, anchor)` per job equal `SPEC_EXAMPLE_JOBS` / `ROUNDING_JOB`, recognised on their days, H4's CC 12.00 not 7.50; `daily_summary(anchor−n, anchor−n)` equals `SEED_DAYS[n]` exactly for n = 0…6 (every column: the D41 appointment counts, consignment placeholders NULL); Σ entries by `recognized_day` equal each day's money columns; every completed seeded job (Phase 3, 4, 5) has entries equal to `work_order_totals_staff` and `work_order_yield` on its completion day, open and cancelled ones none; parts consumed/returned and adjustment counts equal the ledger's sums; every seeded entry's share ≥ 0 and equals its line's (H4's tyre a loss at 0); `stock_adjustments_on(anchor−n)` gives A1–A3 as `SEED_ADJUSTMENTS` (A2 significant, `value_at_cost` NULL for mechanic2, 30.00 for the admin). When the anchor is the shop's today (else skipped with a message): `today_dashboard(null)` is the anchor, `is_today`, flows = `SEED_DAYS[0]`, the `*_now` snapshot equals direct counts and `SEED_SNAPSHOT` (exactly in a fresh per-file database, at least otherwise); `operational_exceptions` has `SEED_EXCEPTIONS` and not H5, J-000002, J-000003 or J-000005. `display-parity.test.ts`: `private.shop_timezone()` = `SHOP_TIME_ZONE`, and `work_order_activity_on`'s `bike_title` / `customer_label` equal `bikeTitle()` / `customerLabel()` for every seeded job of days 0–6. |
 | Seeded ledger consistent (Phase 5) | `reporting-seed.test.ts` "The seeded ledger is consistent": every seeded inventory line has exactly one `job_consumption` movement (−quantity, cost snapshot = the line's unit cost), at the line's own time for the Phase 5 lines (J-000010's, written by `add_inventory_line`, just after); no line created at or after its job's completion; no stock level below zero and the Phase 5 products' on-hand as documented; no seeded job, line, event, assignment or movement later than `now()`, and no Phase 5 row later than J-000007's seed-time check-in. |
 | Cost-pending lines flagged (D14) | `reporting.test.ts`: a `cost_pending` manual line on a completed job is recognised at cost 0 with `cost_pending` true; `today_dashboard(day).cost_pending_lines` and `work_order_yield.cost_pending_count` count it. |
@@ -1014,6 +1072,15 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Shopify gid parity (Phase 10 step 3) | `shopify-gid-parity.test.ts`: one shared table (`tests/fixtures/shopify-gids.ts`) through `private.shopify_gid` (as owner) and `toShopifyGid`: the same gid, the same null and a refusal on both sides (spaces trimmed, a tab, newline or non-ASCII digit refused); an unknown kind is 22023 / RangeError; `shopifyHandle` = `private.shopify_handle` |
 | The Shopify service layer on the live stack (Phase 10 step 3; SPEC §23, D83, D84, D87) | `shopify.stack.test.ts` (skips without the devstack unless `BICII_REQUIRE_STACK=1`): (a) publishing the stack product → one productSet and one inventory write for its handle at `product_sync_state`'s price, ids on the product, `synced`; a stock change at another location → its job calls Shopify zero times; Sync now pushes in full; a price change → one productSet at the new price; a retriable failure → `error` with the message and the job queued, then userErrors → `needs_attention` with Shopify's message; Sync now supersedes it and the anonymous `buy_online_url` is the storefront's `/products/<handle>`; (b) a signed orders/paid through `handleShopifyWebhook` (after-work run synchronously): the same webhook id twice and a new id once → one sale, online stock down once, `delivery_count` 2, the second id `duplicate_order`; the sale's sync defers once (`shopify_quantity_changed`) and then pushes the ledger quantity; (c) a Shopify-made product linked by its second variant → variantsBulkUpdate and inventorySetQuantities only, the first variant untouched, origin `external`, no Buy-online link; restore: both unpublished and run (DRAFT at 0 with ids kept; the variant at 0), nothing left in the queue |
 | Seeded sync data (Phase 10 step 2) | `shopify-sync.test.ts` "Seeded sync data is consistent": no open product-sync job after the seed, syncedTyre `synced`, its Buy-online link the storefront's `/products/bicii-p-000027` |
+| Period reports are built from source records only (Phase 9; SPEC §19.2; D100) | `period-reports.test.ts` "Reports are built from source records only": every day of the March 2025 scenario (`period-report-fixtures.ts`) and of the seed's last week, each `daily_summary` column equals its counterpart in `report_period_summary(d, d, 'sale')` (money, consignment) or `report_activity(d, d)` (job flows, appointments, parts, adjustments), and the job flows equal independent counts over the jobs' own stamps (`loss_total` equals the loss lines of `report_line_items`); the series summed by day, week and month over the week, March 2025 and the seed's week equals the summary on every basis; `report_lines`' recognised rows are exactly `financial_lines` and its work-in-progress money equals the lines' generated columns; `entry_kind` is only 'line', no `financial_lines` row has a NULL channel and no sale has source `work_order` |
+| The date basis decides the day (Phase 9; SPEC §19.2, §23; D100, D35, D1) | `period-reports.test.ts`: each day and the week on all four bases equal `PERIOD_EXPECTED` (check-in 800.00 / 4 jobs, completion 680.00 / 3, collection 300.00 / 1, sale 1,680.00 / 710.00 / 970.00 / Cult Commons 306.00 / after 664.00); retail only on sale, work in progress only on check-in, the cancelled job nowhere; completion equals the workshop channel of the sale basis for any range; 23:59:30 counts Friday and 00:00:00 Saturday; ISO weeks and clipped, flagged month buckets; inline bucketing equals `private.shop_day` at the boundaries; job B's Cult Commons is 60.00, not 45.00, and a loss-only day shows −50.00 and 0.00 |
+| Every breakdown partitions its period (Phase 9; D100, D103) | `period-reports.test.ts`: for every dimension and basis, on the scenario week and the seed's last 7 days, paging at `p_max_rows` 2 with the (sale_total, key) cursor covers every group once and the groups sum to the summary; channel keys are derived from `pg_enum`'s `sale_source` values (a new value fails the test); job rows equal `work_order_totals_staff`; `p_key` returns the same row; a key's line items (keyset, 2 per page) sum to its row and never include a voided line; line items without a key page through every line once past tied instants and a document without a counted line; the free line and the services' 0.00 cost come back as 0.00 (D14, D24 as amended) |
+| Snapshots, restatement, refunds, currency, mechanic (Phase 9; SPEC §23; D21, D101–D104) | `period-reports.test.ts`: new catalogue prices and costs and a 50% Cult Commons rate leave March 2025 unchanged, archived services, products and staff appear by name; reopening job B, voiding its loss line and completing it on 11 March moves it (200.00 / 0.00 / 200.00 / 60.00); a manager's refund counts on its recording day in `refunds_total` / `refund_count` and changes no gross, cost, yield or Cult Commons (restocked line kept), NULL on other bases; a USD line is excluded and counted in `excluded_foreign_line_count`; the by-mechanic breakdown and `report_activity_by_mechanic` credit the lead, 'unassigned' and 'not_workshop'; `report_activity` for the week |
+| Purchases and stock value (Phase 9; D105, D60) | `period-reports.test.ts`: a receipt today adds 1 receipt, 4 units and 30.00 purchases (deltas); `report_stock_value` adds 50.00 for +4 at 12.50, counts a NULL-cost product as uncosted and does not value it, values a 0.00 cost at 0, ignores a location below zero, counts a consigned unit and never values it |
+| Report arguments and access (Phase 9; D30, D91, D92) | `period-reports.test.ts`: reversed or NULL bounds `report_range_invalid`, 732 days `report_range_too_long` (731 pass) on all six ranged RPCs; bad keys, keys of another dimension and half or conflicting cursors `report_key_invalid`; a mechanic with only `view_financial_reports` as an exception (granted by the admin) gets gross, counts, refunds and consignment counts with every cost column NULL, full figures with `view_costs` added, as do a manager and the admin; mechanic1 (view_costs only) and mechanic2 get 42501 from the financial RPCs and may read activity; a customer gets 42501 from all seven; anon has no EXECUTE; no report RPC returns a float; each period-report column leads a valid index |
+| The app's report reads and export pagers (Phase 9 step 2; D30, D100) | `period-report-exports.stack.test.ts` (through PostgREST on the devstack, as the app calls it): walking `report_breakdown` two groups at a time with the cursor passed back as received visits every group once, in one page's order (job, product and mechanic); the breakdown export's groups add up to the summary's `line_count` and end with the summary's own TOTAL row; the lines export of the period and of J-000013 number their counts, newest first; mechanic1 (View costs only) and mechanic2 get 42501 from the summary; the by-mechanic rows are for any staff, the lead-less one "Unassigned" |
+| Stock reconciles with the ledger (Phase 9 step 3; SPEC §12, §23, §26; D106) | `stock-reconciliation.test.ts`: the seed has no unit or stock issue (no seeded negative_on_hand) and every unit's ledger equals the on-hand its status implies; running both RPCs and the exceptions writes nothing (movement, unit, unit-event and consignment row counts and stamps unchanged); the exact columns, none a cost, the 1..1000 clamp. Every RPC-reachable unit state reconciles after EVERY step, with the expected disposition: unit 1 held (`add_inventory_line`), voided back to available, held again, sold at completion, reopened to held (D25), sold again; unit 2 sold by `record_retail_sale`, refunded (still sold_by_sale, D7), restocked (in_stock while the old sale line still names it), transferred (ledger location = the new one); unit 3 held, voided, job cancelled (D16); unit 4 a consigned unit sold on a job (D44, item sold); unit 5 consigned and returned; unit 6 written off; none of them is an exception, and Phase 4's deferred check agrees. Each corruption, written as the owner with `session_replication_role = replica` and rolled back, gives exactly its code and the same `issue` in `operational_exceptions` (as the admin): an extra +1 at a second location `ledger_out_of_range`; a sold unit set available `sale_without_sold_status`; a sold unit given a later +1 `sold_without_sale`; a held unit whose job is cancelled without a void `held_without_open_job`, listed once as Phase 5's `unit_hold_stale`; an available unit given −1 `in_stock_without_ledger`; set written_off without a movement `ledger_without_stock_status`; location changed without movements `location_mismatch`; the item set sold while its unit is available `consignment_status_mismatch`; a quantity product below zero `negative_on_hand`, mirrored by exactly one `negative_stock` row; a unitless unique-product movement `unique_movement_without_unit` (the unit itself still clean); a moved unit `unit_count_mismatch` at both locations. `unit_expected_on_hand` equals `assert_unit_consistent`'s rule for all six statuses (consistent at net 1 exactly when it says 1, at net 0 exactly when it says 0). Access: every seeded staff member may call both RPCs; a customer gets 42501, anon has no EXECUTE, no API role selects the three views; a mechanic without `view_costs` reads the same unit row as the admin. |
+| Operational exceptions, extended (Phase 9 step 3; D34, D104, D107, D108) | `operational-exceptions.test.ts`: with one row of each Phase 5 kind, the first nine columns of `reporting.operational_exceptions` for Phase 5's kinds equal exactly what Phase 5's own view body (read from `20261004002500_daily_summary.sql`) returns, and the appended columns are `issue` (the kind; `negative_on_hand` for negative_stock), `short_id` = `title` = `entity_label`, `detail` = `subject_label`, `amount` and `currency` NULL; the RPC returns `OPERATIONAL_EXCEPTIONS_COLUMNS` (Phase 5's nine, then the six appended). D107: an item received 60 and sold 45 shop days ago is raised for the admin with amount 300.00, currency SGD, days 45, since = the sale and the consignor's name in subject and title; the threshold hides it at 60 and 45 and shows it at 44 and 30; the current value again writes no `schedule_events` row and a change writes one with `{from, to}`; 0, 366 and NULL are `alert_days_out_of_range`; a direct UPDATE as the admin is 42501 and changes nothing; a mechanic with `manage_consignments`, mechanic2, mechanic1 and the manager get 42501; a partial settlement leaves 200.00, a full one clears it, a restock clears another item, and a sale 5 days ago is not raised. D108: the admin, the manager, mechanic1 (`view_costs`) and a mechanic with `manage_consignments` see the unsettled row, a mechanic with only `view_financial_reports` and mechanic2 do not; everyone sees a `unit_state_mismatch`; for each of the six, `report_exception_counts` per kind equals the list per kind and `today_dashboard(null).exceptions_now` its length. `private.integration_exceptions()` has exactly Phase 10's nine-column signature (from the catalogue), is definer, stable, `search_path=""`, executable by no API role, and is Phase 10's body (since reporting joined `main`): the admin sees each seeded `needs_attention` job once, as `integration_failed` with `issue`, `title` and `detail` filled by the view, and mechanic2 sees none (R-058); `exception_visible` gives the per-kind rule for the admin and mechanic2. D104: an owner-written USD work-order line and a two-line USD sale are listed (`work_order_line` and `sale`, with S- number, description · USD and since = `recognized_at`), and they are exactly the documents `private.report_rows(…, true)` returns and `excluded_foreign_line_count` counts (1, 2 and 3). |
 
 ### End-to-end (SPEC §27.3)
 
@@ -1125,6 +1192,63 @@ disabled inside that one transaction (`sqlTransaction` in
 access", "You can't open this") and none of their data. The HTTP status
 is not asserted there: a page whose shell has started streaming keeps
 200 (Next's `forbidden()` docs).
+
+Period reports spec (`reports.spec.ts`, Phase 9 step 2, D30,
+D100–D105; read-only, on the seeded Phase 5 history counted from the seed's
+anchor with `anchorDay(n)`, asserting J-000013's membership, never
+emptiness or totals): **an admin** opens Reports from More (phone) or the
+rail (iPad) on Week and Sale date with a Gross sales amount and a Yield
+tile; on `?period=day&date=anchorDay(4)` steps Previous day and Next day
+once each, and the page has no horizontal scroll; J-000013 is in the Job /
+sale breakdown only under Check-in on anchorDay(4), under Completed and
+Sale date on anchorDay(3) and under Collected on anchorDay(2), each basis
+change keeping `period` and `by` in the URL; the Custom sheet refuses a
+reversed range in place (values kept), then 2020-01-01 to 2020-01-07 on
+Completed shows both empty-state sentences. **The drill-down**: the
+J-000013 row opens `/jobs/<id>`; Product then the wheelset row opens
+`/reports/lines` with a J-000013 line and a back link keeping the basis.
+**The export**: the breakdown's Export CSV link has `target=_blank` and
+`rel=noopener`; `page.request.get` returns 200, `text/csv`,
+`attachment; filename="bicii-breakdown-completion-<day>_<day>.csv"` and
+`no-store`; the body starts with the BOM, its header includes `cost`, and
+it has the J-000013 row and a TOTAL row. **A manager** sees Yield and Cult
+Commons (the role implies View costs, D91). **mechanic2** sees Activity
+and the permission sentence, no Gross sales and no basis control; the
+breakdown export answers 403 "Forbidden", `/reports/lines` the 403 screen
+with a 403 status (no `loading.tsx` above it), and `kind=mechanics` a
+200 CSV.
+
+Exceptions and reconciliation spec (`exceptions.spec.ts`, Phase 9 step 4,
+D106–D108; phone and iPad). Setup in `beforeAll`, as the admin through
+`signInApi` and the real RPCs: a consignor (`new_consignor`) and a
+consigned unique item received 60 shop days ago with a tagged name
+(`tagFor`) and 300.00 agreed, sold with `record_retail_sale` 45 days ago
+(D55); `afterAll` settles it with `record_settlement` and restores the
+threshold to 30. **The admin** opens Today, which must have no
+horizontal scroll (a full run found the Activity and Stock grids widened
+by long tagged names from earlier specs, zooming the phone page out so
+taps missed; fixed with `grid-cols-1` and `min-w-0`), follows its "See
+all exceptions" link
+(href `/reports/exceptions`), reads "Alert unsettled consignments after
+30 days", finds the item's C- ID under Unsettled consignments with
+"$300.00 outstanding" (no horizontal scroll), opens
+`/consignment/items/<id>`, changes the threshold to 60 in the sheet
+(toast; the item disappears) and back to 30 (it returns), and the
+exceptions CSV has the header and the item's row; a `finally` restores
+30 through `set_consignment_settlement_alert_days`, so a failure never
+leaves 60 behind. **mechanic2** sees the threshold as text, no Change
+button and no Unsettled consignments section (no all-clear is asserted:
+Phase 5's job kinds are visible to all staff). **The admin** opens Stock
+reconciliation from Reports' More reports and from Inventory's "Reconcile
+stock"; under Problems only Unique items says "Every item reconciles
+with the ledger" (after every earlier spec's RPCs in the serial run, so
+a drift is a bug to fix); Everything (`all=1`) lists U-000001 with the
+ledger on hand and expected values `report_unit_reconciliation` returns
+(phone rows, iPad table); the products-by-location Export CSV has
+`target=_blank`, `rel=noopener` and the header line. **Signed out**, a
+fresh request context's `GET /reports/export?kind=exceptions` is
+redirected to `/login?next=…` by the proxy; **mechanic2**'s is a 200 CSV
+with no `unsettled_consignment` row.
 
 Staff roles spec (`roles.spec.ts`, D90-D94; every record it creates
 carries `tagFor(testInfo)`, seeded records are only read): **a manager**

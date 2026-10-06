@@ -11,7 +11,8 @@ import { STATUS_LABELS, statusTone } from "@/lib/workshop";
  * … Each row opens the job: J- number, customer, bike, status (text and
  * tone), an "Overdue" badge (D20) and the sale total (sale only, so every
  * staff member sees it). The heading's id is the anchor the flow tile
- * links to.
+ * links to. `min-w-0` (and the page's `grid-cols-1`) let a long tagged
+ * customer or bike name truncate instead of widening the phone page.
  */
 export function ActivityList({
   label,
@@ -23,7 +24,7 @@ export function ActivityList({
   rows: readonly ActivityRow[];
 }) {
   return (
-    <div id={anchor} className="flex scroll-mt-20 flex-col gap-2">
+    <div id={anchor} className="flex min-w-0 scroll-mt-20 flex-col gap-2">
       <h3 className="font-display text-sm font-bold tracking-wide uppercase">
         {label} <span className="text-dust-500 tabular-nums">({rows.length})</span>
       </h3>

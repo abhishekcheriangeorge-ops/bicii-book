@@ -45,7 +45,7 @@ This section was added by the documentation retrofit (2026-10-05, inspected
 at `c6bf6d0`). The numbered sections below are never renumbered; code and
 migration comments cite them as "DATA-MODEL §n".
 
-**Authority.** The schema source is the 52 files in
+**Authority.** The schema source is the 56 files in
 [supabase/migrations/](../supabase/migrations/), from
 `20261004000100_foundation.sql` to
 `20261006103000_public_site.sql` (Phase 6 added `20261004003300` to
@@ -66,31 +66,48 @@ roles added `20261006000100_staff_role_values`,
 replace, with the same signatures, `private.has_permission`,
 `public.my_staff_profile`, `public.record_sale_refund`, `create_staff`,
 `private.authorize_permission_change`, `grant_permission`,
-`set_staff_active` and `update_staff`, D90–D94; Phase 11 step 1 added
+`set_staff_active` and `update_staff`, D90–D94; Phase 9, reporting,
+added `20261006001000_report_periods`, `20261006001100_report_stock_value`,
+`20261006001200_stock_reconciliation` and
+`20261006001300_operational_exceptions`, which sort after the roles ones
+and replace `reporting.financial_lines` (same columns, one added
+exclusion), `reporting.operational_exceptions` (Phase 5's nine columns,
+then six appended), `public.operational_exceptions` (dropped and created
+again with the appended columns) and `public.today_dashboard` (same
+signature), add `shop_settings.consignment_settlement_alert_days` and
+otherwise create new objects, D100–D108; Phase 11 step 1 added
 `20261006103000_public_site`, which creates only new objects:
 `claim_my_customer`, `bookable_slots`,
 `private.customer_can_read_media` and the Storage policy
 `media_internal_select_customer`, D120–D125). The labels and Shopify
-migrations sort before the purchasing, sign-in, roles and public-site
-ones, and no function, view, policy, grant, trigger or type that
-`20261004003800_labels.sql` or `20261004003900` to `20261004004100`
+migrations sort before the purchasing, sign-in, roles, reporting and
+public-site ones, and no function, view, policy, grant, trigger or type
+that `20261004003800_labels.sql` or `20261004003900` to `20261004004100`
 (Shopify) creates or replaces is created or replaced by any of them
 (checked at the merge of `main` into `feat/p8-labels`, and again at the
 merge of `feat/p8-labels` into `feat/p10-shopify`, 2026-10-06, by
 matching every `create`, `create or replace`, `drop`, `alter`, `grant` and
 `revoke` target of those four files against the `20261005…` and
 `20261006…` files, and for `20261006103000_public_site` when labels and
-then Shopify joined `main`): the labels migration's only change to an
-existing object is `shop_settings_public_site_url_check`, and the Shopify
-migrations' are new columns on `products`, `customers` and `sales`,
-which no later migration touches. So the label and Shopify guards
-(`private.require_staff`, `private.require_admin`, `private.is_staff`,
-`private.is_admin`, `private.has_permission`) follow the roles unchanged:
-every role prints labels, and label templates, printers and the QR
-address stay role `admin` only (D91; a manager is not an admin;
-`tests/db/labels.test.ts` proves both for a manager); a manager holds
-`manage_inventory` (Publish online, Sync now) by role, while the Shopify
-settings stay `require_admin` (D86, D91).
+then Shopify joined `main`), with one deliberate exception: Phase 9's
+`20261006001300_operational_exceptions` replaces the
+`reporting.operational_exceptions` view that Shopify's
+`20261004004000_shopify_order_processing` last defined, and keeps its
+`integration_failed` rows by reading the same
+`private.integration_exceptions()`, which it creates as an empty
+placeholder only where Phase 10's is absent
+([R-058](RISKS.md#r-058--phase-9s-exceptions-migration-must-be-re-verified-when-phase-10-merges),
+verified when reporting joined `main`). The labels migration's only
+change to an existing object is `shop_settings_public_site_url_check`,
+and the Shopify migrations' are new columns on `products`, `customers`
+and `sales`, which no later migration touches. So the label and Shopify
+guards (`private.require_staff`, `private.require_admin`,
+`private.is_staff`, `private.is_admin`, `private.has_permission`) follow
+the roles unchanged: every role prints labels, and label templates,
+printers and the QR address stay role `admin` only (D91; a manager is not
+an admin; `tests/db/labels.test.ts` proves both for a manager); a manager
+holds `manage_inventory` (Publish online, Sync now) by role, while the
+Shopify settings stay `require_admin` (D86, D91).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
@@ -102,11 +119,11 @@ document is corrected.
 
 **Applied state.**
 
-- Local: on 2026-10-06, after `npm run db:reset` on `feat/p10-shopify`
-  merged with the main line (`a1aebf6`; `npm run test:e2e` resets the
-  same database),
+- Local: on 2026-10-06, after `npm run db:reset` on the merge of
+  `feat/p9-reporting` into the main line (with labels and Shopify;
+  `npm run test:e2e` resets the same database),
   `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
-  printed `51|20261006000300` (every file applied).
+  printed `56|20261006103000` (every file applied).
 - CI: the `check` job diffs the generated types against a throwaway
   database built from the migrations, and the `test` and E2E jobs run
   `npm run db:reset` (migrations, then the seed) before testing
@@ -137,9 +154,9 @@ the `20261004` prefix; Phase 7's keep `20261005`). For planned tables, the rows 
 | §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`); the database QR base and payload (`private.qr_payload`, `003800_labels`, D9); the Admin's QR display and scan bases on the database base (`src/lib/qr.ts`, Phase 8 step 2). `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4, `PO-` to the purchase order since Phase 7. Missing: the public `/q` route (Phase 11) |
 | §12 Label printing | Partly | Database built (`003800_labels`, Phase 8 step 1: templates, printer profiles, print jobs, label content, RPCs, built-in rows); `src/lib/printing/`, `src/lib/domain/labels.ts`, the print view, the PDF route and the print history (step 2); the record pages' Labels card and the settings screens are steps 3–4; hardware adapters Phase 12 |
 | §13 Shopify integration | Partly | Inbound built (Phase 10 step 1: `003900_shopify_integration`, `004000_shopify_order_processing`: settings, sync rows, events, the queue, the audit trail, webhook recording, order and refund processing, retry, dismiss and the links; D80–D89). Outbound database built (step 2: `004100_shopify_product_sync`: the online price, Publish online, Sync now, the settings RPC, the deferred enqueue triggers, the sync worker's state and result RPCs, `reporting.shopify_sync_status`, `public_items.buy_online_url`). Service layer built (step 3: `src/lib/integrations/shopify/`, the webhook and cron routes; no schema change). Screens built (step 4: the product page's Online card, `/shopify` and its queue, products, events and inspector, `src/lib/domain/shopify.ts`; no schema change). Not verified against a real store ([R-047](RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)) |
-| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `purchase_order_progress` and `product_on_order` (Phase 7). `operational_exceptions` has its `integration_failed` rows since `004000_shopify_order_processing` (admins only, D86). `shopify_sync_status` and `public_items.buy_online_url` since `004100_shopify_product_sync` (Phase 10 step 2). Missing: `stock_reconciliation` (Phase 9) |
+| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `purchase_order_progress` and `product_on_order` (Phase 7). `operational_exceptions` has its `integration_failed` rows since `004000_shopify_order_processing` (admins only, D86). `shopify_sync_status` and `public_items.buy_online_url` since `004100_shopify_product_sync` (Phase 10 step 2). `report_lines` and the period-report helpers (Phase 9 step 1, `20261006001000_report_periods`, `…1100_report_stock_value`; `financial_lines` gained only the `sa.source <> 'work_order'` exclusion). `unit_ledger_disposition`, `unit_reconciliation`, `stock_reconciliation` and the extended `operational_exceptions` (Phase 9 step 3, `…1200_stock_reconciliation`, `…1300_operational_exceptions`, which keeps Phase 10's `integration_failed` rows). Nothing listed here is missing since reporting joined `main`; there is no `inventory_balances` cache by design (D106) |
 | §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48), purchasing (Phase 7, D60), labels (Phase 8 step 1) and the Shopify integration tables (Phase 10 step 1, D86); the rows of later phases are design |
-| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`), the fourteen purchasing RPCs (Phase 7, `receive_purchase(purchase_order_id, idempotency_key, lines, reference, received_at, notes)` among them), the five label RPCs (Phase 8 step 1), the five Shopify service-role RPCs and four staff RPCs (Phase 10 step 1), and the two sync-worker RPCs and three staff RPCs of the outbound sync (step 2); the rows of later phases are design |
+| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`), the fourteen purchasing RPCs (Phase 7, `receive_purchase(purchase_order_id, idempotency_key, lines, reference, received_at, notes)` among them), the five label RPCs (Phase 8 step 1), the five Shopify service-role RPCs and four staff RPCs (Phase 10 step 1), the two sync-worker RPCs and three staff RPCs of the outbound sync (step 2), the seven period-report RPCs (Phase 9 step 1: `report_period_summary`, `report_period_series`, `report_breakdown`, `report_line_items`, `report_activity`, `report_activity_by_mechanic`, `report_stock_value`), the four reconciliation and exception RPCs (Phase 9 step 3: `report_stock_reconciliation`, `report_unit_reconciliation`, `report_exception_counts`, `set_consignment_settlement_alert_days`; `operational_exceptions` gained columns) and Phase 11's `claim_my_customer` and `bookable_slots`; the rows of later phases are design |
 | §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`), S from step 2 (`sales`), PO from Phase 7 (`purchase_orders`) |
 | §18 Seed data | Implemented | Phase 1–5, Phase 2, Phase 6, Phase 7, Phase 8 and Phase 10 parts are in `supabase/seed.sql`, in that order (Phase 10's last) |
 
@@ -566,6 +583,11 @@ shop_settings (single row: id smallint = 1, check shop_settings_singleton;
   customer_cancel_cutoff_minutes integer default 120 -- 0..10080 (D37)
   public_site_url text null                         -- https?://…, ≤ 200; informational
                                                     -- until Phase 8 (D9 note)
+  consignment_settlement_alert_days integer not null default 30
+                                                    -- 1..365 (check
+                                                    -- shop_settings_consignment_settlement_alert_days_check);
+                                                    -- D107, Phase 9 step 3; written only by
+                                                    -- set_consignment_settlement_alert_days (admin)
   updated_at, updated_by -> staff                   -- updated_by = the caller's staff id
 
 shop_hours
@@ -1707,6 +1729,14 @@ settlement are separate facts. A settlement replay with the same
 fingerprint returns it even after the outstanding changed. A consignor is
 archived only with no active item and an outstanding of exactly 0.
 
+Overdue consignor money (Phase 9 step 3, D107): an item with
+`outstanding > 0` whose latest sale (`last_sale_at`) is more than
+`shop_settings.consignment_settlement_alert_days` shop days ago (default
+30, 1..365, admin only through `set_consignment_settlement_alert_days`) is
+an `unsettled_consignment` operational exception (§14), visible only to
+consignment money viewers (D48, D108). It is computed live and clears when
+the item is settled, restocked or returned.
+
 ## 10. Suppliers and purchasing
 
 Built in Phase 7 (migrations `20261005000100_suppliers`,
@@ -2530,15 +2560,18 @@ never exposed.
 
 | View | Purpose |
 |---|---|
-| `financial_lines` | Built (Phase 5, D32 RECOGNITION). One row per recognised ENTRY, columns in this order: `entry_key` text ('wol:' ‖ line id, unique), `source` text, `entry_kind` text ('line'), `source_line_id` uuid, `document_id` uuid, `document_number` text, `channel` text, `recognized_at` timestamptz, `recognized_day` date (`private.shop_day`), `line_type` text, `service_id`, `product_id`, `inventory_unit_id`, `category_id` (the service's or product's), `ownership_type` text (inventory lines: the unit's, else the product's; null otherwise), `consignment_item_id` (the line's consigned item; work-order lines carry it since Phase 6 step 2, D44), `customer_id`, `bike_id`, `lead_mechanic_id`, `description` text, `quantity`, `unit_sale_price`, `unit_direct_cost`, `cult_commons_rate`, `sale_total`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc` (all plain numeric), `is_loss` boolean (yield < 0), `currency` text, `cost_pending` boolean. Pinned vocabulary: `source` ∈ ('work_order','sale'); `channel` ∈ ('workshop','retail','online'); `document_id` = work_orders.id or sales.id; `document_number` = the J- job number or the S- sale number; `entry_kind` = 'line'. Recognition (D3 as modified by D15, refined by D32): every non-voided line of a job with a current `completed_at` (completed, ready for collection or collected; never open or cancelled), on the shop day of that `completed_at`. Lines are frozen once completed, so the only correction is a reopen, which removes the whole job from its earlier day until it is completed again (past days can change; no reversal entries for workshop lines). Amounts come only from the line's snapshots and generated columns; each entry's Cult Commons is the line's own share (≥ 0, D1), so no negative Cult Commons payment arises; `cost_pending` lines (D14) are recognised at cost 0 and flagged. Sale branch (Built, Phase 6 step 2, `…3700_consignment_reporting`): one entry per line of a sale whose status is not `voided`, `union all` with every column in this order: `entry_key` 'sl:' ‖ line id, `source` 'sale', `entry_kind` 'line', `source_line_id` the line, `document_id` / `document_number` the sale and its S- number, `channel` 'retail' (source retail) or 'online' (online_shopify), `recognized_at` the sale's `recognized_at` on `private.shop_day` of it, `line_type` 'inventory', `service_id` null, the line's `product_id` and `inventory_unit_id`, the product's `category_id`, `ownership_type` the unit's else the product's, the line's `consignment_item_id`, the sale's `customer_id`, `bike_id` and `lead_mechanic_id` null, the description, quantity, price, cost, rate and four totals from the line's snapshots, `bicii_yield_after_cc = yield_total − cult_commons_share`, `is_loss = yield_total < 0`, the currency, `cost_pending` false. Refunds are not subtracted and restocked lines stay (D49: netting and Cult Commons claw-back are Phase 9's refund-reporting row). A consigned entry's cost already includes the consignor payout (D44, D46). Phase 9 appends only genuinely new columns at the end, never synonyms. |
+| `financial_lines` | Built (Phase 5, D32 RECOGNITION). One row per recognised ENTRY, columns in this order: `entry_key` text ('wol:' ‖ line id, unique), `source` text, `entry_kind` text ('line'), `source_line_id` uuid, `document_id` uuid, `document_number` text, `channel` text, `recognized_at` timestamptz, `recognized_day` date (`private.shop_day`), `line_type` text, `service_id`, `product_id`, `inventory_unit_id`, `category_id` (the service's or product's), `ownership_type` text (inventory lines: the unit's, else the product's; null otherwise), `consignment_item_id` (the line's consigned item; work-order lines carry it since Phase 6 step 2, D44), `customer_id`, `bike_id`, `lead_mechanic_id`, `description` text, `quantity`, `unit_sale_price`, `unit_direct_cost`, `cult_commons_rate`, `sale_total`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc` (all plain numeric), `is_loss` boolean (yield < 0), `currency` text, `cost_pending` boolean. Pinned vocabulary: `source` ∈ ('work_order','sale'); `channel` ∈ ('workshop','retail','online'); `document_id` = work_orders.id or sales.id; `document_number` = the J- job number or the S- sale number; `entry_kind` = 'line'. Recognition (D3 as modified by D15, refined by D32): every non-voided line of a job with a current `completed_at` (completed, ready for collection or collected; never open or cancelled), on the shop day of that `completed_at`. Lines are frozen once completed, so the only correction is a reopen, which removes the whole job from its earlier day until it is completed again (past days can change; no reversal entries for workshop lines). Amounts come only from the line's snapshots and generated columns; each entry's Cult Commons is the line's own share (≥ 0, D1), so no negative Cult Commons payment arises; `cost_pending` lines (D14) are recognised at cost 0 and flagged. Sale branch (Built, Phase 6 step 2, `…3700_consignment_reporting`): one entry per line of a sale whose status is not `voided`, `union all` with every column in this order: `entry_key` 'sl:' ‖ line id, `source` 'sale', `entry_kind` 'line', `source_line_id` the line, `document_id` / `document_number` the sale and its S- number, `channel` 'retail' (source retail) or 'online' (online_shopify), `recognized_at` the sale's `recognized_at` on `private.shop_day` of it, `line_type` 'inventory', `service_id` null, the line's `product_id` and `inventory_unit_id`, the product's `category_id`, `ownership_type` the unit's else the product's, the line's `consignment_item_id`, the sale's `customer_id`, `bike_id` and `lead_mechanic_id` null, the description, quantity, price, cost, rate and four totals from the line's snapshots, `bicii_yield_after_cc = yield_total − cult_commons_share`, `is_loss = yield_total < 0`, the currency, `cost_pending` false. Refunds are not subtracted and restocked lines stay (D49: netting and Cult Commons claw-back are Phase 9's refund-reporting row). A consigned entry's cost already includes the consignor payout (D44, D46). Phase 9 (`20261006001000_report_periods`) appended NO column (every column the period reports need exists, and synonyms are never added); its only change is the explicit `sa.source <> 'work_order'` in the sale branch's WHERE: a 'work_order' sale is reserved and never written (no RPC inserts one; Phase 10 writes 'online_shopify' only), its lines would double-count the job's own lines, and any NEW `sale_source` value reaches the channel CASE without an arm (a NULL channel), which the channel-partition test in `period-reports.test.ts` catches. |
+| `report_lines` | Built (Phase 9 step 1, D100, `20261006001000_report_periods`). Every non-voided line that carries money on any date basis. Branch 1 is `financial_lines` (all of it, `recognised = true`, so the sale basis is `financial_lines` by construction), left-joined to `work_orders` for workshop rows; branch 2 is the work in progress: the live lines of jobs with `completed_at` NULL and status not cancelled, with the same expressions as `financial_lines`' work-order branch, `recognized_at` / `recognized_day` NULL and `recognised = false` (a job reopened under D15 is back here until completed again). Columns: the 32 `financial_lines` columns in order, then `checked_in_at`, `completed_at`, `collected_at` (the job's current stamps; NULL on sale rows) and `recognised` boolean. security_invoker, granted to no API role; read only through `private.report_rows` and the §16 report RPCs. |
 | `daily_summary` | Built (Phase 5). One row per shop day from the earliest activity day (check-in, recognised entry or movement; today when none) to `private.shop_today()`, zero-filled; columns fixed in this order: 1 `day`; 2–7 `jobs_checked_in`, `jobs_started`, `jobs_completed`, `jobs_ready_for_collection`, `jobs_collected`, `jobs_cancelled` (flows: jobs whose CURRENT stamp falls that day, D31); 8 `currency` (`private.shop_currency()`); 9 `lines_recognised`; 10–14 `gross_sales`, `cogs`, `yield_total`, `cult_commons_share` (Σ entry shares, D1), `bicii_yield_after_cc` (shop-currency `financial_lines` by `recognized_day`); 15 `loss_lines`, 16 `loss_total` (≤ 0); 17 `parts_consumed_qty`, 18 `parts_consumed_lines`, 19 `parts_returned_qty` (reversals of job consumptions); 20 `stock_adjustments`, 21 `significant_stock_adjustments` (D33); 22 `appointments_scheduled`, 23 `appointments_arrived`, 24 `appointments_no_show` (Built, Phase 2 `…3200`, D41: `appointment_daily`'s `booked`, `arrived` and `no_shows` of that day, 0 when none; the series also starts at the earliest appointment's shop day and still ends at `private.shop_today()`); 25 `consignment_sales` integer, 26 `consignment_sales_total` numeric, 27 `new_consignor_liability` numeric (Built, Phase 6 step 2, zero-filled: over that day's shop-currency `financial_lines` entries with a `consignment_item_id`, i.e. sale lines and completed jobs' lines that sold consigned stock: the number of distinct documents, Σ their `sale_total`, and Σ round(quantity × the source line's `consignor_payout_snapshot`, 2)). Retail sales reach the money columns 9–16 through `financial_lines`; the reconcile invariants hold (the day's money columns are its entries' sums). Integer counts and numeric money with explicit casts; Phase 9 appends new measures only after column 27. |
 | `appointment_daily` | Built (Phase 2, D41 APPT-COUNTS). One row per shop day that has appointments, by SCHEDULED day (`private.shop_day(starts_at)`) and CURRENT status: `day`, `booked` (not cancelled), `expected` (booked or confirmed), `arrived` (arrived, checked_in or completed), `checked_in` (checked_in or completed), `no_shows`, `cancelled`, all integer. security_invoker, granted to no API role (it calls `private.shop_day`); read through `public.appointment_daily` (zero-filled) and daily_summary's columns 22–24. Phase 9's activity report reads it. |
 | `work_order_activity` | Built (Phase 5). One row per job: `work_order_id`, `job_number`, `status` (enum), `customer_id`, `bike_id`, `lead_mechanic_id`, `appointment_id`, `currency` text; the CURRENT stamps `checked_in_at`, `started_at`, `completed_at`, `ready_for_collection_at`, `collected_at`, `cancelled_at` and their shop days `checked_in_day`, `started_day`, `completed_day`, `ready_day`, `collected_day`, `cancelled_day`; `is_open`; `is_overdue` (D20: open and `now() - checked_in_at > interval '7 days'`); `age_days` (open: today − check-in day; else completion or cancellation day − check-in day); `days_to_start`, `days_to_complete`; `days_awaiting_collection` (completed/ready: today − completion day; collected: collection day − completion day); `time_to_complete` interval. Integer days and intervals only. A reopened job's completion stamps are its latest ones (D15). |
-| `operational_exceptions` | Built (Phase 5, D34). Columns in order: `kind`, `severity` ('danger' \| 'warning'), `entity_type` ('work_order', 'product', 'inventory_unit', 'work_order_line'), `entity_id`, `entity_label` (job number or P-/U- short ID), `subject_label` (customer · bike, or the product name, with the location for negative stock), `days`, `quantity`, `since`. Kinds: `overdue_job` (warning, which only orders it after danger rows: the UI shows Overdue in the danger tone, as everywhere else; exactly D20, 7 = `OVERDUE_AFTER_DAYS`, strictly more than 7 × 24 h), `uncollected_job` (warning; completed or ready, completed ≥ 7 shop days ago), `negative_stock` (danger; `stock_levels.on_hand < 0`, quantity = on-hand), `unit_hold_stale` (danger; a held_for_customer unit with no live inventory line on an open job; since = its last status change), `currency_mismatch` (danger; a would-be-recognised line not in the shop currency, excluded from totals). Kinds are text: Phase 6 (unit_state_mismatch, unsettled_consignment), Phase 9 (more kinds; columns `issue, short_id, title, detail, amount, currency` appended at the end) and Phase 10 (integration_failed) replace the view keeping these columns first. Built (Phase 10 step 1, `…4000_shopify_order_processing`): the view is replaced with this definition unchanged plus `union all` of `private.integration_exceptions()`, the extension point for integration rows (same nine columns): one `integration_failed` row (danger, `entity_type` 'integration_job', the job id, the event subject or the product's short ID, `subject_label` = the human message ≤ 300, days since the job was created) per `needs_attention` job, for admins only (D86; zero rows for anyone else, so `today_dashboard.exceptions_now` counts them for admins only). When Phase 9 appends `issue, short_id, title, detail, amount, currency` it must widen `private.integration_exceptions()` too ([R-043](RISKS.md#r-043--phase-9-must-widen-the-integration-exceptions-function)). |
+| `operational_exceptions` | Built (Phase 5, D34; extended by Phase 9 step 3, D106–D108, `20261006001300_operational_exceptions`). Columns in order: Phase 5's nine, unchanged: `kind`, `severity` ('danger' \| 'warning'), `entity_type` ('work_order', 'product', 'inventory_unit', 'work_order_line'; Phase 9 adds 'sale' and 'consignment_item'; Phase 10 'integration_job'), `entity_id`, `entity_label` (job number, P-/U-/C- short ID or S- sale number), `subject_label` (customer · bike, or the product name, with the location for negative stock), `days`, `quantity`, `since`; then appended by Phase 9: `issue` text (the kind, or the reconciliation code; `negative_on_hand` for negative_stock), `short_id` text, `title` text, `detail` text (one plain sentence), `amount` numeric (unsettled_consignment's outstanding, else NULL), `currency` text. Phase 5's branches keep their rows and values and fill short_id = entity_label, title = entity_label, detail = subject_label. Kinds: `overdue_job` (warning, which only orders it after danger rows: the UI shows Overdue in the danger tone, as everywhere else; exactly D20, 7 = `OVERDUE_AFTER_DAYS`, strictly more than 7 × 24 h), `uncollected_job` (warning; completed or ready, completed ≥ 7 shop days ago), `negative_stock` (danger; `stock_levels.on_hand < 0`, quantity = on-hand), `unit_hold_stale` (danger; a held_for_customer unit with no live inventory line on an open job; since = its last status change), `currency_mismatch` (danger; a would-be-recognised workshop line not in the shop currency, entity `work_order_line`; since Phase 9 also every line of a sale that is not voided (nor of the reserved source work_order) in another currency, entity `sale`, since = `recognized_at`: exactly the lines the period reports exclude on the sale basis, D104), `unit_state_mismatch` (danger, D106: one row per `unit_reconciliation` issue, entity `inventory_unit`, detail = `issue_detail`, since = last movement; one per `stock_reconciliation` issue `unit_count_mismatch` or `unique_movement_without_unit`, entity `product`; never for `negative_on_hand`, which is `negative_stock`, and not for a held unit that `unit_hold_stale` lists), `unsettled_consignment` (warning, D107: `consignor_item_ledger.outstanding > 0` and `private.shop_today() − private.shop_day(last_sale_at)` > `shop_settings.consignment_settlement_alert_days`; entity `consignment_item`, label and short_id the C- ID, subject and title with the consignor's display name, days since that sale, amount = outstanding, currency the item's), `integration_failed` (the rows of `private.integration_exceptions()`, built by Phase 10 step 1 in `…4000_shopify_order_processing` in Phase 5's nine-column shape: one row (danger, `entity_type` 'integration_job', the job id, the event subject or the product's short ID, `subject_label` = the human message ≤ 300, days since the job was created) per `needs_attention` job, for admins only, D86; this view fills the six appended columns for those rows itself, `issue` = the kind, `title` = `entity_label`, `detail` = `subject_label`, so the function keeps nine columns, [R-043](RISKS.md#r-043--phase-9-must-widen-the-integration-exceptions-function) resolved, [R-058](RISKS.md#r-058--phase-9s-exceptions-migration-must-be-re-verified-when-phase-10-merges)). Not filtered per caller: the RPCs apply `private.exception_visible(kind)` (D108, §15). Computed live, never stored or dismissed. |
 | `work_order_totals` / `work_order_totals_staff` | Running totals per job; the staff variant includes cost and yield. |
 | `stock_levels` | Built (Phase 4): on-hand (`sum(quantity_delta)`) and `last_movement_at` per product and location from the ledger. security_invoker, SELECT to authenticated (staff rows only through RLS). |
 | `product_stock` | Built (Phase 4): every product with on-hand across locations (0 when none), available and held units, `negative_locations` (locations below zero) and `below_reorder` (quantity product, reorder point set, on_hand <= reorder_point). security_invoker. |
-| `stock_reconciliation` | Ledger-derived vs cached balance when the cache exists. |
+| `unit_ledger_disposition` | Built (Phase 9 step 3, D106, `20261006001200_stock_reconciliation`). One row per unique unit from its own movements: `unit_id`, `ledger_on_hand` (total net), `ledger_location_id` (the single location whose net is +1, else NULL), `location_nets` jsonb (location id → net), `location_out_of_range` (a location's net not in {0, 1}), `last_movement_at`, `disposition` and `disposition_ref` (the S- or J- number), `disposition_movement_id`. Disposition, from the unit's LATEST non-transfer movement (`created_at`, `id`; a transfer only moves the location): +1 of any type `in_stock`; −1 retail_sale/online_sale `sold_by_sale`; −1 job_consumption on a live line whose job has a `completed_at` `sold_by_job`, on an open job `held_by_job`, on a cancelled job or a voided line without its reversal `held_on_closed_job`; −1 consignment_returned `returned`; −1 damaged or stock_adjustment `written_off`; any other −1 (no RPC writes one) `unexplained_out`; no movement `none`. A refund writes no movement (D7): a refunded unit stays `sold_by_sale` until `restock_unit`'s +1 'return'. security_invoker, no API grant. |
+| `unit_reconciliation` | Built (Phase 9 step 3, D106). One row per unit: `unit_id`, `unit_short_id`, `product_id`, `status`, `location_id`, `ledger_on_hand`, `ledger_location_id`, `expected_on_hand` (`private.unit_expected_on_hand(status)`: 1 for available and reserved, 0 otherwise, exactly `assert_unit_consistent`'s rule), `disposition`, `disposition_ref`, `last_movement_at`, `issue`, `issue_detail` (one plain sentence, e.g. "Status available; the ledger says sold by S-000123."). `issue` is NULL when consistent, else the FIRST failing check: 1 `ledger_out_of_range` (total net, or a location's net, not in {0, 1}); 2 `sale_without_sold_status` (sold_by_sale or sold_by_job, status ≠ sold); 3 `sold_without_sale` (status sold, disposition neither of those, or `sold_at` NULL); 4 `held_without_open_job` (held_for_customer, disposition ≠ held_by_job); 5 `in_stock_without_ledger` (expected 1, net 0); 6 `ledger_without_stock_status` (expected 0, net 1); 7 `location_mismatch` (expected 1, ledger location ≠ `location_id`); 8 `consignment_status_mismatch` (item sold ↔ unit sold, item returned ↔ unit returned_to_consignor, item active ↔ unit available, reserved or held). security_invoker, no API grant. |
+| `stock_reconciliation` | Built (Phase 9 step 3, D106; replaces the earlier "cached balance when the cache exists" plan: there is no `inventory_balances` cache). One row per (product, location) with a movement or a unit: `product_id`, `location_id`, `tracking_type`, `ledger_on_hand` (`stock_levels`, summed once), `units_in_stock` (unique products: units there whose status implies on-hand 1; NULL for quantity products), `last_movement_at`, `issue`, the first of `negative_on_hand` (ledger < 0), `unique_movement_without_unit` (a unique-product movement there naming no unit; the root cause, so it comes before the count it also shifts) and `unit_count_mismatch` (unique: ledger ≠ units_in_stock), else NULL. security_invoker, no API grant. |
 | `low_stock` | Built (Phase 4): active, non-archived quantity products AT OR BELOW their reorder point (`on_hand <= reorder_point`), or below zero in total or at any location regardless of reorder point (D23); `shortfall = coalesce(reorder_point, 0) - on_hand`, largest first. security_invoker. |
 | `consignor_ledger` / `consignor_item_ledger` | Built (Phase 6 step 2, D46, D47): per consignor / per item liability, consignor charges, owed, paid (settlements not reversed), outstanding, counts and dates; derived, never stored; no API grant ([§9](#9-consignment)). |
 | `purchase_order_progress` | Built (Phase 7). One row per PO line: `purchase_order_id`, `po_number`, `supplier_id`, `po_status`, `purchase_order_line_id`, `product_id`, `quantity_ordered`, `quantity_received` (sum of receipt lines, 0 when none), `quantity_outstanding` (ordered − received, ≥ 0, for draft/submitted/partially_received, else 0), `quantity_cancelled` (the same remainder when cancelled, D61), `expected_at` (the line's, else the PO's), `last_received_at` (latest receipt `received_at`), `is_overdue` (submitted/partially_received, outstanding > 0 and expected_at < `private.purchasing_shop_today()`). security_invoker, SELECT to authenticated, no cost column. `private.purchasing_shop_today()` is a security definer wrapper of Phase 5's `private.shop_today()` (EXECUTE to authenticated), not a competing calendar helper: authenticated has no EXECUTE on the Phase 5 helpers. |
@@ -2582,6 +2615,154 @@ Materialise `daily_summary` only if measured to be slow; refresh then runs
   |delta| ≥ 5, on a unique unit, or |delta| × unit cost ≥ 100.00 (unit
   cost = `unit_cost_snapshot`, else `products.default_direct_cost`, else 0).
 
+**Phase 9 period-report rules (PLAN D100–D105, [ADR-022](decisions/ADR-022-reporting.md)).**
+
+- Date bases (D100, enum `report_date_basis`): `sale` (default) counts
+  `financial_lines` (workshop lines at the job's CURRENT `completed_at`,
+  sales at `recognized_at`); `check_in`, `completion` and `collection`
+  count workshop lines only, dated by the job's `checked_in_at`,
+  `completed_at` or `collected_at`; `check_in` includes work in progress.
+  Cancelled jobs carry no money. Activity counts use each job's own stamps
+  (D31) on any basis; appointments are by scheduled day and current status
+  (D41). Weeks are ISO (Monday), months calendar months; a range is at most
+  731 days (`report_range_too_long`), a reversed or NULL bound is
+  `report_range_invalid`.
+- `private.report_rows(p_from, p_to, p_basis, p_after_at, p_after_id,
+  p_limit = null, p_foreign = false)` returns the `report_lines` columns
+  plus `basis_at`, one query per basis, shop currency only (or, with
+  `p_foreign`, every other currency, which `private.report_foreign_rows`
+  counts for `excluded_foreign_line_count`, D104). The half-open instant
+  range is computed once (`private.shop_day_start(p_from)` ..
+  `private.shop_day_start(p_to + 1)`) and filters the raw timestamptz
+  columns, so their indexes are used. The keyset cursor
+  `(basis_at, source_line_id) < (p_after_at, p_after_id)` and the page
+  limit go inside each per-basis query; with a limit, the bound "the
+  basis instant of the p_limit-th newest document with a counted line
+  before the cursor" lets the query read a few documents instead of the
+  range (each such document has at least one line on the page side).
+- Bucketing (D35): after filtering, rows are bucketed inline with
+  `(ts at time zone v_tz)::date`, `v_tz = private.shop_timezone()` read
+  once; this is `private.shop_day`'s own definition (a test proves they
+  agree at the boundary instants). Measured on the bench: bucketing 58,759
+  `financial_lines` rows with `private.shop_day` took 1,235 ms, inline
+  76 ms, because the helper re-reads `shop_settings` per row.
+- Gating (D30): the financial RPCs require `view_financial_reports`;
+  every cost-derived column (cost, yield, Cult Commons, yield after CC,
+  loss counts, consignor liability, settlements paid, purchases received,
+  stock value) is NULL without `view_costs`. Gross figures, counts,
+  refunds and the consignment sales count and total are always returned.
+  `manage_purchasing` never shows a cost in a report (D60). The activity
+  RPCs need an active staff member and return no money.
+- Breakdown keys (`private.report_key`, one inline CASE): job =
+  `document_id`; product = `product_id` or `none`; category =
+  `category_id` or `none`; service = `service_id`, `products` (inventory
+  and sale lines) or `manual`; mechanic = the current lead (D103),
+  `unassigned` or `not_workshop`; ownership = `shop_owned`,
+  `consignment`, `customer_owned` or `service`; channel = `workshop`,
+  `retail` (sale_source retail) or `online` (online_shopify). Every line
+  is in exactly one group. The order `sale_total desc, key asc` (collation
+  C) is the keyset; it uses gross only, so paging reveals no cost.
+- Refunds (D102) are `sale_refunds` by `created_at` in the shop currency,
+  sale basis only, beside gross and never netted; settlements paid are
+  `consignment_settlements` by `paid_at`, not reversed; purchases received
+  are `purchase_receipt_lines.received_total` of receipts by
+  `received_at` (D105). Nothing is stored: a reopen, a back-dated sale or
+  a back-dated receipt restates past periods (D101, RISKS R-055).
+- Stock value (D105, `20261006001100_report_stock_value`): NOW, per
+  ownership type; quantity products Σ max(on-hand per location, 0) at
+  `products.default_direct_cost` (the last cost, D5/D63; RISKS R-056);
+  available or reserved units at their own cost, else the product's; a
+  NULL cost (or a product in another currency) is not valued and counts in
+  `uncosted_items`; 0 is valued; consigned and customer-owned stock is
+  counted, never valued.
+
+Report timings (`scripts/bench/report-volume.sql` on a throwaway clone of
+`bicii_dev_wt`, 2026-10-06: 15,021 jobs, 51,025 work-order lines, 10,004
+sale lines, 101,045 movements, 2,003 receipt lines; EXPLAIN ANALYZE
+execution time, ms; targets: month < 300, year < 1,500, a line-items page
+< 100, stock value < 300; all met):
+
+| Call | Month | Year |
+|---|---|---|
+| `report_period_summary` sale / check_in / completion / collection | 76 / 88 / 47 / 93 | 284 / 266 / 227 / 234 |
+| `report_period_series` sale by day; check_in by month | 55 | 451; 304 |
+| `report_breakdown` job (sale); product (completion), mechanic (collection), category (check_in) | 36 | 447; 243, 246, 280 |
+| `report_line_items` first page; a page 40,000 lines deep; a month's workshop channel | — | 10; 35; 26 (month) |
+| `report_activity`; `report_activity_by_mechanic` | 31 | 316; 20 |
+| `report_stock_value` (now) | 15 | — |
+
+Re-run at the end of Phase 9 (step 4, 2026-10-06, same bench and data
+shape on a fresh clone; the machine is shared, so ±20% is noise): summary
+month 53–97 / year 259–297; series 59 (month), 522 (year by day), 337
+(year by month); breakdown 37 (month), 502 job, 312 product, 407
+mechanic, 310 category (year); line items 8, 56, 42; activity 46 / 318,
+by mechanic 23; stock value 18. Every target is still met; the moves are
+within the noise (step 4 changed no SQL).
+
+**Phase 9 reconciliation and exception rules (PLAN D106–D108, [ADR-022](decisions/ADR-022-reporting.md#2026-10-06-stock-reconciliation-and-operational-exceptions-d106d108)).**
+
+- No `inventory_balances` cache (D106): the ledger sum is the stock. A
+  future cache must be a trigger-maintained projection that these views
+  also check (SPEC §12, §26).
+- Reconciliation is read-only. Phase 4's deferred
+  `inventory_unit_ledger_consistent` trigger already refuses most unit
+  drift at commit, so an issue means the triggers were bypassed (owner SQL
+  in replica mode, a restore, a hand fix) or a check the trigger does not
+  make failed (disposition versus status, a hold without an open job,
+  consignment item versus unit). The fix is an existing guarded flow
+  (adjust stock with a reason, restock, settle, void, return); an issue
+  that persists after it is an RPC defect.
+- Every RPC-reachable unit path reconciles after every step
+  (`tests/db/stock-reconciliation.test.ts`): hold, void, sell at
+  completion, reopen (D25), retail sale, refund (D7), restock, transfer,
+  cancel (D16), consigned job part (D44), consignment return, write-off.
+  No RPC defect was found.
+- One exceptions surface: `reporting.operational_exceptions` and
+  `public.operational_exceptions(max_rows)`; no enum of kinds, no second
+  view, no second list RPC. `public.report_exception_counts()` counts the
+  same rows per kind and severity.
+- The Phase 10 extension point: `private.integration_exceptions()` has
+  Phase 10's nine-column signature (`kind, severity, entity_type,
+  entity_id, entity_label, subject_label, days, quantity, since`). On this
+  branch `20261006001300` creates it only if absent, as a placeholder with
+  no rows; after Phase 10's `20261004004000` (which sorts first) Phase
+  10's body is kept, and the extended view maps the six appended columns
+  itself (`issue` = kind, `title` = entity_label, `detail` =
+  subject_label, the rest NULL). Re-verify on the integrated branch
+  (RISKS R-058).
+- The reconciliation and exception RPCs run with `jit = off`: on the bench
+  JIT compilation added 100–250 ms per call to these wide plans and saved
+  nothing. The currency_mismatch branches read the shop currency once per
+  query (`(select private.shop_currency())`), not once per line.
+- No new index: the latest-movement lookup per unit uses
+  `inventory_movements_unit_idx` (`inventory_unit_id, id`) and sorts a
+  unit's few rows (about 4 µs per unit on the bench), so an
+  `(inventory_unit_id, created_at)` index is not needed;
+  `settlement_lines(consignment_item_id)` exists, and
+  `consignment_items(status, sold_at)` would not help (the ledger reads
+  every item).
+
+Reconciliation and exception timings (the same bench, section 3, 2026-10-06:
+3,006 unique units, 4,808 unit movements, about 110,000 movements in all,
+15,021 jobs of which 1,503 are overdue or uncollected; EXPLAIN ANALYZE
+execution time, ms):
+
+| Call | Target | Measured |
+|---|---|---|
+| `report_stock_reconciliation()` issues only; all (627 rows) | < 500 | 50; 62 |
+| `report_unit_reconciliation()` issues only; all (1,000 of 3,006) | < 500 | 67; 88 |
+| `operational_exceptions(200)` (1,503 rows before the cap) | < 500 | 390 (973 before the two fixes above) |
+| `report_exception_counts()` | < 150 | 257 (585 before); missed, R-059 |
+| `today_dashboard(null)` | < 150 | 8,837: `public.daily_summary(d, d)` alone takes 6,400–8,400 (Phase 5's view, unchanged here); missed, R-059 |
+
+Step 4's re-run (2026-10-06, 3,008 units): stock reconciliation 48
+(issues) and 59 (all, 629 rows), unit reconciliation 62 and 90 (all, the
+1,000-row cap of 3,008), `operational_exceptions(200)` 402,
+`report_exception_counts()` 259 (still missed), `today_dashboard(null)`
+9,512 (still missed, R-059). The Exceptions screen calls the list and the
+counts in parallel; the `/reports` count Badge calls the counts in its own
+Suspense boundary.
+
 ## 15. Row-level security matrix
 
 `S` = active staff (any), `P(x)` = active staff holding permission x (by
@@ -2605,7 +2786,7 @@ written out, e.g. `A, M or P(view_costs)`.
 | attachment_events | S | triggers only | never | never |
 | storage `media-internal` | S; C the objects of their own customer- or public-visible bike photos (current, non-archived bikes) and job photos (jobs not cancelled), policy `media_internal_select_customer` over `private.customer_can_read_media` (Phase 11, D124) | S | — | S, only objects no attachment points at |
 | storage `media-public` | S (everyone else only by public URL; nobody lists it) | S | — | S, only objects no attachment points at |
-| shop_settings | S; nobody else (anon/C read none of it) | — (one row, inserted by the migration) | RPC `update_shop_settings` (A) | never (`shop_settings_required`) |
+| shop_settings | S; nobody else (anon/C read none of it) | — (one row, inserted by the migration) | RPC `update_shop_settings` (A); `consignment_settlement_alert_days` only through RPC `set_consignment_settlement_alert_days` (A, D107; authenticated has no UPDATE on the table, so a direct write is 42501 even for an admin) | never (`shop_settings_required`) |
 | shop_hours | S; anon/C active weekly rows via `public_shop_hours()` | RPC `set_shop_hours` (A) | RPC `set_shop_hours` (A) | RPC `set_shop_hours` (A) |
 | closure_overrides | S (anon/C: never listed; `available_slots` leaves closures out) | RPC `save_closure_override` (A) | RPC `save_closure_override` (A) | RPC `delete_closure_override` (A, reason) |
 | appointment_types | S; anon/C active + public types (no capacity units) via `public_appointment_types()` | RPC `save_appointment_type` (A) | RPC `save_appointment_type` (A) | — (deactivate) |
@@ -2650,6 +2831,8 @@ written out, e.g. `A, M or P(view_costs)`.
 | shopify_settings, shopify_product_sync | S (sync status and the online location, D86); service role SELECT | seed; RPC `set_shopify_settings` (A; creates the row when absent), `set_publish_online` (P(manage_inventory)), `link_shopify_variant` (A) | RPC `set_shopify_settings` (A; `accept_test_orders` only with a reason, D89), `set_publish_online`, `request_product_sync` (P(manage_inventory)), `record_product_sync_result` (service role), the deferred enqueue triggers (`sync_status` pending) | never |
 | reporting.shopify_sync_status | S (security_invoker; job columns admins only through the queue's RLS) | — | — | — |
 | reporting.* financial views (financial_lines, daily_summary, work_order_activity, operational_exceptions) | no grants (not even SELECT to authenticated); via RPCs: S for counts; P(view_financial_reports) for money rows; cost columns P(view_costs) (FIN-ACCESS D30) | — | — | — |
+| reporting.report_lines and the Phase 9 report RPCs (D100–D105) | the view: no grants; `report_period_summary`, `report_period_series`, `report_breakdown`, `report_line_items` and `report_stock_value`: A, M or P(view_financial_reports) (42501 otherwise), every cost-derived column also A, M or P(view_costs), NULL otherwise (D30; `manage_purchasing` alone never shows a cost here, D60); `report_activity` and `report_activity_by_mechanic`: S, no money; C and anon: none (no EXECUTE for anon; 42501 for a customer) | — | — | — |
+| reporting.unit_ledger_disposition, unit_reconciliation, stock_reconciliation and the operational exceptions (D106–D108) | the views: no grants; `report_stock_reconciliation`, `report_unit_reconciliation`: S (stock is staff-visible; no cost column); `operational_exceptions`, `report_exception_counts` and `today_dashboard.exceptions_now`: S, each row filtered by `private.exception_visible(kind)` (D108): Phase 5's kinds and unit_state_mismatch S, unsettled_consignment A, M or P(manage_consignments) or P(view_costs) (`private.can_view_consignment_money()`, D48), integration_failed A (`private.is_admin()`, D86); C and anon: none | — | `set_consignment_settlement_alert_days` A (42501 otherwise, even with manage_consignments) | — |
 | reporting.public_items | everyone: anon and authenticated (definer view, published rows and public columns only; the only anonymous inventory surface; anon has USAGE on `reporting` for it and EXECUTE on `private.selling_price`, which it calls) | — | — | — |
 
 **Customer access pattern (Phase 1, binding for every later phase).** Staff
@@ -2767,12 +2950,24 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `set_publication_status(product_id, status, reason = null)` → `publication_result (product_id, publication_status, public_slug)` | P(manage_inventory) | Built (Phase 4). 22004 on null ids; `reason_too_long` (> 500); `lock_stock(product)`, then the product FOR UPDATE (P0002). A target of `sold`, or leaving `sold` for anything but `archived` → `publication_sold_by_sale`. Same status → the row, no event. Otherwise the products trigger: `publication_transition_invalid`, `publication_requires_price` / `_photo` / `_available_unit`, slug at the first publish, `publication_changed {from, to}` with the reason. Phase 10 hooks the Shopify sync onto publication changes by trigger. |
 | `split_unit_from_stock(new_product_id, unit_id, source_product_id, location_id, name, reason, serial_number = null, condition = null, sale_price = null)` → `split_unit_result (product_id, product_short_id, unit_id, unit_short_id)` | P(adjust_stock) and P(manage_inventory) | Built (Phase 4, D28). 22004 on null ids; `reason_required`, `reason_too_long` (> 480: the movements' reason is "Split to U-######: " + reason). `lock_stock(source)`, then replay (unit id on new_product_id → the same result; the unit id or new_product_id used otherwise → `unit_conflict`); P0002; `product_not_quantity`, `product_archived`, `ownership_not_saleable` (D27); P0002 / `location_inactive`; `insufficient_stock` (on-hand at the location < 1). Inserts a draft unique product (name; description, brand, category, currency from the source; price = sale_price else the source's; default cost = the source's), `private.register_unit` (shop_owned, cost = the source's default cost) and two `stock_adjustment` movements (−1 source, +1 unit) with the reason, cost snapshot and request_id = unit id. Writes the carried cost for a caller without P(view_costs) (definer path; the invoker cost-write guards still refuse that caller's direct writes); never returns a cost. 23514 checks re-raised without the row. |
 | `daily_summary(from_day date = null, to_day date = null)` → table of the 27 `reporting.daily_summary` columns | S | Built (Phase 5). A null bound takes the other; both null = shop today; `report_range_invalid` when from > to or the range exceeds 366 days. One zero-filled row per day (`generate_series` left join the view), future and pre-history days as zero rows; placeholders passed through. D30: without view_financial_reports `currency`, `lines_recognised`, `gross_sales`, `consignment_sales`, `consignment_sales_total` and every cost column are NULL; with it but without view_costs `cogs`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc`, `loss_lines`, `loss_total`, `new_consignor_liability` are NULL. By day. |
-| `today_dashboard(on_day date = null)` → `day, is_today, generated_at, can_see_financials, can_see_costs`, daily_summary columns 2–27, `received_now, waiting_now, ready_to_start_now, in_progress_now, awaiting_collection_now, open_jobs_now, overdue_now, low_stock_now, exceptions_now, cost_pending_lines` | S | Built (Phase 5). Null = today; a future day → `report_range_invalid`. Reads `public.daily_summary(d, d)` (gating in one place). The `*_now` snapshot (D31; BOARD_GROUPS: received+diagnosing, awaiting_customer+awaiting_parts+paused, ready_to_start, in_progress, completed+ready_for_collection, open, D20 overdue, `reporting.low_stock` rows, `operational_exceptions` rows) only when d is today, else NULL. `cost_pending_lines` = d's shop-currency entries with `cost_pending` (D14), NULL without view_financial_reports. |
+| `today_dashboard(on_day date = null)` → `day, is_today, generated_at, can_see_financials, can_see_costs`, daily_summary columns 2–27, `received_now, waiting_now, ready_to_start_now, in_progress_now, awaiting_collection_now, open_jobs_now, overdue_now, low_stock_now, exceptions_now, cost_pending_lines` | S | Built (Phase 5). Null = today; a future day → `report_range_invalid`. Reads `public.daily_summary(d, d)` (gating in one place). The `*_now` snapshot (D31; BOARD_GROUPS: received+diagnosing, awaiting_customer+awaiting_parts+paused, ready_to_start, in_progress, completed+ready_for_collection, open, D20 overdue, `reporting.low_stock` rows, `operational_exceptions` rows the caller may see: since Phase 9 step 3 (D108) the count is filtered by `private.exception_visible(kind)`, so it equals the length of `operational_exceptions(200)` for each caller below the cap; re-bodied with `create or replace`, same signature, return type and grants, nothing else changed) only when d is today, else NULL. `cost_pending_lines` = d's shop-currency entries with `cost_pending` (D14), NULL without view_financial_reports. |
 | `work_order_activity_on(on_day date = null)` → `work_order_id, job_number, status, customer_id, customer_label, bike_id, bike_title, lead_mechanic_name, checked_in_at, started_at, completed_at, ready_for_collection_at, collected_at, cancelled_at, checked_in_on_day, started_on_day, completed_on_day, ready_on_day, collected_on_day, cancelled_on_day, is_open, is_overdue, age_days, sale_total, currency` | S | Built (Phase 5). Jobs with at least one current stamp on that shop day (null = today), by job number; `customer_label` = `private.customer_label`, `bike_title` = brand model variant (bikeTitle rule), `sale_total` sale only (`work_order_totals`). |
 | `stock_adjustments_on(on_day date = null)` → `movement_id, created_at, movement_type, product_id, product_short_id, product_name, inventory_unit_id, unit_short_id, location_name, quantity_delta, reason, actor_name, significant, value_at_cost, currency` | S; value_at_cost P(view_costs) | Built (Phase 5). `stock_adjustment` and `damaged` movements of that shop day (null = today), newest first; `significant` per D33 for every staff member; `value_at_cost` = \|delta\| × coalesce(snapshot, product default, 0), NULL without view_costs (D30). |
 | `operational_exceptions(max_rows integer = 50)` → `kind, severity, entity_type, entity_id, entity_label, subject_label, days, quantity, since` | S | Built (Phase 5, D34). Danger first, then oldest `since`; max_rows clamped to 1..200. Phase 9 drops and recreates it with appended columns. Since Phase 10 step 1 the view also carries `integration_failed` rows, for admins only (D86). |
+| `operational_exceptions(max_rows integer = 50)` → `kind, severity, entity_type, entity_id, entity_label, subject_label, days, quantity, since, issue, short_id, title, detail, amount, currency` | S | Built (Phase 5, D34); dropped and recreated by Phase 9 step 3 (`…1300_operational_exceptions`, D106–D108) with the same name, argument, default, ordering and clamp and the six appended columns: Danger first, then oldest `since`, then kind, entity_label, entity_id; max_rows clamped to 1..200; only the kinds `private.exception_visible` allows the caller (D108). `jit = off`. |
+| `report_exception_counts()` → `kind, severity, count` | S | Built (Phase 9 step 3, D108). The same visible rows counted per kind and severity, danger first, then kind; their sum is what `operational_exceptions` returns below its cap. `jit = off`. |
+| `report_stock_reconciliation(p_only_issues boolean = true, p_product_id uuid = null, p_max_rows integer = 500)` → `product_id, product_short_id, product_name, tracking_type, location_id, location_name, ledger_on_hand, units_in_stock, issue` | S | Built (Phase 9 step 3, D106). `reporting.stock_reconciliation` with names; issues first, then product name, location name; max_rows clamped to 1..1000. Read-only, no cost column, `jit = off`. |
+| `report_unit_reconciliation(p_only_issues boolean = true, p_product_id uuid = null, p_max_rows integer = 500)` → `unit_id, unit_short_id, product_id, product_name, status, location_id, location_name, ledger_on_hand, ledger_location_id, ledger_location_name, expected_on_hand, disposition, disposition_ref, issue, issue_detail, last_movement_at` | S | Built (Phase 9 step 3, D106). `reporting.unit_reconciliation` with names; issues first, then product name, location name, unit short ID; max_rows clamped to 1..1000. Read-only, no cost column, `jit = off`. |
+| `set_consignment_settlement_alert_days(p_days integer)` → integer | A | Built (Phase 9 step 3, D107). 1..365, else `alert_days_out_of_range` (null too); the current value again changes nothing (no history row) and returns it; a change updates `shop_settings` (its triggers stamp `updated_by`/`updated_at` and append `schedule_events`). |
 | `financial_lines(from_day date, to_day date)` → the 32 `reporting.financial_lines` columns in order | P(view_financial_reports) (42501 otherwise) | Built (Phase 5). Null bounds as daily_summary; at most 31 days inclusive (`report_range_invalid`); PostgREST returns ≤ 1000 rows, so callers page with `.range()`. Without view_costs `unit_direct_cost`, `cult_commons_rate`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc`, `is_loss` are NULL. By recognized_at, document_number, source_line_id. |
 | `work_order_yield(target_work_order_id uuid)` → `work_order_id, job_number, status, currency, line_count, sale_total, cost_total, yield_total, cult_commons_share, bicii_yield_after_cc, loss_line_count, loss_total, cult_commons_rates numeric[], recognized_at, recognized_day, cost_pending_count` | P(view_costs) (42501 otherwise) | Built (Phase 5). The job's live lines whether or not it is completed (running economics; equals `work_order_totals_staff`); rates = distinct snapshot rates ascending; recognized_at = `completed_at` (NULL while open, cancelled or reopened, D32). Unknown job P0002. |
+| `report_period_summary(p_from date, p_to date, p_basis report_date_basis = 'sale')` → `basis, from_date, to_date, currency, line_count, job_count, sale_count, loss_line_count*, sale_total, cost_total*, yield_total*, cult_commons_share*, yield_after_cc*, cost_pending_lines, refunds_total, refund_count, consignment_sales, consignment_sales_total, new_consignor_liability*, settlements_paid_total*, purchases_received_total*, excluded_foreign_line_count` (one row) | P(view_financial_reports); * also P(view_costs), NULL otherwise | Built (Phase 9 step 1, D100–D105). Guard first, then `report_range_invalid` (NULL bound, from > to) / `report_range_too_long` (> 731 days); NULL basis = sale. Totals over `private.report_rows` in the shop currency (D104); Cult Commons = Σ line shares (D1); `yield_after_cc` = Σ yield − Σ share. job_count / sale_count = distinct documents. Sale basis only (NULL otherwise): `refunds_total` / `refund_count` (D102, `sale_refunds.created_at`, never netted), `consignment_sales` / `consignment_sales_total` / `new_consignor_liability` (daily_summary's definitions), `settlements_paid_total` (not reversed), `purchases_received_total` (D105). Zeros (0.00) when empty. |
+| `report_period_series(p_from, p_to, p_basis = 'sale', p_grain report_grain = 'day')` → `bucket_start, bucket_end, partial, line_count, job_count, sale_count, sale_total, cost_total*, yield_total*, cult_commons_share*, yield_after_cc*, loss_line_count*, refunds_total, consignment_sales, consignment_sales_total, new_consignor_liability*, settlements_paid_total*` | as above | Built (Phase 9 step 1). One row per day, ISO week or month overlapping the range (`generate_series`, zeros when empty), clipped to the range with `partial` = clipped; the summary's definitions per bucket; refunds, consignment and settlements on the sale basis only. ≤ 731 rows (under PostgREST max-rows). Same range errors. |
+| `report_breakdown(p_from, p_to, p_basis = 'sale', p_dimension report_dimension = 'job', p_max_rows = 200, p_key text = null, p_after_sale_total numeric = null, p_after_key text = null)` → `key, entity_type, entity_id, label, detail, line_count, job_count, sale_count, quantity, sale_total, cost_total*, yield_total*, cult_commons_share*, yield_after_cc*, first_at, last_at` | as above | Built (Phase 9 step 1). Groups by `private.report_key` (§14); every line in exactly one group. Order and keyset `sale_total desc, key asc` (collation C): the cursor returns groups with sale_total < v, or = v and key > k; `p_key` returns that one group (drill-down header). `p_max_rows` clamped 1..500 (callers ask for one more than they show). `report_key_invalid`: half a cursor, a cursor with `p_key`, or a key that is neither a uuid nor a pseudo key of the dimension (ownership and channel keys are pseudo keys only). Labels by name (archived and inactive included, SPEC §23); `quantity` only for the product dimension. |
+| `report_line_items(p_from, p_to, p_basis = 'sale', p_dimension = null, p_key = null, p_max_rows = 100, p_after_at timestamptz = null, p_after_id uuid = null)` → `source_line_id, source, channel, basis_at, document_id, document_number, line_type, description, quantity, unit_sale_price, sale_total, cost_total*, yield_total*, cult_commons_share*, cost_pending, ownership_type, category_name, mechanic_name, currency` | as above | Built (Phase 9 step 1). Keyset `basis_at desc, source_line_id desc` (the cursor is the last row's pair, applied inside `private.report_rows`); `p_max_rows` clamped 1..1000. `report_key_invalid` when exactly one of dimension/key is given, the key does not fit the dimension, or only half a cursor. A 0.00 price or cost comes back as 0.00 (D24 as amended). Never a voided line. |
+| `report_activity(p_from, p_to)` → `jobs_checked_in, jobs_started, jobs_completed, jobs_ready_for_collection, jobs_collected, jobs_cancelled, jobs_open_at_end, median_hours_to_complete, median_hours_to_collect, appointments_scheduled, appointments_arrived, appointments_no_show, appointments_cancelled, parts_consumed_qty, parts_consumed_lines, parts_returned_qty, stock_adjustments, significant_stock_adjustments, purchase_receipts, purchase_units_received` | S | Built (Phase 9 step 1). No money. Job flows by each job's own current stamps in range (D31); open at end = checked in before the range end and neither completed nor cancelled before it; medians in hours, 1 decimal (`percentile_cont(0.5)` of the intervals of jobs completed / collected in range); appointments Σ `reporting.appointment_daily` (D41); parts and adjustments with daily_summary's definitions (D33); receipts and units by `received_at` (D105). Same range errors. |
+| `report_activity_by_mechanic(p_from, p_to)` → `staff_id, display_name, active, jobs_checked_in, jobs_completed, jobs_collected, jobs_open_now` | S | Built (Phase 9 step 1, D103). Per current lead mechanic, plus `staff_id` NULL 'Unassigned'; inactive staff by name; all-zero rows omitted; `jobs_completed desc`, then name. |
+| `report_stock_value()` → `ownership_type, quantity_on_hand, units_in_stock, uncosted_items, value_at_cost*, currency` (3 rows: shop_owned, consignment, customer_owned) | P(view_financial_reports); * also P(view_costs) | Built (Phase 9 step 1, D105, `…1100_report_stock_value`). NOW, not a period. Valuation in §14; `value_at_cost` NULL for consigned and customer-owned rows for everyone. |
 | `record_retail_sale(sale_id uuid, lines jsonb, customer_id uuid = null, recognized_at timestamptz = null, notes text = null)` → `sale_result (sale_id, sale_number, status, recognized_at, replayed)` | S (D48) | Built (Phase 6 step 2). Deviates from the original row `record_retail_sale(lines[], customer_id, recognized_at, idempotency_key)`: the client's `sale_id` is the idempotency key. (1) Shape: null `sale_id` 22004; `lines` a JSON array of 1–50 (`sale_lines_required`, `sale_too_many_lines`); a unit twice `sale_duplicate_unit`; unknown customer P0002; `recognized_at` > now() + 5 min `sale_recognized_in_future` (past allowed, down to the stock's arrival: `private.sell_line`'s `sale_before_stock`, D55); a line with a `shopify_line_item_id` key `sale_line_invalid` (only Phase 10 writes one); the request fingerprint (`private.sale_request_fingerprint`: lines in order as {unit, product, location, quantity, price as money_amount text, item, shopify}, customer, recognized_at as given in UTC, trimmed notes; 22P02 / 23514 from its casts). (2) Header insert `on conflict (id) do nothing` (lock order 0; `recognized_at = coalesce(arg, now())`, shop currency): a replay with the same fingerprint returns the sale with `replayed` true (after the customer was archived or the unit sold by it, too), another payload `sale_conflict`. (3) `customer_archived`. (4) Locks: stock of every product (ascending), units, items. (5) `private.sell_line(sale, i, line, 'retail_sale')` per line in order. (6) `refresh_unique_publication` per unique product sold. Never returns a cost. |
 | `private.sell_line(p_sale sales, p_line_number integer, p_line jsonb, p_movement_type movement_type)` → `sale_lines` | no grants | Built (Phase 6 step 2): THE single sale-line writer; Phase 10 calls it with `'online_sale'` and may replace it with the same signature to read more keys. The caller holds every lock. `p_line` is `{inventory_unit_id, unit_sale_price?, shopify_line_item_id?}` or `{product_id, location_id, quantity, consignment_item_id?, unit_sale_price?, shopify_line_item_id?}`; anything else `sale_line_invalid`. Unit: P0002; `unit_already_sold` (sold), `unit_not_available` (any other status or archived), `ownership_not_saleable` (customer-owned), `currency_mismatch`; consigned: `consignment_item_not_active`, cost = agreed + live shop charges, payout = agreed. Quantity: P0002, `product_archived`, `product_inactive`, `sale_product_is_unique`, `ownership_not_saleable`, `currency_mismatch`, `sale_quantity_invalid` (integer 1..999), `location_id` 22004, location P0002 / `location_inactive`, `insufficient_stock` (never below zero); consigned: the named item (P0002, `sale_line_invalid` for another product's, `consignment_item_not_active`, `consignment_quantity_unavailable` when its stock at that location is short) or the FIFO head with the quantity at that location (D54; `consignment_quantity_unavailable`), price `coalesce(arg, item asking, product default)`, cost = payout = agreed; shop: price `coalesce(arg, selling_price)`, cost the product default. D55: the sale's `recognized_at` before a consigned item's `received_at` or a unit's latest restock is `sale_before_stock`. NULL price `sale_price_required`, NULL cost `sale_cost_missing` (0 is valid, D24). Rate at `recognized_at`. Writes the line, one movement through `private.record_linked_movement` (−qty, the sale line, the item, cost snapshot), a unit → `sold` at `recognized_at` with `sold_sale_line_id`, and the item's status. Phase 10 step 1 replaced it (`…4000_shopify_order_processing`) with the same signature and body except: `shopify_line_part` joins both key allow-lists and is written to `sale_lines.shopify_line_part` (D80); no other change. |
 | `restock_unit(unit_id uuid, sale_line_id uuid, location_id uuid = null, reason text = null)` → `unit_status_result` | P(adjust_stock); a consigned unit also P(manage_consignments) (D46) | Built (Phase 6 step 2). Deviates from the original row `restock_unit(unit_id, location_id, reason)`: it names the sale line, which is also the replay key. Null ids 22004; `reason_required` / `reason_too_long`. Locks: a consigned unit's consignor FOR SHARE (0b), `lock_stock` (the unit's product, read unlocked), its bike, the unit, its item. Line P0002; another unit's line `restock_line_mismatch`; an already restocked line returns the unit's status with no write (even if it was sold again since); the consigned-unit permission (42501); an archived consignor `consignor_archived` (D47); status ≠ sold `unit_not_sold`; `sold_sale_line_id` ≠ the line `restock_line_mismatch` (a unit sold through a job is never restocked, D44); a customer-owned bike `bike_with_customer` (D29); location P0002 / `location_inactive`. With the reason: the line `restocked_at/by`; a `return` +1 movement linked to the line (and item), cost = the line's cost snapshot; the unit `available` at that location with `sold_sale_line_id` null; the item's status (sold → active, event with the reason); `refresh_unique_publication` (sold → public). The sale and refunds are untouched (D7). |
@@ -2874,7 +3069,10 @@ a random-secret bcrypt hash and no known password (`AUTH_USER`, `STAFF`,
 spread across statuses and the last 9 days, settlements. (The Cult Commons
 base rate is not seed data: the workshop catalog migration ships it, D21.)
 The seed is applied to the local database and to a fresh preview
-project; never to production.
+project; never to production. Phase 9 step 1 (period reports) adds no seed
+rows: its tests build their own March 2025 scenario
+(`tests/db/period-report-fixtures.ts`) and read the existing seed's last
+week.
 
 Phase 1 part (done): customers `c1000000-…-00000000000N` (`CUSTOMER` in
 `tests/fixtures/ids.ts`; only Chloe Lim has a login, added in the Phase 2

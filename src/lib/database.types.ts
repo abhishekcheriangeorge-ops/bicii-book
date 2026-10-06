@@ -2989,6 +2989,7 @@ export type Database = {
         Row: {
           booking_horizon_days: number;
           booking_min_notice_minutes: number;
+          consignment_settlement_alert_days: number;
           customer_cancel_cutoff_minutes: number;
           customer_max_active_bookings: number;
           default_currency: string;
@@ -3003,6 +3004,7 @@ export type Database = {
         Insert: {
           booking_horizon_days?: number;
           booking_min_notice_minutes?: number;
+          consignment_settlement_alert_days?: number;
           customer_cancel_cutoff_minutes?: number;
           customer_max_active_bookings?: number;
           default_currency?: string;
@@ -3017,6 +3019,7 @@ export type Database = {
         Update: {
           booking_horizon_days?: number;
           booking_min_notice_minutes?: number;
+          consignment_settlement_alert_days?: number;
           customer_cancel_cutoff_minutes?: number;
           customer_max_active_bookings?: number;
           default_currency?: string;
@@ -5317,15 +5320,21 @@ export type Database = {
       operational_exceptions: {
         Args: { max_rows?: number };
         Returns: {
+          amount: number;
+          currency: string;
           days: number;
+          detail: string;
           entity_id: string;
           entity_label: string;
           entity_type: string;
+          issue: string;
           kind: string;
           quantity: number;
           severity: string;
+          short_id: string;
           since: string;
           subject_label: string;
+          title: string;
         }[];
       };
       process_shopify_event: {
@@ -5660,6 +5669,218 @@ export type Database = {
           supplier_sku: string;
         }[];
       };
+      report_activity: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          appointments_arrived: number;
+          appointments_cancelled: number;
+          appointments_no_show: number;
+          appointments_scheduled: number;
+          jobs_cancelled: number;
+          jobs_checked_in: number;
+          jobs_collected: number;
+          jobs_completed: number;
+          jobs_open_at_end: number;
+          jobs_ready_for_collection: number;
+          jobs_started: number;
+          median_hours_to_collect: number;
+          median_hours_to_complete: number;
+          parts_consumed_lines: number;
+          parts_consumed_qty: number;
+          parts_returned_qty: number;
+          purchase_receipts: number;
+          purchase_units_received: number;
+          significant_stock_adjustments: number;
+          stock_adjustments: number;
+        }[];
+      };
+      report_activity_by_mechanic: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          active: boolean;
+          display_name: string;
+          jobs_checked_in: number;
+          jobs_collected: number;
+          jobs_completed: number;
+          jobs_open_now: number;
+          staff_id: string;
+        }[];
+      };
+      report_breakdown: {
+        Args: {
+          p_after_key?: string;
+          p_after_sale_total?: number;
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_dimension?: Database["public"]["Enums"]["report_dimension"];
+          p_from: string;
+          p_key?: string;
+          p_max_rows?: number;
+          p_to: string;
+        };
+        Returns: {
+          cost_total: number;
+          cult_commons_share: number;
+          detail: string;
+          entity_id: string;
+          entity_type: string;
+          first_at: string;
+          job_count: number;
+          key: string;
+          label: string;
+          last_at: string;
+          line_count: number;
+          quantity: number;
+          sale_count: number;
+          sale_total: number;
+          yield_after_cc: number;
+          yield_total: number;
+        }[];
+      };
+      report_exception_counts: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          count: number;
+          kind: string;
+          severity: string;
+        }[];
+      };
+      report_line_items: {
+        Args: {
+          p_after_at?: string;
+          p_after_id?: string;
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_dimension?: Database["public"]["Enums"]["report_dimension"];
+          p_from: string;
+          p_key?: string;
+          p_max_rows?: number;
+          p_to: string;
+        };
+        Returns: {
+          basis_at: string;
+          category_name: string;
+          channel: string;
+          cost_pending: boolean;
+          cost_total: number;
+          cult_commons_share: number;
+          currency: string;
+          description: string;
+          document_id: string;
+          document_number: string;
+          line_type: string;
+          mechanic_name: string;
+          ownership_type: string;
+          quantity: number;
+          sale_total: number;
+          source: string;
+          source_line_id: string;
+          unit_sale_price: number;
+          yield_total: number;
+        }[];
+      };
+      report_period_series: {
+        Args: {
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_from: string;
+          p_grain?: Database["public"]["Enums"]["report_grain"];
+          p_to: string;
+        };
+        Returns: {
+          bucket_end: string;
+          bucket_start: string;
+          consignment_sales: number;
+          consignment_sales_total: number;
+          cost_total: number;
+          cult_commons_share: number;
+          job_count: number;
+          line_count: number;
+          loss_line_count: number;
+          new_consignor_liability: number;
+          partial: boolean;
+          refunds_total: number;
+          sale_count: number;
+          sale_total: number;
+          settlements_paid_total: number;
+          yield_after_cc: number;
+          yield_total: number;
+        }[];
+      };
+      report_period_summary: {
+        Args: {
+          p_basis?: Database["public"]["Enums"]["report_date_basis"];
+          p_from: string;
+          p_to: string;
+        };
+        Returns: {
+          basis: Database["public"]["Enums"]["report_date_basis"];
+          consignment_sales: number;
+          consignment_sales_total: number;
+          cost_pending_lines: number;
+          cost_total: number;
+          cult_commons_share: number;
+          currency: string;
+          excluded_foreign_line_count: number;
+          from_date: string;
+          job_count: number;
+          line_count: number;
+          loss_line_count: number;
+          new_consignor_liability: number;
+          purchases_received_total: number;
+          refund_count: number;
+          refunds_total: number;
+          sale_count: number;
+          sale_total: number;
+          settlements_paid_total: number;
+          to_date: string;
+          yield_after_cc: number;
+          yield_total: number;
+        }[];
+      };
+      report_stock_reconciliation: {
+        Args: { p_max_rows?: number; p_only_issues?: boolean; p_product_id?: string };
+        Returns: {
+          issue: string;
+          ledger_on_hand: number;
+          location_id: string;
+          location_name: string;
+          product_id: string;
+          product_name: string;
+          product_short_id: string;
+          tracking_type: Database["public"]["Enums"]["tracking_type"];
+          units_in_stock: number;
+        }[];
+      };
+      report_stock_value: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          currency: string;
+          ownership_type: string;
+          quantity_on_hand: number;
+          uncosted_items: number;
+          units_in_stock: number;
+          value_at_cost: number;
+        }[];
+      };
+      report_unit_reconciliation: {
+        Args: { p_max_rows?: number; p_only_issues?: boolean; p_product_id?: string };
+        Returns: {
+          disposition: string;
+          disposition_ref: string;
+          expected_on_hand: number;
+          issue: string;
+          issue_detail: string;
+          last_movement_at: string;
+          ledger_location_id: string;
+          ledger_location_name: string;
+          ledger_on_hand: number;
+          location_id: string;
+          location_name: string;
+          product_id: string;
+          product_name: string;
+          status: Database["public"]["Enums"]["unit_status"];
+          unit_id: string;
+          unit_short_id: string;
+        }[];
+      };
       request_product_sync: { Args: { product_id: string }; Returns: string };
       restock_unit: {
         Args: { location_id?: string; reason?: string; sale_line_id: string; unit_id: string };
@@ -5948,6 +6169,7 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      set_consignment_settlement_alert_days: { Args: { p_days: number }; Returns: number };
       set_default_label_template: {
         Args: { template_id: string };
         Returns: {
@@ -6563,6 +6785,7 @@ export type Database = {
         Returns: {
           booking_horizon_days: number;
           booking_min_notice_minutes: number;
+          consignment_settlement_alert_days: number;
           customer_cancel_cutoff_minutes: number;
           customer_max_active_bookings: number;
           default_currency: string;
@@ -6860,6 +7083,10 @@ export type Database = {
         | "cancelled";
       purchase_order_status:
         "draft" | "submitted" | "partially_received" | "received" | "cancelled";
+      report_date_basis: "sale" | "check_in" | "completion" | "collection";
+      report_dimension:
+        "job" | "product" | "category" | "service" | "mechanic" | "ownership" | "channel";
+      report_grain: "day" | "week" | "month";
       sale_source: "retail" | "online_shopify" | "work_order";
       sale_status: "recorded" | "partially_refunded" | "refunded" | "voided";
       schedule_entity: "shop_settings" | "shop_hours" | "closure_override" | "appointment_type";
@@ -7086,6 +7313,20 @@ export type Database = {
             referencedColumns: ["consignor_id"];
           },
           {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_ledger_disposition";
+            referencedColumns: ["unit_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_reconciliation";
+            referencedColumns: ["unit_id"];
+          },
+          {
             foreignKeyName: "consignment_items_product_id_fkey";
             columns: ["product_id"];
             isOneToOne: false;
@@ -7141,6 +7382,20 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "consignor_ledger";
             referencedColumns: ["consignor_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_ledger_disposition";
+            referencedColumns: ["unit_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_reconciliation";
+            referencedColumns: ["unit_id"];
           },
           {
             foreignKeyName: "consignment_items_product_id_fkey";
@@ -7264,15 +7519,21 @@ export type Database = {
       };
       operational_exceptions: {
         Row: {
+          amount: number | null;
+          currency: string | null;
           days: number | null;
+          detail: string | null;
           entity_id: string | null;
           entity_label: string | null;
           entity_type: string | null;
+          issue: string | null;
           kind: string | null;
           quantity: number | null;
           severity: string | null;
+          short_id: string | null;
           since: string | null;
           subject_label: string | null;
+          title: string | null;
         };
         Relationships: [];
       };
@@ -7370,6 +7631,47 @@ export type Database = {
           },
         ];
       };
+      report_lines: {
+        Row: {
+          bicii_yield_after_cc: number | null;
+          bike_id: string | null;
+          category_id: string | null;
+          channel: string | null;
+          checked_in_at: string | null;
+          collected_at: string | null;
+          completed_at: string | null;
+          consignment_item_id: string | null;
+          cost_pending: boolean | null;
+          cost_total: number | null;
+          cult_commons_rate: number | null;
+          cult_commons_share: number | null;
+          currency: string | null;
+          customer_id: string | null;
+          description: string | null;
+          document_id: string | null;
+          document_number: string | null;
+          entry_key: string | null;
+          entry_kind: string | null;
+          inventory_unit_id: string | null;
+          is_loss: boolean | null;
+          lead_mechanic_id: string | null;
+          line_type: string | null;
+          ownership_type: string | null;
+          product_id: string | null;
+          quantity: number | null;
+          recognised: boolean | null;
+          recognized_at: string | null;
+          recognized_day: string | null;
+          sale_total: number | null;
+          service_id: string | null;
+          source: string | null;
+          source_line_id: string | null;
+          unit_direct_cost: number | null;
+          unit_sale_price: number | null;
+          yield_total: number | null;
+        };
+        Relationships: [];
+      };
       shopify_sync_status: {
         Row: {
           last_error: string | null;
@@ -7424,6 +7726,65 @@ export type Database = {
           },
           {
             foreignKeyName: "inventory_movements_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_stock";
+            referencedColumns: ["product_id"];
+          },
+        ];
+      };
+      stock_reconciliation: {
+        Row: {
+          issue: string | null;
+          last_movement_at: string | null;
+          ledger_on_hand: number | null;
+          location_id: string | null;
+          product_id: string | null;
+          tracking_type: Database["public"]["Enums"]["tracking_type"] | null;
+          units_in_stock: number | null;
+        };
+        Relationships: [];
+      };
+      unit_ledger_disposition: {
+        Row: {
+          disposition: string | null;
+          disposition_movement_id: number | null;
+          disposition_ref: string | null;
+          last_movement_at: string | null;
+          ledger_location_id: string | null;
+          ledger_on_hand: number | null;
+          location_nets: Json | null;
+          location_out_of_range: boolean | null;
+          unit_id: string | null;
+        };
+        Relationships: [];
+      };
+      unit_reconciliation: {
+        Row: {
+          disposition: string | null;
+          disposition_ref: string | null;
+          expected_on_hand: number | null;
+          issue: string | null;
+          issue_detail: string | null;
+          last_movement_at: string | null;
+          ledger_location_id: string | null;
+          ledger_on_hand: number | null;
+          location_id: string | null;
+          product_id: string | null;
+          status: Database["public"]["Enums"]["unit_status"] | null;
+          unit_id: string | null;
+          unit_short_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "inventory_units_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "low_stock";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "inventory_units_product_id_fkey";
             columns: ["product_id"];
             isOneToOne: false;
             referencedRelation: "product_stock";
@@ -7714,6 +8075,17 @@ export const Constants = {
         "cancelled",
       ],
       purchase_order_status: ["draft", "submitted", "partially_received", "received", "cancelled"],
+      report_date_basis: ["sale", "check_in", "completion", "collection"],
+      report_dimension: [
+        "job",
+        "product",
+        "category",
+        "service",
+        "mechanic",
+        "ownership",
+        "channel",
+      ],
+      report_grain: ["day", "week", "month"],
       sale_source: ["retail", "online_shopify", "work_order"],
       sale_status: ["recorded", "partially_refunded", "refunded", "voided"],
       schedule_entity: ["shop_settings", "shop_hours", "closure_override", "appointment_type"],

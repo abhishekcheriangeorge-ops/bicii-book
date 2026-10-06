@@ -499,20 +499,24 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phase 9). Consignment stopped
-  being a placeholder in Phase 6 step 3, Purchasing in Phase 7 (on the
-  main line since the integration on `feat/p7-purchasing`) and Labels in
-  Phase 8 (the print history, printing from the record pages, and Labels
-  and printers); Reports remains. The heading is kept so links stay valid.
-- Trigger: staff open Reports.
-- Impact: the page renders the `ComingSoon` component
-  (`src/components/shell/coming-soon.tsx`), which names the phase it
-  arrives in; none of its features exist on this branch.
-- Evidence and confidence: high; `src/app/(staff)/reports/page.tsx`.
-- Workaround or containment: none.
-- Next action: Phase 9 (other worktree).
-- Revisit trigger: each phase ends.
-- Last checked: 2026-10-05.
+- Status and owner: resolved 2026-10-06, when reporting joined `main`.
+  Consignment stopped being a placeholder in Phase 6 step 3, Purchasing in
+  Phase 7 (on the main line since the integration on
+  `feat/p7-purchasing`), Labels in Phase 8 (the print history, printing
+  from the record pages, and Labels and printers) and Reports, Exceptions
+  and Stock reconciliation in Phase 9 (steps 2 and 4). No section is a
+  placeholder any more. The heading is kept so links stay valid.
+- Trigger: none left.
+- Impact: none; the `ComingSoon` component
+  (`src/components/shell/coming-soon.tsx`) is no longer used by any page.
+- Evidence and confidence: high; `src/app/(staff)/labels/` and
+  `src/app/(staff)/reports/` are built (`tests/e2e/labels.spec.ts`,
+  `reports.spec.ts`, `exceptions.spec.ts`), and no page imports
+  `ComingSoon`.
+- Workaround or containment: none needed.
+- Next action: none.
+- Revisit trigger: a new section added as a placeholder.
+- Last checked: 2026-10-06 (the merge of reporting into `main`).
 
 ## R-019 — ADR-001 names versions the code does not use
 
@@ -565,7 +569,11 @@ URLs, or customer data in this file.
 - Category: deliberate shortcut.
 - Status and owner: accepted (D49, build default, owner to confirm; D85
   applies it to online refunds); owner, with Phase 9's refund-reporting
-  row (in D100–D119).
+  row. Since 2026-10-06 decided as build default D102 REPORT-REFUNDS
+  (Phase 9 step 1, [ADR-022](decisions/ADR-022-reporting.md)): refunds are
+  reported as their own figure beside gross, never netted, with no Cult
+  Commons claw-back; owner question 12 is still open, so the risk stays
+  accepted until the owner confirms or changes D102.
 - Trigger: an admin or a manager records a refund on a sale
   (`record_sale_refund`, D94), a Shopify refund is recorded
   (`process_shopify_refund`, Phase 10), or staff restock a sold unit
@@ -582,7 +590,19 @@ URLs, or customer data in this file.
   `supabase/migrations/20261004003700_consignment_reporting.sql` subtracts
   nothing; `tests/db/consignment-reporting.test.ts` asserts that S-000002
   keeps its full 28.00 entry after its 14.00 refund, and `SEED_DAYS` day 4
-  includes it (passed in `npm test` on 2026-10-05).
+  includes it (passed in `npm test` on 2026-10-05). Since 2026-10-06 the
+  period reports show `refunds_total` and `refund_count` beside gross on
+  the sale basis (`report_period_summary`, `report_period_series`);
+  `tests/db/period-reports.test.ts` ("Refunds are reported separately
+  (D102)") proves a manager's refund counts on the day it is recorded and
+  leaves the sale's gross, cost, yield and Cult Commons (restocked line
+  included) unchanged.
+- Phase 9 (built on `feat/p9-reporting`, steps 1–4): `/reports` shows
+  "Refunds recorded: $x (n) — not deducted from the figures above" beside
+  gross on the sale basis, and the series export carries a `refunds`
+  column; gross, yield and Cult Commons stay un-netted as D102 says. This
+  is the build default for owner question 12, which is still open, so the
+  risk stays accepted until the owner confirms or changes D102.
 - Workaround or containment: refunds and restocks show on the sale, in
   `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
   ledger; refunds are for admins and managers (D94) and capped at the sale
@@ -591,12 +611,18 @@ URLs, or customer data in this file.
   not change these figures yet", the Sales list marks Partly refunded /
   Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
   refund on the sale and in the list.
-- Next action: Phase 9 decides the refund-reporting row (in D100–D119) for
-  retail and online refunds together; Phase 10's online refunds net
-  nothing either (`tests/db/shopify-webhooks.test.ts` proves
-  `financial_lines` unchanged by an online refund).
-- Revisit trigger: the first real refund, or Phase 9's reports.
-- Last checked: 2026-10-05, the migration and tests above.
+- Next action: was "Phase 9 decides the refund-reporting row for retail
+  and online refunds together" (done as D102, 2026-10-06). Now: the owner
+  answers question 12 (netting, claw-back). Online refunds (D85) are
+  `sale_refunds` rows, so with Shopify and reporting both on `main` the
+  reports' `refunds_total` counts them too (`report_period_summary` sums
+  `sale_refunds` with no source filter); `tests/db/shopify-webhooks.test.ts`
+  proves an online refund leaves `financial_lines` unchanged.
+- Revisit trigger: the first real refund, or the owner's answer to
+  question 12.
+- Last checked: 2026-10-06, `20261006001000_report_periods.sql`,
+  `tests/db/period-reports.test.ts`, and the merge of reporting into
+  `main`.
 
 ## R-022 — Agreement photos are hidden by the app, not by the database
 
@@ -1199,7 +1225,13 @@ URLs, or customer data in this file.
 ## R-043 — Phase 9 must widen the integration exceptions function
 
 - Category: integration debt.
-- Status and owner: open; the build agent of Phase 9.
+- Status and owner: resolved 2026-10-06, when reporting joined `main`:
+  Phase 9 kept the nine-column function and its view fills the appended
+  columns for the integration rows itself (`issue` = the kind, `title` =
+  `entity_label`, `detail` = `subject_label`; `20261006001300_operational_exceptions`),
+  which is what
+  [R-058](#r-058--phase-9s-exceptions-migration-must-be-re-verified-when-phase-10-merges)
+  verified on the merged database.
 - Trigger: Phase 9 appends its columns (`issue, short_id, title, detail,
   amount, currency`) to `reporting.operational_exceptions`.
 - Impact: Phase 10 built `private.integration_exceptions()` in Phase 5's
@@ -1210,12 +1242,12 @@ URLs, or customer data in this file.
   `supabase/migrations/20261004004000_shopify_order_processing.sql`,
   DATA-MODEL §14; Phase 9 is not built on this branch.
 - Workaround or containment: none needed until Phase 9.
-- Next action: Phase 9 replaces `private.integration_exceptions()` with
-  the wider columns in the same migration that widens the view, and keeps
-  `tests/db/shopify-webhooks.test.ts` "Integration failures are
-  operational exceptions" green.
-- Revisit trigger: Phase 9 or the integration step.
-- Last checked: 2026-10-06.
+- Next action: none; `tests/db/shopify-webhooks.test.ts` "Integration
+  failures are operational exceptions" and
+  `tests/db/operational-exceptions.test.ts` keep it covered.
+- Revisit trigger: any later change to `private.integration_exceptions()`
+  or the view.
+- Last checked: 2026-10-06 (the merge of reporting into `main`).
 
 ## R-044 — An edited order with a discounted line records a lower price
 
@@ -1559,6 +1591,221 @@ URLs, or customer data in this file.
 - Revisit trigger: the shop has several admins who administer staff at
   the same time, or a removal is reported as unexpected.
 - Last checked: 2026-10-06 (staff roles, review fixes).
+
+## R-055 — Past report periods change after a reopen, a back-dated sale or a back-dated receipt
+
+- Category: deliberate design (D101 REPORT-RESTATEMENT).
+- Status and owner: accepted (build default, owner to confirm, owner
+  question 26); owner.
+- Trigger: a completed job is reopened (D15) and completed again on a
+  later day; a sale is recorded with an earlier `recognized_at` (D55); a
+  purchase receipt is back-dated (D64, up to 30 days); a settlement is
+  reversed (D47).
+- Impact: a period report run twice can give different figures for the
+  same past days: the reopened job leaves its old completion day, the
+  back-dated sale or receipt joins its past day, a reversed settlement
+  leaves `settlements_paid_total`. There is no period close and no stored
+  total (SPEC §19.2, §30), so nothing records what a report said before.
+- Evidence and confidence: high; the report RPCs read source records only
+  (`20261006001000_report_periods.sql`); `tests/db/period-reports.test.ts`
+  ("Voids restate the period (D101, D15, D32)") moves job B from Fri 7
+  March to 11 March after a reopen and a void.
+- Workaround or containment: an exported CSV (built in Phase 9 step 2) is
+  a snapshot taken at export time; job and sale histories show every
+  reopen, void and date; back-dated receipts are limited to 30 days (D64).
+  The export's file name names the period and basis, not the time it was
+  taken (`bicii-<kind>-<basis>-<from>_<to>.csv`); the download's own time
+  is the only record of when.
+- Next action: the owner confirms D101 or asks for a period close (a new
+  decision); if exports are kept as records, add the export time to the
+  file (a header row or the name).
+- Revisit trigger: an accountant or the owner needs closed periods, or a
+  report is disputed after a restatement.
+- Last checked: 2026-10-06 (Phase 9 step 4: the screens and exports built as described).
+
+## R-056 — Stock value uses each product's last cost, not the cost of the units on hand
+
+- Category: deliberate simplification (D105, D5, D63).
+- Status and owner: accepted (build default, owner to confirm, owner
+  question 26); owner.
+- Trigger: a quantity product's cost changes between deliveries (a receipt
+  sets `products.default_direct_cost` to the latest cost, D63).
+- Impact: `report_stock_value` values every unit of a quantity product on
+  hand at its last cost, so after a price change the value differs from
+  what was actually paid for the stock still on the shelf (higher after a
+  rise, lower after a fall). Products with a NULL cost are counted in
+  `uncosted_items` and not valued, so the value is understated until a
+  cost is set; consigned and customer-owned stock is never valued.
+  Locations below zero count as 0.
+- Evidence and confidence: high; `20261006001100_report_stock_value.sql`;
+  `tests/db/period-reports.test.ts` ("report_stock_value: last cost x
+  positive on-hand ..."). The ledger has no cost layers, so FIFO or average
+  cost is not derivable without a new design.
+- Workaround or containment: the stock value is labelled "at last cost"
+  on `/reports` ("Stock at cost now", step 2); unique units use their own cost; purchase receipts keep the
+  actual cost of each delivery (`purchase_receipt_lines.unit_cost_actual`).
+- Next action: the owner confirms D105 or asks for average or FIFO cost (a
+  new decision and a ledger change).
+- Revisit trigger: stock value is used for accounts or insurance, or costs
+  move a lot between deliveries.
+- Last checked: 2026-10-06 (Phase 9 step 4: the screens and exports built as described).
+
+## R-057 — CSV exports stop at 50,000 rows and refuse when figures change mid-export
+
+- Category: known limitation.
+- Status and owner: accepted; build agent.
+- Trigger: an export of more than 50,000 breakdown groups or lines (a long
+  range on the job dimension, or every line of a busy year); or a job,
+  sale or refund changes the period's lines while an export is paging.
+- Impact: the export answers 413 "Too many rows to export. Choose a
+  shorter range." instead of a file; or, when the groups' or lines' count
+  disagrees with `report_period_summary` (or the group's `line_count`)
+  twice in a row, 409 "Figures changed while exporting. Try again." Each
+  page is its own PostgREST request and transaction, so the check is on
+  integer line counts only: a change that keeps the count (an edited
+  price on a line already counted) is not detected, and the file can mix
+  rows read before and after it.
+- Evidence and confidence: high for the behaviour
+  (`src/lib/domain/period-reports.ts` `getAllBreakdownForExport`,
+  `getAllLineItemsForExport`, `EXPORT_MAX_ROWS`; pages of 500 groups and
+  1,000 lines, PostgREST's max-rows; `tests/db/period-report-exports.stack.test.ts`
+  walks the keyset and checks the counts on the seed); medium for the
+  limit being enough (the bench year has 61,029 lines,
+  [DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting), so a
+  full year of lines exceeds it at that volume; a month does not).
+- Phase 9 step 4's snapshot exports have their own limits, also refused
+  rather than written short: `exceptions` lists at most 200 rows
+  (`public.operational_exceptions` clamps to 200) and answers 413 when
+  `report_exception_counts` says there are more; `stock` and `units` stop
+  at the reconciliation RPCs' 1,000-row clamp and answer 413 at 1,000 rows
+  (one row short of certain: exactly 1,000 is also refused). The screens
+  show the same caps: "Showing the N most urgent of M" on Exceptions and
+  "Showing the first 1,000. Choose a product to see the rest." on
+  Reconciliation (the bench's 3,008 units reach it on Everything).
+- Workaround or containment: export a shorter range, or the breakdown
+  instead of the lines; retry after a 409. For the snapshots, fix the most
+  urgent exceptions first, or export Problems only or one product. The
+  period-report screens are not limited.
+- Next action: none until a real export hits the limit; then a streamed
+  export from one database snapshot (one RPC returning the CSV, or a
+  server-side cursor in a single transaction).
+- Revisit trigger: a 413 or a repeated 409 reported by staff, or the shop
+  needs year-long line exports.
+- Last checked: 2026-10-06 (Phase 9 step 4).
+
+## R-058 — Phase 9's exceptions migration must be re-verified when Phase 10 merges
+
+- Category: integration risk (merge order).
+- Status and owner: resolved 2026-10-06 by the go-live session, when
+  reporting joined `main` after Shopify (both in one tree for the first
+  time). See the last paragraph of Evidence.
+- Trigger: `feat/p10-shopify` and `feat/p9-reporting` are merged into one
+  branch, in either order.
+- Impact: Phase 10's `20261004004000_shopify_order_processing.sql` sorts
+  BEFORE Phase 9's `20261006001300_operational_exceptions.sql`. It creates
+  `private.integration_exceptions()` (nine columns, admins only, D86) and
+  replaces `reporting.operational_exceptions` with its nine-column
+  `integration_failed` branch. Phase 9 must keep Phase 10's body and
+  replace the view with fifteen columns. If the placeholder overwrote
+  Phase 10's body, admins would never see a failed Shopify job; if the
+  signatures differed, whichever migration ran second would fail.
+- Evidence and confidence: high for this branch; medium-high for the
+  merged one (simulated, not yet the real merge). On 2026-10-06 a scratch
+  database built from this branch's migrations plus Phase 10's four files
+  (`20261004003800`–`…4100`, read with `git show feat/p10-shopify:…`, so
+  in merged filename order) and this branch's seed applied every
+  migration; Phase 10's body of `private.integration_exceptions()` was
+  kept (it reads `needs_attention`), the view had 15 columns, and a
+  `needs_attention` product_sync job was listed for the admin as
+  `integration_failed` (entity `integration_job`, issue
+  `integration_failed`, title the P- ID, detail the error) and counted in
+  their `exceptions_now` (4), while mechanic2 saw none (3); the scratch
+  database was dropped. `20261006001300` creates the placeholder inside a
+  `DO` block guarded by `to_regprocedure('private.integration_exceptions()')
+  is null`, with exactly Phase 10's signature (read with `git show
+  feat/p10-shopify:supabase/migrations/20261004004000_shopify_order_processing.sql`),
+  and its view maps the appended columns itself;
+  `tests/db/operational-exceptions.test.ts` checks the signature from the
+  catalogue. Phase 10's other migrations (`…3900`, `…4100`) do not touch
+  the view, `public.operational_exceptions` or `today_dashboard`. On the
+  merged branch Phase 10's `src/lib/reports.ts` already labels
+  integration_failed "Shopify needs attention"; its `integration_job`
+  link must survive step 4's exceptions screen. Step 4 (2026-10-06) made
+  that merge line-identical: `EXCEPTION_LABELS` has the same
+  `integration_failed: "Shopify needs attention",` line after
+  `currency_mismatch`, `exceptionCopy` the same `integration_failed` case
+  ("Fix it in the Shopify queue") after `currency_mismatch`'s, the step's
+  own cases sit before them, `exceptionHref` adds `consignment_item` and
+  `sale` above `work_order_line` and leaves `integration_job` unlinked
+  for Phase 10's case below it, and `tests/unit/reports.test.ts`' unknown
+  kind became `purchase_overdue` exactly as on Phase 10 (the step's tests
+  are in new files). The exceptions screen's "Shopify needs attention"
+  section shows whatever rows the database returns, with no fake row.
+  The real merge (2026-10-06, the go-live session): `npm run db:reset`
+  applied all 56 migrations (`56|20261006103000`) with the seed;
+  `tests/db/operational-exceptions.test.ts`, `reporting.test.ts`,
+  `reporting-seed.test.ts`, `shopify-webhooks.test.ts`, `meta.test.ts`
+  and `public-site.test.ts` passed together except one assertion written
+  for the branch without Phase 10 ("no rows here"). That test now proves
+  the merged behaviour: the function keeps Phase 10's nine-column
+  signature and no API grant, the admin sees each seeded
+  `needs_attention` job once as `integration_failed` (`issue`,
+  `title` = `entity_label`, `detail` = `subject_label`, no amount), and
+  mechanic2 sees none. `tests/unit/exception-kinds.test.ts` now expects
+  `exceptionHref` to open `/shopify/queue?job=<id>` for an
+  `integration_job`, Phase 10's link.
+- Workaround or containment: none needed.
+- Next action: none.
+- Revisit trigger: any later change to `private.integration_exceptions()`
+  or `reporting.operational_exceptions` (Shopify's unreviewed refund-roles
+  follow-up on `wip/feat/p10-shopify` replaces the function: re-run these
+  tests on it).
+- Last checked: 2026-10-06 (the merge of reporting into `main`).
+
+## R-059 — Today and the exception counts are slow at a busy year's volume
+
+- Category: performance (measured).
+- Status and owner: open; build agent (Phase 9 step 4 or a follow-up).
+- Trigger: a year of busy-shop data: the bench in
+  `scripts/bench/report-volume.sql` (15,021 jobs, 51,025 work-order lines,
+  10,004 sale lines, about 110,000 movements, 3,006 unique units, 1,503
+  overdue or uncollected jobs).
+- Impact: `today_dashboard(null)` took 8,837 ms against a 150 ms target.
+  Almost all of it is Phase 5's `public.daily_summary(d, d)` for one day
+  (6,400–8,400 ms measured alone, with and without JIT): it joins the day
+  to `reporting.daily_summary`, which computes every day since the
+  earliest activity before the day is picked. Phase 9 did not change it
+  (the brief keeps `today_dashboard`'s body except the exceptions count).
+  The exceptions count itself (`report_exception_counts()`, and the same
+  query inside Today) took 257 ms against 150 ms; the list
+  (`operational_exceptions(200)`) 390 ms, inside its 500 ms target. The
+  seeded shop is far below this volume, and Today loads instantly there.
+- Evidence and confidence: high for the measurements (DATA-MODEL §14
+  "Reconciliation and exception timings", 2026-10-06, a throwaway clone
+  of `bicii_dev_wt`, numbers noisy within about ±20% on the shared
+  4-CPU machine); medium for how soon a real shop reaches this volume.
+  Before two query fixes the counts took 585 ms and the list 973 ms: the
+  currency_mismatch branches now read the shop currency once per query,
+  and the reconciliation and exception RPCs run with `jit = off` (JIT
+  compilation alone cost 100–250 ms per call).
+- Step 4 re-ran the bench on 2026-10-06: Today 9,512 ms, the counts
+  259 ms, the list 402 ms, reconciliation 48–90 ms (unchanged within the
+  machine's noise). Step 4 adds two callers of the counts: the
+  Exceptions page (beside the list, in parallel) and the count Badge on
+  the `/reports` Exceptions link (in its own Suspense boundary, so the
+  page never waits for it).
+- Workaround or containment: none needed at today's volume. The
+  reconciliation RPCs are well inside target (48–90 ms).
+- Next action: rewrite `public.daily_summary(d, d)` to compute only the
+  requested days from the source tables (the same columns, proved equal
+  by `period-reports.test.ts`' daily_summary comparison), and consider
+  `jit = off` on `today_dashboard` (an attribute change the brief kept out
+  of this step); only if the counts still miss, a trigger-maintained
+  projection of the exception counts (the documented D106 follow-up), never
+  a hand-maintained total.
+- Revisit trigger: Today takes more than a second in use, or the shop's
+  data approaches the bench volume.
+- Last checked: 2026-10-06 (Phase 9 step 4).
 
 ## R-065 — A mistyped customer email lets someone else claim that record
 

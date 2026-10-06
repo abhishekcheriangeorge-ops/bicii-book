@@ -147,15 +147,15 @@ stack, codes go to its Mailpit instead
 
 | Check | Command | What it establishes | Limits | Evidence |
 |---|---|---|---|---|
-| Static | `npm run check` | Types (with Next's generated route types), lint rules (including the service-role import boundary), formatting | `next build` does not lint; Markdown is not formatted (prettier ignores `*.md`) | Local pass, 2026-10-05 |
-| Generated types | `npm run check:types` | `database.types.ts` matches the migrations | Needs Postgres and the devstack cache | Local pass, 2026-10-05 |
-| Unit | `npm run test:unit` | Pure rules: money, permissions, status transitions, labels, form parsing, components | No database | Local: 45 files, 512 tests; the email sign-in integration: 56 files, 686 tests; staff roles step 4: 57 files, 737 tests; staff roles review fixes: 57 files, 738 tests; the merge of `main` into `feat/p8-labels`: 70 files, 904 tests |
-| Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests; `feat/p6-consignment` Phase 6 step 4 `npm test`: 92 files, 1364 tests (unit 48 / 579, so database 44 / 785); the review fixes: 93 files, 1384 tests (unit 48 / 581, database 45 / 803); the Phase 7 integration: 102 files, 1517 tests (unit 52 / 643, database 50 / 874); its review fixes: 102 files, 1518 tests (unit 52 / 644, database 50 / 874); the email sign-in integration: 111 files, 1585 tests (unit 56 / 686, database 55 / 899); staff roles step 1: 112 files, 1632 tests (unit 56 / 689, database 56 / 943); staff roles step 4 (integration review): 113 files, 1680 tests (unit 57 / 737, database 56 / 943); staff roles review fixes: 113 files, 1686 tests (unit 57 / 738, database 56 / 948) |
+| Static | `npm run check` | Types (with Next's generated route types), lint rules (including the service-role import boundary), formatting | `next build` does not lint; Markdown is not formatted (prettier ignores `*.md`) | Local pass, 2026-10-05; Phase 9 step 2: pass (58 s); Phase 9 step 3: pass; Phase 9 step 4: pass (52 s) |
+| Generated types | `npm run check:types` | `database.types.ts` matches the migrations | Needs Postgres and the devstack cache | Local pass, 2026-10-05; Phase 9 step 2: pass (no diff); Phase 9 step 3: pass (no diff); Phase 9 step 4: pass (no diff) |
+| Unit | `npm run test:unit` | Pure rules: money, permissions, status transitions, labels, form parsing, components | No database | Local: 45 files, 512 tests; the email sign-in integration: 56 files, 686 tests; staff roles step 4: 57 files, 737 tests; staff roles review fixes: 57 files, 738 tests; the merge of `main` into `feat/p8-labels`: 70 files, 904 tests; Phase 9 step 1: 57 files, 739 tests; Phase 9 step 2: 60 files, 776 tests; Phase 9 step 3: unchanged (60 files, 776 tests); Phase 9 step 4: 62 files, 802 tests |
+| Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests; `feat/p6-consignment` Phase 6 step 4 `npm test`: 92 files, 1364 tests (unit 48 / 579, so database 44 / 785); the review fixes: 93 files, 1384 tests (unit 48 / 581, database 45 / 803); the Phase 7 integration: 102 files, 1517 tests (unit 52 / 643, database 50 / 874); its review fixes: 102 files, 1518 tests (unit 52 / 644, database 50 / 874); the email sign-in integration: 111 files, 1585 tests (unit 56 / 686, database 55 / 899); staff roles step 1: 112 files, 1632 tests (unit 56 / 689, database 56 / 943); staff roles step 4 (integration review): 113 files, 1680 tests (unit 57 / 737, database 56 / 943); staff roles review fixes: 113 files, 1686 tests (unit 57 / 738, database 56 / 948); Phase 9 step 1 (`feat/p9-reporting`, `BICII_REQUIRE_STACK=1`): 114 files, 1720 tests (unit 57 / 739, database 57 / 981); Phase 9 step 2: 118 files, 1761 tests (unit 60 / 776, database 58 / 985; 108 s); Phase 9 step 3: 120 files, 1788 tests (unit 60 / 776, database 60 / 1012; 106 s); Phase 9 step 4: 122 files, 1814 tests (unit 62 / 802, database 60 / 1012; 112 s) |
 | Live stack | inside `npm run test:db` / `npm test`: `tests/db/*.stack.test.ts` | The app's own server code against the running devstack (PostgREST, Auth, Storage) on `bicii_dev`: photo moves, the label domain, the sign-in counter and staff sessions, and the Shopify service layer (`shopify.stack.test.ts`: a fresh fake Shopify per test, only its own two products' jobs by id, deltas only because `bicii_dev` persists) | Skip when the gateway is down unless `BICII_REQUIRE_STACK=1`; they write to `bicii_dev` (the Shopify test restores its products, price and stock at the end) | Local: pass, Phase 10 step 3; the merge of `main` into `feat/p8-labels`: pass (`BICII_REQUIRE_STACK=1`, no skips); the merge of `main` into `feat/p10-shopify`: pass |
-| End to end | `npm run test:e2e` | The staff journeys on an iPhone 13 and an iPad viewport against a production build and the devstack | Chromium only (installed once, see [Prerequisites](#prerequisites-and-access)); resets the database `PGDATABASE` names (`bicii_dev` by default); not a required check in CI ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) | Local: 106 passed in 11.1 min; the email sign-in integration: 152 passed on phone and tablet in 18.2 min; staff roles step 1: 152 passed in 14.9 min; staff roles step 4: 158 passed in 16.8 min (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, no dev server running); staff roles review fixes: 158 passed in 15.1 min; the merge of `main` into `feat/p8-labels`: 190 passed in 20.2 min; the merge of `main` into `feat/p10-shopify`: 200 passed in 20.3 min; CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521) |
+| End to end | `npm run test:e2e` | The staff journeys on an iPhone 13 and an iPad viewport against a production build and the devstack | Chromium only (installed once, see [Prerequisites](#prerequisites-and-access)); resets the database `PGDATABASE` names (`bicii_dev` by default); not a required check in CI ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) | Local: 106 passed in 11.1 min; the email sign-in integration: 152 passed on phone and tablet in 18.2 min; staff roles step 1: 152 passed in 14.9 min; staff roles step 4: 158 passed in 16.8 min (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, no dev server running); staff roles review fixes: 158 passed in 15.1 min; the merge of `main` into `feat/p8-labels`: 190 passed in 20.2 min; the merge of `main` into `feat/p10-shopify`: 200 passed in 20.3 min; CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521); Phase 9 step 1: 158 passed in 15.4 min; Phase 9 step 2: 168 passed in 17.4 min (`reports.spec.ts` 10 of them); Phase 9 step 3: 168 passed in 17.8 min; Phase 9 step 4: 176 passed in 19.1 min (`exceptions.spec.ts` 8 of them; a first run had 1 failure, the phone Today overflow fixed in f09d72e); CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521) |
 | Contrast | `npm run tokens:contrast` | WCAG ratios of the colour token pairs | Tokens only, not rendered pages | Local: 29 pairs ok |
-| Build | `npm run build` | The app compiles for production with placeholder public env | Does not contact Supabase; writes under `.next`, as `npm run dev` does; it was exercised only with no dev server running in the checkout | Local inside `test:e2e`; CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766) |
-| Docs links | the Vibe Code Docs Stack link checker (below) | Every relative link and heading anchor in the repository's Markdown resolves; fences are closed | Does not check external URLs or the truth of the text | Local: 0 problems at this commit |
+| Build | `npm run build` | The app compiles for production with placeholder public env | Does not contact Supabase; writes under `.next`, as `npm run dev` does; it was exercised only with no dev server running in the checkout | Local inside `test:e2e`; CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766); Phase 9 step 2: local pass (9 s, then again inside `test:e2e`); Phase 9 step 3: local pass (32 s, then again inside `test:e2e`); Phase 9 step 4: local pass (10 s, then again inside `test:e2e`) |
+| Docs links | the Vibe Code Docs Stack link checker (below) | Every relative link and heading anchor in the repository's Markdown resolves; fences are closed | Does not check external URLs or the truth of the text | Local: 0 problems at this commit (Phase 9 step 1: 38 files, 724 links; Phase 9 step 2: 38 files, 737 links; Phase 9 step 3: 38 files, 750 links; Phase 9 step 4: 38 files, 765 links) |
 
 Strategy, the invariant list and what CI runs: [TESTING.md](TESTING.md),
 in particular [Database test harness](TESTING.md#database-test-harness)
@@ -174,6 +174,32 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c "import sys; sys.path.insert(0,
 Clone the toolkit and create the venv outside this repository, or the
 checker would scan the toolkit's own Markdown too.
 
+### Report volume bench
+
+`scripts/bench/report-volume.sql` (Phase 9) generates a year of synthetic
+data (about 15,000 jobs, 50,000 work-order lines, 10,000 sale lines,
+100,000 movements, 2,000 receipt lines) and times the period-report RPCs
+with `EXPLAIN (ANALYZE, BUFFERS)`. It is a measurement, not a test, and it
+writes rows, so run it only on a throwaway clone of the worktree's
+database, never on `bicii_dev` or `bicii_dev_wt` themselves (with
+`PGHOST`, `PGUSER` and `PGPASSWORD` set for the local server):
+
+```sh
+createdb bicii_bench_wt
+pg_dump --no-owner bicii_dev_wt | psql -q bicii_bench_wt
+psql -v ON_ERROR_STOP=1 -f scripts/bench/report-volume.sql bicii_bench_wt
+dropdb bicii_bench_wt
+```
+
+Targets: a month under 300 ms, a year under 1.5 s, a line-items page under
+100 ms, `report_stock_value` under 300 ms. The latest timings are in
+[DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting)
+(2026-10-06: every target met). Section 3 (Phase 9 step 3) adds about
+3,000 unique units across their states and times the reconciliation RPCs
+(target 500 ms: met), `operational_exceptions` (500 ms: met),
+`report_exception_counts` and `today_dashboard` (150 ms each: missed,
+[R-059](RISKS.md#r-059--today-and-the-exception-counts-are-slow-at-a-busy-years-volume)).
+
 ## Changing the system
 
 Read [AGENTS.md](../AGENTS.md) first. Conventions that are not obvious
@@ -185,8 +211,10 @@ from the code:
   `20261004…` main line (through labels, and Shopify on its branch), `20261005…`
   purchasing and staff email sign-in, `20261006000100`–`20261006000900`
   staff roles, `20261006001000` and up reporting, `20261007…` public site.
-  The latest file today is `20261005006000_sign_in_throttle.sql` (staff
-  email sign-in, after purchasing's `20261005000100`–`20261005000500`). A
+  The latest file on `feat/p9-reporting` is
+  `20261006001300_operational_exceptions.sql` (Phase 9, after the staff
+  roles' `20261006000100`–`20261006000300`; it applies before or after
+  Phase 10's `20261004004000`, R-058). A
   migration that replaces a function another track also replaces (as
   `staff_search`) must carry both tracks' behaviour. Never edit an applied
   migration; add a new one (nothing is hosted yet, so a track's own

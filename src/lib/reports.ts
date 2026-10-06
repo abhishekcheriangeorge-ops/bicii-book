@@ -17,6 +17,7 @@
 import { formatRate } from "@/lib/cult-commons";
 import type { Database } from "@/lib/database.types";
 import { hrefForRecord, isShortId } from "@/lib/ids";
+import { issueSentence } from "@/lib/reconciliation";
 import { formatMoney, toDecimal, toMoneyString } from "@/lib/money";
 import {
   DEFAULT_BOARD_FILTERS,
@@ -413,6 +414,22 @@ export type OperationalException = {
   days: number | null;
   quantity: number | null;
   since: string | null;
+  /*
+   * Phase 9 (D106-D108) appends six columns to public.operational_exceptions.
+   * Optional here so a Phase 5 row (and its tests) still type-checks; the
+   * mapper (src/lib/domain/reports.ts) always fills them.
+   */
+  /** The specific issue code (reconciliation codes, or the kind itself). */
+  issue?: string | null;
+  /** The record's short ID (J-, P-, U-, C-, S-). */
+  shortId?: string | null;
+  /** A one-line title ("C-000012 · consignor" for consignments; the short ID otherwise). */
+  title?: string | null;
+  /** The database's own explanation with the specifics. */
+  detail?: string | null;
+  /** unsettled_consignment's outstanding amount, a fixed-2 string from Postgres; null otherwise. */
+  amount?: string | null;
+  currency?: string | null;
 };
 
 const days = (n: number | null) => (n === 1 ? "1 day" : `${n ?? 0} days`);
@@ -427,6 +444,9 @@ const EXCEPTION_LABELS: Readonly<Record<string, string>> = {
   uncollected_job: "Not collected",
   negative_stock: "Below zero",
   unit_hold_stale: "Stale hold",
+  // Phase 9 (D106, D107).
+  unit_state_mismatch: "Impossible state",
+  unsettled_consignment: "Unsettled consignment",
   currency_mismatch: "Other currency",
   integration_failed: "Shopify needs attention",
 };
@@ -442,7 +462,8 @@ export function exceptionCopy(
   row: Pick<
     OperationalException,
     "severity" | "entityLabel" | "subjectLabel" | "days" | "quantity"
-  >,
+  > &
+    Partial<Pick<OperationalException, "issue" | "amount" | "currency">>,
 ): { text: string; tone: StatusTone } {
   const tone = exceptionTone(row.severity);
   switch (kind) {
@@ -468,6 +489,23 @@ export function exceptionCopy(
         text: `Held for a customer, but no open job uses it (${days(row.days)})`,
         tone,
       };
+    case "unit_state_mismatch":
+      // Phase 9 (D106): the reconciliation issue in words.
+      return {
+        text: issueSentence(row.issue) ?? "The records and the stock ledger disagree",
+        tone: "danger",
+      };
+    case "unsettled_consignment": {
+      // Phase 9 (D107): the amount is the database's outstanding figure.
+      const to = (row.subjectLabel ?? "").split(" · ")[0];
+      if (row.amount === null || row.amount === undefined) {
+        return { text: issueSentence("unsettled_consignment", row.days)!, tone };
+      }
+      return {
+        text: `Sold ${days(row.days)} ago; ${formatMoney(row.amount, row.currency ?? undefined)} outstanding${to ? ` to ${to}` : ""}`,
+        tone,
+      };
+    }
     case "currency_mismatch":
       return {
         text: "A line in another currency is left out of the totals",
@@ -519,6 +557,11 @@ export function exceptionHref(
       return hrefForRecord("product", row.entityId);
     case "inventory_unit":
       return hrefForRecord("inventory_unit", row.entityId);
+    // Phase 9: unsettled consignments (D107) and sale lines in another currency (D104).
+    case "consignment_item":
+      return hrefForRecord("consignment_item", row.entityId);
+    case "sale":
+      return hrefForRecord("sale", row.entityId);
     case "work_order_line":
       // The row names the line's job by its J- number; /q opens it.
       return row.entityLabel && isShortId(row.entityLabel) ? `/q/${row.entityLabel}` : null;

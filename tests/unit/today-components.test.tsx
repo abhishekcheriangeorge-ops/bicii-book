@@ -105,6 +105,69 @@ describe("ExceptionList", () => {
     render(<ExceptionList rows={[negative("Shop floor")]} total={1} />);
     expect(screen.queryByText(/most urgent/)).toBeNull();
   });
+
+  // Phase 9 step 4 extends the list with optional props; Today passes only moreHref.
+  it("renders a Phase 5 row exactly as before when given only Today's props", () => {
+    const plain = render(<ExceptionList rows={[negative("Shop floor")]} total={1} />);
+    const before = plain.container.innerHTML;
+    plain.unmount();
+    const today = render(
+      <ExceptionList rows={[negative("Shop floor")]} total={1} moreHref="/reports/exceptions" />,
+    );
+    expect(today.container.innerHTML).toBe(before);
+    const list = screen.getByRole("list", { name: "Needs attention" });
+    expect(within(list).getByRole("link")).toHaveAttribute(
+      "href",
+      "/products/c2000000-0000-4000-8000-000000000001",
+    );
+    expect(list).toHaveTextContent("Below zero");
+    expect(list).not.toHaveTextContent("Critical");
+    expect(list.querySelector("time")).toBeNull();
+  });
+
+  it("links the capped-list note to the full list when given moreHref", () => {
+    render(
+      <ExceptionList rows={[negative("Shop floor")]} total={45} moreHref="/reports/exceptions" />,
+    );
+    expect(screen.getByRole("link", { name: "Showing the 1 most urgent of 45" })).toHaveAttribute(
+      "href",
+      "/reports/exceptions",
+    );
+  });
+
+  it("on the exceptions page: severity, age, the database's detail and a secondary link", () => {
+    render(
+      <ExceptionList
+        rows={[
+          {
+            ...negative("Shop floor"),
+            issue: "negative_on_hand",
+            shortId: "P-000001",
+            title: "P-000001",
+            detail: "Road inner tube · Shop floor",
+            days: 12,
+          },
+        ]}
+        label="Stock below zero"
+        detailed
+        action={() => ({
+          href: "/reports/reconciliation?all=1",
+          label: "Open stock reconciliation",
+        })}
+      />,
+    );
+    const list = screen.getByRole("list", { name: "Stock below zero" });
+    expect(list).toHaveTextContent("Critical");
+    expect(list).toHaveTextContent("12 days");
+    expect(list.querySelector("time")).toHaveAttribute("datetime", "2026-10-04T02:00:00Z");
+    // The detail equals the subject, so it is not repeated.
+    expect(within(list).getAllByText("Road inner tube · Shop floor")).toHaveLength(1);
+    const links = within(list).getAllByRole("link");
+    expect(links.map((l) => l.getAttribute("href"))).toEqual([
+      "/products/c2000000-0000-4000-8000-000000000001",
+      "/reports/reconciliation?all=1",
+    ]);
+  });
 });
 
 const adjustment = (i: number, significant = false): AdjustmentRow => ({

@@ -1,18 +1,17 @@
 # Current state
 
-Updated: 2026-10-06 20:00 SGT by the go-live session (GO-LIVE, see
-`HANDOVER.md` on `handover/go-live`), on `claude/brave-clarke-kfqhgt`
-restarted from `main` 680cb9f (PR #16, labels, merged): Shopify joins
-`main`. The build session paused for the handover at 17:41 SGT with
-`feat/p10-shopify` at 3b5341c (labels' integrated head 01cb3da merged
-into Shopify, which already held `main` a1aebf6) and an unreviewed
-follow-up auto-saved on `wip/feat/p10-shopify` (8dbe6c4, Shopify refund
-jobs for managers, D94). This merge takes 3b5341c only; the follow-up is
-reviewed separately. Evidence checked: `git fetch`, `git log`,
-`git merge-base`, the build session's status (idle, "work paused for
-handoff"), the hosted project's migration history (read-only); the gate
-on this merge is in the last rows below. Earlier rows keep the evidence
-of their own phase.
+Updated: 2026-10-06 21:10 SGT by the go-live session (GO-LIVE, see
+`HANDOVER.md` on `handover/go-live`), on a local branch from
+`claude/brave-clarke-kfqhgt` 1b4aaed (Shopify merged with `main` 680cb9f,
+PR #17): reporting joins. The build session paused for the handover with
+Phase 9 complete on `feat/p9-reporting` (ba1c26c, branched from
+`feat/staff-roles` 5c9fbc7, auto-saved to `wip/feat/p9-reporting`); this
+merge brings it onto labels, Shopify, the migrate workflow and the public
+site's backend. Evidence checked: `git fetch`, `git log`, `git merge-base`
+(5c9fbc7), the build session's status (idle, "work paused for handoff"),
+the hosted project's migration history (read-only); the gate on this
+merge is in the last rows below. Earlier rows keep the evidence of their
+own phase.
 
 ## Return in two minutes
 
@@ -20,9 +19,10 @@ of their own phase.
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
 - On `main`: phases 0–8 (labels in PR #16, which also closed #12), staff
   email sign-in, staff roles (PRs #1–#11, #13), the hosted migration
-  workflow (PR #14, `migrate.yml`) and the public site's backend (PR #15,
-  Phase 11 step 1). This branch adds Phase 10, Shopify (built against an
-  in-memory fake; no store connected).
+  workflow (PR #14, `migrate.yml`), the public site's backend (PR #15,
+  Phase 11 step 1) and Phase 10, Shopify (PR #17; built against an
+  in-memory fake; no store connected). This branch adds Phase 9,
+  reporting and reconciliation.
 - Go-live state (2026-10-06): the Vercel project is linked to this
   repository and deploys `main` to production (functions in sin1); the
   sign-in page answers 200. The hosted database still has only
@@ -32,8 +32,9 @@ of their own phase.
   nobody can sign in). The owner's Auth login (george@chaosactive.com,
   confirmed, no known password) exists on the hosted project; its admin
   staff row waits for the loaded database.
-- Current objective: merge the build session's work in order (labels
-  merged; Shopify on this branch; then reporting) and Phase 11
+- Current objective: merge the build session's work in order (labels and
+  Shopify merged; reporting on this branch; then Shopify's refund-roles
+  follow-up after review) and Phase 11
   ([PLAN Phase 11](docs/PLAN.md#phase-11--public-site-integration-in-the-bicii-repo),
   D120–D125, [ADR-023](docs/decisions/ADR-023-public-site.md)). Step 1
   (this repository) is on `main`; step 2, the screens in repository
@@ -47,10 +48,62 @@ of their own phase.
   ([R-049](docs/RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger),
   [RUNBOOK](docs/RUNBOOK.md#shopify-the-cron-and-the-queue)); Shopify stays
   off until the owner connects a store
-  ([RUNBOOK](docs/RUNBOOK.md#shopify)). Reporting follows Shopify; while
-  the hosted database holds only the foundation no migration needs
-  renaming, and once it is loaded later ones are renamed past everything
-  live (`HANDOVER.md` "Migrations after go-live").
+  ([RUNBOOK](docs/RUNBOOK.md#shopify)). While the hosted database holds
+  only the foundation no migration needs renaming; once it is loaded,
+  later ones are renamed past everything live (`HANDOVER.md` "Migrations
+  after go-live"). The build session's unreviewed Shopify follow-up
+  (`wip/feat/p10-shopify` 8dbe6c4: managers retry and dismiss Shopify
+  refund jobs and read refund events, D94 over D86) is not proposed yet:
+  it widens who reads Shopify refund events (payloads with payment and
+  line details), which is the owner's call, and it no longer fits as
+  written: with reporting on `main`, `private.exception_visible`
+  keeps `integration_failed` admin-only (D108), so managers would still
+  not see refund jobs on Today. A cherry-pick onto this merge conflicted
+  in DATA-MODEL and PLAN and was dropped; it needs a design pass against
+  D108 and the owner's decision.
+- Phase 9 reporting, step 1 of 4 (database), committed locally on
+  `feat/p9-reporting`, not pushed: `20261006001000_report_periods` and
+  `20261006001100_report_stock_value` (D100–D105,
+  [ADR-022](docs/decisions/ADR-022-reporting.md)): four date bases over
+  `reporting.report_lines`, the summary, series, breakdown, line-item,
+  activity and by-mechanic RPCs, stock value at last cost; refunds beside
+  gross (D102, the build default for owner question 12); risks R-055 and
+  R-056; owner question 26.
+- Phase 9 reporting, step 2 of 4 (app), committed locally on
+  `feat/p9-reporting`, not pushed: `/reports` (period and date-basis
+  controls in the URL, figures with cost tiles hidden without View costs,
+  refunds beside gross, buckets, the breakdown by seven dimensions, stock
+  at last cost now, activity and jobs by mechanic), `/reports/lines` (one
+  group's lines; View financial reports, a real 403) and the app's first
+  Route Handler, the CSV export `/reports/export` (R-057: 50,000 rows at
+  most, 409 when the counts move); `ComingSoon` placeholders at
+  `/reports/exceptions` and `/reports/reconciliation`.
+- Phase 9 reporting, step 3 of 4 (database), committed locally on
+  `feat/p9-reporting`, not pushed: `20261006001200_stock_reconciliation`
+  (no balance cache, D106: `reporting.unit_ledger_disposition`,
+  `unit_reconciliation`, `stock_reconciliation`, the RPCs
+  `report_stock_reconciliation` and `report_unit_reconciliation`) and
+  `20261006001300_operational_exceptions` (the threshold
+  `shop_settings.consignment_settlement_alert_days` and its admin RPC,
+  D107; `private.exception_visible`, D108; the exceptions view and
+  `public.operational_exceptions` with six appended columns and the kinds
+  unit_state_mismatch, unsettled_consignment and integration_failed;
+  `report_exception_counts`; Today's `exceptions_now` per caller; the
+  Phase 10 placeholder `private.integration_exceptions()`, R-058). The seed
+  reconciles unchanged; no RPC defect was found. Risks R-058 (re-verify at
+  the Phase 10 merge) and R-059 (Today slow at a busy year's volume, mostly
+  Phase 5's `daily_summary`); owner question 27.
+- Phase 9 reporting, step 4 of 4 (app and closure), committed locally on
+  `feat/p9-reporting`, not pushed: `/reports/exceptions` (grouped,
+  per-caller exceptions, the admin's threshold sheet, Export CSV) and
+  `/reports/reconciliation` (Problems only / Everything, a product
+  filter, links to the guarded fix); Today's "See all exceptions",
+  Inventory's "Reconcile stock", the product page's "Check against the
+  ledger", the Exceptions count on `/reports`; export kinds `exceptions`,
+  `stock` and `units` for any staff; Phase 5's `ExceptionList` and
+  helpers extended, not rewritten. The integration review fixed Today's
+  Activity and Stock grids widening the phone page. No new decision,
+  risk number or owner question; R-018, R-021, R-055–R-059 updated.
 - Phase 10 step 4 in one line: every staff member sees a product's
   Shopify status on its page; manage_inventory switches **Publish online**
   and runs **Sync now** (the action runs only the job id the RPC returned);
@@ -113,9 +166,11 @@ of their own phase.
   ([R-075](docs/RISKS.md#r-075--label-output-is-unverified-on-a-real-label-printer-and-on-ios));
   print success is confirmed by hand
   ([R-076](docs/RISKS.md#r-076--print-success-is-confirmed-by-hand)).
-- Owner questions: 18 (D70–D72), 19 (SMTP provider), 20 (D92, D93), 21
-  (the label defaults D56–D59), 23–25 (Shopify: D89's tax basis and POS,
-  the defaults D80–D88) and 30 (the public-site defaults D120–D125) in
+- Owner questions: 12 (refund netting; D102 is the build default), 18
+  (D70–D72), 19 (SMTP provider), 20 (D92, D93), 21 (the label defaults
+  D56–D59), 23–25 (Shopify: D89's tax basis and POS, the defaults
+  D80–D88), 26–27 (the reporting defaults D100–D108) and 30 (the
+  public-site defaults D120–D125) in
   [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions); the
   Supabase dashboard checklist in `HANDOVER.md` (SMTP, templates, Auth
   settings, rate limits, site URL).
@@ -161,40 +216,31 @@ a separate, label-triggered run. All listed results are success.
 | Labels joins `main` (01cb3da merged with `main` a0f9a90; conflicts in NOW, DATA-MODEL, PRODUCT and RISKS kept both sides; no object defined by both `20261004003800_labels` and `20261006103000_public_site`) | Yes, `claude/brave-clarke-kfqhgt`, the merge commit with this update | Locally on this merge (database `bicii_dev`): `npm run db:reset` pass (`49|20261006103000`, seed applied; devstack restarted), `npm run db:types` no diff, `npm run check` pass, `BICII_REQUIRE_STACK=1 npm test` 130 files / 1927 tests passed (a first run hit the devstack's stale Auth connection after the reset in `stack.smoke`; passed after the restart), docs link check 39 files / 801 links / 0 problems, the public site's journey 6 (repository `bicii`, `npm run test:e2e`) 20 passed against this database; E2E in the pull request's CI | Not deployed |
 | Merge of `feat/p8-labels` (main merged into labels, and its receipts' Print N labels, R-029) into Shopify | Yes, `feat/p10-shopify` 3b5341c (the merge commit) | Not gated by the build session (its row was left as a placeholder when it paused); gated as part of the next row. Its planned follow-up, Shopify refund jobs for managers (D94), is the unreviewed auto-save 8dbe6c4 on `wip/feat/p10-shopify` and is not part of this merge | Not deployed |
 | Shopify joins `main` (3b5341c merged with `main` 680cb9f; conflicts in NOW, ARCHITECTURE, DATA-MODEL, OPERATIONS, PRODUCT and the generated types; no object defined by both a Shopify migration and `20261006103000_public_site`) | Yes, `claude/brave-clarke-kfqhgt`, the merge commit with this update | Locally on this merge (database `bicii_dev`): `npm run db:reset` pass (`52|20261006103000`, seed applied; devstack restarted), `npm run db:types` regenerated (the conflict in the generated file resolved by regeneration), `npm run check` pass, `BICII_REQUIRE_STACK=1 npm test` 147 files / 2228 tests passed (140 s, no skips), docs link check 40 files / 907 links / 0 problems, the public site's journey 6 (repository `bicii`, `npm run test:e2e`) 20 passed against this database; E2E in the pull request's CI | Not deployed |
-| Phase 9 reporting, Shopify refund jobs for managers (D94), public-site screens, hardware adapter | Reporting on `wip/feat/p9-reporting` ba1c26c and the refund follow-up on `wip/feat/p10-shopify` 8dbe6c4 (the build session's last state, paused); public-site screens are Phase 11 step 2 (georgieboys/BICII#1) | Not verified here | Not deployed |
+| Period reporting database (Phase 9 step 1: D100–D105; date bases, report lines, summary / series / breakdown / line items / activity / by-mechanic RPCs with cost gating, purchases, stock value at last cost, six indexes, volume bench) | Database only, `feat/p9-reporting`, the step 1 commits after 5c9fbc7; local only, not pushed; no screens yet | Locally (database `bicii_dev_wt`): `npm run db:reset` pass (`49\|20261006001100`, seed applied), `npm run db:types` committed, `npm run check` pass (47 s), `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 114 files / 1720 tests passed (unit 57 / 739, database 57 / 981; `period-reports.test.ts` 33 tests; Phase 5's and Phase 6's reporting tests unchanged and passing; 107 s), `npm run build` pass (30 s), `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.4 min, no failures, flaky or skipped; it reset the database), docs link check 38 files / 724 links / 0 problems; bench `scripts/bench/report-volume.sql` on a throwaway clone (every target met, timings in DATA-MODEL §14) | Not deployed |
+| Period report screens and CSV export (Phase 9 step 2: `/reports`, `/reports/lines`, `/reports/export` with kinds series, breakdown, lines, stock_value and mechanics; D30, D100–D105) | Yes, `feat/p9-reporting`, the three step 2 commits after c5c1fd7 and the evidence commit; local only, not pushed | Locally (database `bicii_dev_wt`): `npm run check` pass (58 s), `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 118 files / 1761 tests passed (unit 60 / 776 with the new `period-reports`, `csv` and `report-exports` tests; database 58 / 985 with `period-report-exports.stack.test.ts`; 108 s), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 168 passed on phone and tablet (17.4 min, no failures, flaky or skipped; `reports.spec.ts` 5 tests on each project; it reset the database), docs link check 38 files / 737 links / 0 problems | Not deployed |
+| Stock reconciliation and extended operational exceptions (Phase 9 step 3: D106–D108; reconciliation views and RPCs, the unsettled-consignment threshold, per-kind visibility, sale-line currency_mismatch, the Phase 10 placeholder, bench section 3) | Database only, `feat/p9-reporting`, the step 3 commits after 05c9414; local only, not pushed; screens are step 4 | Locally (database `bicii_dev_wt`): `npm run db:reset` pass (`51\|20261006001300`, seed applied; the seed reconciles unchanged), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 120 files / 1788 tests passed (unit 60 / 776 unchanged; database 60 / 1012 with `stock-reconciliation.test.ts` 21 and `operational-exceptions.test.ts` 6; Phase 5's exception tests pass with the six appended column names; 106 s), `npm run build` pass (32 s), `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 168 passed on phone and tablet (17.8 min, no failures, flaky or skipped; it reset the database), docs link check 38 files / 750 links / 0 problems; bench section 3 on a throwaway clone (reconciliation 50–88 ms, exceptions list 390 ms, counts 257 ms and Today 8.8 s missed their 150 ms targets: R-059); the Phase 10 merge order simulated in a scratch database (R-058) | Not deployed |
+| Exceptions and stock reconciliation screens, threshold sheet, Today / Inventory / Reports links, export kinds exceptions, stock and units (Phase 9 step 4: D106–D108; phase closure) | Yes, `feat/p9-reporting` 4da3aa7, f09d72e and the closing commit; local only, not pushed | Locally (database `bicii_dev_wt`): `npm run check` pass (52 s), `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 122 files / 1814 tests passed (unit 62 / 802 with the new `reconciliation.test.ts` and `exception-kinds.test.ts` and the extended `report-exports`, `reports` and `today-components` tests; database 60 / 1012 unchanged, Phase 5's `reporting*.test.ts` passing unchanged; 112 s), `npm run build` pass (10 s), `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 176 passed on phone and tablet (19.1 min, no failures, flaky or skipped; `exceptions.spec.ts` 4 tests on each project; `today.spec.ts` unchanged and passing; it reset the database). The first full run had 1 failure (175 passed, 19.8 min): the phone's Today was 15 px wider than the screen (the Activity grid widened by long tagged names), so the zoomed page's tap on "See all" missed; fixed with `grid-cols-1` / `min-w-0` and guarded by a no-side-scroll check. Docs link check 38 files / 765 links / 0 problems; bench re-run on a throwaway clone (DATA-MODEL §14: every period target met; reconciliation 48–90 ms; list 402 ms; counts 259 ms and Today 9.5 s still miss, R-059) | Not deployed |
+| Reporting joins `main` (`feat/p9-reporting` ba1c26c merged onto Shopify's merge with `main`, 1b4aaed; conflicts in 13 files kept both sides; reporting's owner questions renumbered 26–27 because labels and Shopify hold 21–25; R-018, R-043 and R-058 resolved; two tests written for the branch without Phase 10 now assert the merged behaviour) | Yes, `claude/brave-clarke-kfqhgt`, the merge commit with this update | Locally on this merge (database `bicii_dev`): `npm run db:reset` pass (`56|20261006103000`, seed applied; devstack restarted), `npm run db:types` regenerated (the conflict in the generated file resolved by regeneration), `npm run check` pass, `BICII_REQUIRE_STACK=1 npm test` 156 files / 2356 tests passed (156 s, no skips; a first run failed the two assertions written for the branch without Phase 10, now updated, R-058), R-058's named tests (`operational-exceptions`, `reporting`, `reporting-seed`, `shopify-webhooks`) passed, docs link check 41 files / 979 links / 0 problems, the public site's journey 6 (repository `bicii`) 20 passed against this database; E2E in the pull request's CI | Not deployed |
+| Shopify refund jobs for managers (D94), public-site screens, hardware adapter | The refund follow-up on `wip/feat/p10-shopify` 8dbe6c4 (unreviewed; the build session's last state; conflicts with D108 on `main`, needs a design pass and the owner's decision); public-site screens are Phase 11 step 2 (georgieboys/BICII#1) | Not verified here | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
 ## Work location and continuation
 
-- `main` on origin (a1aebf6) holds PRs #1–#11 and #13: the stack through
-  appointments, the docs stack, Phase 6, purchasing, staff email sign-in
-  and the staff roles. The local `main` ref is stale; use `origin/main`.
-- `feat/p10-shopify` (head: the follow-up commit with this update, on the
-  merge of `feat/p8-labels` 01cb3da into 3109818, 2026-10-06): stacked on
-  `feat/p8-labels`, so it holds `origin/main` (a1aebf6, merged into both
-  branches), labels with their Print N labels follow-up, and Phase 10.
-  Committed locally, not pushed (`git for-each-ref` shows no
-  `origin/feat/p10-shopify`; origin holds only the auto-save
-  `wip/feat/p10-shopify`). Phase 10: ef1a613, 8ea4dbd, 792ce96 (step 1),
-  4196a90, 8ec0fba (step 2), 92b3335, c56143b, 37f4c37, 27a7be8, 3f5970b
-  (step 3), 132a1ae, 3892eeb, 3407fec, 92e4aa6 (step 4), da13884, 4b60fb9,
-  2723548, 4f8efa8, 7fb9c1a (review fixes), 3109818 (merge of `main`).
-- `feat/p8-labels` (01cb3da: the merge of `origin/main` a1aebf6 into
-  3f09d22 and the Print N labels follow-up, 2026-10-06): committed
-  locally, not pushed (`origin/feat/p8-labels` is 3f09d22, the end of
-  Phase 8 with its review fixes). Stacked on `feat/p6-consignment`
-  (c791d4b, now in `main`). Step 1:
-  1294e36, 2c4f6a3, c5de022; step 2: 967b99b, cd4bbb6, 9608931; step 3:
-  41c1a5c, abe7e6c; step 4: afaf288 and 0dc6a41; review fixes: 3f09d22.
-  Origin
-  holds an older orchestrator auto-save, `wip/feat/p8-labels` (889294d,
-  not reviewed).
-- `feat/p6-consignment` (c791d4b): merged into `main` (PR #11).
-- Parallel track: a second worktree of this clone (`/home/user/bicii-book-wt`,
-  see `git worktree list`) builds Phase 9 reporting on
-  `feat/p9-reporting` with its own database `bicii_dev_wt` and ports; this
-  checkout never touches it.
+- `main` on origin holds PRs #1–#11 and #13–#16 (through labels) and
+  Shopify (PR #17, merged before this branch is pushed). The local `main`
+  ref is stale; use `origin/main`.
+- `claude/brave-clarke-kfqhgt`: the go-live session's branch, restarted
+  from `main` after each merge (PRs #14–#17); this merge is pushed there
+  once PR #17 has merged.
+- The build session's branches, paused for the handover: `feat/p8-labels`
+  (3f09d22) and `wip/feat/p8-labels` (01cb3da), both merged through PR
+  #16; `wip/feat/p10-shopify` (8dbe6c4: 3b5341c, merged through PR #17,
+  plus the unreviewed refund-roles follow-up); `wip/feat/p9-reporting`
+  (ba1c26c, merged here). No `feat/p9-reporting` or `feat/p10-shopify`
+  exists on origin.
+- One devstack on this container serves `bicii_dev`; the build session's
+  second worktree (`.wt-env`, `bicii_dev_wt`) is not used.
 - Local-only artifacts (git-ignored): `.env.local`, `.devstack/` (with
   `.devstack/mail/`, the mail catcher's codes), `test-results/`.
 
@@ -204,8 +250,8 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-001](docs/RISKS.md#r-001--nothing-is-deployed),
   [R-002](docs/RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery),
   [R-003](docs/RISKS.md#r-003--the-devstack-differs-from-hosted-supabase).
-  Next in play: the labels and Shopify PR
-  ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
+  Next in play: loading the hosted database (owner's `SUPABASE_DB_URL`)
+  and the review of Shopify's refund-roles follow-up.
 - Decisions needed: [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions);
   Phase 6 adds rows 9 (confirm D44–D55; D54 and D55 came from the review),
   10 (D53: should a price below the agreed amount plus shop charges need
@@ -227,7 +273,19 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   and 22 (the decision ranges, answered,
   [R-028](docs/RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted));
   Phase 10 adds rows 23 and 24 (D89: tax basis, Shopify POS) and 25
-  (confirm D80–D88).
+  (confirm D80–D88); Phase 9 notes the build default D102 on row 12 and
+  adds rows 26 (confirm D100–D105,
+  [R-055](docs/RISKS.md#r-055--past-report-periods-change-after-a-reopen-a-back-dated-sale-or-a-back-dated-receipt),
+  [R-056](docs/RISKS.md#r-056--stock-value-uses-each-products-last-cost-not-the-cost-of-the-units-on-hand))
+  and 27 (confirm D106–D108; numbered 21 and 22 on its branch); Phase 11
+  adds row 30 (confirm D120–D125).
+- Phase 9 risks:
+  [R-057](docs/RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export)
+  (export limits),
+  [R-058](docs/RISKS.md#r-058--phase-9s-exceptions-migration-must-be-re-verified-when-phase-10-merges)
+  (resolved at this merge) and
+  [R-059](docs/RISKS.md#r-059--today-and-the-exception-counts-are-slow-at-a-busy-years-volume)
+  (Today's latency at volume).
 - Phase 10 risks: R-040–R-044 (step 1) and, from step 2,
   [R-045](docs/RISKS.md#r-045--the-buy-online-link-follows-overall-availability-not-online-stock)
   (Buy online follows overall availability, not online stock) and

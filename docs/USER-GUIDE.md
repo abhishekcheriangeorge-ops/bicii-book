@@ -293,8 +293,10 @@ managers.
   refunded or Refunded and lists the refund with its reason. Nothing goes
   back into stock: if the item came back, restock it (below) (D7).
 - If it fails: "That's more than is left to refund on this sale." The
-  financial reports still count the sale in full until Phase 9 decides
-  how refunds are reported ([R-021](RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)).
+  financial reports still count the sale in full: the period reports
+  (Phase 9, screens to come) show refunds as "refunds recorded" beside
+  gross sales on the day the refund is recorded, never taken off (D102, a
+  build default; [R-021](RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)).
 
 ### Restock an item that came back
 
@@ -600,7 +602,17 @@ website's account pages go live when the owner switches them on,
   opens that day's sales (the jobs are under Jobs completed);
   **New consignor liability** (also View costs) opens Consignment.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
-  at 0. Refunds and restocks are not taken off yet (Phase 9).
+  at 0. Refunds and restocks are not taken off (D102: the period reports
+  show refunds beside gross instead).
+- Needs attention lists what you may see (D108): every staff member sees
+  overdue and uncollected jobs, stock below zero, stale holds, lines in
+  another currency (job lines and, since Phase 9, sale lines) and units
+  whose status disagrees with the stock ledger; consignor money unpaid more
+  than 30 days after the sale (D107) only with Manage consignments or View
+  costs (admins and managers by role); failed integrations only admins.
+  Each row opens its record (a job, product, item, consignment item or
+  sale). **See all** beside the count, or the "Showing the 20 most urgent
+  of …" line, opens the full list on Reports → Exceptions.
 - Admins also see **Shopify needs attention** rows under Needs attention:
   an online order or product sync BICII could not finish, with the reason;
   the row opens it in the Shopify queue
@@ -699,6 +711,88 @@ website's account pages go live when the owner switches them on,
   signature did not match is **Rejected** and keeps no body; nothing was
   recorded from it.
 
+### Read reports
+
+- Steps: **Reports** (More on a phone, the rail on an iPad). Choose
+  **Day**, **Week** (Monday to Sunday) or **Month**, step with the arrows
+  (or `[` and `]` on a keyboard), tap the dates to pick another day, or
+  **Custom** for any range up to two years. **Today** comes back to now.
+- Choose the **Date basis** (View financial reports): **Sale date** is the
+  financial figure (jobs on the day they were completed, sales on the day
+  they were paid); **Check-in**, **Completed** and **Collected** count
+  jobs only, on that day. So one job shows on different days: checked in
+  Monday, completed Wednesday, collected Friday. A job that is not
+  finished shows only on Check-in, and a reopened job leaves its old
+  completion day until it is completed again (D100, D101).
+- Success looks like: Gross sales and the counts at the top; with View
+  costs also Direct costs, Yield, Cult Commons and BICII after Cult
+  Commons. Below: the period day by day (or week by week), the
+  **Breakdown** by job or sale, product, category, service, mechanic,
+  ownership or channel (tap a row for the job, the sale or its lines),
+  **Stock at cost now** (stock at this moment, whatever period you chose)
+  and **Activity** (jobs, appointments and stock, for everyone).
+- Refunds are shown beside gross sales, "Refunds recorded: … — not
+  deducted from the figures above", and never change gross, yield or Cult
+  Commons (D102, a build default the owner is asked to confirm).
+- **Export CSV** downloads the table beside it. On an iPhone or iPad
+  app it opens in a new window: use Share → Save to Files. The file is a
+  snapshot of the moment you export; costs are in it only if you have
+  View costs.
+- If it fails: "Too many rows to export" means choose a shorter range;
+  "Figures changed while exporting" means try again
+  ([R-057](RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export)).
+  "Costs, yield and Cult Commons need the View costs permission" and
+  "… need the View financial reports permission" mean ask an admin.
+
+### Check what needs attention (Exceptions)
+
+- Steps: **Reports** → **Exceptions** (or **See all** under Needs
+  attention on Today). The count on the Exceptions link is how many you
+  can see.
+- Success looks like: the exceptions grouped by what is wrong, the most
+  serious first: Stock below zero, Items in an impossible state, Lines in
+  another currency, Unsettled consignments (Manage consignments or View
+  costs), then overdue jobs, jobs not collected and stale holds. Each row
+  says what is wrong and how long ago it started; tap it to open the
+  record and fix it there (adjust stock with a reason, restock, settle,
+  void or return). Stock and item rows also link to **Open stock
+  reconciliation** for that product.
+- Nothing here changes anything: an exception clears by itself once its
+  cause is fixed. "No exceptions" with the time checked means all clear.
+- **Export CSV** downloads the list you can see (at most 200; with more,
+  fix the most urgent first and export again).
+- If it fails: an item still listed after the fix, ask an admin (it may
+  be a bug to report, [RUNBOOK](RUNBOOK.md#when-reconciliation-or-exceptions-show-a-problem)).
+
+### Check stock against the ledger
+
+- Steps: **Inventory** → **Reconcile stock** (or Reports → **Stock
+  reconciliation**, or **Check against the ledger** on a product).
+- Success looks like: "Every product reconciles with the ledger" and
+  "Every item reconciles with the ledger" under **Problems only**.
+  **Everything** lists every product by location and every unique item,
+  with what the ledger says (on hand, where, and the sale or job that
+  last moved it).
+- If a row shows a problem: open it (tap the row). With Adjust stock,
+  **Fix with a stock adjustment** opens the product, where Adjust stock
+  records a counted correction with a reason. Stock below zero is allowed
+  when a job part was used before the stock was received: count the shelf
+  and adjust, or receive the delivery. A problem that stays after the
+  right fix is a bug: tell an admin.
+- **Export CSV** downloads products by location or unique items, as
+  shown (Problems only or Everything, one product or all).
+
+### Change when unsettled consignments are flagged (admins)
+
+- Steps: **Reports** → **Exceptions** → **Change** beside "Alert
+  unsettled consignments after N days". Enter 1 to 365 days and **Save**.
+- Success looks like: a toast "Alert unsettled consignments after N
+  days"; a sold consignment item with money still owed shows under
+  Unsettled consignments once its latest sale is more than N shop days
+  old (D107; 30 by default).
+- If it fails: "Choose between 1 and 365 days" — the number stays in the
+  box to correct. Only admins see Change; everyone else sees the number.
+
 ### Invite a colleague
 
 - Before you start: you need Manage staff (an admin has it; anyone else
@@ -793,7 +887,7 @@ from your role or as extra access:
 | Permission | What changes for you |
 |---|---|
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
-| View financial reports | The Money section on Today (costs inside it also need View costs) |
+| View financial reports | The Money section on Today, and on Reports the figures, date basis, breakdown, line drill-down, stock at cost now and their CSV exports (costs inside them also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
 | Manage inventory | New and edited products and units, **Transfer**, publication, **Publish online** and **Sync now**, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite (the colleague signs in with an emailed code; no password to hand over), extra access and deactivation (it ends their sessions at once). Without the Admin role: mechanics only, only within your own permissions, never Manage staff and never your own row ([OPERATIONS.md](OPERATIONS.md#product-administration), D93) |
@@ -815,7 +909,14 @@ Everyone can open Purchasing, its orders and suppliers, and see what is
 ordered, received and still to come; costs on those screens need View
 costs or Manage purchasing (D60).
 
-Not available yet: **Reports** shows "Phase 9 (Reporting)"
-([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
-There is no reschedule, no customer messaging and no data export. Help:
-ask the owner or an admin.
+Everyone can open Reports and see Activity and jobs by mechanic, and
+export that list; sales, yield and Cult Commons figures need View
+financial reports, and costs inside them View costs (D30).
+
+Everyone can open Exceptions and Stock reconciliation and export them;
+unsettled consignments are listed only with Manage consignments or View
+costs, Shopify failures only for admins (D108),
+and only an admin changes the unsettled-consignment threshold (D107).
+
+There is no reschedule and no customer messaging; the only data exports
+are the report CSVs. Help: ask the owner or an admin.

@@ -250,7 +250,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
       ) : null}
 
       <TodaySection id="today-stock" title="Stock">
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="flex flex-col gap-3">
             <StatTile
               label="Parts used"
@@ -345,9 +345,18 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           id="today-attention"
           title="Needs attention"
           actions={
-            <span className="text-sm text-dust-500 tabular-nums">
-              {dash.now.exceptions === 1 ? "1 item" : `${dash.now.exceptions} items`}
-            </span>
+            <>
+              <span className="text-sm text-dust-500 tabular-nums">
+                {dash.now.exceptions === 1 ? "1 item" : `${dash.now.exceptions} items`}
+              </span>
+              {/* Phase 9: the full list, grouped, on /reports/exceptions. */}
+              <Link
+                href="/reports/exceptions"
+                className="inline-flex min-h-tap items-center text-sm font-semibold underline"
+              >
+                See all<span className="sr-only"> exceptions</span>
+              </Link>
+            </>
           }
         >
           <Suspense fallback={<SectionSkeleton rows={3} />}>
@@ -355,7 +364,9 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
               name="exceptions"
               load={() => getOperationalExceptions(supabase, EXCEPTION_ROWS)}
             >
-              {(rows) => <ExceptionList rows={rows} total={exceptionTotal} />}
+              {(rows) => (
+                <ExceptionList rows={rows} total={exceptionTotal} moreHref="/reports/exceptions" />
+              )}
             </SectionLoader>
           </Suspense>
         </TodaySection>
@@ -371,7 +382,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                   description="No job was checked in, started, completed, collected or cancelled."
                 />
               ) : (
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   {ACTIVITY_FLOWS.map(({ flow, label, anchor }) => {
                     const list = rows.filter((r) => r.on[flow]);
                     const always =
