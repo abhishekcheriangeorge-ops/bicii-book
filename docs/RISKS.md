@@ -433,27 +433,25 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phase 8 and Phase 9 step 4).
+- Status and owner: open; build agent (the Phase 8 integration).
   Consignment stopped being a placeholder in Phase 6 step 3, Purchasing in
   Phase 7 (on the main line since the integration on
-  `feat/p7-purchasing`) and Reports in Phase 9 step 2 on
-  `feat/p9-reporting`; the heading is kept so links stay valid.
-- Trigger: staff open Labels, or the Exceptions and Stock reconciliation
-  links at the bottom of Reports.
-- Impact: those pages render the `ComingSoon` component
-  (`src/components/shell/coming-soon.tsx`), which names the phase or step
-  they arrive in; none of their features exist on this branch. Labels is
-  built on `feat/p8-labels` in the other worktree and is a placeholder
-  here until that branch is integrated.
-- Evidence and confidence: high; `src/app/(staff)/labels/page.tsx`,
-  `src/app/(staff)/reports/{exceptions,reconciliation}/page.tsx`
-  ("Phase 9 step 4"); `/reports` itself is built
-  (`tests/e2e/reports.spec.ts`).
+  `feat/p7-purchasing`), Reports in Phase 9 step 2 and Exceptions and
+  Stock reconciliation in Phase 9 step 4 on `feat/p9-reporting`; only
+  Labels is left. The heading is kept so links stay valid.
+- Trigger: staff open Labels.
+- Impact: the page renders the `ComingSoon` component
+  (`src/components/shell/coming-soon.tsx`), which names the phase it
+  arrives in; no label feature exists on this branch. Labels is built on
+  `feat/p8-labels` in the other worktree and is a placeholder here until
+  that branch is integrated.
+- Evidence and confidence: high; `src/app/(staff)/labels/page.tsx`;
+  `/reports`, `/reports/exceptions` and `/reports/reconciliation` are
+  built (`tests/e2e/reports.spec.ts`, `tests/e2e/exceptions.spec.ts`).
 - Workaround or containment: none.
-- Next action: Phase 9 step 4 (exceptions and reconciliation screens);
-  the Phase 8 integration (labels).
-- Revisit trigger: each phase or step ends.
-- Last checked: 2026-10-06 (Phase 9 step 2).
+- Next action: the Phase 8 integration (labels).
+- Revisit trigger: the Phase 8 merge.
+- Last checked: 2026-10-06 (Phase 9 step 4).
 
 ## R-019 — ADR-001 names versions the code does not use
 
@@ -530,6 +528,12 @@ URLs, or customer data in this file.
   (D102)") proves a manager's refund counts on the day it is recorded and
   leaves the sale's gross, cost, yield and Cult Commons (restocked line
   included) unchanged.
+- Phase 9 (built on `feat/p9-reporting`, steps 1–4): `/reports` shows
+  "Refunds recorded: $x (n) — not deducted from the figures above" beside
+  gross on the sale basis, and the series export carries a `refunds`
+  column; gross, yield and Cult Commons stay un-netted as D102 says. This
+  is the build default for owner question 12, which is still open, so the
+  risk stays accepted until the owner confirms or changes D102.
 - Workaround or containment: refunds and restocks show on the sale, in
   `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
   ledger; refunds are for admins and managers (D94) and capped at the sale
@@ -1169,7 +1173,7 @@ URLs, or customer data in this file.
   file (a header row or the name).
 - Revisit trigger: an accountant or the owner needs closed periods, or a
   report is disputed after a restatement.
-- Last checked: 2026-10-06 (Phase 9 step 2).
+- Last checked: 2026-10-06 (Phase 9 step 4: the screens and exports built as described).
 
 ## R-056 — Stock value uses each product's last cost, not the cost of the units on hand
 
@@ -1196,7 +1200,7 @@ URLs, or customer data in this file.
   new decision and a ledger change).
 - Revisit trigger: stock value is used for accounts or insurance, or costs
   move a lot between deliveries.
-- Last checked: 2026-10-06 (Phase 9 step 1).
+- Last checked: 2026-10-06 (Phase 9 step 4: the screens and exports built as described).
 
 ## R-057 — CSV exports stop at 50,000 rows and refuse when figures change mid-export
 
@@ -1221,14 +1225,25 @@ URLs, or customer data in this file.
   limit being enough (the bench year has 61,029 lines,
   [DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting), so a
   full year of lines exceeds it at that volume; a month does not).
+- Phase 9 step 4's snapshot exports have their own limits, also refused
+  rather than written short: `exceptions` lists at most 200 rows
+  (`public.operational_exceptions` clamps to 200) and answers 413 when
+  `report_exception_counts` says there are more; `stock` and `units` stop
+  at the reconciliation RPCs' 1,000-row clamp and answer 413 at 1,000 rows
+  (one row short of certain: exactly 1,000 is also refused). The screens
+  show the same caps: "Showing the N most urgent of M" on Exceptions and
+  "Showing the first 1,000. Choose a product to see the rest." on
+  Reconciliation (the bench's 3,008 units reach it on Everything).
 - Workaround or containment: export a shorter range, or the breakdown
-  instead of the lines; retry after a 409. The screens are not limited.
+  instead of the lines; retry after a 409. For the snapshots, fix the most
+  urgent exceptions first, or export Problems only or one product. The
+  period-report screens are not limited.
 - Next action: none until a real export hits the limit; then a streamed
   export from one database snapshot (one RPC returning the CSV, or a
   server-side cursor in a single transaction).
 - Revisit trigger: a 413 or a repeated 409 reported by staff, or the shop
   needs year-long line exports.
-- Last checked: 2026-10-06 (Phase 9 step 2).
+- Last checked: 2026-10-06 (Phase 9 step 4).
 
 ## R-058 — Phase 9's exceptions migration must be re-verified when Phase 10 merges
 
@@ -1266,7 +1281,17 @@ URLs, or customer data in this file.
   the view, `public.operational_exceptions` or `today_dashboard`. On the
   merged branch Phase 10's `src/lib/reports.ts` already labels
   integration_failed "Shopify needs attention"; its `integration_job`
-  link must survive step 4's exceptions screen.
+  link must survive step 4's exceptions screen. Step 4 (2026-10-06) made
+  that merge line-identical: `EXCEPTION_LABELS` has the same
+  `integration_failed: "Shopify needs attention",` line after
+  `currency_mismatch`, `exceptionCopy` the same `integration_failed` case
+  ("Fix it in the Shopify queue") after `currency_mismatch`'s, the step's
+  own cases sit before them, `exceptionHref` adds `consignment_item` and
+  `sale` above `work_order_line` and leaves `integration_job` unlinked
+  for Phase 10's case below it, and `tests/unit/reports.test.ts`' unknown
+  kind became `purchase_overdue` exactly as on Phase 10 (the step's tests
+  are in new files). The exceptions screen's "Shopify needs attention"
+  section shows whatever rows the database returns, with no fake row.
 - Workaround or containment: none needed until the merge.
 - Next action: on the integrated branch run `npm run db:reset`, then
   `tests/db/operational-exceptions.test.ts`, `reporting.test.ts`,
@@ -1275,7 +1300,7 @@ URLs, or customer data in this file.
   `issue` = `integration_failed` while mechanic2 does not.
 - Revisit trigger: the merge; any later change to
   `private.integration_exceptions()` on either branch.
-- Last checked: 2026-10-06 (Phase 9 step 3).
+- Last checked: 2026-10-06 (Phase 9 step 4).
 
 ## R-059 — Today and the exception counts are slow at a busy year's volume
 
@@ -1303,8 +1328,14 @@ URLs, or customer data in this file.
   currency_mismatch branches now read the shop currency once per query,
   and the reconciliation and exception RPCs run with `jit = off` (JIT
   compilation alone cost 100–250 ms per call).
+- Step 4 re-ran the bench on 2026-10-06: Today 9,512 ms, the counts
+  259 ms, the list 402 ms, reconciliation 48–90 ms (unchanged within the
+  machine's noise). Step 4 adds two callers of the counts: the
+  Exceptions page (beside the list, in parallel) and the count Badge on
+  the `/reports` Exceptions link (in its own Suspense boundary, so the
+  page never waits for it).
 - Workaround or containment: none needed at today's volume. The
-  reconciliation RPCs are well inside target (50–88 ms).
+  reconciliation RPCs are well inside target (48–90 ms).
 - Next action: rewrite `public.daily_summary(d, d)` to compute only the
   requested days from the source tables (the same columns, proved equal
   by `period-reports.test.ts`' daily_summary comparison), and consider
@@ -1314,4 +1345,4 @@ URLs, or customer data in this file.
   a hand-maintained total.
 - Revisit trigger: Today takes more than a second in use, or the shop's
   data approaches the bench volume.
-- Last checked: 2026-10-06 (Phase 9 step 3).
+- Last checked: 2026-10-06 (Phase 9 step 4).

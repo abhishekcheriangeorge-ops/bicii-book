@@ -5,10 +5,13 @@ Date: 2026-10-06 (built on `feat/p9-reporting`, branched from
 for the owner to confirm ([PRODUCT owner question 21](../PRODUCT.md#open-assumptions-and-owner-questions));
 D102 is the build default for the unanswered owner question 12.
 D106–D108 (stock reconciliation and the extended operational exceptions)
-accepted the same way, owner question 22. Steps 1 (the database), 2 (the
-`/reports` and `/reports/lines` screens and the CSV export) and 3
-(reconciliation and exceptions in the database, [below](#2026-10-06-stock-reconciliation-and-operational-exceptions-d106d108))
-of 4 are built; the screens for step 3 and the closure (step 4) follow. Decision owner: Abhishek Cherian George (owner) for
+accepted the same way, owner question 22. All four steps are built:
+1 (the database), 2 (the `/reports` and `/reports/lines` screens and the
+CSV export), 3 (reconciliation and exceptions in the database,
+[below](#2026-10-06-stock-reconciliation-and-operational-exceptions-d106d108))
+and 4 (the Exceptions and Reconciliation screens, the threshold sheet,
+the Today, Inventory and Reports links, three more export kinds and the
+phase's closure); no decision beyond D100–D108 was needed. Decision owner: Abhishek Cherian George (owner) for
 business meaning; defaults proposed by the build agent and the
 orchestrator's Phase 9 brief.
 
@@ -203,8 +206,14 @@ columns itself. Both merge orders apply cleanly (R-058).
   by appending them.
 - `today_dashboard.exceptions_now` now differs per caller: mechanic2 does
   not count an unsettled consignment that an admin counts.
-- Until the step 4 screens, Today lists the new kinds with its generic
-  "Needs attention" copy, and a sale or consignment row has no link.
+- Step 4 words and links the new kinds through Phase 5's helpers (labels
+  "Impossible state", "Unsettled consignment" and Phase 10's "Shopify
+  needs attention"; a consignment row opens its item, a sale row its
+  sale), so Today shows them as the Exceptions screen does. The screens
+  are read-only and link to the guarded fix (D106); the threshold is the
+  one write, an admin Server Action.
+- The exceptions and reconciliation exports refuse (413) rather than cut
+  a list at the RPC caps of 200 and 1,000 rows (R-057).
 - At the bench volume the exceptions counts take about 260 ms (target
   150 ms) and Today about 8.8 s, almost all of it Phase 5's
   `daily_summary` for one day (R-059).
@@ -227,6 +236,10 @@ RPC defect to report with the unit's movement history).
   `20261006001100_report_stock_value.sql`,
   `20261006001200_stock_reconciliation.sql` and
   `20261006001300_operational_exceptions.sql`.
+- Screens and app tests (steps 2 and 4): `tests/e2e/reports.spec.ts`,
+  `tests/e2e/exceptions.spec.ts`, `tests/unit/reconciliation.test.ts`
+  (the issue codes read from the step 3 migration),
+  `tests/unit/exception-kinds.test.ts`, `tests/unit/report-exports.test.ts`.
 - Tests: `tests/db/period-reports.test.ts` with the scenario in
   `tests/db/period-report-fixtures.ts`; `tests/db/stock-reconciliation.test.ts`
   and `tests/db/operational-exceptions.test.ts` (D106–D108); Phase 5's and

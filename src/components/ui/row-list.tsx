@@ -35,17 +35,23 @@ export function RowList({
   );
 }
 
-/** One row of a RowList: the whole row is the link (≥ 64px tall). */
+/**
+ * One row of a RowList: the whole row is the link (≥ 64px tall). `after`
+ * renders below the link inside the same row, for a secondary link that
+ * cannot sit inside the first one (links never nest).
+ */
 export function RowLink({
   href,
   label,
   className,
+  after,
   children,
 }: {
   href: string;
   /** The link's accessible name when its text alone would run together. */
   label?: string;
   className?: string;
+  after?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -62,6 +68,7 @@ export function RowLink({
       >
         {children}
       </Link>
+      {after}
     </li>
   );
 }

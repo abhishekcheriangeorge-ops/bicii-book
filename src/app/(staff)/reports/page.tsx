@@ -18,6 +18,7 @@ import {
   SummaryTiles,
 } from "@/components/domain/reports/report-sections";
 import { SectionLoader, SectionSkeleton } from "@/components/domain/today/section-loader";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowLink, RowList } from "@/components/ui/row-list";
 import { ChevronRightIcon } from "@/components/ui/icons";
@@ -44,6 +45,9 @@ import {
   type BreakdownCursor,
   type ReportParams,
 } from "@/lib/period-reports";
+import { getExceptionCounts } from "@/lib/domain/reconciliation";
+import { logger } from "@/lib/logger";
+import { exceptionTotal } from "@/lib/reconciliation";
 import { exportHref } from "@/lib/report-exports";
 import { createClient, type ServerSupabase } from "@/lib/supabase/server";
 
@@ -139,6 +143,9 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
         <RowList>
           <RowLink href="/reports/exceptions">
             <span className="flex-1 font-semibold">Exceptions</span>
+            <Suspense fallback={null}>
+              <ExceptionCountBadge supabase={supabase} />
+            </Suspense>
             <ChevronRightIcon className="size-5 text-dust-500" />
           </RowLink>
           <RowLink href="/reports/reconciliation">
@@ -148,6 +155,26 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
         </RowList>
       </nav>
     </>
+  );
+}
+
+/**
+ * How many exceptions the caller may see (report_exception_counts, D108),
+ * on the Exceptions link; nothing while it loads or if the read fails.
+ */
+async function ExceptionCountBadge({ supabase }: { supabase: ServerSupabase }) {
+  let total: number;
+  try {
+    total = exceptionTotal(await getExceptionCounts(supabase));
+  } catch (err) {
+    logger.error({ err, section: "report-exception-count" }, "report section failed to load");
+    return null;
+  }
+  return (
+    <Badge tone={total > 0 ? "waiting" : "neutral"}>
+      {total}
+      <span className="sr-only">{total === 1 ? " exception" : " exceptions"}</span>
+    </Badge>
   );
 }
 

@@ -88,6 +88,10 @@ export default async function InventoryPage({ searchParams }: PageProps<"/invent
             <ButtonLink href="/inventory/movements" variant="outline">
               Movements
             </ButtonLink>
+            {/* Phase 9 (D106): the ledger against the unit records, read only. */}
+            <ButtonLink href="/reports/reconciliation" variant="outline">
+              Reconcile stock
+            </ButtonLink>
             {newButton}
           </>
         }

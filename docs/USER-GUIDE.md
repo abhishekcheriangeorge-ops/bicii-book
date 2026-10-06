@@ -496,9 +496,9 @@ managers.
   whose status disagrees with the stock ledger; consignor money unpaid more
   than 30 days after the sale (D107) only with Manage consignments or View
   costs (admins and managers by role); failed integrations only admins.
-  Until the Reports exceptions screen is built (Phase 9 step 4) the newer
-  kinds show as "Needs attention" with a short description, and a sale or
-  consignment row does not open anything yet.
+  Each row opens its record (a job, product, item, consignment item or
+  sale). **See all** beside the count, or the "Showing the 20 most urgent
+  of …" line, opens the full list on Reports → Exceptions.
 
 ### Read reports
 
@@ -532,6 +532,55 @@ managers.
   ([R-057](RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export)).
   "Costs, yield and Cult Commons need the View costs permission" and
   "… need the View financial reports permission" mean ask an admin.
+
+### Check what needs attention (Exceptions)
+
+- Steps: **Reports** → **Exceptions** (or **See all** under Needs
+  attention on Today). The count on the Exceptions link is how many you
+  can see.
+- Success looks like: the exceptions grouped by what is wrong, the most
+  serious first: Stock below zero, Items in an impossible state, Lines in
+  another currency, Unsettled consignments (Manage consignments or View
+  costs), then overdue jobs, jobs not collected and stale holds. Each row
+  says what is wrong and how long ago it started; tap it to open the
+  record and fix it there (adjust stock with a reason, restock, settle,
+  void or return). Stock and item rows also link to **Open stock
+  reconciliation** for that product.
+- Nothing here changes anything: an exception clears by itself once its
+  cause is fixed. "No exceptions" with the time checked means all clear.
+- **Export CSV** downloads the list you can see (at most 200; with more,
+  fix the most urgent first and export again).
+- If it fails: an item still listed after the fix, ask an admin (it may
+  be a bug to report, [RUNBOOK](RUNBOOK.md#when-reconciliation-or-exceptions-show-a-problem)).
+
+### Check stock against the ledger
+
+- Steps: **Inventory** → **Reconcile stock** (or Reports → **Stock
+  reconciliation**, or **Check against the ledger** on a product).
+- Success looks like: "Every product reconciles with the ledger" and
+  "Every item reconciles with the ledger" under **Problems only**.
+  **Everything** lists every product by location and every unique item,
+  with what the ledger says (on hand, where, and the sale or job that
+  last moved it).
+- If a row shows a problem: open it (tap the row). With Adjust stock,
+  **Fix with a stock adjustment** opens the product, where Adjust stock
+  records a counted correction with a reason. Stock below zero is allowed
+  when a job part was used before the stock was received: count the shelf
+  and adjust, or receive the delivery. A problem that stays after the
+  right fix is a bug: tell an admin.
+- **Export CSV** downloads products by location or unique items, as
+  shown (Problems only or Everything, one product or all).
+
+### Change when unsettled consignments are flagged (admins)
+
+- Steps: **Reports** → **Exceptions** → **Change** beside "Alert
+  unsettled consignments after N days". Enter 1 to 365 days and **Save**.
+- Success looks like: a toast "Alert unsettled consignments after N
+  days"; a sold consignment item with money still owed shows under
+  Unsettled consignments once its latest sale is more than N shop days
+  old (D107; 30 by default).
+- If it fails: "Choose between 1 and 365 days" — the number stays in the
+  box to correct. Only admins see Change; everyone else sees the number.
 
 ### Invite a colleague
 
@@ -652,8 +701,12 @@ Everyone can open Reports and see Activity and jobs by mechanic, and
 export that list; sales, yield and Cult Commons figures need View
 financial reports, and costs inside them View costs (D30).
 
-Not available yet: **Labels** shows "Phase 8 (QR and labels)", and the
-**Exceptions** and **Stock reconciliation** links on Reports show "Phase 9
-step 4" ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
+Everyone can open Exceptions and Stock reconciliation and export them;
+unsettled consignments are listed only with Manage consignments or View
+costs, Shopify failures (when Phase 10 arrives) only for admins (D108),
+and only an admin changes the unsettled-consignment threshold (D107).
+
+Not available yet: **Labels** shows "Phase 8 (QR and labels)"
+([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 There is no reschedule and no customer messaging; the only data exports
 are the report CSVs. Help: ask the owner or an admin.

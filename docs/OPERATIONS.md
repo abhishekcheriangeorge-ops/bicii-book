@@ -240,11 +240,46 @@ E2E spec; the rules are covered by `tests/db/settlements.test.ts`,
 `tests/db/consignment.test.ts`, `tests/db/sales.test.ts` and
 `tests/db/consignment-job-parts.test.ts`.
 
+**Reports and exports** (D30, D100–D105,
+[ADR-022](decisions/ADR-022-reporting.md)). Reports (More on a phone)
+shows Activity and jobs by mechanic to everyone; sales, yield and Cult
+Commons figures need View financial reports, costs inside them View
+costs (managers hold both by role). Every table has Export CSV: a
+snapshot of the moment, at most 50,000 rows for period exports, 200 for
+exceptions and 1,000 for reconciliation, refused rather than cut short
+([R-057](RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export)).
+(`tests/e2e/reports.spec.ts`, `tests/e2e/exceptions.spec.ts`.)
+
+**Who sees which exception** (D108). Reports → Exceptions (and Today's
+Needs attention) list, for every active staff member, overdue and
+uncollected jobs, stock below zero, stale holds, lines in another
+currency and items in an impossible state; unsettled consignments only
+with Manage consignments or View costs (admins and managers by role, or
+extra access); Shopify failures (Phase 10) only admins. One database
+function decides it for the list, the counts and Today. Verify: mechanic2
+(no extra access) sees no Unsettled consignments section
+(`tests/e2e/exceptions.spec.ts`; the rule: `tests/db/operational-exceptions.test.ts`).
+
+**Unsettled-consignment threshold** (admin; D107). Reports → Exceptions →
+Change beside "Alert unsettled consignments after N days" → 1 to 365 →
+Save. A sold consignment item with money still owed becomes an exception
+when its latest sale is more than N shop days old (30 by default). The
+change is recorded in the schedule history like other shop settings; the
+same value again changes nothing. Verify: the toast and the new sentence
+(`tests/e2e/exceptions.spec.ts`).
+
+**Stock reconciliation** (any staff; D106). Inventory → Reconcile stock.
+Read only: it compares each unique item's status and location, and the
+unit counts per product and location, with the movement ledger. Fix a
+problem through its record (Adjust stock with a reason, restock, settle,
+void, return); what to do per issue is in
+[RUNBOOK](RUNBOOK.md#when-reconciliation-or-exceptions-show-a-problem).
+
 Escalation for any of these: the owner (George). A refusal message comes
 from the database's rules; quote it exactly.
 
 Missing administration capabilities (none exists in the code on
-2026-10-05): no data export screen, no customer messaging, no appointment
+2026-10-06): no customer messaging, no appointment
 reschedule (cancel and rebook;
 [R-017](RISKS.md#r-017--appointments-mvp-has-no-reschedule-and-no-customer-messages)),
 no customer data deletion
@@ -254,8 +289,9 @@ payout details
 ([R-026](RISKS.md#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history)),
 no reverse-receipt for a wrong delivery
 ([R-030](RISKS.md#r-030--a-wrong-delivery-cannot-be-reversed-only-adjusted)),
-and Labels and Reports are placeholders
-([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
+and Labels is a placeholder
+([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)). The only
+data exports are the report CSVs.
 
 ## Technical operation
 

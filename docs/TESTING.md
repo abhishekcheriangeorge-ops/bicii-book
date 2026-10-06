@@ -705,6 +705,31 @@ review, on `feat/staff-roles` in the second worktree, database
   alone never opens a financial export, D60), cost-gated columns dropped
   without View costs, the TOTAL row written from the summary, the file
   name and link.
+- Exceptions and reconciliation (Phase 9 step 4; D106–D108):
+  `reconciliation.test.ts` reads `20261006001200_stock_reconciliation.sql`
+  and proves `UNIT_ISSUE_CODES` and `STOCK_ISSUE_CODES` are exactly the
+  codes of its two `… end::text as issue` expressions, in order, that
+  `unsettled_consignment` is the exceptions view's own issue, that every
+  code has a sentence (and no other key does), that every disposition
+  the view derives has a label, and covers the reconciliation URL
+  (`all=1`, a valid `product` only), the exception sections' order and
+  grouping (unknown kinds under "Other"), the counts' total, the capped
+  note and the threshold sentence. `exception-kinds.test.ts`: a pill
+  label for every kind the view emits (Phase 5's five and Phase 9's
+  three; integration_failed "Shopify needs attention", Phase 10's
+  wording), an unknown kind still renders, the impossible-state and
+  unsettled-consignment sentences (the database's amount, never $0.00
+  when it is NULL), and `exceptionHref` for `consignment_item` and `sale`
+  (and none yet for `integration_job`). `report-exports.test.ts` adds the
+  snapshot kinds (`exceptions`, `stock`, `units` for any staff, no cost
+  column, the brief's exception columns, a formula-like detail quoted)
+  and the snapshot file name. `today-components.test.tsx`: Today's
+  `ExceptionList` renders a Phase 5 row with identical markup with and
+  without `moreHref`, the capped note links to `/reports/exceptions`, and
+  the detailed row shows Critical, the age, no repeated detail and the
+  secondary link after the row's link. `reports.test.ts`' later-kind case
+  now uses `purchase_overdue` (identical to Phase 10's change), since
+  `integration_failed` has a label.
 
 ### Database (SPEC §27.2 and §23)
 
@@ -962,6 +987,38 @@ and the permission sentence, no Gross sales and no basis control; the
 breakdown export answers 403 "Forbidden", `/reports/lines` the 403 screen
 with a 403 status (no `loading.tsx` above it), and `kind=mechanics` a
 200 CSV.
+
+Exceptions and reconciliation spec (`exceptions.spec.ts`, Phase 9 step 4,
+D106–D108; phone and iPad). Setup in `beforeAll`, as the admin through
+`signInApi` and the real RPCs: a consignor (`new_consignor`) and a
+consigned unique item received 60 shop days ago with a tagged name
+(`tagFor`) and 300.00 agreed, sold with `record_retail_sale` 45 days ago
+(D55); `afterAll` settles it with `record_settlement` and restores the
+threshold to 30. **The admin** opens Today, which must have no
+horizontal scroll (a full run found the Activity and Stock grids widened
+by long tagged names from earlier specs, zooming the phone page out so
+taps missed; fixed with `grid-cols-1` and `min-w-0`), follows its "See
+all exceptions" link
+(href `/reports/exceptions`), reads "Alert unsettled consignments after
+30 days", finds the item's C- ID under Unsettled consignments with
+"$300.00 outstanding" (no horizontal scroll), opens
+`/consignment/items/<id>`, changes the threshold to 60 in the sheet
+(toast; the item disappears) and back to 30 (it returns), and the
+exceptions CSV has the header and the item's row; a `finally` restores
+30 through `set_consignment_settlement_alert_days`, so a failure never
+leaves 60 behind. **mechanic2** sees the threshold as text, no Change
+button and no Unsettled consignments section (no all-clear is asserted:
+Phase 5's job kinds are visible to all staff). **The admin** opens Stock
+reconciliation from Reports' More reports and from Inventory's "Reconcile
+stock"; under Problems only Unique items says "Every item reconciles
+with the ledger" (after every earlier spec's RPCs in the serial run, so
+a drift is a bug to fix); Everything (`all=1`) lists U-000001 with the
+ledger on hand and expected values `report_unit_reconciliation` returns
+(phone rows, iPad table); the products-by-location Export CSV has
+`target=_blank`, `rel=noopener` and the header line. **Signed out**, a
+fresh request context's `GET /reports/export?kind=exceptions` is
+redirected to `/login?next=…` by the proxy; **mechanic2**'s is a 200 CSV
+with no `unsettled_consignment` row.
 
 Staff roles spec (`roles.spec.ts`, D90-D94; every record it creates
 carries `tagFor(testInfo)`, seeded records are only read): **a manager**
