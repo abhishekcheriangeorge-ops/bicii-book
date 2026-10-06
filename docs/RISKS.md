@@ -433,19 +433,27 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phases 8–9). Consignment stopped
-  being a placeholder in Phase 6 step 3 and Purchasing in Phase 7 (on the
-  main line since the integration on `feat/p7-purchasing`); the heading is
-  kept so links stay valid.
-- Trigger: staff open Labels or Reports.
+- Status and owner: open; build agent (Phase 8 and Phase 9 step 4).
+  Consignment stopped being a placeholder in Phase 6 step 3, Purchasing in
+  Phase 7 (on the main line since the integration on
+  `feat/p7-purchasing`) and Reports in Phase 9 step 2 on
+  `feat/p9-reporting`; the heading is kept so links stay valid.
+- Trigger: staff open Labels, or the Exceptions and Stock reconciliation
+  links at the bottom of Reports.
 - Impact: those pages render the `ComingSoon` component
-  (`src/components/shell/coming-soon.tsx`), which names the phase they
-  arrive in; none of their features exist on this branch.
-- Evidence and confidence: high; `src/app/(staff)/{labels,reports}/page.tsx`.
+  (`src/components/shell/coming-soon.tsx`), which names the phase or step
+  they arrive in; none of their features exist on this branch. Labels is
+  built on `feat/p8-labels` in the other worktree and is a placeholder
+  here until that branch is integrated.
+- Evidence and confidence: high; `src/app/(staff)/labels/page.tsx`,
+  `src/app/(staff)/reports/{exceptions,reconciliation}/page.tsx`
+  ("Phase 9 step 4"); `/reports` itself is built
+  (`tests/e2e/reports.spec.ts`).
 - Workaround or containment: none.
-- Next action: Phases 8 (other worktree) and 9.
-- Revisit trigger: each phase ends.
-- Last checked: 2026-10-05.
+- Next action: Phase 9 step 4 (exceptions and reconciliation screens);
+  the Phase 8 integration (labels).
+- Revisit trigger: each phase or step ends.
+- Last checked: 2026-10-06 (Phase 9 step 2).
 
 ## R-019 — ADR-001 names versions the code does not use
 
@@ -1150,14 +1158,18 @@ URLs, or customer data in this file.
   (`20261006001000_report_periods.sql`); `tests/db/period-reports.test.ts`
   ("Voids restate the period (D101, D15, D32)") moves job B from Fri 7
   March to 11 March after a reopen and a void.
-- Workaround or containment: an exported CSV (Phase 9 step 2) is a
-  snapshot taken at export time; job and sale histories show every reopen,
-  void and date; back-dated receipts are limited to 30 days (D64).
-- Next action: step 2 labels the export with the time it was taken; the
-  owner confirms D101 or asks for a period close (a new decision).
+- Workaround or containment: an exported CSV (built in Phase 9 step 2) is
+  a snapshot taken at export time; job and sale histories show every
+  reopen, void and date; back-dated receipts are limited to 30 days (D64).
+  The export's file name names the period and basis, not the time it was
+  taken (`bicii-<kind>-<basis>-<from>_<to>.csv`); the download's own time
+  is the only record of when.
+- Next action: the owner confirms D101 or asks for a period close (a new
+  decision); if exports are kept as records, add the export time to the
+  file (a header row or the name).
 - Revisit trigger: an accountant or the owner needs closed periods, or a
   report is disputed after a restatement.
-- Last checked: 2026-10-06 (Phase 9 step 1).
+- Last checked: 2026-10-06 (Phase 9 step 2).
 
 ## R-056 — Stock value uses each product's last cost, not the cost of the units on hand
 
@@ -1178,10 +1190,42 @@ URLs, or customer data in this file.
   positive on-hand ..."). The ledger has no cost layers, so FIFO or average
   cost is not derivable without a new design.
 - Workaround or containment: the stock value is labelled "at last cost"
-  (step 2); unique units use their own cost; purchase receipts keep the
+  on `/reports` ("Stock at cost now", step 2); unique units use their own cost; purchase receipts keep the
   actual cost of each delivery (`purchase_receipt_lines.unit_cost_actual`).
 - Next action: the owner confirms D105 or asks for average or FIFO cost (a
   new decision and a ledger change).
 - Revisit trigger: stock value is used for accounts or insurance, or costs
   move a lot between deliveries.
 - Last checked: 2026-10-06 (Phase 9 step 1).
+
+## R-057 — CSV exports stop at 50,000 rows and refuse when figures change mid-export
+
+- Category: known limitation.
+- Status and owner: accepted; build agent.
+- Trigger: an export of more than 50,000 breakdown groups or lines (a long
+  range on the job dimension, or every line of a busy year); or a job,
+  sale or refund changes the period's lines while an export is paging.
+- Impact: the export answers 413 "Too many rows to export. Choose a
+  shorter range." instead of a file; or, when the groups' or lines' count
+  disagrees with `report_period_summary` (or the group's `line_count`)
+  twice in a row, 409 "Figures changed while exporting. Try again." Each
+  page is its own PostgREST request and transaction, so the check is on
+  integer line counts only: a change that keeps the count (an edited
+  price on a line already counted) is not detected, and the file can mix
+  rows read before and after it.
+- Evidence and confidence: high for the behaviour
+  (`src/lib/domain/period-reports.ts` `getAllBreakdownForExport`,
+  `getAllLineItemsForExport`, `EXPORT_MAX_ROWS`; pages of 500 groups and
+  1,000 lines, PostgREST's max-rows; `tests/db/period-report-exports.stack.test.ts`
+  walks the keyset and checks the counts on the seed); medium for the
+  limit being enough (the bench year has 61,029 lines,
+  [DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting), so a
+  full year of lines exceeds it at that volume; a month does not).
+- Workaround or containment: export a shorter range, or the breakdown
+  instead of the lines; retry after a 409. The screens are not limited.
+- Next action: none until a real export hits the limit; then a streamed
+  export from one database snapshot (one RPC returning the CSV, or a
+  server-side cursor in a single transaction).
+- Revisit trigger: a 413 or a repeated 409 reported by staff, or the shop
+  needs year-long line exports.
+- Last checked: 2026-10-06 (Phase 9 step 2).
