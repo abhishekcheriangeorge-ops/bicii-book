@@ -2407,9 +2407,13 @@ select public.record_shopify_webhook(
 );
 
 -- LAST: syncedTyre's sync row, published and synced as if pushed a day ago
--- (D84). desired_hash NULL: the first real sync pushes it once. Any
--- product-sync job the seed produced (none until Phase 10 step 2's
--- triggers exist) is closed.
+-- (D84). desired_hash NULL: the first real sync pushes it once. The seed
+-- runs in one transaction and the Phase 10 step 2 enqueue triggers are
+-- deferred to commit, so they are fired now, while no product has a sync
+-- row (they queue nothing); then any product-sync job the seed produced is
+-- closed.
+set constraints all immediate;
+set constraints all deferred;
 insert into public.shopify_product_sync (
   product_id, publish_online, sync_status, shopify_origin, shopify_inventory_item_id, shopify_handle,
   last_pushed_at, last_checked_at, last_pushed_quantity, last_pushed_price, desired_hash, api_version,

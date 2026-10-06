@@ -303,8 +303,10 @@ URLs, or customer data in this file.
   store).
 - Trigger: Phase 10 and go-live of the online channel.
 - Impact: Phase 10 step 1 built the inbound database side (webhook
-  recording, the queue, order and refund processing, D80–D89); the
-  outbound sync, the service layer and the screens follow in steps 2–4.
+  recording, the queue, order and refund processing, D80–D89) and step 2
+  the outbound sync's database side (what to push, the queue, the results);
+  the service layer that calls Shopify and the screens follow in steps
+  3–4.
   Everything is tested against payloads written from Shopify's documented
   REST shapes (`tests/fixtures/shopify.ts`), never against a real store,
   so payload and API drift would not be caught: in particular whether a
@@ -992,4 +994,56 @@ URLs, or customer data in this file.
   allocations are not adjusted, prorate them by `current_quantity /
   quantity` in the one place the line total is computed.
 - Revisit trigger: a development store is connected.
+- Last checked: 2026-10-06.
+
+## R-045 — The Buy-online link follows overall availability, not online stock
+
+- Category: deliberate shortcut (D84).
+- Status and owner: accepted for now; build agent (Phase 11 decides how it
+  shows the link), owner.
+- Trigger: a published, synced product whose stock is only at a location
+  other than the online location (e.g. all units in the workshop store).
+- Impact: `reporting.public_items.availability` counts stock and units at
+  every location, and `buy_online_url` follows the row's availability, so
+  the public page can show **Buy online** while Shopify, which only sees
+  the online location (D83), shows the item sold out. The shopper reaches
+  a sold-out Shopify page; no sale is recorded wrongly (an order BICII
+  cannot fulfil waits for an admin, D82).
+- Evidence and confidence: high; the view definition in
+  `20261004004100_shopify_product_sync.sql` and
+  `tests/db/shopify-sync.test.ts` "Buy online link".
+- Workaround or containment: keep online stock at the online location;
+  staff move stock with a transfer.
+- Next action: Phase 11 or the owner decides whether the link should
+  require stock at the online location (a column change only, in the one
+  view).
+- Revisit trigger: Phase 11 builds the public `/q` page, or the shop keeps
+  sellable stock at a second location.
+- Last checked: 2026-10-06.
+
+## R-046 — The product-sync queue is coarse
+
+- Category: deliberate shortcut (D83, D84).
+- Status and owner: accepted for now; build agent (step 3 measures it).
+- Trigger: busy online periods, frequent stock changes, products that were
+  pushed and then unpublished.
+- Impact: `product_sync_state.orders_in_flight` is shop-wide: any orders/paid
+  event of the last 10 minutes that is pending (or failed with its job
+  queued or running) reports an order in flight for every product, so the
+  worker may defer stock pushes of unrelated products by up to a few
+  minutes. A product pushed once keeps being queued on every change after
+  it is unpublished (`private.enqueue_product_sync` queues anything pushed
+  before), so the worker runs syncs that end `unchanged`. Neither records
+  anything wrong; both cost Shopify API calls and delay.
+- Evidence and confidence: medium; the rules are in
+  `20261004004100_shopify_product_sync.sql`; no volume has been measured
+  (no store, R-011).
+- Workaround or containment: one queued job per product and the desired
+  hash keep repeats cheap; the worker skips the push when the hash is
+  unchanged.
+- Next action: in step 3, decide whether the in-flight check should look
+  only at orders naming the product's variant, and whether an unpublished,
+  already-drafted product should stop being queued.
+- Revisit trigger: Shopify API throttling or visible delay in a development
+  store.
 - Last checked: 2026-10-06.

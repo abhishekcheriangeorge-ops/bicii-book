@@ -487,8 +487,9 @@ Settings → Your profile.
 ### Online orders from Shopify
 
 Phase 10 is being built: online orders and refunds are recorded by the
-database, and the Shopify screens (the queue, the event inspector, Publish
-online) come in a later step.
+database, the rules for publishing products online are in place, and the
+Shopify screens (the queue, the event inspector, Publish online, the sync
+status) come in a later step.
 
 - What happens: a paid Shopify order becomes a sale with source **Online**
   in Sales, at Shopify's prices after discounts (a 3 × $40 line with $20
@@ -504,6 +505,16 @@ online) come in a later step.
   **Restock…** if the item came back.
 - A Shopify customer becomes a BICII customer only when an admin links
   them; a matching email is never enough.
+- Publishing online (staff with Manage inventory, when the screens arrive):
+  the product must be public, have a price ($0 counts), not be archived and
+  not belong to a customer. Shopify then shows BICII's price (a consigned
+  item at its asking price, as on its label) and the stock at the online
+  location; every later change is sent once, automatically, and **Sync
+  now** sends it again. Unpublishing hides it in Shopify (a product made in
+  Shopify is set to 0 instead). The public page shows **Buy online** only
+  while the item is available and its Shopify listing is up to date.
+- Admins set the online location, the storefront address and (with a
+  reason) whether test orders count.
 
 ## Roles and limits
 

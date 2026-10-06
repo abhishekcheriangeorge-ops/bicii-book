@@ -18,8 +18,11 @@ D80, D82, D85–D89 is built and tested
 `tests/db/shopify-webhooks.test.ts`): webhook recording, the queue, order
 and refund processing through Phase 6's `private.sell_line`, the
 retry/dismiss/link RPCs and the admin-only `integration_failed` exception.
-The outbound sync (D81's sync side, D83, D84's push and `buy_online_url`)
-is step 2; the service layer step 3; the screens step 4.
+Step 2 builds the outbound sync's database side (D81's sync side, D83,
+D84's publish rules and `buy_online_url`) in
+`20261004004100_shopify_product_sync.sql`, tested by
+`tests/db/shopify-sync.test.ts`; the service layer is step 3; the screens
+step 4.
 
 ## Context
 
@@ -107,6 +110,8 @@ Rationale:
 | Net refunds in reports now | Not decided here: owner question 12 / R-021 belong to Phase 9 (D100–D119), for retail and online together |
 | Store rejected bodies | Rejected: untrusted, possibly large, possibly PII; the hash and size identify a repeat |
 | A purge cron | Rejected for the MVP: deletion of evidence stays a deliberate owner action |
+| Enqueue product syncs from an immediate, statement-level trigger on `inventory_movements` | Rejected in step 2: a sale writes its movements before `refresh_unique_publication` locks the product, so taking the sync row there inverts the lock order against a product edit or `set_publish_online` (deadlock); deferred constraint triggers run at commit, after every business lock |
+| Store the online price on the sync row | Rejected: a second price would drift from the label and public page; `private.shopify_online_price` derives it from `private.selling_price` (D58) every time |
 
 ## Consequences
 
@@ -128,6 +133,12 @@ Rationale:
   ([RISKS R-044](../RISKS.md#r-044--an-edited-order-with-a-discounted-line-records-a-lower-price)).
 - `products.shopify_product_id` is no longer unique (DATA-MODEL §6
   deviation).
+- The Buy-online link follows the item's overall availability, not its
+  stock at the online location
+  ([RISKS R-045](../RISKS.md#r-045--the-buy-online-link-follows-overall-availability-not-online-stock)).
+- The in-flight check is shop-wide and pushed-but-unpublished products are
+  re-checked on every stock change, so the sync queue is coarse
+  ([RISKS R-046](../RISKS.md#r-046--the-product-sync-queue-is-coarse)).
 
 ## Revisit trigger
 

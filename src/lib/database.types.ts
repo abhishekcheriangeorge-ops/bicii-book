@@ -4605,6 +4605,16 @@ export type Database = {
           sale_id: string;
         }[];
       };
+      product_sync_state: {
+        Args: { product_id: string };
+        Returns: Database["public"]["CompositeTypes"]["shopify_product_sync_state"];
+        SetofOptions: {
+          from: "*";
+          to: "shopify_product_sync_state";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       public_appointment_types: {
         Args: Record<PropertyKey, never>;
         Returns: {
@@ -4655,6 +4665,50 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "attachments";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      record_product_sync_result: {
+        Args: {
+          api_version: string;
+          desired_hash: string;
+          error_code: string;
+          error_message: string;
+          job_id: string;
+          outcome: string;
+          product_id: string;
+          pushed_price: unknown;
+          pushed_quantity: number;
+          retriable: boolean;
+          shopify_inventory_item_id: string;
+          shopify_location_id: string;
+          shopify_product_id: string;
+          shopify_variant_id: string;
+        };
+        Returns: {
+          api_version: string | null;
+          created_at: string;
+          desired_hash: string | null;
+          last_checked_at: string | null;
+          last_error: string | null;
+          last_error_code: string | null;
+          last_pushed_at: string | null;
+          last_pushed_price: number | null;
+          last_pushed_quantity: number | null;
+          product_id: string;
+          publish_changed_at: string | null;
+          publish_changed_by: string | null;
+          publish_online: boolean;
+          shopify_handle: string | null;
+          shopify_inventory_item_id: string | null;
+          shopify_origin: string | null;
+          sync_status: Database["public"]["Enums"]["shopify_sync_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "shopify_product_sync";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -4737,6 +4791,7 @@ export type Database = {
           job_id: string;
         }[];
       };
+      request_product_sync: { Args: { product_id: string }; Returns: string };
       restock_unit: {
         Args: { location_id?: string; reason?: string; sale_line_id: string; unit_id: string };
         Returns: Database["public"]["CompositeTypes"]["unit_status_result"];
@@ -5120,6 +5175,16 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      set_publish_online: {
+        Args: { product_id: string; publish: boolean };
+        Returns: Database["public"]["CompositeTypes"]["shopify_publish_result"];
+        SetofOptions: {
+          from: "*";
+          to: "shopify_publish_result";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       set_service_archived: { Args: { archived: boolean; service_id: string }; Returns: string };
       set_shop_hours: {
         Args: { active?: boolean; intervals: Json; weekday: number };
@@ -5137,6 +5202,29 @@ export type Database = {
           to: "shop_hours";
           isOneToOne: false;
           isSetofReturn: true;
+        };
+      };
+      set_shopify_settings: {
+        Args: {
+          accept_test_orders: boolean;
+          online_location_id: string;
+          reason: string;
+          storefront_url: string;
+        };
+        Returns: {
+          accept_test_orders: boolean;
+          id: number;
+          online_location_id: string;
+          shopify_location_id: string | null;
+          storefront_url: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "shopify_settings";
+          isOneToOne: true;
+          isSetofReturn: false;
         };
       };
       set_staff_active: {
@@ -5896,6 +5984,43 @@ export type Database = {
         shopify_customer_id: string | null;
         earlier_online_sales: number | null;
       };
+      shopify_product_sync_state: {
+        product_id: string | null;
+        short_id: string | null;
+        sku: string | null;
+        name: string | null;
+        description: string | null;
+        brand: string | null;
+        tracking_type: Database["public"]["Enums"]["tracking_type"] | null;
+        ownership_type: Database["public"]["Enums"]["ownership_type"] | null;
+        publication_status: Database["public"]["Enums"]["publication_status"] | null;
+        active: boolean | null;
+        archived: boolean | null;
+        sale_price: unknown;
+        currency: string | null;
+        publish_online: boolean | null;
+        effective_online: boolean | null;
+        available_quantity: number | null;
+        unit_price_conflicts: string[] | null;
+        public_photo_paths: string[] | null;
+        handle: string | null;
+        shopify_origin: string | null;
+        shopify_product_id: string | null;
+        shopify_variant_id: string | null;
+        shopify_inventory_item_id: string | null;
+        shopify_location_id: string | null;
+        online_location_name: string | null;
+        last_desired_hash: string | null;
+        last_pushed_quantity: number | null;
+        orders_in_flight: boolean | null;
+        sync_status: Database["public"]["Enums"]["shopify_sync_status"] | null;
+      };
+      shopify_publish_result: {
+        product_id: string | null;
+        publish_online: boolean | null;
+        sync_status: Database["public"]["Enums"]["shopify_sync_status"] | null;
+        job_id: string | null;
+      };
       split_unit_result: {
         product_id: string | null;
         product_short_id: string | null;
@@ -6170,6 +6295,7 @@ export type Database = {
         Row: {
           availability: string | null;
           brand: string | null;
+          buy_online_url: string | null;
           category: string | null;
           condition: string | null;
           currency: string | null;
@@ -6183,6 +6309,43 @@ export type Database = {
           updated_at: string | null;
         };
         Relationships: [];
+      };
+      shopify_sync_status: {
+        Row: {
+          last_error: string | null;
+          last_error_code: string | null;
+          last_pushed_at: string | null;
+          last_pushed_quantity: number | null;
+          name: string | null;
+          open_job_id: string | null;
+          open_job_next_attempt_at: string | null;
+          open_job_status: Database["public"]["Enums"]["integration_job_status"] | null;
+          product_id: string | null;
+          publication_status: Database["public"]["Enums"]["publication_status"] | null;
+          publish_online: boolean | null;
+          shopify_origin: string | null;
+          shopify_product_id: string | null;
+          shopify_variant_id: string | null;
+          short_id: string | null;
+          sync_status: Database["public"]["Enums"]["shopify_sync_status"] | null;
+          tracking_type: Database["public"]["Enums"]["tracking_type"] | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "shopify_product_sync_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "low_stock";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "shopify_product_sync_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: true;
+            referencedRelation: "product_stock";
+            referencedColumns: ["product_id"];
+          },
+        ];
       };
       stock_levels: {
         Row: {

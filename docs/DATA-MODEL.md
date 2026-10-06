@@ -97,10 +97,10 @@ the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
 | §10 Suppliers and purchasing | Planned | Phase 7; built only on the parallel branch `feat/p7-purchasing`, not on this line |
 | §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`); the database QR base and payload (`private.qr_payload`, `003800_labels`, D9); the Admin's QR display and scan bases on the database base (`src/lib/qr.ts`, Phase 8 step 2). Missing: PO- resolution (Phase 7; `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4), the public `/q` route (Phase 11) |
 | §12 Label printing | Partly | Database built (`003800_labels`, Phase 8 step 1: templates, printer profiles, print jobs, label content, RPCs, built-in rows); `src/lib/printing/`, `src/lib/domain/labels.ts`, the print view, the PDF route and the print history (step 2); the record pages' Labels card and the settings screens are steps 3–4; hardware adapters Phase 12 |
-| §13 Shopify integration | Partly | Inbound built (Phase 10 step 1: `003900_shopify_integration`, `004000_shopify_order_processing`: settings, sync rows, events, the queue, the audit trail, webhook recording, order and refund processing, retry, dismiss and the links; D80–D89). Missing: the outbound product sync (step 2), the service layer and webhook route (step 3), the screens (step 4) |
-| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `operational_exceptions` has its `integration_failed` rows since `004000_shopify_order_processing` (admins only, D86). Missing: `stock_reconciliation` (Phase 9), `purchase_order_progress` (Phase 7), `shopify_sync_status` and `public_items.buy_online_url` (Phase 10 step 2) |
+| §13 Shopify integration | Partly | Inbound built (Phase 10 step 1: `003900_shopify_integration`, `004000_shopify_order_processing`: settings, sync rows, events, the queue, the audit trail, webhook recording, order and refund processing, retry, dismiss and the links; D80–D89). Outbound database built (step 2: `004100_shopify_product_sync`: the online price, Publish online, Sync now, the settings RPC, the deferred enqueue triggers, the sync worker's state and result RPCs, `reporting.shopify_sync_status`, `public_items.buy_online_url`). Missing: the service layer, webhook route and sync worker (step 3), the screens (step 4) |
+| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `operational_exceptions` has its `integration_failed` rows since `004000_shopify_order_processing` (admins only, D86). `shopify_sync_status` and `public_items.buy_online_url` since `004100_shopify_product_sync` (Phase 10 step 2). Missing: `stock_reconciliation` (Phase 9), `purchase_order_progress` (Phase 7) |
 | §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48) labels (Phase 8 step 1) and the Shopify integration tables (Phase 10 step 1, D86); rows for purchasing are design |
-| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`); the five label RPCs (Phase 8 step 1) are built; the five Shopify service-role RPCs and four staff RPCs (Phase 10 step 1) are built; `receive_purchase` and the outbound sync RPCs (Phase 10 step 2) are design |
+| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`); the five label RPCs (Phase 8 step 1) are built; the five Shopify service-role RPCs and four staff RPCs (Phase 10 step 1) are built; the two sync-worker RPCs and three staff RPCs of the outbound sync (step 2) are built; `receive_purchase` (Phase 10 step 2) are design |
 | §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`), S from step 2 (`sales`); PO is reserved for Phase 7 |
 | §18 Seed data | Partly | Phase 1–5, Phase 2, Phase 6, Phase 8 and Phase 10 parts are in `supabase/seed.sql`; the suppliers and purchase order of the opening list wait for Phase 7 |
 
@@ -2052,10 +2052,103 @@ yields one sale and one movement per line (`inventory_movements_sale_line_once`)
 (dismissing an order also closes its waiting refunds), `link_shopify_variant`
 (mapping only, D84) and `link_shopify_customer` (never by email; recorded
 sales are never edited, D86), each with an `integration_audit_events` row.
-Outbound (step 2): `publish_online` on a product enqueues a sync job; the
-service layer (`src/lib/integrations/shopify/`, step 3) owns every Shopify
-API call. Nothing in a component or route handler talks to Shopify
+The service layer (`src/lib/integrations/shopify/`, step 3) owns every
+Shopify API call. Nothing in a component or route handler talks to Shopify
 directly.
+
+**Outbound product sync** (step 2, `20261004004100_shopify_product_sync.sql`;
+D81, D83, D84, D86, D87):
+
+- **The online price** is `private.shopify_online_price(product_id)`:
+  `private.selling_price` (D58) for the oldest (created_at, id) available,
+  non-customer-owned, non-archived unit at the online location of a unique
+  product (no unit when there is none), or for no unit for a quantity
+  product (a consigned one's FIFO item asking price, D45, else the
+  default). The publish check, `product_sync_state` and so Shopify read it;
+  nothing reads `default_sale_price` for an online price. NULL is missing;
+  0 is a price (D24 as amended).
+- **Effectively online** (`private.shopify_effective_online`): Publish
+  online on, product active, not archived, not customer-owned, and public,
+  or a unique product whose publication is `sold` (pushed at quantity 0).
+- **Publish online** (`set_publish_online`, manage_inventory) refuses an
+  archived product (`shopify_product_archived`), a customer-owned one
+  (`shopify_not_saleable`), one that is not public
+  (`shopify_requires_public`) or without an online price
+  (`shopify_price_missing`). It upserts the sync row (`publish_online`,
+  `publish_changed_by/at`; never the handle) and queues the product; it
+  returns the queued job's id so the app runs exactly that job (non-admins
+  never read the queue). Unpublishing a product never pushed is
+  `not_synced` and dismisses its queued job; a pushed one is queued to be
+  drafted (BICII-created) or set to quantity 0 (external).
+- **Queueing** (`private.enqueue_product_sync`): nothing unless the sync row
+  is published, was pushed before (`last_pushed_at`), or has a push
+  running; so a product only linked to a variant of a Shopify-made product
+  is never pushed until staff publish it. Otherwise it dismisses the
+  product's `needs_attention` sync jobs ("Superseded by a newer change"),
+  inserts a queued `product_sync` job `on conflict do nothing` on the
+  one-queued-per-product index, marks the row `pending` and returns the
+  queued job's id.
+- **What queues a product** (deferred constraint triggers, run at commit;
+  `private.shopify_enqueue_product_change`): every `inventory_movements`
+  insert; a change of `products` name, description, brand, SKU, default
+  price, publication, active or archived; an `inventory_units` insert or a
+  change of status, location, price, ownership or archived; a
+  `consignment_items.asking_price` change (`update_consignment_terms`); a
+  public product photo inserted, deleted or changing visibility or entity.
+  `shopify_settings.online_location_id` changing queues every published or
+  pushed product at once (an immediate trigger). The triggers are
+  deferred, not the brief's statement-level trigger, because a sale writes
+  its movements before `refresh_unique_publication` locks the product (lock
+  order 7): an immediate trigger taking the sync row there would invert
+  the order against a product edit or `set_publish_online` and deadlock.
+  Inside one transaction the job appears at commit (tests:
+  `set constraints all immediate`).
+- **Sync now** (`request_product_sync`, manage_inventory): needs a published
+  or pushed product (`shopify_not_published`); clears `desired_hash` so the
+  next run pushes in full, and returns the queued job, due now.
+- **The worker's input** (`product_sync_state`, service role): name,
+  description, brand, SKU, the online price, `effective_online`, the
+  available quantity at the online location floored at 0 (the ledger for a
+  quantity product; available, non-customer-owned, non-archived units for a
+  unique one), `unit_price_conflicts` (short IDs of those units whose own
+  selling price differs from the online price: the worker refuses, D81),
+  the public product photo paths oldest first, the handle
+  (`bicii-<short id>` unless the origin is `external`), the Shopify ids,
+  inventory item and location, the last hash and pushed quantity (the
+  compare quantity, D83), and `orders_in_flight` (an orders/paid event
+  received in the last 10 minutes that is pending, or failed with its job
+  queued or running).
+- **The worker's result** (`record_product_sync_result`, service role):
+  `pushed` stores the Shopify product and variant ids on `products` when
+  missing (reason "Created in Shopify by the BICII sync"; different ids, or
+  a BICII-created Shopify product another product carries, →
+  `shopify_ids_conflict`; a variant on another product →
+  `products_shopify_variant_id_key`), origin `bicii` unless already
+  `external`, the inventory item, the handle (BICII-created only), the
+  pushed quantity, price, hash and API version, clears the errors, fills
+  `shopify_settings.shopify_location_id` when missing and finishes the job;
+  `unchanged` records the check and clears the errors. Both settle the
+  status: `pending` when another sync is queued, `synced` when effectively
+  online, `not_synced` when never pushed, else `unpublished`; and dismiss
+  older `needs_attention` syncs ("Resolved by a later sync"). `deferred`
+  (D83) re-queues the job two minutes out without consuming an attempt;
+  `failed` (D87) sets `error` with the human message and re-queues with
+  `private.integration_backoff` when retriable and attempts remain, else
+  `needs_attention`. When another job is already queued for the product, a
+  re-queue dismisses this job and pushes the queued one's next attempt out
+  instead (one queued per product). `job_id` may be NULL; a job closed
+  meanwhile is left closed; an unknown outcome is 22023.
+- **Settings** (`set_shopify_settings`, admin): the only editor of the row
+  and of `storefront_url` (https or NULL, trailing slashes trimmed);
+  creates the row when absent; the online location must exist (P0002) and,
+  when it changes, be active (`location_inactive`); changing
+  `accept_test_orders` needs a reason (D89, `reason_required`); same values
+  change nothing; one `settings_changed` audit row `{from, to}`.
+
+Lock order (extends the consignment migration's header): `shopify_settings`
+FOR UPDATE, when taken, before 7 (products); then 8, the `shopify_product_sync`
+rows (ascending product id when several), then the product's
+`integration_retry_queue` rows.
 
 ## 14. Reporting views (schema `reporting`)
 
@@ -2085,8 +2178,8 @@ never exposed.
 | `low_stock` | Built (Phase 4): active, non-archived quantity products AT OR BELOW their reorder point (`on_hand <= reorder_point`), or below zero in total or at any location regardless of reorder point (D23); `shortfall = coalesce(reorder_point, 0) - on_hand`, largest first. security_invoker. |
 | `consignor_ledger` / `consignor_item_ledger` | Built (Phase 6 step 2, D46, D47): per consignor / per item liability, consignor charges, owed, paid (settlements not reversed), outstanding, counts and dates; derived, never stored; no API grant ([§9](#9-consignment)). |
 | `purchase_order_progress` | Ordered vs received per line. |
-| `shopify_sync_status` | Per published product. |
-| `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at`; price from `private.selling_price`; public photos only. Definer view, security_barrier, SELECT for anon and authenticated. Rules in §11. |
+| `shopify_sync_status` | Built (Phase 10 step 2, D86). One row per product with a sync row: `product_id`, `short_id`, `name`, `tracking_type`, `publication_status`, `publish_online`, `shopify_origin`, `sync_status`, `last_pushed_at`, `last_pushed_quantity`, `last_error_code`, `last_error`, `shopify_product_id`, `shopify_variant_id`, and the open sync job (`open_job_id`, `open_job_status`, `open_job_next_attempt_at`: running, else queued, else needs_attention). security_invoker, SELECT to authenticated: active staff read the rows; the job columns are NULL for non-admins (the queue's RLS); customers and anon read nothing. |
+| `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at, buy_online_url`; price from `private.selling_price`; public photos only. `buy_online_url` (Phase 10 step 2, D84; the single Buy-online rule Phase 11 reads) = `shopify_settings.storefront_url ‖ '/products/' ‖ shopify_product_sync.shopify_handle`, only when the row's own `availability` is `available`, `publish_online`, `sync_status = 'synced'`, the origin is `bicii` with a handle, and the storefront is set; otherwise NULL (an external-origin product never has one). It exposes no Shopify id, sync state, cost or payload. Definer view (it reads the sync row and settings as its owner), security_barrier, SELECT for anon and authenticated. Rules in §11. |
 
 Materialise `daily_summary` only if measured to be slow; refresh then runs
 `after()` completion/sale mutations.
@@ -2176,7 +2269,8 @@ security-definer function. Blank = no access.
 | label_templates, printer_profiles | Built (Phase 8 step 1): S; C and anon none | A (RLS `*_insert_admin`; column grants: templates id, name, kind, width_mm, height_mm, layout, active; profiles id, name, adapter, config, active, sort_order; never `is_default` or `created_by`) | A (column grants: templates name, width_mm, height_mm, layout, active; profiles name, config, active, sort_order); `is_default` only via RPC `set_default_label_template` / `set_default_printer_profile` (A) | never (switch off) |
 | print_jobs | Built (Phase 8 step 1): S; C and anon none | RPC `create_print_job` (S) | RPC `set_print_job_status` (S; status columns only, D59) | never (`print_job_immutable`) |
 | integration_events, integration_retry_queue, integration_audit_events | A (D86: payloads and messages name customers); service role SELECT | RPC only: `record_shopify_webhook` (service role); jobs also `claim_integration_jobs`, the processors, `retry_integration_job`, `dismiss_integration_job`; audit rows by the staff RPCs | RPC only; events immutable except processing columns (`integration_event_immutable`), audit append-only | never (events: only `private.purge_integration_events`, owner by hand, rejected rows ≥ 30 days old, D88) |
-| shopify_settings, shopify_product_sync | S (sync status and the online location, D86); service role SELECT | seed / step 2 RPCs | step 2 RPCs (`set_shopify_settings`, admin with a reason; publishing and sync) | never |
+| shopify_settings, shopify_product_sync | S (sync status and the online location, D86); service role SELECT | seed; RPC `set_shopify_settings` (A; creates the row when absent), `set_publish_online` (P(manage_inventory)), `link_shopify_variant` (A) | RPC `set_shopify_settings` (A; `accept_test_orders` only with a reason, D89), `set_publish_online`, `request_product_sync` (P(manage_inventory)), `record_product_sync_result` (service role), the deferred enqueue triggers (`sync_status` pending) | never |
+| reporting.shopify_sync_status | S (security_invoker; job columns admins only through the queue's RLS) | — | — | — |
 | reporting.* financial views (financial_lines, daily_summary, work_order_activity, operational_exceptions) | no grants (not even SELECT to authenticated); via RPCs: S for counts; P(view_financial_reports) for money rows; cost columns P(view_costs) (FIN-ACCESS D30) | — | — | — |
 | reporting.public_items | everyone: anon and authenticated (definer view, published rows and public columns only; the only anonymous inventory surface; anon has USAGE on `reporting` for it and EXECUTE on `private.selling_price`, which it calls) | — | — | — |
 
@@ -2332,6 +2426,12 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `link_shopify_customer(customer_id, shopify_customer_id, reason)` → `shopify_customer_link_result (customer_id, shopify_customer_id, earlier_online_sales)` | A | Built (Phase 10 step 1, D86). A composite result (a `returns table` would clash with the argument names). Reason required; the customer FOR UPDATE; a different id already linked → `shopify_customer_already_linked`; an id on another customer → 23505 `customers_shopify_customer_id_key`; never by email; recorded sales are never edited (`earlier_online_sales` counts the online sales of that Shopify customer still without a customer); same id → no-op; audit `customer_linked`. |
 | `private.integration_exceptions()` → P5's nine exception columns | no API role | Built (Phase 10 step 1, D86): §14. |
 | `private.purge_integration_events(older_than interval)` → `rejected_deleted, payloads_purged` | owner only, by hand (no API role, no cron) | Built (Phase 10 step 1, D88). 22023 under 30 days; deletes rejected rows last delivered before then; clears the payload of processed/skipped events processed before then (`payload_purged_at`), never failed, pending or open-job events. |
+| `set_publish_online(product_id, publish)` → `shopify_publish_result (product_id, publish_online, sync_status, job_id)` | P(manage_inventory) | Built (Phase 10 step 2, D84, D86). A composite result (a `returns table` cannot reuse the argument name). Locks the product (P0002). Publishing: `shopify_product_archived`, `shopify_not_saleable` (customer-owned), `shopify_requires_public`, `shopify_price_missing` (`private.shopify_online_price` NULL; 0 is a price), in that order. Same value: the current state, `job_id` NULL, no job, no audit. Otherwise upserts the sync row and queues the product; `job_id` is the queued job this call created or reused (the app runs exactly that one); unpublishing a never-pushed product is `not_synced`, its queued job dismissed, `job_id` NULL. One `publish_online_changed {from, to}` audit row. |
+| `request_product_sync(product_id)` → uuid | P(manage_inventory) | Built (Phase 10 step 2, D86). Sync now: `shopify_not_published` unless published or pushed before; clears `desired_hash` (a full push), returns the queued job (created or reused), due now. One `sync_requested` audit row per call. |
+| `set_shopify_settings(online_location_id, storefront_url, accept_test_orders, reason)` → `shopify_settings` | A | Built (Phase 10 step 2, D83, D84, D89). 22004 without a location or `accept_test_orders`; the location must exist (P0002) and be active when it changes (`location_inactive`); storefront https or NULL (`shopify_settings_storefront_url_check`), trailing slashes trimmed; a reason is required when `accept_test_orders` changes (`reason_required`), optional otherwise; creates the row when absent; same values: unchanged, no audit. A new online location queues every published or pushed product. One `settings_changed {from, to}` audit row. |
+| `product_sync_state(product_id)` → `shopify_product_sync_state` (§13's fields) | service role only | Built (Phase 10 step 2, D81, D83, D84). The sync worker's input (§13). P0002 unknown product; `shopify_settings_missing`. Never a cost. |
+| `record_product_sync_result(product_id, job_id, outcome, shopify_product_id, shopify_variant_id, shopify_inventory_item_id, shopify_location_id, pushed_quantity, pushed_price, desired_hash, api_version, error_code, error_message, retriable)` → `shopify_product_sync` | service role only | Built (Phase 10 step 2, D83, D84, D87). Outcomes `pushed`, `unchanged`, `deferred`, `failed` (§13); 22023 for another; 22004 when a push lacks its ids or quantity or a failure its message; `shopify_ids_conflict`; lock order settings → product → sync row → job. |
+| `private.shopify_online_price(product_id)` → money_amount; `private.enqueue_product_sync(product_id)` → uuid | no API role | Built (Phase 10 step 2): §13. |
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) within the D11 ceiling | Permission rows (`granted_by` = caller); replay-safe (no row change, no event). One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
 | `set_staff_active(target_staff_id, active, reason)` | A or P(manage_staff) | Deactivating needs a reason (P0001 `reason_required`; `reason_too_long` over 500). Nobody deactivates themselves; only an admin changes an admin's status; the last active admin stays (55000). One `deactivated`/`reactivated` event with the reason; replaying the current state is a no-op. |
 | `update_staff(target_staff_id, display_name, role, reason)` | A or P(manage_staff); role changes A only | Null leaves a field as it is. Nobody changes their own role; only an admin renames an admin; the last active admin cannot be demoted (55000). `role_changed` / `details_changed` events. Email is not editable (it must stay the login's email). |
@@ -2727,7 +2827,12 @@ webhooks through the real service-role RPCs (`record_shopify_webhook`, then
 - Last, syncedTyre's sync row: published, `synced`, origin `bicii`, handle
   `bicii-p-000027`, inventory item `9200000027`, pushed a day ago at its
   on-hand (11) and selling price (95.00), `desired_hash` NULL so the first
-  real sync pushes it once; any product-sync job the seed produced is
-  closed (none until step 2's triggers exist).
+  real sync pushes it once. The seed is one transaction and step 2's
+  enqueue triggers are deferred to commit, so the seed fires them
+  (`set constraints all immediate`) before inserting the row, while no
+  product has one; they queue nothing, and any product-sync job is closed.
+  syncedTyre's `public_items.buy_online_url` is
+  `https://shop.bicii.example/products/bicii-p-000027`.
 - `tests/db/shopify-webhooks.test.ts` "Seeded integration data is
-  consistent" proves them.
+  consistent" and `tests/db/shopify-sync.test.ts` "Seeded sync data is
+  consistent" prove them.

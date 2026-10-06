@@ -478,6 +478,8 @@ export type PublicItem = {
   availability: "available" | "sold_out" | "sold" | "unavailable";
   photos: { bucket: string; path: string; width: number; height: number; caption: string | null }[];
   updated_at: Date;
+  /** Phase 10 (D84): storefront/products/<handle> while published, synced and available. */
+  buy_online_url: string | null;
 };
 
 /** Every row of reporting.public_items as whoever `tx` is, by short ID. */

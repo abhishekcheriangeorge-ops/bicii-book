@@ -195,6 +195,37 @@ automatically and keep their SQLSTATE in `last_error_detail` (admin only).
 `tests/db/shopify-webhooks.test.ts` proves each step, including concurrent
 deliveries.
 
+## Shopify outbound flow
+
+Built in Phase 10 step 2 as database functions
+(`20261004004100_shopify_product_sync.sql`); the sync worker that calls
+Shopify is step 3, the Publish online toggle and sync status step 4
+([ADR-020](decisions/ADR-020-shopify.md), D81, D83, D84, D86, D87).
+
+1. **Publish.** Staff with manage_inventory call `set_publish_online`
+   (public, priced, not archived, not customer-owned); it queues one
+   `product_sync` job and returns its id, which the app runs right away.
+2. **Queue on change.** Deferred constraint triggers on stock movements,
+   product fields, units, consignment asking prices, public product photos
+   and the online location call `private.enqueue_product_sync` at commit:
+   one queued job per product, the row `pending`. Products only linked to a
+   Shopify-made product are never queued until published. Deferred, so the
+   sync row and queue are always locked last (after the products row a sale
+   locks when it refreshes publication).
+3. **Read the desired state.** The worker claims the job
+   (`claim_integration_jobs`) and reads `product_sync_state`: the one
+   online price (`private.shopify_online_price`, through
+   `private.selling_price`, D58), the quantity at the online location, the
+   unit price conflicts, the photos, the handle, the compare quantity and
+   whether an online order is in flight (D83).
+4. **Record the outcome.** `record_product_sync_result`: `pushed` (ids,
+   handle, what was pushed), `unchanged`, `deferred` (two minutes, no
+   attempt used) or `failed` (backoff or needs attention, D87). The status
+   staff see (`reporting.shopify_sync_status`) and the public Buy-online
+   link (`reporting.public_items.buy_online_url`, D84) follow it.
+
+`tests/db/shopify-sync.test.ts` proves each step.
+
 ## Component map
 
 | Responsibility | Location | Dependency | Failure consequence |

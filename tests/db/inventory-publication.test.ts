@@ -81,6 +81,9 @@ const PUBLIC_COLUMNS = [
   "availability",
   "photos",
   "updated_at",
+  // Phase 10 step 2 (D84): the Buy-online link, null unless published,
+  // synced and available.
+  "buy_online_url",
 ];
 
 const shortIdOf = (tx: pg.Client, table: string, id: string) =>

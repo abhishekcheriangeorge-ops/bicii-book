@@ -318,6 +318,12 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   integration_job_running: "That item is being retried right now. Try again in a moment.",
   integration_event_immutable: "Received webhooks cannot be changed.",
   integration_history_append_only: "Integration history cannot be changed.",
+  // Publishing online (Phase 10 step 2, D84, D86)
+  shopify_requires_public: "Make the product public before publishing it online.",
+  shopify_not_saleable: "Customer-owned items cannot be sold online.",
+  shopify_product_archived: "Unarchive the product before publishing it online.",
+  shopify_price_missing: "Set a sale price before publishing it online.",
+  shopify_not_published: "Publish the product online first.",
 };
 
 /** 23505 unique violations by constraint name. */
