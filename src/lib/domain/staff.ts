@@ -6,6 +6,7 @@ import {
   invitableRoles,
   isPermissionKey,
   permissionChangeBlocker,
+  roleChangeBlocker,
   type PermissionKey,
   type StaffDTO,
   type StaffRole,
@@ -93,7 +94,7 @@ export async function listStaffHistory(
 }
 
 export type InviteInput = { displayName: string; email: string; role: StaffRole };
-export type InviteResult = { staffId: string; email: string };
+export type InviteResult = { staffId: string; email: string; role: StaffRole };
 
 /**
  * Invite a colleague: create their Supabase Auth login (service-role admin
@@ -136,7 +137,7 @@ export async function inviteStaff(
       }),
     );
     if (!row) throw new Error("create_staff returned no row");
-    return { staffId: row.id, email: input.email };
+    return { staffId: row.id, email: input.email, role: row.role };
   } catch (err) {
     await deleteStaffLogin(login.userId).catch((cleanupError) =>
       onCleanupError(cleanupError, login.userId),
@@ -168,6 +169,30 @@ export async function setPermission(
 }
 
 export const REASON_MAX = 500;
+
+/**
+ * Change someone's role (RPC update_staff; PLAN D90, D93): admins only,
+ * never their own, and the last active admin stays (55000). The change
+ * appends role_changed with the optional reason, and drops the exceptions
+ * the new role implies, each with a permission_revoked event (D92). The
+ * cheap refusals become precise messages here; the database decides.
+ */
+export async function setRole(
+  supabase: ServerSupabase,
+  actor: StaffDTO,
+  input: { staffId: string; role: StaffRole; reason?: string },
+): Promise<void> {
+  const reason = input.reason?.trim() || undefined;
+  const blocker = roleChangeBlocker(actor, { staffId: input.staffId, role: input.role });
+  if (blocker) throw new DomainError(blocker);
+  unwrap(
+    await supabase.rpc("update_staff", {
+      target_staff_id: input.staffId,
+      role: input.role,
+      reason,
+    }),
+  );
+}
 
 /**
  * Deactivate (reason required: SPEC §22) or reactivate (reason optional)

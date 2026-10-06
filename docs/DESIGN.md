@@ -271,9 +271,31 @@ upload itself, below).
   your email" exactly as for any other address (D70). The code is never
   echoed back. Under the form: "No access? Ask an admin to invite or
   reactivate you in Settings → Staff." Full-width 56px primary buttons, 48px secondary ones.
-- **Invites** (Settings → Staff → Invite): the success view says "{email}
-  can now sign in." and how (the email, then the emailed code; no password
-  to hand over), with "Invite another" and "Set permissions".
+- **Invites** (Settings → Staff → Invite): an admin picks the Role in a
+  `SegmentedControl` (Admin, Manager, Mechanic; Mechanic chosen first) with
+  each role's one line listed under it, the chosen one in ink; anyone else
+  reads "They join as a Mechanic." (D93). The success view says "{email}
+  can now sign in.", "They join as a <Role>." and how (the email, then the
+  emailed code; no password to hand over), with "Invite another" and "Set
+  extra access" ("Open their page" for an admin).
+- **Staff roles** (Settings → Staff, D90-D93). The list shows each
+  person's `RoleBadge`, then a plain line for what the role includes ("All
+  permissions", "Everything except staff management", "Workshop access
+  only"), then "· Extra:" and a neutral `Badge` per exception. The person
+  page opens with the **Role** card: the role's label and one line; for an
+  admin a `SegmentedControl` "Role" and an outline "Change role…" (off
+  until another role is picked; on their own row every segment is
+  disabled with "You can't change your own role." under it); others read
+  "Only an admin changes roles.". "Change role…" opens a `Sheet` "Change
+  <name> to <Role>?" listing what changes (`roleChangeSummary`: what the
+  new role has, exceptions it includes and so removes, what is lost), an
+  optional "Why?" textarea (500) and "Change role", disarmed for 400 ms
+  (`useArmed`); a refusal shows as an alert in the sheet; success toasts
+  "<name> is now a <Role>". The **Extra access** card states "Included in
+  the <Role> role: …" in words and offers switches only for what the role
+  does not include. History lines come from `describeStaffEvent`
+  (src/lib/staff-events.ts): "Added as <Role>", "Role changed from <From>
+  to <To>", "Extra access: <Permission> granted/removed".
 
 ### Inventory
 

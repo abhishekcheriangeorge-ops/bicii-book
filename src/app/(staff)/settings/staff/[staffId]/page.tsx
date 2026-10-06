@@ -7,22 +7,34 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   PERMISSIONS,
+  PERMISSION_LABELS,
+  ROLE_DESCRIPTIONS,
+  ROLE_LABELS,
   ROLE_PERMISSIONS,
   accessChangeBlocker,
+  exceptionsOf,
+  isExceptionFor,
   permissionChangeBlocker,
-  type PermissionKey,
+  roleChangeBlocker,
 } from "@/lib/auth/permissions";
+import { joinList } from "@/lib/auth/role-change";
 import { requireStaff } from "@/lib/auth/session";
 import { getStaffMember, listStaffHistory } from "@/lib/domain/staff";
 import { createClient } from "@/lib/supabase/server";
 
 import { StaffHistory } from "./staff-history";
-import { AccessControl, PermissionSwitches } from "./staff-controls";
+import { AccessControl, PermissionSwitches, RoleControl } from "./staff-controls";
 
 export const metadata: Metadata = { title: "Staff member" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * One staff member (SPEC §21; PLAN D90-D93): their role (admins change
+ * it), their "Extra access" exceptions on top of the role, their access
+ * and their history. Every control mirrors the RPC that decides (the
+ * blockers in src/lib/auth/permissions.ts) and shows why it is off.
+ */
 export default async function StaffMemberPage({ params }: PageProps<"/settings/staff/[staffId]">) {
   const me = await requireStaff("manage_staff");
   const { staffId } = await params;
@@ -32,12 +44,15 @@ export default async function StaffMemberPage({ params }: PageProps<"/settings/s
   if (!member) notFound();
   const history = await listStaffHistory(supabase, staffId);
 
-  const isAdmin = member.role === "admin";
-  // The same rules the RPCs enforce (PLAN D11): show why a control is off.
+  const roleLabel = ROLE_LABELS[member.role];
+  const included = ROLE_PERMISSIONS[member.role];
+  // Only what the role does not include can be an exception (D92).
+  const offered = PERMISSIONS.filter((p) => isExceptionFor(member.role, p));
   const blockers = Object.fromEntries(
-    PERMISSIONS.map((p) => [p, permissionChangeBlocker(me, member, p)]),
-  ) as Record<PermissionKey, string | null>;
+    offered.map((p) => [p, permissionChangeBlocker(me, member, p)]),
+  );
   const accessBlocker = accessChangeBlocker(me, member);
+  const roleBlocker = roleChangeBlocker(me, member);
 
   return (
     <>
@@ -56,33 +71,62 @@ export default async function StaffMemberPage({ params }: PageProps<"/settings/s
           </>
         }
       />
-      <Card title="Permissions">
-        {isAdmin ? (
-          <p className="text-dust-700">Admins have every permission; there is nothing to grant.</p>
+      <Card title="Role">
+        <p className="mb-3 text-dust-700">
+          <span className="font-medium text-ink">{roleLabel}</span>:{" "}
+          {ROLE_DESCRIPTIONS[member.role]}.
+        </p>
+        {me.role === "admin" && me.active ? (
+          // Admins change roles, never their own (D93): the picker shows,
+          // disabled with the reason on their own row.
+          <RoleControl
+            key={member.role}
+            staffId={member.staffId}
+            name={member.displayName}
+            role={member.role}
+            exceptions={exceptionsOf(member.role, member.grantedPermissions)}
+            blocker={roleBlocker}
+          />
+        ) : (
+          <p className="text-sm text-dust-500">Only an admin changes roles.</p>
+        )}
+      </Card>
+      <Card title="Extra access">
+        {offered.length === 0 ? (
+          <p className="text-dust-700">
+            Admins have every permission; there is nothing extra to grant.
+          </p>
         ) : (
           <>
+            {included.length > 0 ? (
+              <p className="mb-2 text-dust-700">
+                Included in the {roleLabel} role:{" "}
+                {joinList(included.map((p) => PERMISSION_LABELS[p].label))}.
+              </p>
+            ) : (
+              <p className="mb-2 text-dust-700">
+                The {roleLabel} role has workshop access only. Turn on anything extra they need.
+              </p>
+            )}
             {me.role !== "admin" ? (
               <p className="mb-2 text-sm text-dust-500">
-                You can grant or remove the permissions you have yourself. Only an admin changes
-                Manage staff, or your own permissions.
+                You can grant or remove the permissions you have yourself, for mechanics. Only an
+                admin changes Manage staff, your own access, or an admin&apos;s or a manager&apos;s.
               </p>
             ) : null}
-            {/* What the role implies shows on, locked with "Included in the
-                <Role> role." (D91); the rest are exceptions (D92). */}
             <PermissionSwitches
               staffId={member.staffId}
-              granted={[
-                ...new Set([...ROLE_PERMISSIONS[member.role], ...member.grantedPermissions]),
-              ]}
+              permissions={offered}
+              granted={member.grantedPermissions}
               disabled={!member.active}
               blockers={blockers}
             />
           </>
         )}
-        {!member.active && !isAdmin ? (
+        {!member.active && offered.length > 0 ? (
           <p className="mt-3 text-sm text-dust-500">
-            Deactivated staff have no permissions while deactivated; grants are kept for when they
-            return.
+            Deactivated staff have no permissions while deactivated; their role and extra access are
+            kept for when they return.
           </p>
         ) : null}
       </Card>

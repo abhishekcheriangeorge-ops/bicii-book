@@ -12,7 +12,7 @@ Last walkthrough: not walked through by a person. These flows are exercised
 by the E2E specs `tests/e2e/auth.spec.ts`, `workshop.spec.ts`,
 `workshop-board.spec.ts`, `inventory.spec.ts`, `inventory-publish.spec.ts`,
 `scan.spec.ts`, `appointments.spec.ts`, `appointment-settings.spec.ts`,
-`today.spec.ts`, `customers-bikes.spec.ts`, `staff.spec.ts`,
+`today.spec.ts`, `customers-bikes.spec.ts`, `staff.spec.ts`, `roles.spec.ts`,
 `consignment.spec.ts`, `consignment-journey.spec.ts`, `sales.spec.ts` and
 `purchasing.spec.ts`, on an iPhone 13 and an iPad viewport: 138 passed
 locally at the Phase 7 integration on 2026-10-05, and the latest green CI
@@ -486,6 +486,68 @@ managers.
   **New consignor liability** (also View costs) opens Consignment.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
   at 0. Refunds and restocks are not taken off yet (Phase 9).
+
+### Invite a colleague
+
+- Before you start: you need Manage staff (an admin has it; anyone else
+  only as extra access). An admin invites an Admin, a Manager or a
+  Mechanic; anyone else invites Mechanics only (D93).
+- Steps: Settings → **Staff** → **Invite staff**. Enter **Name** and
+  **Email**. An admin picks the **Role** (Admin, Manager or Mechanic;
+  Mechanic is chosen first, and each role's one line is listed under the
+  picker). Anyone else sees "They join as a Mechanic." instead of a picker.
+  Press **Invite**.
+- Success looks like: "<email> can now sign in." and "They join as a
+  Mechanic." (or the role picked). The colleague opens the Admin, enters
+  that email and types the 6-digit code emailed to them; there is no
+  password to hand over. **Set extra access** (or **Open their page** for
+  an admin) opens their page.
+- If it fails: "An account with that email already exists."; "Only an
+  admin can invite a manager." (or an admin) when you are not an admin.
+  Covered by `tests/e2e/staff.spec.ts` and `tests/e2e/roles.spec.ts`.
+
+### Change someone's role
+
+- Before you start: admins only, and never your own role (D93). The shop
+  always keeps at least one active admin.
+- Steps: Settings → **Staff** → open the person. In the **Role** card pick
+  **Admin**, **Manager** or **Mechanic** and press **Change role…**. The
+  sheet "Change <name> to <Role>?" says what changes: what the new role
+  has (for example "Managers have every permission except Manage staff,
+  and can record refunds."), any extra access the new role already
+  includes ("Their extra access to … is included in the new role and will
+  be removed.") and anything they lose. Optionally answer **Why?** (up to
+  500 characters), then press **Change role**.
+- Success looks like: "<name> is now a <Role>"; the badge beside their name
+  shows the new role, the **Extra access** card offers only what the new
+  role does not include, and **History** reads "Role changed from <From>
+  to <To>" with your name and the reason, plus "Extra access: … removed"
+  for each exception the role now includes. Changing the role back later
+  does not restore removed extra access (D92).
+- If it fails: on your own row the picker is off with "You can't change
+  your own role."; "The shop must keep at least one active admin." when the
+  change would leave no active admin; anyone who is not an admin sees the
+  role read-only with "Only an admin changes roles." Covered by
+  `tests/e2e/roles.spec.ts`.
+
+### Give someone extra access
+
+- Before you start: you need Manage staff. An admin changes anyone's extra
+  access but their own; anyone else changes mechanics' only, only
+  permissions they hold themselves, never Manage staff and never their own
+  (D11, D93).
+- Steps: Settings → **Staff** → open the person → **Extra access**. The
+  card first says what the role includes ("Included in the Manager role:
+  …"); those are never offered as switches. Turn a switch on or off: it
+  applies at once.
+- Success looks like: "<Permission> granted" or "<Permission> removed";
+  History reads "Extra access: <Permission> granted" (or removed) with your
+  name; their profile marks it **Extra access**. An admin's card reads
+  "Admins have every permission; there is nothing extra to grant."; a
+  manager's offers only **Manage staff**; a mechanic's all seven.
+- If it fails: a switch you may not change is off with the reason under it
+  (for example "Only an admin changes an admin's or a manager's access.").
+  Covered by `tests/e2e/staff.spec.ts` and `tests/e2e/roles.spec.ts`.
 
 ## Roles and limits
 

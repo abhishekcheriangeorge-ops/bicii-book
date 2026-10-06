@@ -33,7 +33,7 @@ export default async function SettingsPage() {
           {
             href: "/settings/staff",
             label: "Staff",
-            description: "Invite staff, permissions and access",
+            description: "Invite staff, roles, extra access and deactivation",
             icon: UsersIcon,
           },
         ]

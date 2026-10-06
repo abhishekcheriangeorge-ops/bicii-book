@@ -4,29 +4,47 @@ import { useEffect, useOptimistic, useRef, useState, useTransition } from "react
 
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Sheet } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { PERMISSIONS, PERMISSION_LABELS, type PermissionKey } from "@/lib/auth/permissions";
+import { useArmed } from "@/components/ui/use-armed";
+import {
+  PERMISSION_LABELS,
+  ROLES,
+  ROLE_DESCRIPTIONS,
+  ROLE_LABELS,
+  type PermissionKey,
+  type StaffRole,
+} from "@/lib/auth/permissions";
+import { roleChangeSummary, roleWithArticle } from "@/lib/auth/role-change";
 
-import { setStaffActive, setStaffPermission } from "../actions";
+import { setStaffActive, setStaffPermission, setStaffRole } from "../actions";
+
+const REASON_MAX = 500;
 
 /**
- * One switch per permission. Each change applies immediately through the
- * grant/revoke RPCs; the switch moves optimistically and snaps back with an
- * error toast if the server refuses. A permission the viewer may not change
- * (delegation ceiling, PLAN D11) is disabled with the reason underneath.
+ * One switch per "Extra access" exception the person's role does not
+ * already include (PLAN D92): `permissions` lists them; what the role
+ * includes is summarised above, never offered as a switch. Each change
+ * applies immediately through the grant/revoke RPCs; the switch moves
+ * optimistically and snaps back with an error toast if the server refuses.
+ * A permission the viewer may not change (delegation ceiling, D11, D93) is
+ * disabled with the reason underneath.
  */
 export function PermissionSwitches({
   staffId,
+  permissions,
   granted,
   disabled,
   blockers,
 }: {
   staffId: string;
+  permissions: readonly PermissionKey[];
   granted: PermissionKey[];
   disabled: boolean;
-  blockers: Record<PermissionKey, string | null>;
+  blockers: Partial<Record<PermissionKey, string | null>>;
 }) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -43,7 +61,7 @@ export function PermissionSwitches({
       apply({ permission, on });
       const result = await setStaffPermission({ staffId, permission, granted: on });
       if (!result.ok) {
-        toast({ title: "Permission not changed", description: result.error, tone: "error" });
+        toast({ title: "Extra access not changed", description: result.error, tone: "error" });
       } else {
         toast({
           title: `${PERMISSION_LABELS[permission].label} ${on ? "granted" : "removed"}`,
@@ -55,7 +73,7 @@ export function PermissionSwitches({
 
   return (
     <div className="flex flex-col divide-y divide-hairline" aria-busy={pending || undefined}>
-      {PERMISSIONS.map((p) => (
+      {permissions.map((p) => (
         <Switch
           key={p}
           label={PERMISSION_LABELS[p].label}
@@ -71,10 +89,157 @@ export function PermissionSwitches({
           }
           checked={optimistic.includes(p)}
           onCheckedChange={(on) => toggle(p, on)}
-          disabled={disabled || blockers[p] !== null}
+          disabled={disabled || Boolean(blockers[p])}
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * The role picker (PLAN D90, D93) for an admin viewing someone else:
+ * Admin, Manager or Mechanic, then "Change role…" opens a sheet that says
+ * what changes, takes an optional reason and confirms. `blocker` (e.g.
+ * "You can't change your own role.") disables the picker with the reason
+ * underneath. The page keys this by the current role, so a change that
+ * went through starts the picker afresh.
+ */
+export function RoleControl({
+  staffId,
+  name,
+  role,
+  exceptions,
+  blocker,
+}: {
+  staffId: string;
+  name: string;
+  role: StaffRole;
+  exceptions: PermissionKey[];
+  blocker: string | null;
+}) {
+  const [choice, setChoice] = useState<StaffRole>(role);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-3">
+      <SegmentedControl<StaffRole>
+        label="Role"
+        value={choice}
+        onValueChange={setChoice}
+        options={ROLES.map((r) => ({
+          value: r,
+          label: ROLE_LABELS[r],
+          disabled: blocker !== null,
+        }))}
+      />
+      {choice !== role ? (
+        <p className="text-sm text-dust-700">{ROLE_DESCRIPTIONS[choice]}.</p>
+      ) : null}
+      {blocker ? <p className="text-sm font-medium text-dust-700">{blocker}</p> : null}
+      <div>
+        <Button
+          variant="outline"
+          disabled={blocker !== null || choice === role}
+          onClick={() => setOpen(true)}
+        >
+          Change role…
+        </Button>
+      </div>
+      {open ? (
+        <ChangeRoleSheet
+          staffId={staffId}
+          name={name}
+          from={role}
+          to={choice}
+          exceptions={exceptions}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ChangeRoleSheet({
+  staffId,
+  name,
+  from,
+  to,
+  exceptions,
+  onClose,
+}: {
+  staffId: string;
+  name: string;
+  from: StaffRole;
+  to: StaffRole;
+  exceptions: PermissionKey[];
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [pending, startTransition] = useTransition();
+  const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState<string | undefined>();
+  const [formError, setFormError] = useState<string | null>(null);
+  // A double tap on "Change role…" must not reach "Change role" (DESIGN.md "Forms").
+  const armed = useArmed(true);
+  const summary = roleChangeSummary(from, to, exceptions);
+
+  const confirm = () => {
+    if (!armed) return;
+    startTransition(async () => {
+      const result = await setStaffRole({ staffId, role: to, reason: reason || undefined });
+      if (!result.ok) {
+        const fieldError = result.fieldErrors?.reason?.[0];
+        setReasonError(fieldError);
+        setFormError(fieldError ? null : result.error);
+        return;
+      }
+      toast({ title: `${name} is now ${roleWithArticle(to)}`, tone: "success" });
+      onClose();
+    });
+  };
+
+  return (
+    <Sheet
+      open
+      onOpenChange={(next) => (next ? null : onClose())}
+      dismissible={!pending}
+      title={`Change ${name} to ${ROLE_LABELS[to]}?`}
+      description={`From ${ROLE_LABELS[from]} to ${ROLE_LABELS[to]}. Kept in their history.`}
+      footer={
+        <>
+          <Button variant="outline" disabled={pending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={!armed} pending={pending} pendingLabel="Changing…" onClick={confirm}>
+            Change role
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {formError ? (
+          <p role="alert" className="text-sm font-medium text-danger-deep">
+            {formError}
+          </p>
+        ) : null}
+        <ul aria-label="What changes" className="flex list-disc flex-col gap-2 pl-5 text-dust-700">
+          {summary.lines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <Field label="Why?" hint="Optional. Kept in their history." error={reasonError}>
+          <Textarea
+            name="reason"
+            rows={2}
+            maxLength={REASON_MAX}
+            value={reason}
+            onChange={(e) => {
+              setReason(e.target.value);
+              if (reasonError) setReasonError(undefined);
+            }}
+          />
+        </Field>
+      </div>
+    </Sheet>
   );
 }
 

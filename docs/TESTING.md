@@ -392,6 +392,15 @@ worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
   inactive staff has none) and the refund role check (`consignment.test.ts`;
   D94: an active admin or manager; a mechanic holding every permission as
   exceptions cannot).
+- The Staff screens' role wording (`staff-roles-screens.test.ts`, D90-D93):
+  `describeStaffEvent` (src/lib/staff-events.ts) reads "Added as <Role>",
+  "Role changed from <From> to <To>" (the pre-D90 payload value "staff"
+  reads Mechanic) and "Extra access: <Permission> granted/removed";
+  `roleWithArticle` ("an Admin", "a Manager"); and `roleChangeSummary`
+  (src/lib/auth/role-change.ts): which exceptions a new role includes and
+  so removes (D92), which stay, and what is lost (permissions, Record
+  refunds, Admin settings), for mechanic to manager, manager to mechanic,
+  manager to admin and admin to manager.
 - Staff sign-in codes (PLAN D10, D70): `otp.test.ts` (6 digits, 10
   minutes, 60 s cooldown; `normaliseCode` drops spaces and hyphens from a
   pasted code and refuses anything else; `resendSecondsLeft` rounds up and
@@ -866,6 +875,32 @@ disabled inside that one transaction (`sqlTransaction` in
 access", "You can't open this") and none of their data. The HTTP status
 is not asserted there: a page whose shell has started streaming keeps
 200 (Next's `forbidden()` docs).
+
+Staff roles spec (`roles.spec.ts`, D90-D94; every record it creates
+carries `tagFor(testInfo)`, seeded records are only read): **a manager**
+(the seeded Kavya Menon) sees the Money section on Today and the seeded
+job J-000002's Cost and Cult Commons, has no Staff row in Settings and a
+403 on `/settings/staff`, creates and stocks a product (manage_inventory,
+adjust_stock), sells it with the cost preview, records a partial refund
+with a reason ("Refund of $6.00 recorded"), and their profile shows the
+Manager badge, View costs, View financial reports and Record refunds but
+not Manage staff or Admin settings. **A mechanic** (mechanic2) sees no
+Money, no cost on J-000002, no Record refund on the seeded S-000004, a 403
+on `/settings/staff`, and a profile reading Mechanic and "Workshop access
+only". **An admin** finds their own row's role picker disabled with "You
+can't change your own role." and nothing extra to grant; invites a
+colleague (unique per project and run) with the Role picker offering
+Admin, Manager, Mechanic and Mechanic chosen; grants Extra access "Manage
+purchasing" (seven switches for a mechanic); changes the role to Manager
+through the sheet (it names the extra access the role includes) with a
+reason; then sees "<name> is now a Manager", the Manager badge, one switch
+left (Manage staff) under "Included in the Manager role: …", and in
+History one "Role changed from Mechanic to Manager" with the admin and the
+reason and "Extra access: Manage purchasing removed" with the same reason;
+the list row reads "Everything except staff management"; the colleague
+signs in and their profile shows Manager and Record refunds; the admin
+then deactivates them so no extra active staff remain. `staff.spec.ts`'s
+invite test also checks "They join as a Mechanic." and "Set extra access".
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
 tag made of the project name and a timestamp, so the phone and iPad runs and

@@ -10,6 +10,7 @@ import {
   inviteStaff as invite,
   setActive,
   setPermission,
+  setRole,
   type InviteResult,
 } from "@/lib/domain/staff";
 
@@ -49,6 +50,25 @@ export const setStaffPermission = staffAction(
   { name: "staff.set_permission", permission: "manage_staff" },
   async (input, { staff, supabase }) => {
     await setPermission(supabase, staff, input);
+    refresh();
+    return null;
+  },
+);
+
+/** Change someone's role (admins only, D93; src/lib/domain/staff.ts setRole). */
+export const setStaffRole = staffAction(
+  z.object({
+    staffId,
+    role: z.enum(Constants.public.Enums.staff_role),
+    reason: z
+      .string()
+      .trim()
+      .max(REASON_MAX, { error: `Keep the reason under ${REASON_MAX} characters.` })
+      .optional(),
+  }),
+  { name: "staff.set_role", admin: true },
+  async (input, { staff, supabase }) => {
+    await setRole(supabase, staff, input);
     refresh();
     return null;
   },
