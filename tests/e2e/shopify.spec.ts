@@ -17,10 +17,16 @@ import { section, signIn, toast } from "./helpers";
  * Every order id and name, refund id and webhook id carries the project
  * and a timestamp; each project uses its own seeded products
  * (SHOPIFY_PRODUCT.e2ePhone / e2eTablet for the journey, e2eLinkPhone /
- * e2eLinkTablet for the unmapped variant). A CI retry finds the journey
- * product already published and the link product already linked, and
- * still passes.
+ * e2eLinkTablet for the unmapped variant). The database is reset only
+ * once per run (globalSetup), so a CI retry would find the journey product
+ * already published and the link product already linked: rather than take
+ * a weaker path that skips the publish or link assertions (and turn a real
+ * failure into a "flaky" pass), such a retry fails with a message saying
+ * so. Run `npm run test:e2e` again (it resets the database).
  */
+
+const RETRY_AFTER_STATE =
+  "A previous attempt already changed this project's seeded product, so this attempt cannot prove the whole path; run npm run test:e2e again (it resets bicii_dev).";
 
 const PHOTO = "tests/e2e/fixtures/bike-photo.jpg";
 
@@ -132,17 +138,12 @@ test("journey 5: publish online, one sale from repeated deliveries, then a refun
   const online = section(page, "Online (Shopify)");
   await expect(online.getByText("Test Shopify")).toBeVisible();
   const toggle = online.getByRole("switch", { name: "Publish online" });
-  if ((await toggle.getAttribute("aria-checked")) !== "true") {
-    await toggle.click();
-    await expect(toast(page, "Published online")).toBeVisible();
-    await expect(toggle).toHaveAttribute("aria-checked", "true");
-    await expect(online.getByText("Synced", { exact: true })).toBeVisible();
-    await expect(online).toContainText(`Online quantity ${n} at Shop floor`);
-  }
-  // Otherwise a retry found it published: the in-memory Shopify of a new
-  // server process no longer holds it, so a sync may defer (D83); the
-  // order below does not depend on it.
+  expect(await toggle.getAttribute("aria-checked"), RETRY_AFTER_STATE).not.toBe("true");
+  await toggle.click();
+  await expect(toast(page, "Published online")).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(online.getByText("Synced", { exact: true })).toBeVisible();
+  await expect(online).toContainText(`Online quantity ${n} at Shop floor`);
   await online.getByText("Shopify details").click();
   const variantGid = (await online
     .getByLabel("Shopify variant ID", { exact: true })
@@ -248,12 +249,11 @@ test("an order for an unknown variant waits on Today and in the queue until it i
   await openProduct(page, linkProduct(project));
   const m = await onHand(page);
   const online = section(page, "Online (Shopify)");
-  const alreadyLinked =
-    (await online.getByLabel("Shopify variant ID", { exact: true }).count()) > 0;
-  if (alreadyLinked) {
-    await online.getByText("Shopify details").click();
-    await expect(online.getByLabel("Shopify variant ID", { exact: true })).toHaveText(variantGid);
-  }
+  // Every attempt runs the whole path: queue, Today, sheet, link, record.
+  expect(
+    await online.getByLabel("Shopify variant ID", { exact: true }).count(),
+    RETRY_AFTER_STATE,
+  ).toBe(0);
 
   const orderName = `#E2E-LINK-${project}-${stamp}`;
   const title = `E2E musette ${project} ${stamp}`;
@@ -274,12 +274,6 @@ test("an order for an unknown variant waits on Today and in the queue until it i
   });
   const res = await post(request, "orders/paid", `e2e-${project}-${stamp}-link`, order);
   expect(res.status()).toBe(200);
-
-  if (alreadyLinked) {
-    // A retry after the link was made: the order records at once.
-    await expectOnHand(page, m - 1);
-    return;
-  }
 
   // Nothing recorded; the queue says which line and what to do (D82, D84).
   await page.goto("/shopify/queue");
@@ -374,6 +368,17 @@ test("boundaries: only admins open Shopify; other staff see the sync status; the
 }, testInfo) => {
   const project = projectOf(testInfo);
   await signIn(page, "mechanic2");
+  // Not listed for them: neither More nor the iPad rail offers a page they cannot open.
+  await page.goto("/more");
+  await expect(
+    page.getByRole("navigation", { name: "More sections" }).getByRole("link", { name: /^Sales/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "More sections" }).getByRole("link", { name: /^Shopify/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Shopify" }),
+  ).toHaveCount(0);
   const res = await page.goto("/shopify");
   expect(res?.status()).toBe(403);
   expect((await page.goto("/shopify/queue"))?.status()).toBe(403);
@@ -394,10 +399,19 @@ test("boundaries: only admins open Shopify; other staff see the sync status; the
 
 test("the Shopify overview shows the connection, the settings and the lists (admins)", async ({
   page,
-}) => {
+}, testInfo) => {
   await signIn(page, "admin");
   await page.goto("/more");
-  await page.getByRole("link", { name: /Shopify/ }).click();
+  // The More list's link (on an iPad the rail lists Shopify too, for admins).
+  if (testInfo.project.name === "tablet") {
+    await expect(
+      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Shopify" }),
+    ).toBeVisible();
+  }
+  await page
+    .getByRole("navigation", { name: "More sections" })
+    .getByRole("link", { name: /^Shopify/ })
+    .click();
   await expect(page).toHaveURL(/\/shopify$/);
   // The dev/E2E seed records test orders, so the warning shows (D89).
   await expect(page.getByRole("note")).toContainText("Shopify test orders are recorded as sales");
