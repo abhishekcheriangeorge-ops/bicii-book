@@ -28,7 +28,7 @@ import {
   type StaffRole,
 } from "@/lib/auth/permissions";
 
-import { AUTH_USER, STAFF } from "../fixtures/ids";
+import { AUTH_USER, SHOPIFY_WEBHOOK_ID, STAFF } from "../fixtures/ids";
 import {
   actAs,
   connect,
@@ -41,9 +41,21 @@ import {
 import { failsWith } from "./workshop-fixtures";
 
 let conn: pg.Client;
+/** The seeded Shopify jobs: #1001's refund (done) and #1002 (needs attention). */
+const shopifyJob = { refund: "", order: "" };
 
 beforeAll(async () => {
   conn = await connect();
+  const jobOf = (webhookId: string) =>
+    scalar<string>(
+      conn,
+      `select q.id from public.integration_retry_queue q
+         join public.integration_events e on e.id = q.integration_event_id
+        where e.external_event_id = $1`,
+      [webhookId],
+    );
+  shopifyJob.refund = await jobOf(SHOPIFY_WEBHOOK_ID.refund);
+  shopifyJob.order = await jobOf(SHOPIFY_WEBHOOK_ID.unmappedOrder);
 });
 
 const ALL: PermissionKey[] = [
@@ -460,6 +472,30 @@ const GATES: Gate[] = [
     family: "refunds",
     knock: knock(`select public.record_sale_refund(${nil}, ${nil}, 1, 'Scratched')`),
   },
+  // Shopify refunds follow D94 (20261006500000_shopify_refund_roles.sql):
+  // the seeded refund job is done, so allowed callers reach
+  // integration_job_closed; refund events and jobs are readable.
+  {
+    name: "retry_integration_job (refund)",
+    family: "refunds",
+    knock: (tx) => call(tx, `select public.retry_integration_job('${shopifyJob.refund}')`),
+  },
+  {
+    name: "dismiss_integration_job (refund)",
+    family: "refunds",
+    knock: (tx) =>
+      call(tx, `select public.dismiss_integration_job('${shopifyJob.refund}', 'Refunded twice')`),
+  },
+  {
+    name: "Shopify refund events rows",
+    family: "refunds",
+    knock: (tx) => rows(tx, "public.integration_events where topic = 'refunds/create'"),
+  },
+  {
+    name: "Shopify refund jobs rows",
+    family: "refunds",
+    knock: (tx) => rows(tx, `public.integration_retry_queue where id = '${shopifyJob.refund}'`),
+  },
   // admin-only settings
   {
     name: "update_shop_settings",
@@ -471,6 +507,36 @@ const GATES: Gate[] = [
     family: "admin_only",
     knock: knock(
       `select public.schedule_cult_commons_rate(${nil}, 0.3, now() + interval '30 days')`,
+    ),
+  },
+  // Shopify orders and settings stay admin-only (D86, D91): the seeded
+  // unmapped order #1002 needs attention.
+  {
+    name: "retry_integration_job (order)",
+    family: "admin_only",
+    knock: (tx) => call(tx, `select public.retry_integration_job('${shopifyJob.order}')`),
+  },
+  {
+    name: "dismiss_integration_job (order)",
+    family: "admin_only",
+    knock: (tx) =>
+      call(tx, `select public.dismiss_integration_job('${shopifyJob.order}', 'Sold by hand')`),
+  },
+  {
+    name: "Shopify order events rows",
+    family: "admin_only",
+    knock: (tx) => rows(tx, "public.integration_events where topic = 'orders/paid'"),
+  },
+  {
+    name: "Shopify order jobs rows",
+    family: "admin_only",
+    knock: (tx) => rows(tx, `public.integration_retry_queue where id = '${shopifyJob.order}'`),
+  },
+  {
+    name: "set_shopify_settings",
+    family: "admin_only",
+    knock: knock(
+      "select public.set_shopify_settings(null::uuid, null::text, null::boolean, null::text)",
     ),
   },
 ];

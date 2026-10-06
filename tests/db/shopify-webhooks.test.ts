@@ -62,6 +62,7 @@ import {
 } from "./harness";
 import {
   ADMIN,
+  MANAGER,
   MECHANIC1,
   MECHANIC2,
   addPublicPhoto,
@@ -3287,6 +3288,135 @@ describe("Seeded integration data is consistent", () => {
           });
         }
       });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D94 applied to Shopify refunds (20261006500000_shopify_refund_roles.sql)
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!isolatedDatabase())("Refund jobs follow the staff roles (D86, D94)", () => {
+  const visibleIds = async (tx: pg.Client, table: string, ids: string[]) => {
+    const { rows } = await tx.query<{ id: string }>(
+      `select id from public.${table} where id = any($1::uuid[]) order by id`,
+      [ids],
+    );
+    return rows.map((r) => r.id);
+  };
+
+  it("a manager reads, retries and dismisses refund jobs, never an order's; mechanics none, even with manage_inventory; audited", async () => {
+    await inTx(async (tx) => {
+      const orderEv = await deliver(tx, "orders/paid", order([line(nextShopifyId())]));
+      const [orderJob] = await jobsOf(tx, orderEv.event_id);
+      expect(orderJob).toMatchObject({ status: "needs_attention" });
+      // Refunds of orders BICII has not recorded wait in the queue.
+      const first = await deliver(
+        tx,
+        "refunds/create",
+        refundFor(nextShopifyId(), { amount: "5.00" }),
+      );
+      const [firstJob] = await jobsOf(tx, first.event_id);
+      const second = await deliver(
+        tx,
+        "refunds/create",
+        refundFor(nextShopifyId(), { amount: "7.00" }),
+      );
+      const [secondJob] = await jobsOf(tx, second.event_id);
+      expect([firstJob.status, secondJob.status]).toEqual(["queued", "queued"]);
+      const eventIds = [orderEv.event_id, first.event_id, second.event_id];
+      const jobIds = [orderJob.id, firstJob.id, secondJob.id];
+
+      await actAs(tx, MANAGER);
+      expect(await visibleIds(tx, "integration_events", eventIds)).toEqual(
+        [first.event_id, second.event_id].sort(),
+      );
+      expect(await visibleIds(tx, "integration_retry_queue", jobIds)).toEqual(
+        [firstJob.id, secondJob.id].sort(),
+      );
+      for (const sql of [
+        "select public.retry_integration_job($1)",
+        "select public.dismiss_integration_job($1, 'Sold by hand')",
+      ]) {
+        await failsWith(tx, () => tx.query(sql, [orderJob.id]), { code: "42501" });
+      }
+      const { rows } = await tx.query(
+        "select status::text, last_retried_by from public.retry_integration_job($1)",
+        [firstJob.id],
+      );
+      expect(rows[0]).toEqual({ status: "queued", last_retried_by: STAFF.manager });
+      await tx.query("select public.dismiss_integration_job($1, 'Refunded twice in Shopify')", [
+        secondJob.id,
+      ]);
+      expect(await jobRow(tx, secondJob.id)).toMatchObject({
+        status: "dismissed",
+        resolution_reason: "Refunded twice in Shopify",
+        resolved_by: STAFF.manager,
+      });
+      expect(await eventRow(tx, second.event_id)).toMatchObject({
+        status: "skipped",
+        outcome: "dismissed",
+      });
+
+      // D94 is a role check: no exception reaches refund jobs.
+      await ownerMode(tx);
+      const inventory = await staffWith(tx, ["manage_inventory"]);
+      for (const claims of [MECHANIC1, MECHANIC2, inventory.claims]) {
+        await actAs(tx, claims);
+        expect(await visibleIds(tx, "integration_events", eventIds)).toEqual([]);
+        expect(await visibleIds(tx, "integration_retry_queue", jobIds)).toEqual([]);
+        for (const sql of [
+          "select public.retry_integration_job($1)",
+          "select public.dismiss_integration_job($1, 'No')",
+        ]) {
+          await failsWith(tx, () => tx.query(sql, [firstJob.id]), { code: "42501" });
+        }
+      }
+
+      const audit = await readAsOwner(tx, async () => {
+        const { rows: a } = await tx.query(
+          `select event_type::text, job_id, actor_staff_id from public.integration_audit_events
+            where job_id = any ($1::uuid[]) and event_type in ('job_retried', 'job_dismissed')
+            order by event_type desc`,
+          [[firstJob.id, secondJob.id]],
+        );
+        return a;
+      });
+      expect(audit).toEqual([
+        { event_type: "job_retried", job_id: firstJob.id, actor_staff_id: STAFF.manager },
+        { event_type: "job_dismissed", job_id: secondJob.id, actor_staff_id: STAFF.manager },
+      ]);
+    });
+  });
+
+  it("a refund job that needs attention is an integration_failed row for managers too; an order's stays the admin's", async () => {
+    await inTx(async (tx) => {
+      const orderEv = await deliver(tx, "orders/paid", order([line(nextShopifyId())]));
+      const [orderJob] = await jobsOf(tx, orderEv.event_id);
+      const refund = await deliver(
+        tx,
+        "refunds/create",
+        refundFor(nextShopifyId(), { amount: "5.00" }),
+      );
+      const [refundJob] = await jobsOf(tx, refund.event_id);
+      await readAsOwner(tx, () =>
+        tx.query(
+          "update public.integration_retry_queue set status = 'needs_attention' where id = $1",
+          [refundJob.id],
+        ),
+      );
+      const failedAs = async (claims: Claims) => {
+        await actAs(tx, claims);
+        const { rows } = await tx.query<{ entity_id: string }>(
+          `select entity_id from public.operational_exceptions(200)
+            where kind = 'integration_failed' and entity_id = any($1::uuid[]) order by entity_id`,
+          [[orderJob.id, refundJob.id]],
+        );
+        return rows.map((r) => r.entity_id);
+      };
+      expect(await failedAs(ADMIN)).toEqual([orderJob.id, refundJob.id].sort());
+      expect(await failedAs(MANAGER)).toEqual([refundJob.id]);
+      expect(await failedAs(MECHANIC2)).toEqual([]);
     });
   });
 });

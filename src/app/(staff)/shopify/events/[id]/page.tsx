@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusPill } from "@/components/ui/status-pill";
-import { requireAdmin } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/session";
 import { formatDateTime } from "@/lib/dates";
 import { getEvent } from "@/lib/domain/shopify";
 import {
@@ -56,9 +56,11 @@ function SaleLink({ sale }: { sale: { id: string; saleNumber: string } }) {
  * away, unmapped lines with Link buttons, and the job with Retry and
  * Dismiss as on the queue. Customer (orders): the Shopify customer and
  * the linked BICII customer, or Link. Headers, then the payload.
+ * Managers open refund events only (RLS; any other id is a 404) and act
+ * on their job (D94); linking a customer stays the admin's.
  */
 export default async function ShopifyEventPage({ params }: PageProps<"/shopify/events/[id]">) {
-  await requireAdmin();
+  const staff = await requireRole(["admin", "manager"]);
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const event = await getEvent(await createClient(), id);
@@ -214,7 +216,7 @@ export default async function ShopifyEventPage({ params }: PageProps<"/shopify/e
                 )}
               </Row>
             </dl>
-            {event.customer.linked ? null : (
+            {event.customer.linked || staff.role !== "admin" ? null : (
               <>
                 <p className="text-sm text-dust-700">
                   Online orders are recorded without a customer until an admin links the Shopify

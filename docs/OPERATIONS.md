@@ -102,7 +102,10 @@ event inspector, the queue (retry, dismiss with a reason), variant and
 customer links (with a reason) and the settings (online location,
 storefront URL, `accept_test_orders` with a reason), because payloads hold
 customer data; staff with `manage_inventory` publish products online, run
-Sync now and retry product-sync jobs; every staff member sees each
+Sync now and retry product-sync jobs; admins and managers retry or
+dismiss a Shopify refund's job that needs attention (D94: a refund is
+money going out; a manager reads refund events and their jobs only, from
+Today's row and `/shopify/queue`); every staff member sees each
 product's sync status. Screens: **More → Shopify** (admins: settings,
 queue, products, events) and the product page's **Online (Shopify)** card
 ([USER-GUIDE](USER-GUIDE.md#publish-a-product-online)). Connecting
@@ -375,7 +378,7 @@ outage would be noticed by a user. There is no incident record location
 | Staff report that no sign-in code arrives | That person cannot sign in | Auth logs for `over_email_send_rate_limit`; the Admin's warnings `auth.request_code`; the SMTP provider's sending log (hosted) | Send a code to the owner's address (hosted: Users → Send magic link; locally: the mail catcher) | Engineering, then the owner (SMTP provider) |
 | "You don't have permission to do that." or a 403 page | One task blocked | The person's permissions in Settings → Staff | Compare with [USER-GUIDE "Roles and limits"](USER-GUIDE.md#roles-and-limits) | Admin |
 | CI `check:types` fails | PR cannot merge cleanly | Job log | `npm run db:types` locally | Engineering |
-| An online order is missing from Sales, or a product's Shopify stock is stale | Online sale not recorded or Shopify oversells | Admins: Today's exceptions ("Shopify needs attention") and `/shopify/queue`; logs `shopify webhook` / `shopify product sync` lines by correlation id | Is the cron running (`/api/cron/integrations` answers 401 without the bearer, 503 without `CRON_SECRET`)? Are webhooks answering 200? | Admin, then engineering ([RUNBOOK](RUNBOOK.md#shopify-resolving-problems)) |
+| An online order is missing from Sales, or a product's Shopify stock is stale | Online sale not recorded or Shopify oversells | Admins (managers for refunds, D94): Today's exceptions ("Shopify needs attention") and `/shopify/queue`; logs `shopify webhook` / `shopify product sync` lines by correlation id | Is the cron running (`/api/cron/integrations` answers 401 without the bearer, 503 without `CRON_SECRET`)? Are webhooks answering 200? | Admin, then engineering ([RUNBOOK](RUNBOOK.md#shopify-resolving-problems)) |
 
 ## Recovery
 

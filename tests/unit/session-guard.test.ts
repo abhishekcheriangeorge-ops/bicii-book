@@ -25,7 +25,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn(), cookies: vi.fn() }));
 const createClient = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({ createClient: () => createClient() }));
 
-import { authorizeStaff, requireAdmin, requireStaff } from "@/lib/auth/session";
+import { authorizeStaff, requireAdmin, requireRole, requireStaff } from "@/lib/auth/session";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
 const USER = "c0000000-0000-4000-8000-000000000001";
@@ -148,6 +148,19 @@ describe("role requirements (D94 refunds, admin-only settings)", () => {
         roles: ["admin", "manager"],
       }),
     ).rejects.toBeInstanceOf(Forbidden);
+  });
+
+  it("requireRole (pages, e.g. Shopify refund jobs, D94): admin and manager pass; a mechanic with every exception and an inactive manager get 403", async () => {
+    createClient.mockResolvedValue(client(profile({ role: "manager" })));
+    await expect(requireRole(["admin", "manager"])).resolves.toMatchObject({ role: "manager" });
+    createClient.mockResolvedValue(client(profile({ role: "admin" })));
+    await expect(requireRole(["admin", "manager"])).resolves.toMatchObject({ role: "admin" });
+    createClient.mockResolvedValue(
+      client(profile({ permissions: ["manage_inventory", "view_financial_reports"] })),
+    );
+    await expect(requireRole(["admin", "manager"])).rejects.toBeInstanceOf(Forbidden);
+    createClient.mockResolvedValue(client(profile({ role: "manager", active: false })));
+    await expect(requireRole(["admin", "manager"])).rejects.toBeInstanceOf(Forbidden);
   });
 
   it("admin: still refuses a manager (admin-only settings stay admin-only)", async () => {

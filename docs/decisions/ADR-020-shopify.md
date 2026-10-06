@@ -23,6 +23,26 @@ Sync now and product-sync retries are a manager's too; a mechanic needs
 gained `note_sign_in_attempt` (email sign-in, D72) beside the Shopify
 RPCs. No Shopify migration, RPC or test changed in the merge.
 
+Status update 2026-10-06 (the merge of `feat/p8-labels` into
+`feat/p10-shopify`): D94 (refunds are recorded by an admin or a manager,
+[ADR-021](ADR-021-staff-roles.md)) now reaches Shopify refunds. An online
+refund is still recorded by the service role when its webhook arrives
+(`process_shopify_refund`, unchanged); what a person does with a refund
+that needs attention, retry or dismiss its job, is an admin's or a
+manager's, and a manager reads exactly the `refunds/create` events and
+their jobs (RLS) and sees their `integration_failed` rows on Today. Orders,
+product-sync dismissals, the links, the audit trail, the event and product
+lists, the overview and the settings stay admin-only (D86). Built by the
+reconciling migration `20261006500000_shopify_refund_roles.sql` (it sorts
+after every roles migration and replaces `retry_integration_job`,
+`dismiss_integration_job` and `private.integration_exceptions` with the
+same signatures), `/shopify/queue` and `/shopify/events/[id]` through
+`requireRole(["admin", "manager"])`, and the dismiss action's
+`roles: ["admin", "manager"]`; proved by `tests/db/staff-roles.test.ts`
+(refund and order gates for every role subject),
+`tests/db/shopify-webhooks.test.ts` ("Refund jobs follow the staff roles")
+and `tests/e2e/shopify.spec.ts` (a manager dismisses a refund from Today).
+
 Status update 2026-10-06 (Phase 10 step 1): the inbound database side of
 D80, D82, D85–D89 is built and tested
 (`supabase/migrations/20261004003900_shopify_integration.sql`,

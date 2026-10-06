@@ -264,7 +264,10 @@ URLs, or customer data in this file.
   non-staff out (D70). No function, view, policy, grant, trigger or type
   is defined both by a labels or Shopify migration and by a purchasing,
   sign-in or roles migration ([DATA-MODEL](DATA-MODEL.md#authority-applied-state-and-implementation-status)
-  "Authority"), so no reconciling migration was needed for the merge.
+  "Authority"), so no reconciling migration was needed for the merge;
+  one follow-up migration, `20261006500000_shopify_refund_roles.sql`
+  (sorting after every other), applies D94 to Shopify refund jobs on
+  purpose (admin or manager), with database, unit and E2E tests.
   Reporting (Phase 9) is on its own branch.
 - Evidence and confidence: high; `git merge-base --all` before the merge
   (a1aebf6 and 3f09d22), the merge commit's parents; the gates on the

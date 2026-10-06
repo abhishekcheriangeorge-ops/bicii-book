@@ -140,6 +140,15 @@ export async function requireAdmin(): Promise<StaffDTO> {
 }
 
 /**
+ * requireStaff() plus one of these roles, for pages decided by role, e.g.
+ * Shopify refund jobs for admins and managers (D94). No exception
+ * satisfies it.
+ */
+export async function requireRole(roles: readonly StaffRole[]): Promise<StaffDTO> {
+  return guard(await getSession(), await getStaff(), { roles });
+}
+
+/**
  * The same guard for Server Actions, on the client the action will use:
  * one session check (getClaims) and one my_staff_profile call per action,
  * where requireStaff() would repeat both because cache() does not memoise

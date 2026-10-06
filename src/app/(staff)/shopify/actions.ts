@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 
 import { ActionError, staffAction } from "@/lib/actions";
-import { hasPermission } from "@/lib/auth/permissions";
+import { canRecordRefund, hasPermission } from "@/lib/auth/permissions";
 import { staffSearch } from "@/lib/domain/search";
 import {
   describeRun,
@@ -32,9 +32,11 @@ import {
  * RPCs check again:
  *
  *   retryJobAction              admins; a manage_inventory holder may retry
- *                               a product-sync job (retry_integration_job
+ *                               a product-sync job, an admin or a manager
+ *                               a refund's job (D94; retry_integration_job
  *                               refuses anyone else with 42501)
- *   dismissJobAction            admins, reason required
+ *   dismissJobAction            admins; managers a refund's job (D94; the
+ *                               RPC refuses them any other); reason required
  *   linkVariantAction           admins, reason required; then retries the job
  *   linkCustomerAction          admins, reason required (never by email)
  *   saveShopifySettingsAction   admins; a reason when test orders change
@@ -52,8 +54,9 @@ export const retryJobAction = staffAction(
   { name: "shopify.retry_job" },
   async ({ jobId }, { supabase, staff, correlationId, log }): Promise<RunReport> => {
     // Admins have every permission; manage_inventory alone may only retry
-    // product syncs, which the RPC enforces.
-    if (!hasPermission(staff, "manage_inventory")) {
+    // product syncs, and an admin or a manager refunds (D94), which the RPC
+    // enforces.
+    if (!hasPermission(staff, "manage_inventory") && !canRecordRefund(staff)) {
       throw new ActionError("Only an admin can retry this.");
     }
     // Committed here; the run only speeds it up (D87).
@@ -72,7 +75,7 @@ export const retryJobAction = staffAction(
 /** Close a job with a reason; an order's waiting refunds are closed too. */
 export const dismissJobAction = staffAction(
   dismissJobSchema,
-  { name: "shopify.dismiss_job", admin: true },
+  { name: "shopify.dismiss_job", roles: ["admin", "manager"] },
   async ({ jobId, reason }, { supabase }) => {
     await dismissJob(supabase, jobId, reason);
     refresh();

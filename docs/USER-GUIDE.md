@@ -582,6 +582,8 @@ managers.
   an online order or product sync BICII could not finish, with the reason;
   the row opens it in the Shopify queue
   ([Fix a Shopify order](#fix-a-shopify-order-that-needs-attention-admins)).
+  Managers see the rows of Shopify refunds only
+  ([Fix a Shopify refund](#fix-a-shopify-refund-that-needs-attention-admins-and-managers)).
 
 ### Online orders from Shopify
 
@@ -651,6 +653,20 @@ managers.
 - Items under **Waiting** are retried automatically (1 minute, doubling, up
   to 8 tries); **Recent** shows what was done or dismissed in the last 7
   days. **Open event** shows what Shopify sent.
+
+### Fix a Shopify refund that needs attention (admins and managers)
+
+- Who: admins and managers (a refund is money going out, D94); a
+  mechanic cannot, even with extra access.
+- Where: Today → **Needs attention** → the **Shopify needs attention** row
+  named "Refund … of #…", which opens the Shopify queue on it. A manager's
+  queue lists refunds only; Shopify's other pages stay the admin's (a
+  manager gets "not allowed" there).
+- Nothing was recorded for the refund. Fix the cause and tap **Retry**, or
+  record the refund by hand on the sale (**Record refund**) and
+  **Dismiss…** it with a reason, for example a refund in another currency
+  ("Refund … is in USD but S-000005 was recorded in SGD"). A dismissal is
+  final, as for orders. **Open event** shows what Shopify sent.
 
 ### Link a Shopify customer (admins)
 
@@ -749,7 +765,7 @@ shown as a badge on Settings → Your profile and on Settings → Staff:
 | Role | What it lets you do |
 |---|---|
 | Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93), Settings → **Labels and printers** (the QR address, printers, label templates) and **More → Shopify** (settings, the queue, events, linking variants and customers, D86) |
-| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings, Labels and printers, or Shopify |
+| Manager | Every permission below except Manage staff, **Record refund** on a sale, and Shopify refunds that need attention ([Fix a Shopify refund](#fix-a-shopify-refund-that-needs-attention-admins-and-managers)) (D91, D94). Not the admin-only settings, Labels and printers, or the rest of Shopify |
 | Mechanic | The workshop: what everyone can do (next paragraph). Anything more only as extra access |
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,

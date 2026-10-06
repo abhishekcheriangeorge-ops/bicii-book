@@ -30,15 +30,17 @@ import type { ListPage } from "./list";
  * Who reads what (D86): every active staff member reads a product's sync
  * status (shopify_product_sync, reporting.shopify_sync_status, settings);
  * the queue, events, payloads and audit rows are admins' only (they name
- * customers), so for anyone else those reads return nothing. The app runs
+ * customers), except that a manager reads refund events and their jobs
+ * (D94), so for anyone else those reads return nothing. The app runs
  * an integration job only by the id an RPC returned (src/lib/integrations/
  * shopify/queue.ts runJobById), never one it read from the queue.
  *
  * Writes:
  *   set_publish_online(product, publish)     manage_inventory
  *   request_product_sync(product)            manage_inventory
- *   retry_integration_job(job)               admin; manage_inventory for product syncs
- *   dismiss_integration_job(job, reason)     admin
+ *   retry_integration_job(job)               admin; manage_inventory for product syncs;
+ *                                            admin or manager for refunds (D94)
+ *   dismiss_integration_job(job, reason)     admin; admin or manager for refunds (D94)
  *   link_shopify_variant(product, gids, why) admin
  *   link_shopify_customer(customer, gid, why) admin
  *   set_shopify_settings(location, url, test, why) admin
@@ -236,7 +238,7 @@ export async function listSyncedProducts(
 }
 
 // ---------------------------------------------------------------------------
-// The queue (/shopify/queue; admin)
+// The queue (/shopify/queue; admin; a manager sees refund jobs only, D94)
 // ---------------------------------------------------------------------------
 
 export type QueueRow = {
@@ -313,7 +315,7 @@ export async function listQueue(
   return { items: rows.slice(0, limit).map(toQueueRow), more: rows.length > limit };
 }
 
-/** One job (admin), for the Sheet a deep link (?job=) opens; null when unknown. */
+/** One job (admin; a manager's refund job, D94), for the Sheet a deep link (?job=) opens; null when unknown. */
 export async function getQueueJob(
   supabase: ServerSupabase,
   jobId: string,
@@ -662,7 +664,7 @@ export async function productSyncStatus(
   return { syncStatus: r?.sync_status ?? "not_synced", lastError: r?.last_error ?? null };
 }
 
-/** Queue a job again now (admin; manage_inventory for a product sync). */
+/** Queue a job again now (admin; manage_inventory for a product sync; admin or manager for a refund, D94). */
 export async function retryJob(
   supabase: ServerSupabase,
   jobId: string,
@@ -677,7 +679,7 @@ export async function retryJob(
   };
 }
 
-/** Close a job with a reason (admin); an order also closes its waiting refunds. */
+/** Close a job with a reason (admin; admin or manager for a refund, D94); an order also closes its waiting refunds. */
 export async function dismissJob(
   supabase: ServerSupabase,
   jobId: string,

@@ -397,6 +397,57 @@ test("boundaries: only admins open Shopify; other staff see the sync status; the
   expect(cron.status()).toBe(401);
 });
 
+test("refunds follow the roles: a manager dismisses a refund that needs attention; orders and the rest of Shopify stay the admin's (D94)", async ({
+  page,
+  request,
+}, testInfo) => {
+  const project = projectOf(testInfo);
+  const stamp = Date.now();
+  const refundId = numericId(project, stamp, "7");
+  const subject = `Refund ${refundId} of #1001`;
+  // A refund of the seeded online order #1001 (S-000005) in the wrong
+  // currency: a business failure, so it needs a person at once (D87).
+  const res = await post(
+    request,
+    "refunds/create",
+    `e2e-${project}-${stamp}-refund-usd`,
+    refundPayload({ refundId, orderId: 7000001001, amount: "1.00", currency: "USD" }),
+  );
+  expect(res.status()).toBe(200);
+
+  await signIn(page, "manager");
+  // Today lists it for a manager and opens the queue on it.
+  const attention = section(page, "Needs attention").getByRole("list", { name: "Needs attention" });
+  const exception = attention.getByRole("link").filter({ hasText: subject });
+  await expect
+    .poll(
+      async () => {
+        await page.goto("/");
+        return exception.count();
+      },
+      { timeout: 30_000, intervals: [500, 1000, 2000] },
+    )
+    .toBe(1);
+  await expect(exception).toContainText("Shopify needs attention");
+  await exception.click();
+  await expect(page).toHaveURL(/\/shopify\/queue\?job=[0-9a-f-]{36}$/);
+  const sheet = page.getByRole("dialog", { name: subject });
+  await expect(sheet).toContainText("is in USD but S-000005 was recorded in SGD");
+  await expect(sheet.getByRole("button", { name: "Retry" })).toBeVisible();
+  await sheet.getByRole("button", { name: "Dismiss…" }).click();
+  await sheet.getByLabel("Why are you dismissing it?").fill(`E2E ${project}: refunded by hand`);
+  await sheet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect(toast(page, /^Dismissed$/)).toBeVisible();
+
+  // The queue shows a manager refunds only: the seeded order #1002 that
+  // needs attention is the admin's (D86).
+  await page.goto("/shopify/queue");
+  await expect(page.getByRole("heading", { name: "Queue", exact: true })).toBeVisible();
+  await expect(page.getByText("#1002")).toHaveCount(0);
+  expect((await page.goto("/shopify"))?.status()).toBe(403);
+  expect((await page.goto("/shopify/events"))?.status()).toBe(403);
+});
+
 test("the Shopify overview shows the connection, the settings and the lists (admins)", async ({
   page,
 }, testInfo) => {
