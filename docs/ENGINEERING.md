@@ -44,6 +44,17 @@ the Next.js 16 differences (`proxy.ts`, async request APIs, Turbopack):
 - No hosted service, account or credential is needed for development: all
   work runs against the local devstack with its public local demo keys.
   Never commit `.env.local`.
+- Shopify (Phase 10) needs no store locally. With no `SHOPIFY_*` variable
+  set, Shopify is off (webhooks answer 503, syncs wait). Add
+  `SHOPIFY_ADAPTER=fake` to `.env.local` for the in-memory Shopify (one per
+  dev server process; never with `SHOPIFY_ADMIN_TOKEN`, never in
+  production, env.ts refuses both); add `SHOPIFY_WEBHOOK_SECRET` and
+  `SHOPIFY_SHOP_DOMAIN` (any test values, e.g. the fixtures' in
+  `tests/fixtures/shopify.ts`) to post signed webhooks to
+  `/api/shopify/webhooks`, and `CRON_SECRET` to call
+  `/api/cron/integrations` with `Authorization: Bearer <value>`. E2E sets
+  all four itself (`playwright.config.mts`). The live adapter and its
+  variables: [RUNBOOK "Shopify"](RUNBOOK.md#shopify).
 
 ## Clean checkout to running application
 
@@ -108,6 +119,7 @@ Today opens ([USER-GUIDE.md](USER-GUIDE.md)).
 | Generated types | `npm run check:types` | `database.types.ts` matches the migrations | Needs Postgres and the devstack cache | Local pass, 2026-10-05 |
 | Unit | `npm run test:unit` | Pure rules: money, permissions, status transitions, labels, form parsing, components | No database | Local: 45 files, 512 tests |
 | Database | `npm run test:db` (or `npm test` for both) | Invariants, RLS, RPC guards, concurrency and the API surface against real Supabase Auth and Storage schemas. Global setup builds one template from roles, Auth, Storage, the migrations and the seed; each file runs on its own clone | The live-stack smoke test skips when the gateway is down unless `BICII_REQUIRE_STACK=1` (CI sets it); concurrency blocks skip in existing-database mode | Local `npm test`: 82 files, 1186 tests (on b34bbcd); `npm run test:db`: 37 files, 674 tests; `feat/p6-consignment` Phase 6 step 4 `npm test`: 92 files, 1364 tests (unit 48 / 579, so database 44 / 785); the review fixes: 93 files, 1384 tests (unit 48 / 581, database 45 / 803) |
+| Live stack | inside `npm run test:db` / `npm test`: `tests/db/*.stack.test.ts` | The app's own server code against the running devstack (PostgREST, Auth, Storage) on `bicii_dev`: photo moves, label domain, and the Shopify service layer (`shopify.stack.test.ts`: a fresh fake Shopify per test, only its own two products' jobs by id, deltas only because `bicii_dev` persists) | Skip when the gateway is down unless `BICII_REQUIRE_STACK=1`; they write to `bicii_dev` (the Shopify test restores its products, price and stock at the end) | Local: pass, Phase 10 step 3 |
 | End to end | `npm run test:e2e` | The staff journeys on an iPhone 13 and an iPad viewport against a production build and the devstack | Chromium only (installed once, see [Prerequisites](#prerequisites-and-access)); resets `bicii_dev`; not a required check in CI ([R-010](RISKS.md#r-010--e2e-is-not-a-required-check-and-branch-protection-is-unverified)) | Local: 106 passed in 11.1 min (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, no dev server running); CI [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521) |
 | Contrast | `npm run tokens:contrast` | WCAG ratios of the colour token pairs | Tokens only, not rendered pages | Local: 29 pairs ok |
 | Build | `npm run build` | The app compiles for production with placeholder public env | Does not contact Supabase; writes under `.next`, as `npm run dev` does; it was exercised only with no dev server running in the checkout | Local inside `test:e2e`; CI [PR #7 `build`](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276827625/job/111655574766) |
@@ -182,6 +194,20 @@ from the code:
   the PDF. A unit test that rasterises with sharp or decodes with ZXing or
   pdf-lib declares `// @vitest-environment node`, and one that imports a
   `server-only` module mocks it (`vi.mock("server-only", () => ({}))`).
+- **Shopify** (Phase 10, ADR-020). Every Shopify API call lives in
+  [`src/lib/integrations/shopify`](../src/lib/integrations/shopify) behind
+  the `ShopifyAdmin` interface (`graphql-admin.ts` live, `fake-admin.ts`
+  in memory; `client.ts` picks one), never in a component, action, route
+  or domain module; the service-role client is imported only there and in
+  `src/lib/admin`. Runners take their dependencies (`IntegrationDeps`:
+  service client, adapter, logger, Storage base) so tests inject them. The
+  price pushed is `product_sync_state.sale_price` exactly; TypeScript never
+  computes money or stock, and every status, retry and backoff is decided
+  by the RPCs. Routes are thin: `src/app/api/shopify/webhooks/route.ts`
+  and `src/app/api/cron/integrations/route.ts` call `handleShopifyWebhook`
+  and `handleCronRequest`. The pinned Admin API version is
+  `SHOPIFY_API_VERSION` in `config.ts` (upgrade:
+  [RUNBOOK](RUNBOOK.md#shopify-api-version-upgrade)).
 - **Tests.** DB tests run on per-file clones; E2E specs run on both the
   phone and iPad projects and give every record a unique tag
   (`tagFor(testInfo)`), never counting rows in the shared database.
@@ -225,7 +251,9 @@ Supabase, unmerged PR stack): [RISKS.md](RISKS.md).
 | [`src/app`](../src/app) | App Router: `(auth)/login`, the `(staff)/…` screens, manifest, error pages; `src/proxy.ts` (session refresh and sign-in redirect, Next 16's middleware) and `src/instrumentation.ts` |
 | [`src/lib/domain`](../src/lib/domain) | Typed, server-only wrappers over the RPCs |
 | [`src/lib/auth`](../src/lib/auth) | Session, `requireStaff`, permissions, redirects, sign-in messages |
-| [`src/lib`](../src/lib) | Money, IDs, dates, env, logger, actions, DB error messages; `supabase/` (server, browser and restricted service-role clients); `admin/` (Auth admin API, service role) |
+| [`src/lib`](../src/lib) | Money, IDs, dates, env, logger, actions, DB error messages; `supabase/` (server, browser and restricted service-role clients); `admin/` (Auth admin API, service role); `integrations/shopify/` (the Shopify adapters, webhook and cron handlers, queue and sync runners, service role) |
+| [`src/app/api`](../src/app/api) | Route handlers: the label PDF, `shopify/webhooks` (HMAC) and `cron/integrations` (bearer); the last two are outside the proxy matcher |
+| [`vercel.json`](../vercel.json) | The integration cron (every 5 minutes, D87) |
 | [`src/components`](../src/components) | `ui/` design-system primitives ([DESIGN.md](DESIGN.md)); `shell/` tab bar, rail, header with global search; `domain/` record components and sheets |
 | [`supabase/migrations`](../supabase/migrations) | Schema, RLS and RPCs (Supabase CLI timestamp names) |
 | [`supabase/seed.sql`](../supabase/seed.sql) | Demo data and test fixtures (synthetic) |

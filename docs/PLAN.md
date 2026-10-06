@@ -708,7 +708,12 @@ and `20261004004000_shopify_order_processing.sql`, the Phase 10 seed,
 Sync now, the settings RPC, the deferred enqueue triggers, the sync
 worker's state and result RPCs, `reporting.shopify_sync_status`,
 `reporting.public_items.buy_online_url`) and
-`tests/db/shopify-sync.test.ts`.
+`tests/db/shopify-sync.test.ts`; step 3: `src/lib/integrations/shopify/`
+(the live GraphQL and fake adapters, HMAC, desired state, the sync,
+queue, webhook and cron handlers), the routes `api/shopify/webhooks` and
+`api/cron/integrations`, `vercel.json`, the Shopify and cron environment
+variables, the unit tests, `tests/db/shopify-gid-parity.test.ts` and
+`tests/db/shopify.stack.test.ts`, and [RUNBOOK "Shopify"](RUNBOOK.md#shopify).
 
 - Migrations: integration_events, shopify_product_sync,
   integration_retry_queue; RPCs `process_shopify_order_paid`,

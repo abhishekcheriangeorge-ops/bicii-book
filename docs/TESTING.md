@@ -85,7 +85,17 @@ photo domain code (`src/lib/domain/attachments.ts`, loaded with
 against real Storage: moves between buckets, deletes, refused moves and
 failed cleanups (a client whose Storage `remove` fails), checked by
 fetching public URLs with no key; it ages objects through the devstack's
-database to stand in for the sweep's 10-minute grace. Both use
+database to stand in for the sweep's 10-minute grace.
+`tests/db/shopify.stack.test.ts` (Phase 10 step 3) runs the Shopify service
+layer (`src/lib/integrations/shopify`) against the RPCs through PostgREST
+with a service-role client (`SERVICE_ROLE_KEY` from
+`scripts/devstack/config.mjs`), the admin's staff client and a fresh fake
+Shopify per test seeded from what the sync rows say was last pushed. It
+writes to `bicii_dev`, which persists between runs, so it asserts deltas,
+uses unique order and webhook ids per run, runs only its own two
+products' jobs by id (never `runDueJobs`, which would run every due job in
+`bicii_dev`), and ends by unpublishing both products and restoring the
+price and stock it changed. All of them use
 `tests/db/stack.ts` and skip with a message when the gateway is not
 reachable, unless `BICII_REQUIRE_STACK=1` (CI), where that fails the file.
 
@@ -473,6 +483,61 @@ step, no buttons without `stepper`. `printing/schemas.test.ts`:
 `tests/fixtures/qr-bases.ts` bases the database accepts, trims, and gives
 the database's sentence.
 
+Phase 10 step 3 (the Shopify service layer, `src/lib/integrations/shopify`;
+every file `// @vitest-environment node`, `server-only` mocked):
+`shopify-hmac.test.ts` (Shopify's signature of the exact bytes passes; one
+flipped byte, another secret, an empty secret, a missing, empty, truncated,
+mis-padded, hex or garbage header fail without throwing; multibyte UTF-8 is
+verified on the bytes, its Latin-1 re-encoding fails); `shopify-ids.test.ts`
+(the shared gid table in `tests/fixtures/shopify-gids.ts`, numbers, unknown
+kinds, `parseShopifyGid`, handles, the fake ids equal the seed's
+`SHOPIFY_GID`); `shopify-desired-state.test.ts` (the full productSet input
+with an escaped description, vendor and SKU fallbacks, the price passed
+through unchanged including 0, DRAFT and 0 when not effective,
+`variant_only` with no input for an external product, the two problems
+only while effectively online, the hash stable under key order and
+changing with price, quantity, photos, API version, location, mode and
+status); `shopify-graphql-admin.test.ts` (mocked fetch: the pinned version
+in the URL, the token header, productSet by handle on create and by id on
+update with one default variant, no price when there is none,
+productVariantsBulkUpdate with the price only, `changeFromQuantity`
+carried or null, a stale compare → `shopify_quantity_changed`, userErrors →
+not retriable with Shopify's messages, 429 / THROTTLED / 5xx / network /
+timeout retriable, an aborted slow call, 401 / 403 `shopify_auth_failed`,
+bad shapes `shopify_bad_response`, the first active location);
+`shopify-fake-admin.test.ts` (deterministic ids, idempotent by handle,
+unknown product refused unless derivable, compare enforcement and
+overwrite, one idempotency key applied once, `simulateCheckout`, a
+Shopify-made product's other variant untouched, `failNext` once and by
+kind, `calls`, `reset`); `shopify-sync.test.ts` (stubbed RPCs and the
+fake: a new product → productSet by handle + inventory and the exact
+`record_product_sync_result` arguments; the location asked only when none
+is stored; an unchanged hash and an order in flight call Shopify zero
+times; an external product → variantsBulkUpdate + inventorySetQuantities,
+never productSet, the other variant untouched; unpublishing a priceless
+external product sets only its quantity; a moved count defers first and
+overwrites on the next attempt; retriable and userError failures; a unit
+price conflict and no adapter; a record refusal after the push → not
+retriable with the mapped message; crashes recorded, never thrown);
+`shopify-webhook-handler.test.ts` (injected deps: 413 by header and by
+size with nothing stored; 503 secret or shop domain unset stored as
+rejected; 401 bad HMAC stored with capped allow-listed headers, size and
+SHA-256 but no payload, and the response never echoes it; 401 another
+shop, case-insensitive match passes; 400 missing headers and non-object
+bodies; the 31st rejected delivery in a minute not stored but still 401;
+the sliding window; 200 new → stored with its payload and triggered-at, one
+scheduled task running the event's job then 5 due jobs; 200 duplicate →
+no event run; record failure → 500, nothing scheduled; a failing
+follow-up is logged); `shopify-cron-route.test.ts` (503 without
+`CRON_SECRET`, 401 for missing, malformed or wrong bearers, 200 with the
+summary and `no-store`, the route modules' `runtime`, `maxDuration` and
+exports); `proxy-matcher.test.ts` (Next's matcher test helper,
+`unstable_doesMiddlewareMatch` in 16.3.8: the cron, webhook, health and
+static paths are not matched, `/`, `/shopify`, `/products/x` and the
+label PDF route are); `env.test.ts` (the Shopify and cron variables: the
+shop domain format, fake with a token or in Vercel production refused,
+live needs the domain and token, blank is unset).
+
 ### Database (SPEC §27.2 and §23)
 
 Each invariant from SPEC §23 has at least one test, named after it:
@@ -607,6 +672,8 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Shopify settings (Phase 10 step 2; D83, D86, D89) | `shopify-sync.test.ts`: mechanic1 gets 42501; same values write no audit; changing test orders without a reason → `reason_required`, with one → one audit row `{from, to}` with the reason; the storefront trims a trailing slash, refuses http (`shopify_settings_storefront_url_check`) and may be cleared; an unknown location → P0002, an inactive one → `location_inactive`; a new online location queues every published product (the seeded one too) but no link-only product |
 | Buy online link (Phase 10 step 2; D84, Phase 11's rule) | `shopify-sync.test.ts`: as anon, `buy_online_url` = storefront + `/products/` + handle on a published, synced, available product row and on a unique product's product and unit rows; `public_items` has exactly the 14 public columns and no Shopify id or sync state; null when a change is pending, the last sync failed, unpublished, external origin, sold out (synced again), and with no storefront; a written-off unit leaves the list. `inventory-publication.test.ts`'s exact column list gains `buy_online_url`; `labels.test.ts` still sees identical anon and staff rows |
 | Who reaches the outbound sync (Phase 10 step 2; DATA-MODEL §15, D86) | `shopify-sync.test.ts`: anon and authenticated (admin included) get 42501 from `product_sync_state` and `record_product_sync_result`; anon cannot publish or read `reporting.shopify_sync_status`; an admin reads the open job there, mechanic2 the same row with the job columns null; `meta.test.ts` checks the grants against `tests/fixtures/api-surface.ts` |
+| Shopify gid parity (Phase 10 step 3) | `shopify-gid-parity.test.ts`: one shared table (`tests/fixtures/shopify-gids.ts`) through `private.shopify_gid` (as owner) and `toShopifyGid`: the same gid, the same null and a refusal on both sides (spaces trimmed, a tab, newline or non-ASCII digit refused); an unknown kind is 22023 / RangeError; `shopifyHandle` = `private.shopify_handle` |
+| The Shopify service layer on the live stack (Phase 10 step 3; SPEC §23, D83, D84, D87) | `shopify.stack.test.ts` (skips without the devstack unless `BICII_REQUIRE_STACK=1`): (a) publishing the stack product → one productSet and one inventory write for its handle at `product_sync_state`'s price, ids on the product, `synced`; a stock change at another location → its job calls Shopify zero times; Sync now pushes in full; a price change → one productSet at the new price; a retriable failure → `error` with the message and the job queued, then userErrors → `needs_attention` with Shopify's message; Sync now supersedes it and the anonymous `buy_online_url` is the storefront's `/products/<handle>`; (b) a signed orders/paid through `handleShopifyWebhook` (after-work run synchronously): the same webhook id twice and a new id once → one sale, online stock down once, `delivery_count` 2, the second id `duplicate_order`; the sale's sync defers once (`shopify_quantity_changed`) and then pushes the ledger quantity; (c) a Shopify-made product linked by its second variant → variantsBulkUpdate and inventorySetQuantities only, the first variant untouched, origin `external`, no Buy-online link; restore: both unpublished and run (DRAFT at 0 with ids kept; the variant at 0), nothing left in the queue |
 | Seeded sync data (Phase 10 step 2) | `shopify-sync.test.ts` "Seeded sync data is consistent": no open product-sync job after the seed, syncedTyre `synced`, its Buy-online link the storefront's `/products/bicii-p-000027` |
 
 ### End-to-end (SPEC §27.3)

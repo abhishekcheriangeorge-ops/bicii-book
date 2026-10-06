@@ -263,7 +263,7 @@ One Vercel project for the Admin, connected to this repository.
    | `SUPABASE_SERVICE_ROLE_KEY` | prod service/secret key | staging key | Sensitive; server only |
    | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | own value | own value | Sensitive; `openssl rand -base64 32` |
    | `LOG_LEVEL` | `info` | `debug` | optional |
-   | `SHOPIFY_*` | Phase 10 | Phase 10 | Sensitive |
+   | `SHOPIFY_*`, `CRON_SECRET` | see [Shopify](#shopify-environment-variables-and-fake-mode) | same | Sensitive; never `SHOPIFY_ADAPTER=fake` in Production |
 
    The CLI equivalent is `vercel env add <NAME> production` (or `preview`).
    Do not `vercel env pull` into `.env.local` for everyday work: local
@@ -384,7 +384,182 @@ Hosted projects: the public side of a label (an anonymous scan) reads
 schemas ([step 4 above](#hosted-supabase-projects-staging-and-production),
 required since Phase 4). Phase 8 adds no other anonymous surface.
 
-## Shopify: purging old webhook data
+## Shopify
+
+The integration (Phase 10, decisions D80–D89 in
+[ADR-020](decisions/ADR-020-shopify.md)) is built and tested only against
+the in-memory fake Shopify; nothing has run against a real store
+([R-011](RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only),
+[R-047](RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)).
+Work through [Verify before go-live](#shopify-verify-before-go-live) on a
+development store before connecting the shop.
+
+### Shopify: the custom app and its webhooks
+
+1. In the Shopify admin: Settings → Apps and sales channels → Develop apps
+   → create a custom app ("BICII Admin"). Admin API scopes:
+   `write_products`, `write_inventory`, `read_locations`, `read_orders`
+   (write includes read). Install it and copy the **Admin API access
+   token** once (it is shown once) into the password manager and the
+   Vercel environment as `SHOPIFY_ADMIN_TOKEN`.
+2. Webhook subscriptions (the app's configuration or Settings →
+   Notifications → Webhooks): `orders/paid` and `refunds/create`, format
+   JSON, URL `https://<admin host>/api/shopify/webhooks`, API version the
+   pinned `SHOPIFY_API_VERSION` (`src/lib/integrations/shopify/config.ts`,
+   currently 2026-10). Do not subscribe `orders/cancelled` (D85). The
+   signing secret goes into `SHOPIFY_WEBHOOK_SECRET`.
+3. `SHOPIFY_SHOP_DOMAIN` is the store's own `<name>.myshopify.com` (lower
+   case; a delivery naming any other shop is refused and kept as
+   `shop_domain_mismatch` evidence).
+4. In the Admin, an admin sets the online location and the storefront URL
+   (the `/shopify` settings, Phase 10 step 4; until then
+   `set_shopify_settings`). The storefront URL drives the public Buy-online
+   link (`storefront_url/products/<handle>`, D84) and nothing else.
+   `accept_test_orders` stays **off** in production: Shopify's test
+   notifications are then stored as skipped `test_order` evidence and
+   record nothing (D89).
+
+What each response means (`src/lib/integrations/shopify/webhooks.ts`):
+200 stored (a repeat answers `duplicate: true` and changes nothing); 401
+bad signature or another shop; 400 missing Shopify headers or a body that
+is not a JSON object; 413 over 1 MiB (not stored); 503 the secret or shop
+domain is not configured; 500 the database could not store it (Shopify
+retries). Rejected deliveries keep only capped headers, size and SHA-256,
+never the body; above 30 a minute per server instance they are only
+logged (`shopify_rejected_rate_limited`;
+[R-048](RISKS.md#r-048--the-rejected-delivery-limit-is-per-server-instance)).
+
+### Shopify: environment variables and fake mode
+
+| Variable | Where | Notes |
+|---|---|---|
+| `SHOPIFY_SHOP_DOMAIN` | Vercel (Production, Preview) | `<name>.myshopify.com`; env.ts refuses anything else |
+| `SHOPIFY_ADMIN_TOKEN` | Vercel, Sensitive | the custom app's Admin API token |
+| `SHOPIFY_WEBHOOK_SECRET` | Vercel, Sensitive | the webhook signing secret |
+| `SHOPIFY_ADAPTER` | unset in Production | `fake` only for local development, CI and E2E |
+| `CRON_SECRET` | Vercel, Sensitive | the cron route's bearer (below) |
+
+With none set, Shopify is off: webhooks answer 503 (kept as rejected
+evidence) and product syncs wait, retried with backoff, with "Shopify is
+not connected". `SHOPIFY_ADAPTER=fake` swaps in the in-memory Shopify
+(one per server process, deterministic ids matching the seed); env.ts
+refuses it together with `SHOPIFY_ADMIN_TOKEN` and when `VERCEL_ENV` is
+`production`. E2E sets it with the fixtures' secret and shop
+(`playwright.config.mts`). Never point a fake-mode deployment at a
+database that a real store also writes to.
+
+### Shopify: the cron and the queue
+
+`vercel.json` schedules `GET /api/cron/integrations` every 5 minutes
+(D87). Vercel sends `Authorization: Bearer <CRON_SECRET>`; without
+`CRON_SECRET` the route answers 503, with a wrong bearer 401. Each run
+claims and runs up to 25 due jobs within 25 s and returns
+`{claimed, done, failed, needsAttention, deferred}`. Every webhook also
+runs its own event's job and up to 5 due jobs after it has answered, and
+Publish online / Sync now / Retry run exactly the job the RPC returned.
+
+**Hobby plan fallback**: Vercel's Hobby plan runs crons at most once a
+day, so the 5-minute schedule needs a Pro plan, or an external scheduler
+calling the cron route with the bearer every 5 minutes. On Hobby alone,
+retries and deferred syncs wait until the next webhook, a staff Retry or
+Sync now, or the daily run
+([R-049](RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)).
+To run the queue by hand: `curl -H "Authorization: Bearer $CRON_SECRET"
+https://<admin host>/api/cron/integrations`.
+
+Reading the queue: the Shopify screens (Phase 10 step 4) show each job's
+status, attempts, next attempt and the human message, and the event
+inspector shows each delivery (admins only: payloads hold customer data,
+D86). Integration failures also appear in Today's exceptions for admins.
+Logs: every webhook logs `{correlationId, topic, webhookId, eventId,
+duplicate, status, outcome}` and every sync `{correlationId, productId,
+jobId, mode, outcome, durationMs}`; the correlation id is stored on the
+event row. A job whose result could not be stored stays `running` and is
+reclaimed after 10 minutes.
+
+### Shopify: resolving problems
+
+- **An online order needs attention** (unmapped variant, not enough stock
+  at the online location, a refused line; D82): either link the variant
+  (an admin, with a reason) or fix the stock, then Retry; or refund the
+  order in Shopify and Dismiss the job with a reason. Its waiting refunds
+  then close themselves. Nothing was recorded, so nothing is undone.
+- **A product that already exists in Shopify**: link its variant
+  (`link_shopify_variant`, admin and reason). BICII then pushes only that
+  variant's price and stock level once it is published online, never the
+  title, description, photos, options or other variants, and shows no
+  Buy-online link for it (D84).
+- **Why a consigned item sells online at its asking price**: the online
+  price is `private.selling_price` through `private.shopify_online_price`
+  (D58, D81), the same price as its label and public page. A unique
+  product whose units are priced differently refuses to sync until they
+  match ("Unit U-… is priced differently…").
+- **Shopify's stock differs from BICII's**: BICII is the stock truth for
+  the online location (D83). A sync waits once (2 minutes) when Shopify's
+  count moved since the last push, in case an order webhook is on its
+  way, then overwrites it with the ledger quantity.
+
+### Shopify: API version upgrade
+
+1. Bump `SHOPIFY_API_VERSION` in `src/lib/integrations/shopify/config.ts`
+   and read Shopify's release notes for the mutations BICII uses
+   (`productSet`, `productVariantsBulkUpdate`, `inventorySetQuantities`,
+   `locations`).
+2. `npm run test:unit` (the GraphQL documents and error mapping are in
+   `tests/unit/shopify-graphql-admin.test.ts`).
+3. Verify on a development store (the checklist below), then change the
+   webhook subscriptions' version.
+4. Deploy. The version is part of every product's desired-state hash, so
+   every published product re-pushes once; the version is stored on each
+   sync row and each event.
+
+### Shopify: rotating secrets
+
+- Admin API token: in Shopify, rotate or reinstall the custom app, put the
+  new token in Vercel, redeploy. Syncs fail retriably with
+  `shopify_auth_failed` ("Shopify refused the access token…") until then;
+  retry them afterwards.
+- Webhook secret: set the new value in Vercel and redeploy at the same
+  time as Shopify starts signing with it; deliveries signed with the old
+  one are refused (401) and kept as `hmac_invalid` evidence. Shopify
+  retries refused webhooks for a while, so a short gap loses nothing;
+  check the event inspector afterwards.
+- `CRON_SECRET`: change it in Vercel and redeploy (Vercel sends the
+  current value).
+
+### Shopify: verify before go-live
+
+On a development store with the custom app, `SHOPIFY_ADAPTER` unset and
+`accept_test_orders` temporarily on (with a reason), check and record here
+(date, store, result):
+
+1. The GraphQL documents in `graphql-admin.ts` validate against the pinned
+   version's schema: `productSet` (identifier by handle and id,
+   `synchronous: true`, `productOptions`, `variants[].optionValues`,
+   `variants[].inventoryItem.sku` and `tracked`, `files[].originalSource`
+   / `contentType: IMAGE`), `productVariantsBulkUpdate`, and `locations`.
+2. `inventorySetQuantities`: the compare field (`changeFromQuantity`; older
+   versions used `compareQuantity` with `ignoreCompareQuantity`), that
+   `null` skips the check, the stale error code
+   (`CHANGE_FROM_QUANTITY_STALE` or `COMPARE_QUANTITY_STALE` are mapped),
+   and the `@idempotent(key:)` directive.
+3. A product BICII creates is stocked at the online location so the first
+   `inventorySetQuantities` succeeds (otherwise add `inventoryActivate` or
+   productSet's `inventoryQuantities` on create).
+4. productSet without a variant price (unpublishing a product with no
+   price) keeps the existing price.
+5. Whether a refund line's `subtotal` includes tax in a tax-inclusive
+   store (`private.shopify_refund_line_amount`).
+6. That Shopify's test notifications carry `X-Shopify-Test: true` or a
+   payload `test: true` (D89).
+7. The store's `taxes_included` setting (D89: tax-exclusive orders with
+   tax are refused).
+8. With `accept_test_orders` on: a Bogus-gateway order → `orders/paid`
+   records one online sale; replay it from the Shopify admin → one sale;
+   a refund → `refunds/create` records one refund. Then turn
+   `accept_test_orders` off again.
+
+### Shopify: purging old webhook data
 
 Shopify webhook bodies hold customer names, emails and addresses
 (`integration_events.payload`, admins only). Nothing removes them
@@ -400,9 +575,7 @@ It deletes rejected deliveries last seen more than that long ago and
 clears the payload of processed or skipped events processed before then
 (the row, its outcome and its result stay); it refuses anything under 30
 days and never touches failed or pending events or events with an open
-job. No API role can run it and there is no cron. The rest of the Shopify
-runbook (secrets, webhook subscriptions, the cron, the verify-before-go-live
-list) is written with the webhook route in Phase 10 step 3.
+job. No API role can run it and there is no cron.
 
 ## Label printers
 

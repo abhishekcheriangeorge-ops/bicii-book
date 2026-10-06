@@ -11,6 +11,7 @@ import {
   withDatabase,
 } from "./scripts/devstack/config.mjs";
 import { E2E_PUBLIC_SITE_URL } from "./tests/fixtures/public-site";
+import { SHOPIFY_TEST_SECRET, SHOPIFY_TEST_SHOP } from "./tests/fixtures/shopify";
 
 /**
  * End-to-end tests (TESTING.md): Chromium only, an iPhone 13 and an iPad
@@ -70,6 +71,12 @@ export default defineConfig({
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
       DATABASE_URL: withDatabase(databaseUrl(), DEFAULT_DB_NAME),
       LOG_LEVEL: process.env.LOG_LEVEL ?? "warn",
+      // Phase 10: the in-memory Shopify (never production), the fixtures'
+      // webhook secret and shop, and the cron bearer (no real values).
+      SHOPIFY_ADAPTER: "fake",
+      SHOPIFY_WEBHOOK_SECRET: SHOPIFY_TEST_SECRET,
+      SHOPIFY_SHOP_DOMAIN: SHOPIFY_TEST_SHOP,
+      CRON_SECRET: "bicii-e2e-cron-secret",
     },
   },
 });

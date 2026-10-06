@@ -27,11 +27,14 @@ flowchart LR
     storage --> db
   end
   public["Public site, repo bicii<br/>(not integrated yet, Phase 11)"] -.-> rest
-  shopify["Shopify<br/>(planned, Phase 10)"] -.-> app
+  shopify["Shopify<br/>(Phase 10: built against a fake;<br/>no store connected)"] -. "webhooks (HMAC)" .-> app
+  app -. "Admin API (GraphQL)" .-> shopify
+  cron["Vercel cron<br/>(vercel.json, not set up)"] -. "bearer" .-> app
   printer["Label printer<br/>(browser print / PDF since Phase 8;<br/>hardware adapter Phase 12)"] --- app
 ```
 
-Dashed lines are planned, not built. Nothing is deployed: there is no
+Dashed lines are planned or not yet connected (the Shopify layer is
+built and tested only against its in-memory fake). Nothing is deployed: there is no
 hosted Supabase project and no Vercel project
 ([R-001](RISKS.md#r-001--nothing-is-deployed)). Locally and in CI the
 Supabase services run without Docker on the devstack
@@ -156,21 +159,31 @@ the browser printer.
 
 ## Shopify inbound flow
 
-Built in Phase 10 step 1 as database functions; the webhook route, the cron
-and the Shopify client are step 3 (`src/lib/integrations/shopify/`), the
-screens step 4 ([ADR-020](decisions/ADR-020-shopify.md), D80–D89).
+Built in Phase 10 step 1 as database functions and in step 3 as the
+service layer (`src/lib/integrations/shopify/`: the webhook and cron
+routes, the queue runners); the screens are step 4
+([ADR-020](decisions/ADR-020-shopify.md), D80–D89).
 
-1. **Store first.** The webhook route will verify the HMAC and call
+1. **Store first.** `POST /api/shopify/webhooks` (outside the proxy;
+   `handleShopifyWebhook` in `webhooks.ts`) reads the body once as bytes,
+   refuses more than 1 MiB (413, not stored), verifies the HMAC on those
+   raw bytes before anything is parsed, checks the shop domain, the
+   Shopify headers and that the body is a JSON object, and calls
    `record_shopify_webhook` with the service-role key. Every delivery is
    stored before anything else happens: a verified one in
    `integration_events` (deduplicated on X-Shopify-Webhook-Id; a repeat only
    counts the delivery), a rejected one as evidence without its body (D88).
    A new order or refund gets a queued job in `integration_retry_queue`;
    test, POS and unhandled deliveries are stored as skipped (D89).
-2. **Queue.** `claim_integration_jobs` hands due jobs to a worker (the
-   cron, or the route after it responds) with `FOR UPDATE SKIP LOCKED`, so
-   two workers never run one job; a run stalled for 10 minutes is
-   reclaimed (D87).
+   The route answers 200 as soon as the event is stored (500 if it could
+   not be, so Shopify retries; 401/400/503 for rejected deliveries, kept
+   as evidence up to 30 a minute per instance).
+2. **Queue.** `claim_integration_jobs` hands due jobs to a runner
+   (`queue.ts`) with `FOR UPDATE SKIP LOCKED`, so two runners never run one
+   job; a run stalled for 10 minutes is reclaimed (D87). After the
+   response, in `after()`, the route runs the new event's own job
+   (`runJobById`), then up to 5 due jobs; `GET /api/cron/integrations`
+   (Vercel cron every 5 minutes, bearer `CRON_SECRET`) runs up to 25.
 3. **Process in one subtransaction.** `process_shopify_event` locks the
    event row (a processed event is a replay with no effect), then runs
    every business write inside one plpgsql `begin … exception … end`
@@ -198,8 +211,9 @@ deliveries.
 ## Shopify outbound flow
 
 Built in Phase 10 step 2 as database functions
-(`20261004004100_shopify_product_sync.sql`); the sync worker that calls
-Shopify is step 3, the Publish online toggle and sync status step 4
+(`20261004004100_shopify_product_sync.sql`) and in step 3 as the sync
+runner (`runProductSync` in `src/lib/integrations/shopify/sync.ts`); the
+Publish online toggle and sync status are step 4
 ([ADR-020](decisions/ADR-020-shopify.md), D81, D83, D84, D86, D87).
 
 1. **Publish.** Staff with manage_inventory call `set_publish_online`
@@ -218,13 +232,33 @@ Shopify is step 3, the Publish online toggle and sync status step 4
    `private.selling_price`, D58), the quantity at the online location, the
    unit price conflicts, the photos, the handle, the compare quantity and
    whether an online order is in flight (D83).
-4. **Record the outcome.** `record_product_sync_result`: `pushed` (ids,
+4. **Push only what changed** (`runProductSync`, never throws).
+   `buildDesiredState` (pure) turns the state into the product's desired
+   Shopify state and a SHA-256 hash that includes the location and the
+   pinned API version: a BICII-created product is pushed in full with
+   `productSet` (DRAFT at quantity 0 when not effectively online); a
+   product linked to a Shopify-made product gets only its variant's price
+   (`productVariantsBulkUpdate`) and inventory level, never productSet
+   (D84). The price is `sale_price` as Postgres computed it. No adapter →
+   failed, retried; a missing price or a unit priced differently → failed,
+   a person acts; the same hash as the last push → `unchanged` with no
+   Shopify call; an order in flight → `deferred` with no call. The
+   absolute quantity is set with the last pushed quantity as the compare
+   quantity; when Shopify's count moved the job is deferred once, then
+   overwritten without a compare (BICII is the stock truth, D83). Every
+   call goes through the `ShopifyAdmin` interface: `graphql-admin.ts`
+   (live, pinned version, 15 s timeout, retriable vs person-must-act error
+   mapping) or `fake-admin.ts` (in memory, for tests and E2E).
+5. **Record the outcome.** `record_product_sync_result`: `pushed` (ids,
    handle, what was pushed), `unchanged`, `deferred` (two minutes, no
    attempt used) or `failed` (backoff or needs attention, D87). The status
    staff see (`reporting.shopify_sync_status`) and the public Buy-online
    link (`reporting.public_items.buy_online_url`, D84) follow it.
 
-`tests/db/shopify-sync.test.ts` proves each step.
+`tests/db/shopify-sync.test.ts` proves the database steps,
+`tests/unit/shopify-sync.test.ts` and `shopify-desired-state.test.ts` the
+runner, and `tests/db/shopify.stack.test.ts` the whole chain through
+PostgREST with the fake Shopify.
 
 ## Component map
 
@@ -242,6 +276,7 @@ Shopify is step 3, the Publish online toggle and sync status step 4
 | Labels and the QR base (Phase 8; D9, D56–D59, [ADR-017](decisions/ADR-017-labels-and-qr-base.md)) | Database (step 1): `20261004003800_labels.sql` — `private.qr_payload` (the only payload source, from `shop_settings.public_site_url`, no fallback), `private.label_content` (the only label text, price through `private.selling_price`), `label_templates`, `printer_profiles`, `print_jobs` and the five label RPCs. App (step 2): [src/lib/qr.ts](../src/lib/qr.ts) (`getQrBase`, `qrUrl`, `scanBases`: every DISPLAYED QR URL from the same column, "QR address not set" when unusable); [src/lib/printing/](../src/lib/printing/) (pure: zod schemas with the database's layout rule, `composeLabel` — the one layout engine — `LabelSvg`, the status machine, links; `adapters/`: `browser` → `LabelSheet`, `pdf` → pdf-lib, server only); [src/lib/domain/labels.ts](../src/lib/domain/labels.ts) (print job DTO from the snapshots, history, `getLabelContext`, reprint preset, admin template, printer and address writes); actions in `src/app/(staff)/labels/actions.ts` and `settings/labels/actions.ts`; the print view `src/app/(print)/print/labels/[jobId]` (outside the shell), the PDF Route Handler `src/app/api/labels/[jobId]/pdf/route.ts`, and the print history `/labels`, `/labels/[jobId]`. Screens (step 3): the record pages' Labels card and print sheet ([labels-card.tsx](../src/components/domain/labels-card.tsx), [print-label.tsx](../src/components/domain/print-label.tsx), over `getLabelContext` and `resolvePrintPreset`, which read the deep link `?print=1&qty=N&reprint={job}` from each page's awaited `searchParams`) and Settings → Labels and printers (`/settings/labels`, admins only, no `loading.tsx`, [label-settings.tsx](../src/components/domain/label-settings.tsx)). Journeys (step 4): the label steps of journeys 3 and 4. The staff view of what an anonymous scan returns is the existing `PublicPreviewPanel` over `reporting.public_items`; Phase 8 adds no anonymous RPC, client or route (Phase 11 creates `public.public_item`) | Postgres; `shop_settings.public_site_url` | nothing prints while the address is unset (`public_site_url_invalid`), and record pages say "QR address not set"; printed labels keep their address ([R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address)) |
 | Supabase clients | [server.ts](../src/lib/supabase/server.ts), [browser.ts](../src/lib/supabase/browser.ts), [service.ts](../src/lib/supabase/service.ts) | anon key + session; service-role key (server only) | no data access |
 | Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API) | `SUPABASE_SERVICE_ROLE_KEY` | staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
+| Shopify integration layer (Phase 10 step 3; D80–D89, [ADR-020](decisions/ADR-020-shopify.md)) | [src/lib/integrations/shopify/](../src/lib/integrations/shopify/): `config.ts` (pinned API version, topics, limits), `ids.ts` (gids, handles), `hmac.ts`, `admin.ts` (the `ShopifyAdmin` interface and `ShopifyError`), `graphql-admin.ts` (live), `fake-admin.ts` / `fake-ids.ts` (in memory), `client.ts` (`getShopifyAdmin`, `shopifyConnection`), `desired-state.ts` (pure), `deps.ts` (`IntegrationDeps`), `sync.ts` (`runProductSync`), `queue.ts` (`runJob`, `runJobById`, `runDueJobs`), `webhooks.ts` (`handleShopifyWebhook`), `cron.ts` (`handleCronRequest`); routes [api/shopify/webhooks](../src/app/api/shopify/webhooks/route.ts) (POST, HMAC) and [api/cron/integrations](../src/app/api/cron/integrations/route.ts) (GET, bearer), both Node runtime with `maxDuration` 60, both outside the proxy matcher; [vercel.json](../vercel.json) cron every 5 minutes | the service-role client and the Shopify RPCs (DATA-MODEL §16); `SHOPIFY_*`, `CRON_SECRET` | webhooks are refused or not stored (Shopify retries for a while); syncs wait in the queue with a human message; no sale or stock is ever recorded outside the RPCs |
 | Error mapping | [src/lib/db-errors.ts](../src/lib/db-errors.ts) | P0001 codes, constraint names | users see the generic error |
 | Logging and server errors | [src/instrumentation.ts](../src/instrumentation.ts), [src/lib/logger.ts](../src/lib/logger.ts) | pino to stdout | no trace of failures (no retention or alerting, [R-002](RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery)) |
 | PWA shell | [public/sw.js](../public/sw.js), [src/app/manifest.ts](../src/app/manifest.ts) | browser | no install or offline page |

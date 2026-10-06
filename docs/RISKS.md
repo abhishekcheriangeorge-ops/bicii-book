@@ -305,8 +305,8 @@ URLs, or customer data in this file.
 - Impact: Phase 10 step 1 built the inbound database side (webhook
   recording, the queue, order and refund processing, D80–D89) and step 2
   the outbound sync's database side (what to push, the queue, the results);
-  the service layer that calls Shopify and the screens follow in steps
-  3–4.
+  step 3 the service layer (the GraphQL and fake adapters, the webhook and
+  cron routes, the queue and sync runners); the screens follow in step 4.
   Everything is tested against payloads written from Shopify's documented
   REST shapes (`tests/fixtures/shopify.ts`), never against a real store,
   so payload and API drift would not be caught: in particular whether a
@@ -319,11 +319,15 @@ URLs, or customer data in this file.
 - Workaround or containment: unknown or malformed payloads fail safe:
   nothing is recorded and the event waits for an admin
   (`shopify_payload_invalid`, D82).
-- Next action: the owner provides a development store; step 3 adds the
-  RUNBOOK's verify-before-go-live list and a test against it.
+- Next action: the owner provides a development store; the build agent
+  works through
+  [RUNBOOK "Verify before go-live"](RUNBOOK.md#shopify-verify-before-go-live)
+  (added in step 3) and records the results there; the outbound calls'
+  own unverified assumptions are
+  [R-047](#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store).
 - Revisit trigger: a development store is connected; Shopify's pinned API
   version changes.
-- Last checked: 2026-10-06, Phase 10 step 1.
+- Last checked: 2026-10-06, Phase 10 step 3.
 
 ## R-012 — Label printer hardware is unknown
 
@@ -1041,9 +1045,111 @@ URLs, or customer data in this file.
 - Workaround or containment: one queued job per product and the desired
   hash keep repeats cheap; the worker skips the push when the hash is
   unchanged.
-- Next action: in step 3, decide whether the in-flight check should look
-  only at orders naming the product's variant, and whether an unpublished,
-  already-drafted product should stop being queued.
+  Step 3 measured the cost rather than volume: a sync whose desired hash
+  equals the last push makes **no** Shopify call (proven in
+  `tests/unit/shopify-sync.test.ts` and `tests/db/shopify.stack.test.ts`),
+  so the repeat syncs of an unpublished, drafted product cost one
+  `product_sync_state` read and one `record_product_sync_result` each.
+  Every online order, though, costs one extra 2-minute deferral of its
+  product's next push: the order lowers Shopify's count before BICII
+  records it, so the push's compare quantity (the last pushed quantity) is
+  stale once, and the worker waits before overwriting (D83, step 3's
+  `runProductSync` step 7).
+- Next action: kept as built in step 3 (no database change); revisit the
+  in-flight scope (only orders naming the product's variant) and the
+  per-order deferral (compare with Shopify's count less the order just
+  recorded) after measuring on a development store.
 - Revisit trigger: Shopify API throttling or visible delay in a development
   store.
-- Last checked: 2026-10-06.
+- Last checked: 2026-10-06, Phase 10 step 3.
+
+## R-047 — The live Shopify adapter is unverified against a real store
+
+- Category: validation gap (D83, D84).
+- Status and owner: open; build agent, owner (a development store).
+- Trigger: the first connection to a real store; a Shopify API version
+  upgrade.
+- Impact: `src/lib/integrations/shopify/graphql-admin.ts` was written from
+  Shopify's documentation without a store to run it against. Assumptions
+  that could be wrong: the `productSet` input shape (`productOptions`,
+  `variants[].optionValues`, the SKU on `inventoryItem.sku`, media through
+  `files`); `inventorySetQuantities`' compare field `changeFromQuantity`
+  (older versions: `compareQuantity` plus `ignoreCompareQuantity`), its
+  stale-compare error codes (`CHANGE_FROM_QUANTITY_STALE`,
+  `COMPARE_QUANTITY_STALE`) and the `@idempotent(key:)` directive; whether
+  a product created by productSet is stocked at the online location before
+  the first inventory write; whether productSet without a variant price
+  keeps the price; the `locations` query's `isActive`. A wrong field name
+  fails every push as `shopify_bad_response` (retried, then needs
+  attention after 8 attempts); a wrong stale code would make a moved count
+  a non-retriable `shopify_user_error` instead of the 2-minute deferral.
+  No money or stock is recorded wrongly: the ledger never depends on a
+  push.
+- Evidence and confidence: medium; `tests/unit/shopify-graphql-admin.test.ts`
+  proves what BICII sends and how it maps answers, against a mocked fetch
+  only. The idempotency key is BICII's own: a UUID-shaped SHA-256 of the
+  inventory item, desired hash, job id and phase (deviation from the
+  brief's `${productId}:${hash}`, so Sync now and a retry after a moved
+  count are not swallowed by Shopify's idempotency replay).
+- Workaround or containment: the fake adapter for every test and E2E;
+  Shopify is off until the variables are set.
+- Next action: work through
+  [RUNBOOK "Verify before go-live"](RUNBOOK.md#shopify-verify-before-go-live)
+  on a development store and correct the documents and the tests together.
+- Revisit trigger: a development store exists; `SHOPIFY_API_VERSION`
+  changes.
+- Last checked: 2026-10-06, Phase 10 step 3.
+
+## R-048 — The rejected-delivery limit is per server instance
+
+- Category: deliberate shortcut (D88).
+- Status and owner: accepted for now; build agent.
+- Trigger: a burst of unsigned or wrongly signed POSTs to
+  `/api/shopify/webhooks`.
+- Impact: the limit of 30 stored rejected deliveries a minute is an
+  in-memory sliding window in each server process
+  (`SlidingWindowLimiter` in `webhooks.ts`). On Vercel every function
+  instance has its own window and a cold start resets it, so a burst
+  spread over many instances can store more than 30 a minute (each bad
+  body is still one row with a delivery count, D88, and never a payload).
+  Above the limit deliveries are only logged
+  (`shopify_rejected_rate_limited`), so a real misconfiguration during a
+  burst leaves fewer rows to inspect.
+- Evidence and confidence: high; `tests/unit/shopify-webhook-handler.test.ts`
+  "the 31st rejected delivery".
+- Workaround or containment: the platform's own firewall or rate limiting
+  in front of the route; the owner purges rejected rows by hand
+  (`private.purge_integration_events`).
+- Next action: if hosted logs show rejected bursts, move the limit into
+  the database (a count of rejected rows in the last minute in
+  `record_shopify_webhook`) or the platform firewall.
+- Revisit trigger: hosted deployment; any rejected-delivery burst in the
+  logs.
+- Last checked: 2026-10-06, Phase 10 step 3.
+
+## R-049 — Queued integration jobs wait for a trigger
+
+- Category: operational dependency (D87).
+- Status and owner: open; owner (the Vercel plan), build agent.
+- Trigger: a Vercel Hobby plan; a quiet shop; a failed result write.
+- Impact: nothing runs jobs on its own except the cron
+  (`/api/cron/integrations`, every 5 minutes in `vercel.json`) and the
+  work after each webhook (its own event, then up to 5 due jobs). Vercel's
+  Hobby plan runs crons at most daily, so on Hobby a retry backing off a
+  minute, a deferred stock push (D83) or a refund waiting for its order
+  can wait until the next webhook, staff action or the daily run. The
+  work after a webhook runs in `after()` within the function's
+  `maxDuration` (60 s); if the platform stops it, the job stays `running`
+  and is reclaimed only after 10 minutes. The same happens when a runner
+  cannot store a result (the database unreachable).
+- Evidence and confidence: medium; the plan limit is Vercel's documented
+  behaviour, not checked against the owner's account (no Vercel project,
+  R-001).
+- Workaround or containment: a Pro plan, or an external scheduler calling
+  the cron route with the bearer every 5 minutes
+  ([RUNBOOK](RUNBOOK.md#shopify-the-cron-and-the-queue)); staff Retry and
+  Sync now run their job immediately.
+- Next action: the owner chooses the Vercel plan before go-live of the
+  online channel.
+- Revisit trigger: the Vercel project is created.
+- Last checked: 2026-10-06, Phase 10 step 3.

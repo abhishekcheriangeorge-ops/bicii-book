@@ -24,6 +24,15 @@ D84's publish rules and `buy_online_url`) in
 `tests/db/shopify-sync.test.ts`; the service layer is step 3; the screens
 step 4.
 
+Status update 2026-10-06 (Phase 10 step 3): the service layer is built
+(`src/lib/integrations/shopify/`, the routes `api/shopify/webhooks` and
+`api/cron/integrations`, `vercel.json`) and tested against a mocked fetch,
+an in-memory fake Shopify and, end to end, the live devstack
+(`tests/db/shopify.stack.test.ts`). No new business decision: the step
+implements D83, D84, D87 and D88 in TypeScript where the database cannot
+(the HMAC, the Shopify calls, the per-instance rejected limit, the cron).
+Its design choices are below ("Service layer").
+
 ## Context
 
 SPEC §17 asks for Shopify as the online channel: BICII is the operational
@@ -95,6 +104,35 @@ Rationale:
 - D89: BICII never invents or drops tax; the owner must confirm the store's
   configuration before go-live.
 
+### Service layer (step 3)
+
+- One `ShopifyAdmin` interface (`admin.ts`) with two implementations: the
+  live GraphQL adapter at the pinned `SHOPIFY_API_VERSION` and an
+  in-memory fake with the seed's deterministic ids. `SHOPIFY_ADAPTER=fake`
+  selects the fake; env.ts refuses it in production and together with a
+  live token. Every runner receives its dependencies (`IntegrationDeps`),
+  so unit tests stub the RPCs and the stack test brings its own fake.
+- The webhook route stores before it answers and processes after it
+  answers (`after()`): its own event's job by id, then a few due jobs; the
+  Vercel cron runs the rest every 5 minutes behind `CRON_SECRET` (D87).
+  The HMAC is checked on the raw bytes before parsing; rejected deliveries
+  are counted by an in-process sliding window (D88,
+  [R-048](../RISKS.md#r-048--the-rejected-delivery-limit-is-per-server-instance)).
+- The sync is hash-driven: no Shopify call when the desired state (which
+  includes the location and the API version) equals the last push.
+  Problems (no price, a unit priced differently) block a product only
+  while it is meant to be live, so unpublishing always drafts it or sets
+  its quantity to 0.
+- The inventory write's idempotency key is a UUID-shaped SHA-256 of the
+  inventory item, desired hash, job id and phase (compare or overwrite),
+  not `${productId}:${hash}`: with the brief's key, a Sync now or the
+  overwrite after a moved count would repeat a key Shopify had already
+  applied and be replayed instead of applied.
+- Unverified against a real store (field names, error codes, the
+  idempotency directive):
+  [R-047](../RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)
+  and [RUNBOOK "Verify before go-live"](../RUNBOOK.md#shopify-verify-before-go-live).
+
 ## Alternatives actually considered
 
 | Option | Why chosen or rejected |
@@ -112,6 +150,9 @@ Rationale:
 | A purge cron | Rejected for the MVP: deletion of evidence stays a deliberate owner action |
 | Enqueue product syncs from an immediate, statement-level trigger on `inventory_movements` | Rejected in step 2: a sale writes its movements before `refresh_unique_publication` locks the product, so taking the sync row there inverts the lock order against a product edit or `set_publish_online` (deadlock); deferred constraint triggers run at commit, after every business lock |
 | Store the online price on the sync row | Rejected: a second price would drift from the label and public page; `private.shopify_online_price` derives it from `private.selling_price` (D58) every time |
+| Process webhooks synchronously before answering Shopify | Rejected in step 3: Shopify expects a fast answer and retries slow ones; storing first and processing in `after()` keeps one business effect per delivery either way |
+| A Shopify SDK (`@shopify/shopify-api`) | Rejected in step 3: four GraphQL calls and an HMAC do not justify the dependency; plain `fetch` keeps the adapter testable with a mocked fetch |
+| Rate-limit rejected deliveries in the database | Deferred in step 3: an in-process window is enough until hosted logs show bursts (R-048) |
 
 ## Consequences
 
@@ -139,6 +180,13 @@ Rationale:
 - The in-flight check is shop-wide and pushed-but-unpublished products are
   re-checked on every stock change, so the sync queue is coarse
   ([RISKS R-046](../RISKS.md#r-046--the-product-sync-queue-is-coarse)).
+- The live adapter is written from Shopify's documentation only
+  ([RISKS R-047](../RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store));
+  the rejected-delivery limit is per server instance
+  ([R-048](../RISKS.md#r-048--the-rejected-delivery-limit-is-per-server-instance));
+  queued jobs wait for the cron, a webhook or a staff action, and Vercel's
+  Hobby plan runs crons daily
+  ([R-049](../RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)).
 
 ## Revisit trigger
 
@@ -152,8 +200,11 @@ Shopify changes its webhook payloads or API version.
 - [DATA-MODEL §13](../DATA-MODEL.md#13-shopify-integration), §6, §8, §14–§16, §18.
 - `supabase/migrations/20261004003900_shopify_integration.sql`,
   `supabase/migrations/20261004004000_shopify_order_processing.sql`,
-  `tests/db/shopify-webhooks.test.ts`, `tests/fixtures/shopify.ts`.
+  `tests/db/shopify-webhooks.test.ts`, `tests/fixtures/shopify.ts`;
+  step 3: `src/lib/integrations/shopify/`, `tests/unit/shopify-*.test.ts`,
+  `tests/db/shopify.stack.test.ts`, `tests/db/shopify-gid-parity.test.ts`,
+  [RUNBOOK "Shopify"](../RUNBOOK.md#shopify).
 - [ARCHITECTURE "Shopify inbound flow"](../ARCHITECTURE.md#shopify-inbound-flow);
   risks [R-011](../RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only),
   [R-021](../RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock),
-  R-040 to R-044.
+  R-040 to R-049.

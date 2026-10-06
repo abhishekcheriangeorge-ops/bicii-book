@@ -97,7 +97,7 @@ the `20261004` prefix). For planned tables, the rows of §15 and the RPCs of
 | §10 Suppliers and purchasing | Planned | Phase 7; built only on the parallel branch `feat/p7-purchasing`, not on this line |
 | §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`); the database QR base and payload (`private.qr_payload`, `003800_labels`, D9); the Admin's QR display and scan bases on the database base (`src/lib/qr.ts`, Phase 8 step 2). Missing: PO- resolution (Phase 7; `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4), the public `/q` route (Phase 11) |
 | §12 Label printing | Partly | Database built (`003800_labels`, Phase 8 step 1: templates, printer profiles, print jobs, label content, RPCs, built-in rows); `src/lib/printing/`, `src/lib/domain/labels.ts`, the print view, the PDF route and the print history (step 2); the record pages' Labels card and the settings screens are steps 3–4; hardware adapters Phase 12 |
-| §13 Shopify integration | Partly | Inbound built (Phase 10 step 1: `003900_shopify_integration`, `004000_shopify_order_processing`: settings, sync rows, events, the queue, the audit trail, webhook recording, order and refund processing, retry, dismiss and the links; D80–D89). Outbound database built (step 2: `004100_shopify_product_sync`: the online price, Publish online, Sync now, the settings RPC, the deferred enqueue triggers, the sync worker's state and result RPCs, `reporting.shopify_sync_status`, `public_items.buy_online_url`). Missing: the service layer, webhook route and sync worker (step 3), the screens (step 4) |
+| §13 Shopify integration | Partly | Inbound built (Phase 10 step 1: `003900_shopify_integration`, `004000_shopify_order_processing`: settings, sync rows, events, the queue, the audit trail, webhook recording, order and refund processing, retry, dismiss and the links; D80–D89). Outbound database built (step 2: `004100_shopify_product_sync`: the online price, Publish online, Sync now, the settings RPC, the deferred enqueue triggers, the sync worker's state and result RPCs, `reporting.shopify_sync_status`, `public_items.buy_online_url`). Service layer built (step 3: `src/lib/integrations/shopify/`, the webhook and cron routes; no schema change). Missing: the screens (step 4) |
 | §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `operational_exceptions` has its `integration_failed` rows since `004000_shopify_order_processing` (admins only, D86). `shopify_sync_status` and `public_items.buy_online_url` since `004100_shopify_product_sync` (Phase 10 step 2). Missing: `stock_reconciliation` (Phase 9), `purchase_order_progress` (Phase 7) |
 | §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48) labels (Phase 8 step 1) and the Shopify integration tables (Phase 10 step 1, D86); rows for purchasing are design |
 | §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`); the five label RPCs (Phase 8 step 1) are built; the five Shopify service-role RPCs and four staff RPCs (Phase 10 step 1) are built; the two sync-worker RPCs and three staff RPCs of the outbound sync (step 2) are built; `receive_purchase` (Phase 10 step 2) are design |
@@ -155,7 +155,7 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 - Errors: business refusals are `P0001` with a stable snake_case code in
   `MESSAGE`, mapped to user messages in
   [src/lib/db-errors.ts](../src/lib/db-errors.ts) (§16).
-- Shopify: inbound built in §13 (Phase 10 step 1): the service-role RPCs the webhook route and cron call (`record_shopify_webhook`, `claim_integration_jobs`, `process_shopify_event`); the outbound sync and `reporting.public_items.buy_online_url` (the Buy-online rule Phase 11 reads, D84) come in step 2.
+- Shopify: inbound built in §13 (Phase 10 step 1): the service-role RPCs the webhook route and cron call (`record_shopify_webhook`, `claim_integration_jobs`, `process_shopify_event`); the outbound sync and `reporting.public_items.buy_online_url` (the Buy-online rule Phase 11 reads, D84) came in step 2, and the service layer that calls them (`src/lib/integrations/shopify/`) in step 3.
 
 ## 1. Identity and authorization
 
@@ -1904,8 +1904,8 @@ Archived records keep their jobs readable (SPEC §23).
 
 Inbound built in Phase 10 step 1 (`20261004003900_shopify_integration.sql`,
 `20261004004000_shopify_order_processing.sql`; PLAN D80–D89, ADR-020);
-the outbound product sync is step 2, the service layer step 3, the screens
-step 4. This replaces the first draft (bigint ids, a `dead` job status,
+the outbound product sync is step 2, the service layer step 3 (built:
+`src/lib/integrations/shopify/`, no schema change), the screens step 4. This replaces the first draft (bigint ids, a `dead` job status,
 Shopify ids on the sync row): ids are uuids, a job a person must act on is
 `needs_attention`, and Shopify product and variant ids live ONLY on
 `products` (§6). Every Shopify id is stored as a gid
@@ -2053,8 +2053,12 @@ yields one sale and one movement per line (`inventory_movements_sale_line_once`)
 (mapping only, D84) and `link_shopify_customer` (never by email; recorded
 sales are never edited, D86), each with an `integration_audit_events` row.
 The service layer (`src/lib/integrations/shopify/`, step 3) owns every
-Shopify API call. Nothing in a component or route handler talks to Shopify
-directly.
+Shopify API call and is the only caller of the service-role RPCs:
+`handleShopifyWebhook` calls `record_shopify_webhook`, the queue runners
+call `claim_integration_jobs` (one job at a time; by id for the job an RPC
+returned), `process_shopify_event`, `product_sync_state` and
+`record_product_sync_result`. Nothing in a component or route handler
+talks to Shopify directly.
 
 **Outbound product sync** (step 2, `20261004004100_shopify_product_sync.sql`;
 D81, D83, D84, D86, D87):
