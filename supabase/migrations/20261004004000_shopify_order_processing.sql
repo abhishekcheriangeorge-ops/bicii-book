@@ -567,6 +567,40 @@ as $$
     and q.status in ('queued', 'running', 'needs_attention');
 $$;
 
+-- An order is recorded (D80, one business effect): every other delivery of
+-- it (another webhook id) still pending or failed becomes processed /
+-- duplicate_order with the sale, and its open job is closed, so the queue
+-- and Today never keep a failure for a recorded order. Sibling events are
+-- taken in id order with SKIP LOCKED: a locked one is being processed (it
+-- finds the sale under the order lock and closes itself) or dismissed.
+create function private.shopify_close_order_siblings(event_id uuid, order_gid text, sale_id uuid)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  sib uuid;
+begin
+  for sib in
+    select e.id
+    from public.integration_events e
+    where e.topic = 'orders/paid' and e.shopify_order_gid = shopify_close_order_siblings.order_gid
+      and e.id <> shopify_close_order_siblings.event_id and e.status in ('pending', 'failed')
+    order by e.id
+    for update skip locked
+  loop
+    update public.integration_events e
+    set status = 'processed', processed_at = pg_catalog.now(), outcome = 'duplicate_order',
+        sale_id = shopify_close_order_siblings.sale_id
+    where e.id = sib;
+    perform private.shopify_close_event_job(sib);
+  end loop;
+end;
+$$;
+
 -- An event failed: the event becomes failed with the code and the human
 -- message; its open job (created when there is none, so every failed event
 -- is in the queue) is re-queued with backoff for a transient code
@@ -850,6 +884,19 @@ begin
           sale_id = existing_sale, last_error_code = null, last_error = null, last_error_detail = null
       where e.id = ev.id;
       perform private.shopify_close_event_job(ev.id);
+      perform private.shopify_close_order_siblings(ev.id, order_gid, existing_sale);
+    elsif exists (
+      select 1 from public.integration_events o
+      where o.topic = 'orders/paid' and o.shopify_order_gid = order_gid and o.id <> ev.id and o.status = 'skipped'
+    ) then
+      -- 3b. Another delivery of this order was closed without a sale
+      -- (dismissed, a test or a POS order): that is final for the order
+      -- (D87), so a delivery under a new webhook id records nothing.
+      update public.integration_events e
+      set status = 'skipped', processed_at = pg_catalog.now(), outcome = 'earlier_delivery_skipped',
+          last_error_code = null, last_error = null, last_error_detail = null
+      where e.id = ev.id;
+      perform private.shopify_close_event_job(ev.id);
     else
       -- 4. Settings, currency (D35) and tax basis (D89).
       select s.* into settings from public.shopify_settings s where s.id = 1;
@@ -1058,8 +1105,8 @@ begin
         perform private.refresh_unique_publication(pid);
       end loop;
 
-      -- 10. Done: the event, its job, and any refund that waited for this
-      -- order (D87).
+      -- 10. Done: the event, its job, the order's other open deliveries
+      -- (duplicate_order) and any refund that waited for this order (D87).
       update public.integration_events e
       set status = 'processed', processed_at = pg_catalog.now(), outcome = 'sale_recorded', sale_id = sale.id,
           last_error_code = null, last_error = null, last_error_detail = null,
@@ -1068,6 +1115,7 @@ begin
           )
       where e.id = ev.id;
       perform private.shopify_close_event_job(ev.id);
+      perform private.shopify_close_order_siblings(ev.id, order_gid, sale.id);
       update public.integration_retry_queue q
       set status = 'queued', next_attempt_at = pg_catalog.now(), locked_at = null,
           max_attempts = greatest(q.max_attempts, q.attempts + 3)
@@ -1109,7 +1157,7 @@ end;
 $$;
 
 comment on function public.process_shopify_order_paid(uuid) is
-  'service_role: record an orders/paid event as one online sale through private.sell_line (online_sale), all or nothing (D80-D82, D89). Replays and second deliveries have no further effect (duplicate_order). A failure leaves the event failed with a human message and its job needs_attention (or queued with backoff when transient, D87); it never raises for a business failure.';
+  'service_role: record an orders/paid event as one online sale through private.sell_line (online_sale), all or nothing (D80-D82, D89). Replays and second deliveries have no further effect (duplicate_order), and recording the order closes its other open deliveries as duplicate_order. A delivery of an order another delivery of which was skipped (dismissed, test or POS) is skipped (earlier_delivery_skipped): a dismissal is final for the order (D87). A failure leaves the event failed with a human message and its job needs_attention (or queued with backoff when transient, D87); it never raises for a business failure.';
 
 -- ---------------------------------------------------------------------------
 -- process_shopify_refund (service_role): a refunds/create event becomes one
@@ -1140,6 +1188,8 @@ declare
   note text;
   sale public.sales;
   dup_sale uuid;
+  sib_status public.integration_event_status;
+  sib_sale uuid;
   t jsonb;
   t_amount numeric;
   t_currency text;
@@ -1213,12 +1263,29 @@ begin
     perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('bicii.shopify.order:' || order_gid, 0));
     select s.* into sale from public.sales s where s.shopify_order_id = order_gid for update;
 
+    -- Another delivery of this refund (another webhook id) already decided
+    -- (D87, one business effect): processed is a duplicate; skipped
+    -- (dismissed, a test, or its order not recorded) is final.
+    select o.status, o.sale_id into sib_status, sib_sale
+    from public.integration_events o
+    where o.topic = 'refunds/create' and o.shopify_order_gid = order_gid and o.id <> ev.id
+      and o.status in ('processed', 'skipped')
+      and private.shopify_gid_or_null('Refund', o.payload ->> 'id') = refund_gid
+    order by (o.status = 'processed') desc, o.id
+    limit 1;
     select r.sale_id into dup_sale from public.sale_refunds r where r.shopify_refund_id = refund_gid;
-    if found then
+    if found or sib_status = 'processed' then
       res_status := 'processed';
       res_outcome := 'duplicate_refund';
       update public.integration_events e
-      set status = 'processed', processed_at = pg_catalog.now(), outcome = 'duplicate_refund', sale_id = dup_sale,
+      set status = 'processed', processed_at = pg_catalog.now(), outcome = 'duplicate_refund',
+          sale_id = coalesce(dup_sale, sib_sale),
+          last_error_code = null, last_error = null, last_error_detail = null
+      where e.id = ev.id;
+      perform private.shopify_close_event_job(ev.id);
+    elsif sib_status = 'skipped' then
+      update public.integration_events e
+      set status = 'skipped', processed_at = pg_catalog.now(), outcome = 'earlier_delivery_skipped',
           last_error_code = null, last_error = null, last_error_detail = null
       where e.id = ev.id;
       perform private.shopify_close_event_job(ev.id);
@@ -1373,7 +1440,7 @@ end;
 $$;
 
 comment on function public.process_shopify_refund(uuid) is
-  'service_role: record a refunds/create event as one sale_refunds row (D85): the line-attributable refund, never above the money refunded, capped at the sale''s remaining total; the sale becomes refunded or partially_refunded as record_sale_refund decides (D49). Never a movement, unit, consignment, line or settlement change (D7). A refund before its order waits (shopify_refund_order_unknown, retried; re-queued when the order is recorded); a refund of a dismissed, test or POS order is skipped (order_not_recorded).';
+  'service_role: record a refunds/create event as one sale_refunds row (D85): the line-attributable refund, never above the money refunded, capped at the sale''s remaining total; the sale becomes refunded or partially_refunded as record_sale_refund decides (D49). Never a movement, unit, consignment, line or settlement change (D7). A refund before its order waits (shopify_refund_order_unknown, retried; re-queued when the order is recorded); a refund of a dismissed, test or POS order is skipped (order_not_recorded). Another delivery of the same refund (same refund id, another webhook id) that was processed makes this one duplicate_refund; one that was skipped (dismissed, test, order not recorded) makes this one skipped (earlier_delivery_skipped): a dismissal is final (D87). The match reads the stored payloads, so it holds until they are purged.';
 
 -- ---------------------------------------------------------------------------
 -- process_shopify_event (service_role): the one entry point the queue
@@ -1503,17 +1570,29 @@ declare
   job public.integration_retry_queue;
   ev public.integration_events;
   closed uuid[] := '{}';
+  closed_orders uuid[] := '{}';
 begin
   if dismiss_integration_job.job_id is null then
     raise exception 'job_id is required' using errcode = '22004';
   end if;
-  -- Lock order as the processors': the event row first, then its job.
+  -- Lock order as the processors': the event rows first, then the jobs. An
+  -- order's deliveries (every orders/paid event of its gid) are locked
+  -- together in id order, so two dismissals of one order never deadlock.
   select q.* into job from public.integration_retry_queue q where q.id = dismiss_integration_job.job_id;
   if not found then
     raise exception 'integration job % not found', dismiss_integration_job.job_id using errcode = 'P0002';
   end if;
   if job.integration_event_id is not null then
-    select e.* into ev from public.integration_events e where e.id = job.integration_event_id for update;
+    select e.* into ev from public.integration_events e where e.id = job.integration_event_id;
+    if ev.topic = 'orders/paid' and ev.shopify_order_gid is not null then
+      perform 1
+      from public.integration_events o
+      where o.topic = 'orders/paid' and o.shopify_order_gid = ev.shopify_order_gid
+      order by o.id
+      for update;
+    else
+      perform 1 from public.integration_events e where e.id = ev.id for update;
+    end if;
   end if;
   select q.* into job from public.integration_retry_queue q where q.id = job.id for update;
   if job.status = 'running' then
@@ -1541,7 +1620,38 @@ begin
     set status = 'skipped', outcome = 'dismissed', processed_at = pg_catalog.now()
     where e.id = job.integration_event_id
     returning e.* into ev;
-    if ev.topic = 'orders/paid' and ev.shopify_order_gid is not null then
+    if ev.topic = 'orders/paid' and ev.shopify_order_gid is not null
+       and not exists (select 1 from public.sales s where s.shopify_order_id = ev.shopify_order_gid) then
+      -- A dismissal is final for the order (D87): its other open
+      -- deliveries (another webhook id) close with it, so none can record
+      -- it later and none stays on Today. Their events are locked above.
+      with sibling_jobs as (
+        select q.id
+        from public.integration_retry_queue q
+        join public.integration_events o on o.id = q.integration_event_id
+        where q.kind = 'shopify_event' and q.status in ('queued', 'needs_attention')
+          and o.topic = 'orders/paid' and o.shopify_order_gid = ev.shopify_order_gid and o.id <> ev.id
+          and o.status in ('pending', 'failed')
+        order by q.id
+        for update of q
+      ),
+      closed_sibling_jobs as (
+        update public.integration_retry_queue q
+        set status = 'dismissed', resolved_at = pg_catalog.now(), resolved_by = actor, locked_at = null,
+            resolution_reason = pg_catalog.left('Another delivery of this order was dismissed: ' || cleaned, 500)
+        from sibling_jobs w
+        where q.id = w.id
+        returning q.id, q.integration_event_id
+      ),
+      closed_sibling_events as (
+        update public.integration_events e
+        set status = 'skipped', outcome = 'dismissed', processed_at = pg_catalog.now()
+        from closed_sibling_jobs c
+        where e.id = c.integration_event_id
+        returning e.id
+      )
+      select coalesce(pg_catalog.array_agg(c.id order by c.id), '{}') into closed_orders
+      from closed_sibling_jobs c;
       -- The waiting refunds' events, then their jobs (the processors' order).
       perform 1
       from public.integration_events r
@@ -1582,7 +1692,10 @@ begin
   )
   values (
     'job_dismissed', job.product_id, job.id, job.integration_event_id, actor, cleaned,
-    pg_catalog.jsonb_build_object('closed_refund_job_ids', pg_catalog.to_jsonb(closed)),
+    pg_catalog.jsonb_build_object(
+      'closed_refund_job_ids', pg_catalog.to_jsonb(closed),
+      'closed_order_job_ids', pg_catalog.to_jsonb(closed_orders)
+    ),
     private.current_correlation_id()
   );
   return job;
@@ -1590,7 +1703,7 @@ end;
 $$;
 
 comment on function public.dismiss_integration_job(uuid, text) is
-  'Admins (D86), reason required: close a queued or needs_attention job (its event becomes skipped / dismissed and keeps its last error); dismissing an order also closes its waiting refunds (order_not_recorded, D87). running -> integration_job_running; done or dismissed -> integration_job_closed. Audited (job_dismissed).';
+  'Admins (D86), reason required: close a queued or needs_attention job (its event becomes skipped / dismissed and keeps its last error); dismissing an order is final for that order (D87): unless a sale already exists for it, its other open deliveries close too (skipped / dismissed, ''Another delivery of this order was dismissed: '' || reason) and its waiting refunds close (order_not_recorded); a later delivery of the order or of a refund of it is skipped (earlier_delivery_skipped / order_not_recorded). running -> integration_job_running; done or dismissed -> integration_job_closed. Audited (job_dismissed).';
 
 -- ---------------------------------------------------------------------------
 -- link_shopify_variant (admin, reason): map a BICII product to a Shopify
@@ -1925,6 +2038,7 @@ revoke all on function
   private.shopify_gid_number(text),
   private.shopify_unmapped_lines(jsonb),
   private.shopify_close_event_job(uuid),
+  private.shopify_close_order_siblings(uuid, text, uuid),
   private.shopify_event_failed(uuid, text, text, text, jsonb),
   private.integration_exceptions()
 from public, anon, authenticated, service_role;

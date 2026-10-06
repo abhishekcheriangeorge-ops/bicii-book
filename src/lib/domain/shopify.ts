@@ -360,6 +360,9 @@ type EventListSelect = {
   sale: { sale_number: string } | null;
 };
 
+/** A stored order gid (DB check integration_events_shopify_order_gid_check). */
+const ORDER_GID = /^gid:\/\/shopify\/Order\/[0-9]{1,20}$/;
+
 /** Characters PostgREST's or() filter would read as syntax, and LIKE wildcards. */
 const sanitizeSearch = (q: string) => q.replace(/[,()"'\\%*_]/g, " ").trim();
 
@@ -374,7 +377,28 @@ export async function listEvents(
     );
   if (status !== "all") query = query.eq("status", status);
   const term = sanitizeSearch(q);
-  if (term) query = query.or(`subject.ilike.*${term}*,external_event_id.ilike.*${term}*`);
+  if (term) {
+    // An order name (#1042) also finds the order's refunds, through the
+    // order gid every delivery of the order carries.
+    const orders = (unwrap(
+      await supabase
+        .from("integration_events")
+        .select("shopify_order_gid")
+        .eq("topic", "orders/paid")
+        .ilike("subject", `%${term}%`)
+        .not("shopify_order_gid", "is", null)
+        .limit(20),
+    ) ?? []) as { shopify_order_gid: string | null }[];
+    const gids = [
+      ...new Set(
+        orders.map((o) => o.shopify_order_gid).filter((g): g is string => !!g && ORDER_GID.test(g)),
+      ),
+    ];
+    const byOrder = gids.length
+      ? `,shopify_order_gid.in.(${gids.map((g) => `"${g}"`).join(",")})`
+      : "";
+    query = query.or(`subject.ilike.*${term}*,external_event_id.ilike.*${term}*${byOrder}`);
+  }
   const rows = (unwrap(await query.order("received_at", { ascending: false }).limit(limit + 1)) ??
     []) as unknown as EventListSelect[];
   return {

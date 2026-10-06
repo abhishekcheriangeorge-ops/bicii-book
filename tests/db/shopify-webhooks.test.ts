@@ -261,6 +261,26 @@ const jobRow = (tx: pg.Client, jobId: string) =>
     return rows[0];
   });
 
+/** Today's integration_failed rows for these jobs, read as the admin; ends as the admin. */
+async function failedRowsFor(tx: pg.Client, jobIds: string[]): Promise<string[]> {
+  await actAs(tx, ADMIN);
+  const { rows } = await tx.query<{ entity_id: string }>(
+    "select entity_id from public.operational_exceptions(200) where kind = 'integration_failed' and entity_id = any($1::uuid[])",
+    [jobIds],
+  );
+  return rows.map((r) => r.entity_id);
+}
+
+/** The sale_refunds rows of a Shopify refund id (owner). */
+const refundRowsOf = (tx: pg.Client, refundId: number) =>
+  readAsOwner(tx, () =>
+    scalar<number>(
+      tx,
+      "select count(*)::int from public.sale_refunds where shopify_refund_id = $1",
+      [`gid://shopify/Refund/${refundId}`],
+    ),
+  );
+
 /** The sale recorded for a Shopify order id, or undefined (owner). */
 const saleOfOrder = (tx: pg.Client, orderId: number) =>
   readAsOwner(tx, async () => {
@@ -1931,7 +1951,7 @@ describe.skipIf(!isolatedDatabase())("Refunds are financial only (D7, D85, D49)"
           event_type: "job_dismissed",
           actor_staff_id: STAFF.admin,
           reason: "Refunded in Shopify; we never had it",
-          payload: { closed_refund_job_ids: [refundJob.id] },
+          payload: { closed_refund_job_ids: [refundJob.id], closed_order_job_ids: [] },
         },
       ]);
 
@@ -1945,7 +1965,291 @@ describe.skipIf(!isolatedDatabase())("Refunds are financial only (D7, D85, D49)"
       expect((await jobsOf(tx, later.event_id)).every((j) => j.status === "done")).toBe(true);
     });
   });
+
+  it("a refund of a test order (accept_test_orders false) is skipped (order_not_recorded): no job left open, no refund row, nothing on Today", async () => {
+    await inTx(async (tx) => {
+      const { variant } = await quantityProduct(tx, { stock: 10 });
+      await readAsOwner(tx, () =>
+        tx.query("update public.shopify_settings set accept_test_orders = false"),
+      );
+      const payload = order([line(variant)], { test: true });
+      const o = await deliver(tx, "orders/paid", payload);
+      expect(o.result).toMatchObject({ event_status: "skipped", outcome: "test_order" });
+      expect((await eventRow(tx, o.event_id)).shopify_order_gid).toBe(
+        `gid://shopify/Order/${payload.id}`,
+      );
+      // Shopify's refund carries no test flag: it is stored pending and
+      // reaches the order lookup.
+      const r = refundFor(payload.id, { amount: "20.00" });
+      const refund = await deliver(tx, "refunds/create", r);
+      expect(refund).toMatchObject({ event_status: "pending" });
+      expect(refund.result).toMatchObject({
+        event_status: "skipped",
+        outcome: "order_not_recorded",
+        sale_id: null,
+        error_code: null,
+      });
+      const jobs = await jobsOf(tx, refund.event_id);
+      expect(jobs.map((j) => j.status)).toEqual(["done"]);
+      expect(await refundRowsOf(tx, r.id)).toBe(0);
+      expect(
+        await failedRowsFor(
+          tx,
+          jobs.map((j) => j.id),
+        ),
+      ).toEqual([]);
+    });
+  });
+
+  it("a refund of a POS order is skipped (order_not_recorded): no job left open, no refund row, nothing on Today", async () => {
+    await inTx(async (tx) => {
+      const { variant } = await quantityProduct(tx, { stock: 10 });
+      const payload = order([line(variant)], { sourceName: "pos" });
+      const o = await deliver(tx, "orders/paid", payload);
+      expect(o.result).toMatchObject({ event_status: "skipped", outcome: "pos_order" });
+      expect((await eventRow(tx, o.event_id)).shopify_order_gid).toBe(
+        `gid://shopify/Order/${payload.id}`,
+      );
+      const r = refundFor(payload.id, { amount: "20.00" });
+      const refund = await deliver(tx, "refunds/create", r);
+      expect(refund).toMatchObject({ event_status: "pending" });
+      expect(refund.result).toMatchObject({
+        event_status: "skipped",
+        outcome: "order_not_recorded",
+        sale_id: null,
+        error_code: null,
+      });
+      const jobs = await jobsOf(tx, refund.event_id);
+      expect(jobs.map((j) => j.status)).toEqual(["done"]);
+      expect(await refundRowsOf(tx, r.id)).toBe(0);
+      expect(
+        await failedRowsFor(
+          tx,
+          jobs.map((j) => j.id),
+        ),
+      ).toEqual([]);
+      // Named after its order as staff know it, so a search by #name finds it.
+      expect((await eventRow(tx, refund.event_id)).subject).toBe(
+        `Refund ${r.id} of #T${payload.id}`,
+      );
+    });
+  });
 });
+
+// ---------------------------------------------------------------------------
+// One order, several webhook ids (D80, D87)
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!isolatedDatabase())(
+  "An order's deliveries close together; a dismissal is final (D80, D87)",
+  () => {
+    /** A quantity product whose variant is not linked yet; `link` links it (owner). */
+    async function unlinkedProduct(tx: pg.Client) {
+      const { productId } = await quantityProduct(tx, { stock: 10 });
+      await readAsOwner(tx, () =>
+        tx.query(
+          "update public.products set shopify_product_id = null, shopify_variant_id = null where id = $1",
+          [productId],
+        ),
+      );
+      const variant = nextShopifyId();
+      const link = () =>
+        readAsOwner(tx, () =>
+          tx.query(
+            "update public.products set shopify_product_id = $2, shopify_variant_id = $3 where id = $1",
+            [
+              productId,
+              `gid://shopify/Product/${nextShopifyId()}`,
+              `gid://shopify/ProductVariant/${variant}`,
+            ],
+          ),
+        );
+      return { productId, variant, link };
+    }
+
+    it("two webhook ids of one order both fail; recording one closes the other as duplicate_order, so nothing stays on Today", async () => {
+      await inTx(async (tx) => {
+        const { variant, link } = await unlinkedProduct(tx);
+        const payload = order([line(variant)]);
+        const a = await deliver(tx, "orders/paid", payload);
+        const b = await deliver(tx, "orders/paid", payload);
+        expect(a.event_id).not.toBe(b.event_id);
+        for (const d of [a, b]) expect(d.result.error_code).toBe("shopify_variant_unmapped");
+        const [jobA] = await jobsOf(tx, a.event_id);
+        const [jobB] = await jobsOf(tx, b.event_id);
+        expect((await failedRowsFor(tx, [jobA.id, jobB.id])).sort()).toEqual(
+          [jobA.id, jobB.id].sort(),
+        );
+
+        await link();
+        await actAs(tx, ADMIN);
+        await tx.query("select public.retry_integration_job($1)", [jobA.id]);
+        await actAs(tx, SERVICE);
+        const recorded = await processEvent(tx, a.event_id);
+        expect(recorded).toMatchObject({ event_status: "processed", outcome: "sale_recorded" });
+        expect(await eventRow(tx, b.event_id)).toMatchObject({
+          status: "processed",
+          outcome: "duplicate_order",
+          sale_id: recorded.sale_id,
+        });
+        expect((await jobRow(tx, jobB.id)).status).toBe("done");
+        expect(await failedRowsFor(tx, [jobA.id, jobB.id])).toEqual([]);
+        // A later manual retry of B finds it closed.
+        await failsWith(tx, () => tx.query("select public.retry_integration_job($1)", [jobB.id]), {
+          code: "P0001",
+          message: "integration_job_closed",
+        });
+      });
+    });
+
+    it("dismissing one delivery closes the order's other open deliveries and its waiting refunds; a later delivery records nothing", async () => {
+      await inTx(async (tx) => {
+        const { productId, variant, link } = await unlinkedProduct(tx);
+        const payload = order([line(variant)]);
+        const a = await deliver(tx, "orders/paid", payload);
+        const b = await deliver(tx, "orders/paid", payload);
+        const waiting = await deliver(
+          tx,
+          "refunds/create",
+          refundFor(payload.id, { amount: "5.00" }),
+        );
+        expect(waiting.result.error_code).toBe("shopify_refund_order_unknown");
+        const [jobA] = await jobsOf(tx, a.event_id);
+        const [jobB] = await jobsOf(tx, b.event_id);
+        const [refundJob] = await jobsOf(tx, waiting.event_id);
+
+        await actAs(tx, ADMIN);
+        await tx.query("select public.dismiss_integration_job($1, $2)", [
+          jobA.id,
+          "Recorded by hand in the shop",
+        ]);
+        expect(await jobRow(tx, jobB.id)).toMatchObject({
+          status: "dismissed",
+          resolution_reason:
+            "Another delivery of this order was dismissed: Recorded by hand in the shop",
+          resolved_by: STAFF.admin,
+        });
+        expect(await eventRow(tx, b.event_id)).toMatchObject({
+          status: "skipped",
+          outcome: "dismissed",
+        });
+        expect((await jobRow(tx, refundJob.id)).status).toBe("dismissed");
+        const audit = await readAsOwner(tx, async () => {
+          const { rows } = await tx.query(
+            "select payload from public.integration_audit_events where job_id = $1 and event_type = 'job_dismissed'",
+            [jobA.id],
+          );
+          return rows;
+        });
+        expect(audit).toEqual([
+          { payload: { closed_refund_job_ids: [refundJob.id], closed_order_job_ids: [jobB.id] } },
+        ]);
+        expect(await failedRowsFor(tx, [jobA.id, jobB.id, refundJob.id])).toEqual([]);
+
+        // The cause clears and the same order arrives under a new webhook id:
+        // the dismissal is final, so no sale and no movement.
+        await link();
+        const before = await movementCount(tx);
+        const c = await deliver(tx, "orders/paid", payload);
+        expect(c.result).toMatchObject({
+          event_status: "skipped",
+          outcome: "earlier_delivery_skipped",
+          sale_id: null,
+          error_code: null,
+        });
+        expect((await jobsOf(tx, c.event_id)).map((j) => j.status)).toEqual(["done"]);
+        expect(await saleOfOrder(tx, payload.id)).toBeUndefined();
+        expect(await movementCount(tx)).toBe(before);
+        expect(await onlineMovements(tx, productId)).toEqual([]);
+      });
+    });
+
+    it("a dismissed order delivered again under a new webhook id records nothing (the replay has no business effect)", async () => {
+      await inTx(async (tx) => {
+        const { productId, variant, link } = await unlinkedProduct(tx);
+        const payload = order([line(variant)]);
+        const a = await deliver(tx, "orders/paid", payload);
+        const [jobA] = await jobsOf(tx, a.event_id);
+        await actAs(tx, ADMIN);
+        await tx.query("select public.dismiss_integration_job($1, $2)", [
+          jobA.id,
+          "Refunded in Shopify",
+        ]);
+        await link();
+        const before = await movementCount(tx);
+        const again = await deliver(tx, "orders/paid", payload, {
+          webhookId: "replayed-webhook-id",
+        });
+        expect(again).toMatchObject({ duplicate: false, event_status: "pending" });
+        expect(again.result).toMatchObject({
+          event_status: "skipped",
+          outcome: "earlier_delivery_skipped",
+        });
+        expect(await saleOfOrder(tx, payload.id)).toBeUndefined();
+        expect(await movementCount(tx)).toBe(before);
+        expect(await onlineMovements(tx, productId)).toEqual([]);
+        // Its refunds are not recorded either.
+        const refund = await deliver(
+          tx,
+          "refunds/create",
+          refundFor(payload.id, { amount: "5.00" }),
+        );
+        expect(refund.result).toMatchObject({
+          event_status: "skipped",
+          outcome: "order_not_recorded",
+        });
+      });
+    });
+
+    it("a dismissed refund delivered again under a new webhook id records nothing; a processed one is duplicate_refund", async () => {
+      await inTx(async (tx) => {
+        const { variant } = await quantityProduct(tx, { stock: 10 });
+        const payload = order([line(variant, { quantity: 2, price: "50.00" })]);
+        // The refund arrives first and the admin dismisses it.
+        const r = refundFor(payload.id, { amount: "50.00" });
+        const early = await deliver(tx, "refunds/create", r);
+        expect(early.result.error_code).toBe("shopify_refund_order_unknown");
+        const [job] = await jobsOf(tx, early.event_id);
+        // Before its order arrives a refund is named by Shopify's order number.
+        expect((await eventRow(tx, early.event_id)).subject).toBe(
+          `Refund ${r.id} of order ${payload.id}`,
+        );
+        await actAs(tx, ADMIN);
+        await tx.query("select public.dismiss_integration_job($1, $2)", [
+          job.id,
+          "Refund handled in the shop",
+        ]);
+        const o = await deliver(tx, "orders/paid", payload);
+        expect(o.result.outcome).toBe("sale_recorded");
+        expect((await jobRow(tx, job.id)).status).toBe("dismissed");
+
+        const again = await deliver(tx, "refunds/create", r);
+        expect(again.result).toMatchObject({
+          event_status: "skipped",
+          outcome: "earlier_delivery_skipped",
+          error_code: null,
+        });
+        expect(await refundRowsOf(tx, r.id)).toBe(0);
+        expect((await saleOfOrder(tx, payload.id)).status).toBe("recorded");
+
+        // A refund that was processed without a row (nothing refunded) stays
+        // processed under any webhook id.
+        const none = refundFor(payload.id, { amount: "0.00" });
+        const first = await deliver(tx, "refunds/create", none);
+        expect(first.result).toMatchObject({
+          event_status: "processed",
+          outcome: "no_money_refunded",
+        });
+        const second = await deliver(tx, "refunds/create", none);
+        expect(second.result).toMatchObject({
+          event_status: "processed",
+          outcome: "duplicate_refund",
+          sale_id: o.result.sale_id,
+        });
+      });
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // D88

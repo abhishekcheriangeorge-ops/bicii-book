@@ -1418,6 +1418,74 @@ describe.skipIf(!isolatedDatabase())("Buy online link (D84; Phase 11 consumes it
       expect(await urlOf(SHOPIFY_PRODUCT_SHORT_ID.syncedTyre)).toBeNull();
     });
   });
+
+  it("links only what Shopify sells: the oldest unit at the online location, and a product row only at the online price (D81)", async () => {
+    await inTx(async (tx) => {
+      const urlOf = async (sid: string) => {
+        await actAs(tx, ANON);
+        const url = (await publicRow(tx, sid)).buy_online_url;
+        await actAs(tx, ADMIN);
+        return url;
+      };
+
+      // Two units at the online location (same price, so the sync does not
+      // refuse) and one elsewhere at its own price: only the oldest online
+      // unit, the one an order takes, links; the product row's price is the
+      // online price, so it links too.
+      const unique = await publicUniqueProduct(tx, {
+        price: "120.00",
+        units: [{}, {}, { price: "90.00", locationId: LOCATION.workshopStore }],
+      });
+      await setPublish(tx, unique.productId, true);
+      await flush(tx);
+      await pushQueued(tx, unique.productId);
+      expect((await syncRow(tx, unique.productId))?.sync_status).toBe("synced");
+      const sid = await shortIdOf(tx, unique.productId);
+      const url = `${SHOPIFY_SETTINGS.storefrontUrl}/products/${handleOf(sid)}`;
+      expect(await urlOf(sid)).toBe(url);
+      expect(await urlOf(unique.units[0].short_id)).toBe(url);
+      // The second online unit is available but an order would take the first.
+      expect(await urlOf(unique.units[1].short_id)).toBeNull();
+      // The unit at another location shows 90.00; Shopify charges 120.00.
+      await actAs(tx, ANON);
+      expect(await publicRow(tx, unique.units[2].short_id)).toMatchObject({
+        availability: "available",
+        sale_price: "90.00",
+        buy_online_url: null,
+      });
+      await actAs(tx, ADMIN);
+
+      // The oldest online unit leaves: the next one is what an order takes.
+      await writeOff(tx, unique.units[0].unit_id);
+      await flush(tx);
+      await pushQueued(tx, unique.productId);
+      expect(await urlOf(unique.units[1].short_id)).toBe(url);
+      expect(await urlOf(unique.units[2].short_id)).toBeNull();
+
+      // A unit priced above its product's default: Shopify charges the
+      // unit's 150.00, the product row shows 100.00, so only the unit links.
+      const priced = await publicUniqueProduct(tx, {
+        price: "100.00",
+        units: [{ price: "150.00" }],
+      });
+      await setPublish(tx, priced.productId, true);
+      await flush(tx);
+      await pushQueued(tx, priced.productId);
+      expect((await syncRow(tx, priced.productId))?.sync_status).toBe("synced");
+      expect((await syncState(tx, priced.productId)).sale_price).toBe("150.00");
+      const pricedSid = await shortIdOf(tx, priced.productId);
+      await actAs(tx, ANON);
+      expect(await publicRow(tx, pricedSid)).toMatchObject({
+        availability: "available",
+        sale_price: "100.00",
+        buy_online_url: null,
+      });
+      expect((await publicRow(tx, priced.units[0].short_id)).buy_online_url).toBe(
+        `${SHOPIFY_SETTINGS.storefrontUrl}/products/${handleOf(pricedSid)}`,
+      );
+      await actAs(tx, ADMIN);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

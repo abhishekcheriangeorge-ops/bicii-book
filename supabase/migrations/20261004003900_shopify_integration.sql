@@ -415,7 +415,8 @@ create table public.integration_events (
   constraint integration_events_outcome_check check (
     outcome in (
       'sale_recorded', 'duplicate_order', 'refund_recorded', 'duplicate_refund', 'no_money_refunded',
-      'refund_not_allocated', 'topic_not_handled', 'test_order', 'pos_order', 'order_not_recorded', 'dismissed'
+      'refund_not_allocated', 'topic_not_handled', 'test_order', 'pos_order', 'order_not_recorded', 'dismissed',
+      'earlier_delivery_skipped'
     )
   ),
   constraint integration_events_last_error_code_check check (pg_catalog.char_length(last_error_code) <= 100),
@@ -824,9 +825,18 @@ begin
     );
     order_gid := private.shopify_gid_or_null('Order', record_shopify_webhook.payload ->> 'id');
   elsif clean_topic = 'refunds/create' then
-    derived_subject := 'Refund ' || coalesce(record_shopify_webhook.payload ->> 'id', '?') || ' of order '
-      || coalesce(record_shopify_webhook.payload ->> 'order_id', '?');
     order_gid := private.shopify_gid_or_null('Order', record_shopify_webhook.payload ->> 'order_id');
+    -- Named after its order as staff know it (#1001, from the order's own
+    -- delivery) so a search by order name finds the refund; Shopify's
+    -- order number when the order has not arrived.
+    derived_subject := 'Refund ' || coalesce(record_shopify_webhook.payload ->> 'id', '?') || ' of '
+      || coalesce(
+           (select o.subject from public.integration_events o
+             where order_gid is not null and o.topic = 'orders/paid' and o.shopify_order_gid = order_gid
+               and o.subject is not null
+             order by o.received_at, o.id limit 1),
+           'order ' || coalesce(record_shopify_webhook.payload ->> 'order_id', '?')
+         );
   end if;
   derived_subject := pg_catalog.left(derived_subject, 200);
   is_test := coalesce(record_shopify_webhook.payload -> 'test' = 'true'::jsonb, false)

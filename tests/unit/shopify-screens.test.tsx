@@ -19,6 +19,8 @@ import {
   eventStatusTone,
   jobKindLabel,
   jobStatusLabel,
+  jobTitle,
+  offlineReason,
   jobStatusTone,
   outcomeText,
   parseUnmappedLines,
@@ -272,6 +274,41 @@ describe("the Online card's rules", () => {
     expect(earlierSalesText(0)).toBe("No earlier online sale is waiting for this customer.");
     expect(earlierSalesText(1)).toMatch(/^1 earlier online sale shows/);
     expect(earlierSalesText(3)).toMatch(/^3 earlier online sales show/);
+  });
+});
+
+describe("the Online card's offline reason (D84: private.shopify_effective_online)", () => {
+  const listed = {
+    active: true,
+    archived: false,
+    ownershipType: "shop_owned",
+    publicationStatus: "public",
+    trackingType: "quantity",
+  };
+  it("is null when the product is listed, a sold-out unique product included", () => {
+    expect(offlineReason(listed)).toBeNull();
+    expect(
+      offlineReason({ ...listed, trackingType: "unique", publicationStatus: "sold" }),
+    ).toBeNull();
+  });
+  it("names why it is not listed", () => {
+    expect(offlineReason({ ...listed, publicationStatus: "unpublished" })).toMatch(
+      /^Not listed: the product is not public/,
+    );
+    expect(offlineReason({ ...listed, publicationStatus: "sold" })).toMatch(/not public/);
+    expect(offlineReason({ ...listed, archived: true })).toMatch(/archived/);
+    expect(offlineReason({ ...listed, active: false })).toMatch(/inactive/);
+    expect(offlineReason({ ...listed, ownershipType: "customer_owned" })).toMatch(/customer-owned/);
+  });
+});
+
+describe("queue titles", () => {
+  it("adds the kind unless the subject starts with it", () => {
+    expect(jobTitle("shopify_event", "orders/paid", "#1042")).toBe("Order #1042");
+    expect(jobTitle("shopify_event", "refunds/create", "Refund 7300000001 of #1001")).toBe(
+      "Refund 7300000001 of #1001",
+    );
+    expect(jobTitle("product_sync", null, "P-000027 Bottle")).toBe("Product sync P-000027 Bottle");
   });
 });
 

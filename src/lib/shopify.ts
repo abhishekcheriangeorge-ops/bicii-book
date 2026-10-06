@@ -98,6 +98,21 @@ export function jobKindLabel(kind: JobKind, topic: string | null | undefined): s
 }
 
 /**
+ * A queue item's title: its kind and subject ("Order #1042", "Product sync
+ * P-000027 …"), without repeating the kind when the subject already starts
+ * with it (a refund's subject is "Refund 7300000001 of #1001").
+ */
+export function jobTitle(kind: JobKind, topic: string | null | undefined, subject: string): string {
+  const label = jobKindLabel(kind, topic);
+  return subject.toLowerCase().startsWith(`${label.toLowerCase()} `)
+    ? subject
+    : `${label} ${subject}`;
+}
+
+/** A job that is finished: nothing can be done with it any more. */
+export const jobClosed = (status: JobStatus) => status === "done" || status === "dismissed";
+
+/**
  * "Attempt 3 of 8 · next try 2:05 pm" (Singapore time) while a job waits;
  * "Attempt 3 of 8" otherwise; "Not tried yet" before the first claim.
  */
@@ -201,6 +216,7 @@ export const EVENT_OUTCOMES = [
   "test_order",
   "pos_order",
   "order_not_recorded",
+  "earlier_delivery_skipped",
   "topic_not_handled",
   "dismissed",
 ] as const;
@@ -302,6 +318,11 @@ export function outcomeText(
         text: "The order was not recorded in BICII, so neither is this refund",
         detail: null,
       };
+    case "earlier_delivery_skipped":
+      return {
+        text: "Another delivery of this was already closed without recording (dismissed, a test or POS order); that is final, so this one is not recorded either",
+        detail: null,
+      };
     case "topic_not_handled":
       return { text: "Topic not used by BICII", detail: null };
     case "dismissed":
@@ -346,6 +367,8 @@ export function eventRowNote({
       return "POS order, not recorded";
     case "order_not_recorded":
       return "Order not recorded";
+    case "earlier_delivery_skipped":
+      return "Earlier delivery closed, not recorded";
     case "topic_not_handled":
       return "Not used by BICII";
     case "dismissed":
@@ -417,6 +440,9 @@ export function earlierSalesText(n: number): string {
   return `${n} earlier online ${n === 1 ? "sale shows" : "sales show"} this customer through their Shopify ID; recorded sales are not changed.`;
 }
 
+/** After a committed change whose immediate run could not happen (D87: the queue runs it). */
+export const SYNC_QUEUED_MESSAGE = "Saved. The sync runs from the queue in a moment.";
+
 export const TEST_ORDERS_WARNING = "Only for testing. Test orders would count as real sales.";
 
 /**
@@ -447,6 +473,43 @@ export function publishBlockedReason({
   if (!hasPrice) return "Set a sale price first.";
   return null;
 }
+
+/**
+ * Why a product with Publish online on is not listed on the store, or null
+ * when it is (private.shopify_effective_online, D84: active, not archived,
+ * not customer-owned, and public, or a unique product that sold out). The
+ * flag stays on, so the listing comes back when the product does.
+ */
+export function offlineReason({
+  active,
+  archived,
+  ownershipType,
+  publicationStatus,
+  trackingType,
+}: {
+  active: boolean;
+  archived: boolean;
+  ownershipType: string;
+  publicationStatus: string;
+  trackingType: string;
+}): string | null {
+  if (archived)
+    return "Not listed: the product is archived. It goes back online when you unarchive it.";
+  if (!active)
+    return "Not listed: the product is inactive. It goes back online when it is active again.";
+  if (ownershipType === "customer_owned")
+    return "Not listed: customer-owned items are never sold online.";
+  if (
+    publicationStatus !== "public" &&
+    !(trackingType === "unique" && publicationStatus === "sold")
+  )
+    return "Not listed: the product is not public. It goes back online when you publish it again.";
+  return null;
+}
+
+/** The list's note for a product whose Publish online is on but which is offline. */
+export const OFFLINE_WHILE_PUBLISHED =
+  "Publish online is on, but the product is not public, active or unarchived; it goes back online when it is.";
 
 /** "just now", "3 min ago", "2 h ago", "4 days ago" (rounded down; never negative). */
 export function relativeAgo(at: string | Date, now: Date = new Date()): string {

@@ -1012,10 +1012,17 @@ as
            where a.entity_type = 'product' and a.entity_id = p.id and a.visibility = 'public'
          ), '[]'::jsonb) as photos,
          p.updated_at,
+         -- D84: the link only when the price this row shows is the price
+         -- Shopify charges: private.shopify_online_price, inlined (it is
+         -- not granted to the API roles): a unique product's row shows the
+         -- product price, Shopify sells its oldest unit at the online
+         -- location at that unit's price (D81).
          (case
             when av.availability = 'available' and ps.publish_online and ps.sync_status = 'synced'
                  and ps.shopify_origin = 'bicii' and ps.shopify_handle is not null
                  and ss.storefront_url is not null
+                 and (p.tracking_type = 'quantity'
+                      or private.selling_price(p.id, null) is not distinct from private.selling_price(p.id, ou.id))
               then ss.storefront_url || '/products/' || ps.shopify_handle
           end)::text as buy_online_url
   from visible_products p
@@ -1043,6 +1050,19 @@ as
   ) av
   left join public.shopify_product_sync ps on ps.product_id = p.id
   left join public.shopify_settings ss on ss.id = 1
+  -- The unit an online order takes (D81; as private.shopify_online_price).
+  left join lateral (
+    select o.id
+    from public.inventory_units o
+    where p.tracking_type = 'unique'
+      and o.product_id = p.id
+      and o.location_id = ss.online_location_id
+      and o.status = 'available'
+      and o.ownership_type <> 'customer_owned'
+      and o.archived_at is null
+    order by o.created_at, o.id
+    limit 1
+  ) ou on true
   union all
   select 'unit'::text,
          u.short_id,
@@ -1094,10 +1114,14 @@ as
            ) ph
          ), '[]'::jsonb),
          greatest(u.updated_at, p.updated_at),
+         -- D84: the link only on the unit an online order takes (D81: the
+         -- oldest available, non-customer-owned, non-archived unit at the
+         -- online location), so the page, its price and the unit sold agree.
          (case
             when uav.availability = 'available' and ps.publish_online and ps.sync_status = 'synced'
                  and ps.shopify_origin = 'bicii' and ps.shopify_handle is not null
                  and ss.storefront_url is not null
+                 and u.id = ou.id
               then ss.storefront_url || '/products/' || ps.shopify_handle
           end)::text
   from visible_products p
@@ -1109,11 +1133,24 @@ as
   ) uav
   left join public.shopify_product_sync ps on ps.product_id = p.id
   left join public.shopify_settings ss on ss.id = 1
+  -- The unit an online order takes (D81; as private.shopify_online_price).
+  left join lateral (
+    select o.id
+    from public.inventory_units o
+    where p.tracking_type = 'unique'
+      and o.product_id = p.id
+      and o.location_id = ss.online_location_id
+      and o.status = 'available'
+      and o.ownership_type <> 'customer_owned'
+      and o.archived_at is null
+    order by o.created_at, o.id
+    limit 1
+  ) ou on true
   where u.archived_at is null
     and u.status not in ('written_off', 'returned_to_consignor');
 
 comment on view reporting.public_items is
-  'The only anonymous inventory surface (Phase 11 /q/{short_id}, D9): published (public or sold) products and their units, public columns and public photos only; sale_price is private.selling_price. buy_online_url (D84, Phase 10; the single Buy-online rule Phase 11 reads) = shopify_settings.storefront_url || ''/products/'' || the BICII-created Shopify handle, only when the row''s own availability is available, the product is published online, synced, BICII-created (an external-origin product has no handle) and the storefront is set; otherwise NULL. Never a Shopify id, sync state, cost or payload. Unknown and unpublished short IDs are absent.';
+  'The only anonymous inventory surface (Phase 11 /q/{short_id}, D9): published (public or sold) products and their units, public columns and public photos only; sale_price is private.selling_price. buy_online_url (D84, Phase 10; the single Buy-online rule Phase 11 reads) = shopify_settings.storefront_url || ''/products/'' || the BICII-created Shopify handle, only when the row''s own availability is available, the product is published online, synced, BICII-created (an external-origin product has no handle) and the storefront is set; and the row is what Shopify sells: a unit row only for the unit an online order takes (the oldest available, non-customer-owned, non-archived unit at the online location, D81), a product row only when its sale_price is not distinct from private.shopify_online_price; otherwise NULL. Never a Shopify id, sync state, cost or payload. Unknown and unpublished short IDs are absent.';
 
 revoke all on table reporting.public_items from public, anon, authenticated, service_role;
 grant select on table reporting.public_items to anon, authenticated;
