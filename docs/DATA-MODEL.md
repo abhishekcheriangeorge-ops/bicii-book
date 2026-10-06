@@ -471,8 +471,11 @@ Rules:
 Attachment storage: two Supabase Storage buckets, created by migration
 (`insert … on conflict do nothing`), photos only (JPEG, PNG, WebP,
 HEIC/HEIF) up to 20 MiB. `media-internal` is private; staff read it directly
-and customers get short-lived signed URLs minted on a server for
-`visibility = customer` rows they are entitled to (`my_bike_attachments`).
+and customers get short-lived signed URLs for the `customer`-visible rows
+they are entitled to (`my_bike_attachments`, `my_work_order_attachments`).
+Phase 1 planned to mint those on a server; since Phase 11 (D124) the
+customer's own session mints them under a read policy limited to exactly
+those objects, so no frontend holds the service-role key.
 `media-public` is a public bucket: its files are served to anyone at their
 public URL (`/object/public/…`, which Storage serves without RLS), and it
 holds only rows with `visibility = public`. Changing visibility to or from
@@ -484,9 +487,14 @@ uploaded as is (it may carry EXIF GPS), so it is never public
 (`attachment_original_never_public`), like any photo on a customer record.
 Storage policies on `storage.objects`:
 
-- `media-internal`: select and insert for active staff. Nobody else, ever:
-  not anon, not signed-in customers, not inactive staff. Customer access is
-  only through signed URLs.
+- `media-internal`: select and insert for active staff. Since Phase 11
+  (D124, `media_internal_select_customer`), select for a signed-in customer
+  on exactly the objects of their own customer- or public-visible bike and
+  job photos, the rows `my_bike_attachments` and `my_work_order_attachments`
+  return them, so their session can sign URLs. Nothing for anon or inactive
+  staff, no listing of anything else, no writes for customers. (Phase 1 had
+  no customer policy and planned server-minted URLs; the visible set is
+  unchanged.)
 - `media-public`: select and insert for active staff only. No select for
   anon or customers: public URLs need none, and a select policy would let
   anyone list the bucket.

@@ -45,7 +45,7 @@ D120–D125.
 | Staff link every website login by hand | Rejected: SPEC §18 asks for customer sign-up; staff already record emails at intake, and a verified code proves the mailbox |
 | Link by email even when several records share it | Rejected: it would pick one customer's history at random; the shop resolves duplicates (D121) |
 | Create a customer record at sign-in | Rejected: every sign-up, including people who never book, would add a record to the staff customer list (D122, data minimisation) |
-| A service-role client on the public site to sign photo URLs | Rejected: it would put a key that bypasses RLS into the second frontend; a storage policy keeps the boundary in the database (D124) |
+| Phase 1's plan: signed photo URLs minted by a server that holds the service-role key (DATA-MODEL §2 as first written) | Rejected for D124: the only servers are the two Next apps, and giving the public site the service-role key would put a key that bypasses RLS into the second frontend (ADR-003 keeps it in the Admin's `src/lib/admin/`); a Storage policy limited to the same objects shows customers exactly what the server would have, and keeps the boundary in the database |
 | Sign customers in from Server Actions, as the Admin does | Rejected: every visitor would share the site server's Auth bucket, which D72 had to fix with limits of its own; browser calls count each visitor |
 | A Buy online button now | Rejected: Phase 10 is not merged and no item has a storefront address yet (D125) |
 
