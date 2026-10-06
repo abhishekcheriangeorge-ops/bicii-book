@@ -1229,3 +1229,79 @@ URLs, or customer data in this file.
 - Revisit trigger: a 413 or a repeated 409 reported by staff, or the shop
   needs year-long line exports.
 - Last checked: 2026-10-06 (Phase 9 step 2).
+
+## R-058 — Phase 9's exceptions migration must be re-verified when Phase 10 merges
+
+- Category: integration risk (merge order).
+- Status and owner: open; orchestrator (the integration of
+  `feat/p9-reporting` and `feat/p10-shopify`).
+- Trigger: `feat/p10-shopify` and `feat/p9-reporting` are merged into one
+  branch, in either order.
+- Impact: Phase 10's `20261004004000_shopify_order_processing.sql` sorts
+  BEFORE Phase 9's `20261006001300_operational_exceptions.sql`. It creates
+  `private.integration_exceptions()` (nine columns, admins only, D86) and
+  replaces `reporting.operational_exceptions` with its nine-column
+  `integration_failed` branch. Phase 9 must keep Phase 10's body and
+  replace the view with fifteen columns. If the placeholder overwrote
+  Phase 10's body, admins would never see a failed Shopify job; if the
+  signatures differed, whichever migration ran second would fail.
+- Evidence and confidence: high for this branch, medium for the merged
+  one (not yet run). `20261006001300` creates the placeholder inside a
+  `DO` block guarded by `to_regprocedure('private.integration_exceptions()')
+  is null`, with exactly Phase 10's signature (read with `git show
+  feat/p10-shopify:supabase/migrations/20261004004000_shopify_order_processing.sql`),
+  and its view maps the appended columns itself;
+  `tests/db/operational-exceptions.test.ts` checks the signature from the
+  catalogue. Phase 10's other migrations (`…3900`, `…4100`) do not touch
+  the view, `public.operational_exceptions` or `today_dashboard`. On the
+  merged branch Phase 10's `src/lib/reports.ts` already labels
+  integration_failed "Shopify needs attention"; its `integration_job`
+  link must survive step 4's exceptions screen.
+- Workaround or containment: none needed until the merge.
+- Next action: on the integrated branch run `npm run db:reset`, then
+  `tests/db/operational-exceptions.test.ts`, `reporting.test.ts`,
+  `reporting-seed.test.ts` and Phase 10's exception tests, and check that
+  an admin sees a `needs_attention` job as `integration_failed` with
+  `issue` = `integration_failed` while mechanic2 does not.
+- Revisit trigger: the merge; any later change to
+  `private.integration_exceptions()` on either branch.
+- Last checked: 2026-10-06 (Phase 9 step 3).
+
+## R-059 — Today and the exception counts are slow at a busy year's volume
+
+- Category: performance (measured).
+- Status and owner: open; build agent (Phase 9 step 4 or a follow-up).
+- Trigger: a year of busy-shop data: the bench in
+  `scripts/bench/report-volume.sql` (15,021 jobs, 51,025 work-order lines,
+  10,004 sale lines, about 110,000 movements, 3,006 unique units, 1,503
+  overdue or uncollected jobs).
+- Impact: `today_dashboard(null)` took 8,837 ms against a 150 ms target.
+  Almost all of it is Phase 5's `public.daily_summary(d, d)` for one day
+  (6,400–8,400 ms measured alone, with and without JIT): it joins the day
+  to `reporting.daily_summary`, which computes every day since the
+  earliest activity before the day is picked. Phase 9 did not change it
+  (the brief keeps `today_dashboard`'s body except the exceptions count).
+  The exceptions count itself (`report_exception_counts()`, and the same
+  query inside Today) took 257 ms against 150 ms; the list
+  (`operational_exceptions(200)`) 390 ms, inside its 500 ms target. The
+  seeded shop is far below this volume, and Today loads instantly there.
+- Evidence and confidence: high for the measurements (DATA-MODEL §14
+  "Reconciliation and exception timings", 2026-10-06, a throwaway clone
+  of `bicii_dev_wt`, numbers noisy within about ±20% on the shared
+  4-CPU machine); medium for how soon a real shop reaches this volume.
+  Before two query fixes the counts took 585 ms and the list 973 ms: the
+  currency_mismatch branches now read the shop currency once per query,
+  and the reconciliation and exception RPCs run with `jit = off` (JIT
+  compilation alone cost 100–250 ms per call).
+- Workaround or containment: none needed at today's volume. The
+  reconciliation RPCs are well inside target (50–88 ms).
+- Next action: rewrite `public.daily_summary(d, d)` to compute only the
+  requested days from the source tables (the same columns, proved equal
+  by `period-reports.test.ts`' daily_summary comparison), and consider
+  `jit = off` on `today_dashboard` (an attribute change the brief kept out
+  of this step); only if the counts still miss, a trigger-maintained
+  projection of the exception counts (the documented D106 follow-up), never
+  a hand-maintained total.
+- Revisit trigger: Today takes more than a second in use, or the shop's
+  data approaches the bench volume.
+- Last checked: 2026-10-06 (Phase 9 step 3).

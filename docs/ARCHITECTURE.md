@@ -251,6 +251,19 @@ All records: [decisions/README.md](decisions/README.md).
   `report_period_summary`, retrying once before a 409
   ([R-057](RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export),
   [ADR-001 A2](ADR-001-architecture.md#a2-three-layers-one-direction)).
+- Reconciliation and exceptions (Phase 9 step 3, D106–D108): there is no
+  stock balance cache; reconciliation is three read-only `reporting` views
+  over the ledger (`unit_ledger_disposition`, `unit_reconciliation`,
+  `stock_reconciliation`) read through two staff RPCs, and its issues also
+  flow into the ONE exceptions surface (`reporting.operational_exceptions`,
+  `public.operational_exceptions`, `report_exception_counts`, Today's
+  `exceptions_now`). Who sees which kind is one function,
+  `private.exception_visible`, so the list, the counts and Today agree per
+  caller. Fixes are links to the existing guarded RPCs, never automatic.
+  Phase 10's `private.integration_exceptions()` is the integration
+  extension point, created here only if absent so both merge orders work
+  ([R-058](RISKS.md#r-058--phase-9s-exceptions-migration-must-be-re-verified-when-phase-10-merges);
+  [ADR-022](decisions/ADR-022-reporting.md#2026-10-06-stock-reconciliation-and-operational-exceptions-d106d108)).
 - Search: `staff_search` is one function replaced whole by each phase that
   adds a kind; the latest (`20261005000400_purchasing_search.sql`) carries
   every kind, and a DB test checks it against `SEARCH_KINDS`.
@@ -263,7 +276,7 @@ All records: [decisions/README.md](decisions/README.md).
 | Concern | Measured fact | Assumption or unknown | Revisit trigger |
 |---|---|---|---|
 | Concurrency | Races are tested on separate connections: `tests/db/workshop-concurrency.test.ts`, `reporting-concurrency`, `staff-concurrency`, `appointment-concurrency`, `consignment-concurrency` (Phase 6 steps 1 and 2 and the review fixes: intake, returns, parts, completions, sales, settlements, refunds and restocks; each case proves the second call waits on a lock), `purchasing-concurrency` (Phase 7: the same receipt key twice, two keys racing for one line, a receipt against a quantity change or a job part, opposite-order receipts, racing preferred links) and the "under concurrency" block of `inventory-ledger.test.ts` (skipped in existing-database mode); all passed in `npm test` on `feat/p7-purchasing` at the Phase 7 integration (102 files, 1517 tests) and again after its review fixes (102 files, 1518 tests), every concurrency file above included | Behaviour under real shop load | First hosted use |
-| Load and latency | Period reports only: `scripts/bench/report-volume.sql` on a year of synthetic data (15,021 jobs, 51,025 work-order lines, 10,004 sale lines, 101,045 movements) measured every report RPC under its target on 2026-10-06 (a month ≤ 93 ms, a year ≤ 451 ms, a line-items page ≤ 35 ms, stock value 15 ms; [DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting)); screens not measured | Single shop, a few staff; hosted latency unknown | Slow screens reported; a report query changes (re-run the bench) |
+| Load and latency | Period reports only: `scripts/bench/report-volume.sql` on a year of synthetic data (15,021 jobs, 51,025 work-order lines, 10,004 sale lines, 101,045 movements) measured every report RPC under its target on 2026-10-06 (a month ≤ 93 ms, a year ≤ 451 ms, a line-items page ≤ 35 ms, stock value 15 ms; [DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting)); step 3 added 3,006 unique units: reconciliation 50–88 ms and the exceptions list 390 ms (targets 500), but the exception counts 257 ms (target 150) and `today_dashboard` 8.8 s, almost all Phase 5's `daily_summary` for one day ([R-059](RISKS.md#r-059--today-and-the-exception-counts-are-slow-at-a-busy-years-volume)); screens not measured | Single shop, a few staff; hosted latency unknown | Slow screens reported; a report query changes (re-run the bench) |
 | Upload size | 20 MiB per object on both buckets (`file_size_limit` 20971520); photos are scaled to at most 2048 px and re-encoded as JPEG in the browser first (`prepare-photo.ts`) | Hosted Storage limits per plan | Hosted project created |
 | Hosted behaviour | None: everything runs on the devstack | Platform roles, Auth settings and versions may differ | [R-001](RISKS.md#r-001--nothing-is-deployed), [R-003](RISKS.md#r-003--the-devstack-differs-from-hosted-supabase) |
 | Recovery | No backup or restore exercised | Unknown plan tier | [R-002](RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery) |

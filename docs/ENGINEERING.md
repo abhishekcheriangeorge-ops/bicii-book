@@ -182,8 +182,11 @@ dropdb bicii_bench_wt
 Targets: a month under 300 ms, a year under 1.5 s, a line-items page under
 100 ms, `report_stock_value` under 300 ms. The latest timings are in
 [DATA-MODEL §14](DATA-MODEL.md#14-reporting-views-schema-reporting)
-(2026-10-06: every target met). Phase 9 step 3 appends the reconciliation
-and exception timings to the same script.
+(2026-10-06: every target met). Section 3 (Phase 9 step 3) adds about
+3,000 unique units across their states and times the reconciliation RPCs
+(target 500 ms: met), `operational_exceptions` (500 ms: met),
+`report_exception_counts` and `today_dashboard` (150 ms each: missed,
+[R-059](RISKS.md#r-059--today-and-the-exception-counts-are-slow-at-a-busy-years-volume)).
 
 ## Changing the system
 
@@ -197,8 +200,9 @@ from the code:
   purchasing and staff email sign-in, `20261006000100`–`20261006000900`
   staff roles, `20261006001000` and up reporting, `20261007…` public site.
   The latest file on `feat/p9-reporting` is
-  `20261006001100_report_stock_value.sql` (Phase 9, after the staff roles'
-  `20261006000100`–`20261006000300`). A
+  `20261006001300_operational_exceptions.sql` (Phase 9, after the staff
+  roles' `20261006000100`–`20261006000300`; it applies before or after
+  Phase 10's `20261004004000`, R-058). A
   migration that replaces a function another track also replaces (as
   `staff_search`) must carry both tracks' behaviour. Never edit an applied
   migration; add a new one (nothing is hosted yet, so a track's own

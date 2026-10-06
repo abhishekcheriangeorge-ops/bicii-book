@@ -18,11 +18,13 @@
 -- their own numbers) while every CHECK constraint still holds.
 --
 -- Targets (Phase 9 step 1): a month under 300 ms, a year under 1.5 s, a
--- line-items page under 100 ms, report_stock_value under 300 ms.
+-- line-items page under 100 ms, report_stock_value under 300 ms. Step 3:
+-- reconciliation and operational_exceptions under 500 ms,
+-- report_exception_counts and today_dashboard under 150 ms.
 --
 -- Structure: section 1 generates data, section 2 times the period
--- reports. Phase 9 step 3 appends section 3 (reconciliation and
--- exceptions) after section 2.
+-- reports, section 3 (Phase 9 step 3) adds about 3,000 unique units and
+-- times reconciliation and the exceptions.
 
 \set ON_ERROR_STOP 1
 \pset pager off
@@ -280,5 +282,142 @@ explain (analyze, buffers, summary on) select * from public.report_activity_by_m
 explain (analyze, buffers, summary on) select * from public.report_stock_value();
 
 -- ===========================================================================
--- 3. (Phase 9 step 3 appends reconciliation and exception timings here.)
+-- 3. Reconciliation and exceptions (Phase 9 step 3; D106-D108)
 -- ===========================================================================
+-- About 3,000 unique units across their states, each with a consistent
+-- ledger (owner inserts in replica mode, as in section 1): 40% available,
+-- 20% sold by a retail sale, 20% sold on a completed bench job, 10% held on
+-- an open bench job, 10% written off. Targets: both reconciliation RPCs and
+-- operational_exceptions under 500 ms; report_exception_counts and
+-- today_dashboard under 150 ms each (Today loads them every time).
+reset role;
+begin;
+set local session_replication_role = replica;
+
+create temporary table bench_uproducts on commit drop as
+select gen_random_uuid() as id, g as n from generate_series(1, 300) g;
+
+insert into public.products (id, short_id, name, tracking_type, default_sale_price, default_direct_cost)
+select id, 'P-' || lpad((600000 + n)::text, 6, '0'), 'Bench bike ' || n, 'unique', 900, 500
+from bench_uproducts;
+
+create temporary table bench_units on commit drop as
+select
+  gen_random_uuid() as id,
+  g as n,
+  p.id as product_id,
+  case g % 10
+    when 0 then 'sold_sale' when 1 then 'sold_sale'
+    when 2 then 'sold_job' when 3 then 'sold_job'
+    when 4 then 'held'
+    when 5 then 'written_off'
+    else 'available'
+  end as state,
+  gen_random_uuid() as line_id,
+  now() - interval '200 days' + (g % 150) * interval '1 day' as received_at
+from generate_series(1, 3000) g
+join bench_uproducts p on p.n = 1 + (g % 300);
+
+insert into public.inventory_units (id, short_id, product_id, location_id, status, sold_at, direct_cost)
+select u.id, 'U-' || lpad((600000 + u.n)::text, 6, '0'), u.product_id,
+       (select id from public.locations order by sort_order limit 1),
+       (case u.state
+          when 'sold_sale' then 'sold' when 'sold_job' then 'sold'
+          when 'held' then 'held_for_customer' when 'written_off' then 'written_off'
+          else 'available'
+        end)::public.unit_status,
+       case when u.state in ('sold_sale', 'sold_job') then u.received_at + interval '20 days' end,
+       500
+from bench_units u;
+
+insert into public.inventory_movements (
+  product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason, unit_cost_snapshot,
+  currency, created_at
+)
+select u.product_id, u.id, (select id from public.locations order by sort_order limit 1), 1, 'stock_adjustment',
+       'Bench intake', 500, 'SGD', u.received_at
+from bench_units u;
+
+-- Retail sales, one line each.
+insert into public.sales (id, sale_number, source, recognized_at, status, currency)
+select u.line_id, 'S-' || lpad((600000 + u.n)::text, 6, '0'), 'retail', u.received_at + interval '20 days',
+       'recorded', 'SGD'
+from bench_units u where u.state = 'sold_sale';
+
+insert into public.sale_lines (
+  id, sale_id, line_number, product_id, inventory_unit_id, description_snapshot, quantity,
+  unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency, created_at
+)
+select u.line_id, u.line_id, 1, u.product_id, u.id, 'Bench bike sale', 1, 900, 500, 0.3000, 'SGD',
+       u.received_at + interval '20 days'
+from bench_units u where u.state = 'sold_sale';
+
+update public.inventory_units iu set sold_sale_line_id = u.line_id
+from bench_units u where u.id = iu.id and u.state = 'sold_sale';
+
+insert into public.inventory_movements (
+  product_id, inventory_unit_id, location_id, quantity_delta, movement_type, sale_line_id, unit_cost_snapshot,
+  currency, created_at
+)
+select u.product_id, u.id, (select id from public.locations order by sort_order limit 1), -1, 'retail_sale',
+       u.line_id, 500, 'SGD', u.received_at + interval '20 days'
+from bench_units u where u.state = 'sold_sale';
+
+-- Job parts: sold on a completed bench job, or held on an open one.
+create temporary table bench_unit_jobs on commit drop as
+select u.id as unit_id, u.product_id, u.line_id, u.state, u.received_at,
+       (select w.id from public.work_orders w
+         where w.job_number like 'J-5%'
+           and w.status = case when u.state = 'held' then 'in_progress' else 'collected' end::public.work_order_status
+         order by w.job_number offset (u.n % 500) limit 1) as work_order_id
+from bench_units u where u.state in ('sold_job', 'held');
+
+insert into public.work_order_line_items (
+  id, work_order_id, line_type, source_product_id, source_inventory_unit_id, description_snapshot, quantity,
+  unit_sale_price_snapshot, unit_direct_cost_snapshot, cult_commons_rate_snapshot, currency, created_at
+)
+select j.line_id, j.work_order_id, 'inventory', j.product_id, j.unit_id, 'Bench bike part', 1, 900, 500,
+       0.3000, 'SGD', j.received_at + interval '10 days'
+from bench_unit_jobs j;
+
+insert into public.inventory_movements (
+  product_id, inventory_unit_id, location_id, quantity_delta, movement_type, work_order_id,
+  work_order_line_item_id, unit_cost_snapshot, currency, created_at
+)
+select j.product_id, j.unit_id, (select id from public.locations order by sort_order limit 1), -1,
+       'job_consumption', j.work_order_id, j.line_id, 500, 'SGD', j.received_at + interval '10 days'
+from bench_unit_jobs j;
+
+-- Write-offs.
+insert into public.inventory_movements (
+  product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason, unit_cost_snapshot,
+  currency, created_at
+)
+select u.product_id, u.id, (select id from public.locations order by sort_order limit 1), -1, 'damaged',
+       'Bench write-off', 500, 'SGD', u.received_at + interval '5 days'
+from bench_units u where u.state = 'written_off';
+
+commit;
+analyze;
+
+select
+  (select count(*) from public.inventory_units) as units,
+  (select count(*) from public.inventory_movements where inventory_unit_id is not null) as unit_movements;
+
+select set_config(
+  'request.jwt.claims', '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false
+);
+
+\echo '--- reconciliation: issues only, then everything'
+explain (analyze, buffers, summary on) select * from public.report_stock_reconciliation();
+explain (analyze, buffers, summary on) select * from public.report_unit_reconciliation();
+explain (analyze, buffers, summary on) select * from public.report_stock_reconciliation(false, null, 1000);
+explain (analyze, buffers, summary on) select * from public.report_unit_reconciliation(false, null, 1000);
+select issue, count(*) from reporting.unit_reconciliation group by issue order by issue;
+select issue, count(*) from reporting.stock_reconciliation group by issue order by issue;
+
+\echo '--- exceptions: the list, the counts and Today'
+explain (analyze, buffers, summary on) select * from public.operational_exceptions(200);
+explain (analyze, buffers, summary on) select * from public.report_exception_counts();
+explain (analyze, buffers, summary on) select * from public.today_dashboard(null);
+select * from public.report_exception_counts();

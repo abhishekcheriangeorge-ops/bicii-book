@@ -189,6 +189,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.report_period_series(date, date, report_date_basis, report_grain)",
   "public.report_period_summary(date, date, report_date_basis)",
   "public.report_stock_value()",
+  // Reconciliation and exceptions (Phase 9): any active staff; the threshold is admin only (D106–D108)
+  "public.report_stock_reconciliation(boolean, uuid, integer)",
+  "public.report_unit_reconciliation(boolean, uuid, integer)",
+  "public.report_exception_counts()",
+  "public.set_consignment_settlement_alert_days(integer)",
 ];
 
 /**

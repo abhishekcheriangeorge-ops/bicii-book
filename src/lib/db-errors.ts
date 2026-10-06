@@ -248,6 +248,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   // Period reports (Phase 9, D100)
   report_range_too_long: "Reports cover at most two years. Choose a shorter range.",
   report_key_invalid: "That report row no longer exists. Go back and pick it again.",
+  // Reconciliation and exceptions (Phase 9, D107)
+  alert_days_out_of_range: "Choose between 1 and 365 days.",
   // Appointments and schedule (Phase 2)
   appointment_slot_misaligned: "Pick one of the listed times.",
   appointment_outside_hours: "The shop is not open for the whole of that time.",
@@ -613,6 +615,7 @@ export const CHECK_ERRORS: Record<string, string> = {
   shop_settings_cancel_cutoff_check:
     "The online cancellation cutoff must be between 0 minutes and 7 days.",
   shop_settings_public_site_url_check: "Enter the public site's address, starting with https://.",
+  shop_settings_consignment_settlement_alert_days_check: "Choose between 1 and 365 days.",
   shop_hours_interval_check: "Opening time must be before closing time.",
   shop_hours_weekday_check: "Pick a day of the week.",
   closure_overrides_range_check: "A closure ends after it starts and lasts at most 366 days.",

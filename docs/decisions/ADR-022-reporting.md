@@ -3,10 +3,12 @@
 Date: 2026-10-06 (built on `feat/p9-reporting`, branched from
 `feat/staff-roles` at 5c9fbc7). Status: D100–D105 accepted, build defaults
 for the owner to confirm ([PRODUCT owner question 21](../PRODUCT.md#open-assumptions-and-owner-questions));
-D102 is the build default for the unanswered owner question 12. Steps 1
-(the database) and 2 (the `/reports` and `/reports/lines` screens and the
-CSV export) of 4 are built; reconciliation and exceptions (step 3,
-D106–D108, recorded here when built) and the closure (step 4) follow. Decision owner: Abhishek Cherian George (owner) for
+D102 is the build default for the unanswered owner question 12.
+D106–D108 (stock reconciliation and the extended operational exceptions)
+accepted the same way, owner question 22. Steps 1 (the database), 2 (the
+`/reports` and `/reports/lines` screens and the CSV export) and 3
+(reconciliation and exceptions in the database, [below](#2026-10-06-stock-reconciliation-and-operational-exceptions-d106d108))
+of 4 are built; the screens for step 3 and the closure (step 4) follow. Decision owner: Abhishek Cherian George (owner) for
 business meaning; defaults proposed by the build agent and the
 orchestrator's Phase 9 brief.
 
@@ -114,14 +116,122 @@ reporting build defaults); a measured report slowdown in use; Phase 10's
 online refunds (D85) are integrated (they must report through D102); a
 second currency or shop.
 
+## 2026-10-06: stock reconciliation and operational exceptions (D106–D108)
+
+Built in Phase 9 step 3 (`20261006001200_stock_reconciliation.sql`,
+`20261006001300_operational_exceptions.sql`). Status: accepted, build
+defaults for the owner to confirm (owner question 22).
+
+### Context
+
+SPEC §12 asks that current stock be "derivable/reconcilable from
+movements" and SPEC §26 lists "stock reconciliation tools" and an
+operational exceptions panel (negative stock, units in impossible states,
+unsettled consignments older than N days, failed integrations). Phase 4
+already refuses most unit drift at commit (`private.assert_unit_consistent`
+nets each unit's ledger to 1 at its own location while available or
+reserved, 0 elsewhere); Phase 5 built one exceptions surface
+(`reporting.operational_exceptions`, `public.operational_exceptions`,
+Today's `exceptions_now`) with five kinds visible to every staff member
+(D34). Phase 10, on `feat/p10-shopify`, adds `integration_failed` rows for
+admins only (D86) through `private.integration_exceptions()` with Phase 5's
+nine columns. The brief does not say whether stock needs a balance cache,
+when unpaid consignment money becomes an exception, or who sees which
+exception.
+
+### Decision
+
+| D | Rule (short) | Implemented in |
+|---|---|---|
+| D106 STOCK-RECONCILIATION | No `inventory_balances` cache: the ledger sum is the stock. Reconciliation compares each unit's status, location and consignment item status with its ledger (per-location nets and the disposition of its latest non-transfer movement) and each (product, location) ledger with its units; read-only; fixes are links to guarded flows; a persistent issue is an RPC defect | `reporting.unit_ledger_disposition`, `reporting.unit_reconciliation`, `reporting.stock_reconciliation`, `report_stock_reconciliation`, `report_unit_reconciliation`; `tests/db/stock-reconciliation.test.ts` |
+| D107 UNSETTLED-CONSIGNMENT-ALERT | An item with outstanding > 0 whose latest sale is more than N shop days ago; N = `shop_settings.consignment_settlement_alert_days` (default 30, 1–365), set only by an admin through `set_consignment_settlement_alert_days` (replay-safe, recorded in `schedule_events`); computed live, never stored or dismissed | the `unsettled_consignment` branch of `reporting.operational_exceptions`; `tests/db/operational-exceptions.test.ts` |
+| D108 EXCEPTION-VISIBILITY | One rule, `private.exception_visible(kind)`, for the list, the counts and `exceptions_now`: Phase 5's kinds and unit_state_mismatch for every active staff member; unsettled_consignment for consignment money viewers (D48); integration_failed for admins (D86) | `public.operational_exceptions`, `report_exception_counts`, `today_dashboard`; `tests/db/operational-exceptions.test.ts` |
+
+Full text: [PLAN §6](../PLAN.md#6-open-decisions-for-the-owner), rows
+D106–D108, and the status note on D34.
+
+Rationale. The ledger is the single source of truth (SPEC §12); a cache
+would be a second truth that needs its own reconciliation, and the bench
+shows the live views fast enough for the reconciliation page (under
+100 ms at 3,006 units and about 110,000 movements). Reconciliation never
+writes because every stock, status and money change already has a guarded
+RPC with its own idempotency, reason and history; an automatic fix would
+bypass them (inferred). The alert counts from the latest sale because that
+is when money became owed (D46), and 30 days matches a monthly settlement
+habit (inferred; the owner confirms N). Visibility follows the money:
+consignor balances are consignment money (D48), integration failures carry
+order details that Phase 10 keeps to admins (D86), and everything else is
+operational and already visible to all staff (D30).
+
+The disposition of a unit comes from its latest non-transfer movement
+because a transfer only moves the location; a refund writes no movement
+(D7), so a refunded unit stays sold until `restock_unit`'s +1. Checks run
+in a fixed order and the first failure is the issue, so each corruption
+has one code. On products the root cause comes first:
+`unique_movement_without_unit` before `unit_count_mismatch`, because a
+unitless movement always shifts the count too. A held unit that Phase 5's
+`unit_hold_stale` already lists, and a negative location that Phase 5's
+`negative_stock` already lists, are not repeated as `unit_state_mismatch`:
+one row per problem.
+
+The Phase 10 extension point keeps Phase 10's nine-column signature: this
+branch creates `private.integration_exceptions()` only when it is absent,
+as a placeholder with no rows, and the extended view maps the six appended
+columns itself. Both merge orders apply cleanly (R-058).
+
+### Alternatives actually considered
+
+| Option | Why chosen or rejected |
+|---|---|
+| An `inventory_balances` cache maintained by triggers | Rejected for the MVP: a second truth to reconcile; the measured live views meet the reconciliation targets. A future cache must be a trigger-maintained projection that these views also check (D106) |
+| Live ledger views and read-only RPCs | Chosen |
+| Auto-fix (write the missing movement or status) | Rejected: bypasses the guarded RPCs, their reasons and their histories; a wrong guess would corrupt the ledger it is meant to prove |
+| Show the issue and link to the guarded flow (adjust stock, restock, settle, void, return) | Chosen |
+| Every exception visible to every staff member (Phase 5's rule) | Rejected: unsettled consignments show consignor balances (D48) and integration failures are admin-only in Phase 10 (D86) |
+| Per-kind visibility through one function | Chosen (D108); the counts and Today cannot disagree with the list |
+| Widen `private.integration_exceptions()` to fifteen columns | Rejected: Phase 10 on `feat/p10-shopify` already defines the nine-column function; a different signature would break whichever branch merges second |
+| Keep Phase 10's nine-column signature; the view maps the appended columns | Chosen; created here only if absent (R-058) |
+| Store raised exceptions with a dismiss flag | Rejected: SPEC §19.2 forbids a second truth; an exception clears when its cause is fixed |
+| A separate `report_exceptions` RPC and a second Today tile | Rejected: one exceptions surface, extended in place |
+
+### Consequences
+
+- `public.operational_exceptions(max_rows)` keeps its name, argument,
+  default, ordering and 1..200 clamp and gains six columns after Phase 5's
+  nine (`issue`, `short_id`, `title`, `detail`, `amount`, `currency`); the
+  Phase 5 column contract in `tests/db/reporting-fixtures.ts` was extended
+  by appending them.
+- `today_dashboard.exceptions_now` now differs per caller: mechanic2 does
+  not count an unsettled consignment that an admin counts.
+- Until the step 4 screens, Today lists the new kinds with its generic
+  "Needs attention" copy, and a sale or consignment row has no link.
+- At the bench volume the exceptions counts take about 260 ms (target
+  150 ms) and Today about 8.8 s, almost all of it Phase 5's
+  `daily_summary` for one day (R-059).
+- The RPCs that read the wide reconciliation and exception views run with
+  `jit = off` (as Phase 2's slot functions do): compiling cost 100–250 ms
+  per call on the bench and saved nothing.
+- New error code `alert_days_out_of_range`; CHECK
+  `shop_settings_consignment_settlement_alert_days_check`.
+
+### Revisit trigger
+
+The owner answers question 22; Phase 10 merges (re-verify R-058); Today
+is reported slow (R-059); a unit issue persists after its guarded fix (an
+RPC defect to report with the unit's movement history).
+
 ## Evidence and links
 
 - Branch `feat/p9-reporting` (local, not pushed), migrations
-  `20261006001000_report_periods.sql` and
-  `20261006001100_report_stock_value.sql`.
+  `20261006001000_report_periods.sql`,
+  `20261006001100_report_stock_value.sql`,
+  `20261006001200_stock_reconciliation.sql` and
+  `20261006001300_operational_exceptions.sql`.
 - Tests: `tests/db/period-reports.test.ts` with the scenario in
-  `tests/db/period-report-fixtures.ts`; Phase 5's and Phase 6's reporting
-  tests pass unchanged.
+  `tests/db/period-report-fixtures.ts`; `tests/db/stock-reconciliation.test.ts`
+  and `tests/db/operational-exceptions.test.ts` (D106–D108); Phase 5's and
+  Phase 6's reporting tests pass unchanged apart from the six appended
+  exception columns.
 - Bench: `scripts/bench/report-volume.sql`; timings in
   [DATA-MODEL §14](../DATA-MODEL.md#14-reporting-views-schema-reporting).
 - [DATA-MODEL §14, §15, §16](../DATA-MODEL.md#14-reporting-views-schema-reporting),

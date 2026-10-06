@@ -522,6 +522,14 @@ export const OPERATIONAL_EXCEPTIONS_COLUMNS = [
   "days",
   "quantity",
   "since",
+  // Phase 9 (D106-D108) appends these after Phase 5's nine (a documented
+  // contract change: the first nine are unchanged).
+  "issue",
+  "short_id",
+  "title",
+  "detail",
+  "amount",
+  "currency",
 ] as const;
 
 export const FINANCIAL_LINES_COLUMNS = [

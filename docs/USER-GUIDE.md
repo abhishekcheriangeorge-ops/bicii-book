@@ -490,6 +490,15 @@ managers.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
   at 0. Refunds and restocks are not taken off (D102: the period reports
   show refunds beside gross instead).
+- Needs attention lists what you may see (D108): every staff member sees
+  overdue and uncollected jobs, stock below zero, stale holds, lines in
+  another currency (job lines and, since Phase 9, sale lines) and units
+  whose status disagrees with the stock ledger; consignor money unpaid more
+  than 30 days after the sale (D107) only with Manage consignments or View
+  costs (admins and managers by role); failed integrations only admins.
+  Until the Reports exceptions screen is built (Phase 9 step 4) the newer
+  kinds show as "Needs attention" with a short description, and a sale or
+  consignment row does not open anything yet.
 
 ### Read reports
 

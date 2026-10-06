@@ -2414,6 +2414,7 @@ export type Database = {
         Row: {
           booking_horizon_days: number;
           booking_min_notice_minutes: number;
+          consignment_settlement_alert_days: number;
           customer_cancel_cutoff_minutes: number;
           customer_max_active_bookings: number;
           default_currency: string;
@@ -2428,6 +2429,7 @@ export type Database = {
         Insert: {
           booking_horizon_days?: number;
           booking_min_notice_minutes?: number;
+          consignment_settlement_alert_days?: number;
           customer_cancel_cutoff_minutes?: number;
           customer_max_active_bookings?: number;
           default_currency?: string;
@@ -2442,6 +2444,7 @@ export type Database = {
         Update: {
           booking_horizon_days?: number;
           booking_min_notice_minutes?: number;
+          consignment_settlement_alert_days?: number;
           customer_cancel_cutoff_minutes?: number;
           customer_max_active_bookings?: number;
           default_currency?: string;
@@ -4440,15 +4443,21 @@ export type Database = {
       operational_exceptions: {
         Args: { max_rows?: number };
         Returns: {
+          amount: number;
+          currency: string;
           days: number;
+          detail: string;
           entity_id: string;
           entity_label: string;
           entity_type: string;
+          issue: string;
           kind: string;
           quantity: number;
           severity: string;
+          short_id: string;
           since: string;
           subject_label: string;
+          title: string;
         }[];
       };
       public_appointment_types: {
@@ -4742,6 +4751,14 @@ export type Database = {
           yield_total: number;
         }[];
       };
+      report_exception_counts: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          count: number;
+          kind: string;
+          severity: string;
+        }[];
+      };
       report_line_items: {
         Args: {
           p_after_at?: string;
@@ -4833,6 +4850,20 @@ export type Database = {
           yield_total: number;
         }[];
       };
+      report_stock_reconciliation: {
+        Args: { p_max_rows?: number; p_only_issues?: boolean; p_product_id?: string };
+        Returns: {
+          issue: string;
+          ledger_on_hand: number;
+          location_id: string;
+          location_name: string;
+          product_id: string;
+          product_name: string;
+          product_short_id: string;
+          tracking_type: Database["public"]["Enums"]["tracking_type"];
+          units_in_stock: number;
+        }[];
+      };
       report_stock_value: {
         Args: Record<PropertyKey, never>;
         Returns: {
@@ -4842,6 +4873,27 @@ export type Database = {
           uncosted_items: number;
           units_in_stock: number;
           value_at_cost: number;
+        }[];
+      };
+      report_unit_reconciliation: {
+        Args: { p_max_rows?: number; p_only_issues?: boolean; p_product_id?: string };
+        Returns: {
+          disposition: string;
+          disposition_ref: string;
+          expected_on_hand: number;
+          issue: string;
+          issue_detail: string;
+          last_movement_at: string;
+          ledger_location_id: string;
+          ledger_location_name: string;
+          ledger_on_hand: number;
+          location_id: string;
+          location_name: string;
+          product_id: string;
+          product_name: string;
+          status: Database["public"]["Enums"]["unit_status"];
+          unit_id: string;
+          unit_short_id: string;
         }[];
       };
       restock_unit: {
@@ -5102,6 +5154,7 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      set_consignment_settlement_alert_days: { Args: { p_days: number }; Returns: number };
       set_publication_status: {
         Args: {
           product_id: string;
@@ -5602,6 +5655,7 @@ export type Database = {
         Returns: {
           booking_horizon_days: number;
           booking_min_notice_minutes: number;
+          consignment_settlement_alert_days: number;
           customer_cancel_cutoff_minutes: number;
           customer_max_active_bookings: number;
           default_currency: string;
@@ -6065,6 +6119,20 @@ export type Database = {
             referencedColumns: ["consignor_id"];
           },
           {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_ledger_disposition";
+            referencedColumns: ["unit_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_reconciliation";
+            referencedColumns: ["unit_id"];
+          },
+          {
             foreignKeyName: "consignment_items_product_id_fkey";
             columns: ["product_id"];
             isOneToOne: false;
@@ -6120,6 +6188,20 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "consignor_ledger";
             referencedColumns: ["consignor_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_ledger_disposition";
+            referencedColumns: ["unit_id"];
+          },
+          {
+            foreignKeyName: "consignment_items_inventory_unit_id_fkey";
+            columns: ["inventory_unit_id"];
+            isOneToOne: true;
+            referencedRelation: "unit_reconciliation";
+            referencedColumns: ["unit_id"];
           },
           {
             foreignKeyName: "consignment_items_product_id_fkey";
@@ -6243,15 +6325,21 @@ export type Database = {
       };
       operational_exceptions: {
         Row: {
+          amount: number | null;
+          currency: string | null;
           days: number | null;
+          detail: string | null;
           entity_id: string | null;
           entity_label: string | null;
           entity_type: string | null;
+          issue: string | null;
           kind: string | null;
           quantity: number | null;
           severity: string | null;
+          short_id: string | null;
           since: string | null;
           subject_label: string | null;
+          title: string | null;
         };
         Relationships: [];
       };
@@ -6406,6 +6494,65 @@ export type Database = {
           },
           {
             foreignKeyName: "inventory_movements_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_stock";
+            referencedColumns: ["product_id"];
+          },
+        ];
+      };
+      stock_reconciliation: {
+        Row: {
+          issue: string | null;
+          last_movement_at: string | null;
+          ledger_on_hand: number | null;
+          location_id: string | null;
+          product_id: string | null;
+          tracking_type: Database["public"]["Enums"]["tracking_type"] | null;
+          units_in_stock: number | null;
+        };
+        Relationships: [];
+      };
+      unit_ledger_disposition: {
+        Row: {
+          disposition: string | null;
+          disposition_movement_id: number | null;
+          disposition_ref: string | null;
+          last_movement_at: string | null;
+          ledger_location_id: string | null;
+          ledger_on_hand: number | null;
+          location_nets: Json | null;
+          location_out_of_range: boolean | null;
+          unit_id: string | null;
+        };
+        Relationships: [];
+      };
+      unit_reconciliation: {
+        Row: {
+          disposition: string | null;
+          disposition_ref: string | null;
+          expected_on_hand: number | null;
+          issue: string | null;
+          issue_detail: string | null;
+          last_movement_at: string | null;
+          ledger_location_id: string | null;
+          ledger_on_hand: number | null;
+          location_id: string | null;
+          product_id: string | null;
+          status: Database["public"]["Enums"]["unit_status"] | null;
+          unit_id: string | null;
+          unit_short_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "inventory_units_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "low_stock";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "inventory_units_product_id_fkey";
             columns: ["product_id"];
             isOneToOne: false;
             referencedRelation: "product_stock";
