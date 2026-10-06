@@ -1,0 +1,70 @@
+# Apply supabase/migrations to the hosted Supabase project (docs/RUNBOOK.md
+# "Applying migrations to a hosted project").
+#
+# Runs on manual dispatch and on every push to `main` that changes a file
+# under supabase/migrations/. It prints the migration history, shows what a
+# push would apply (--dry-run), applies it, and prints the history again.
+#
+# - The only secret is SUPABASE_DB_URL, the project's session pooler
+#   connection string (Project Settings -> Database -> Connection string ->
+#   Session pooler), set as a GitHub Actions secret by the owner. It is never
+#   printed; GitHub masks it in logs.
+# - Never --include-seed: supabase/seed.sql is test data and must not reach a
+#   hosted project. Never --include-all: hosted migrations are append-only, so
+#   a file that sorts before the newest applied one fails the push (rename it
+#   to a later timestamp instead, docs/RUNBOOK.md).
+# - One run at a time, never cancelled half way (each migration is its own
+#   transaction, but a cancelled run would leave the history mid-list).
+
+name: Migrate hosted database
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+
+concurrency:
+  group: migrate-hosted
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_CLI: supabase@2.119.0
+  SUPABASE_TELEMETRY_DISABLED: "1"
+
+jobs:
+  migrate:
+    name: db push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check the connection secret is set
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::The SUPABASE_DB_URL Actions secret is not set (docs/RUNBOOK.md, Applying migrations to a hosted project)."
+            exit 1
+          fi
+
+      - name: Migration history before
+        run: npx --yes "$SUPABASE_CLI" migration list --db-url "$SUPABASE_DB_URL"
+
+      - name: What would be applied (dry run)
+        run: npx --yes "$SUPABASE_CLI" db push --dry-run --db-url "$SUPABASE_DB_URL"
+
+      - name: Apply pending migrations
+        run: npx --yes "$SUPABASE_CLI" db push --yes --db-url "$SUPABASE_DB_URL"
+
+      - name: Migration history after
+        run: npx --yes "$SUPABASE_CLI" migration list --db-url "$SUPABASE_DB_URL"

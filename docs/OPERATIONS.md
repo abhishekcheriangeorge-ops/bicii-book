@@ -29,7 +29,7 @@ commands in [ENGINEERING.md](ENGINEERING.md).
 | Service or account | Purpose | Owner and access | Billing | If it fails |
 |---|---|---|---|---|
 | GitHub repository `abhishekcheriangeorge-ops/bicii-book` (public; 0 issues) | Code, pull requests, CI on GitHub Actions | George (owner account) | Not checked | No CI and no review history |
-| GitHub Actions (`ci.yml`, `e2e.yml`) | `check`, `test (unit + db)`, `build`; Playwright | Same repository; no secrets configured or needed | Not checked | Changes merge unverified |
+| GitHub Actions (`ci.yml`, `e2e.yml`, `migrate.yml`) | `check`, `test (unit + db)`, `build`; Playwright; `db push` to the hosted Supabase project | Same repository. `ci.yml` and `e2e.yml` need no secrets; `migrate.yml` reads the `SUPABASE_DB_URL` Actions secret, set by the owner ([RUNBOOK](RUNBOOK.md#from-github-actions-the-hosted-project)) | Not checked | Changes merge unverified; migrations stop reaching the hosted database |
 | Supabase hosted projects `bicii-staging`, `bicii-prod` | Database, Auth, Storage for previews and production | **Not set up** | n/a | n/a until created |
 | Vercel project | Hosting the Admin | **Not set up** | n/a | n/a |
 | Domain, DNS | Admin and public site addresses | None known for the Admin | Unknown | n/a |
@@ -57,7 +57,7 @@ describe (planned; never exercised).
 | Environment | App | Database | Auth, Storage, integrations | Configuration source |
 |---|---|---|---|---|
 | Local devstack | http://localhost:3000 (`npm run dev`); E2E serves a production build on :3100 | `bicii_dev` on Postgres 16 at 127.0.0.1:5432 | Supabase Auth :9999, PostgREST :3001, Storage :5000 behind the gateway :54321; public local demo keys; no email, no Shopify | `npm run devstack:env` writes `.env.local`; shell variables for the scripts ([ENGINEERING.md](ENGINEERING.md#prerequisites-and-access)) |
-| CI (GitHub Actions) | `next build`; `next start` on :3100 for E2E | A `postgres:16` service container per job | The devstack with the local demo keys; no secrets | [`ci.yml`](../.github/workflows/ci.yml): `check`, `test (unit + db)`, `build` on pull requests (opened, synchronize, reopened), pushes to `main` and manual dispatch. [`e2e.yml`](../.github/workflows/e2e.yml): pull requests labelled `e2e`, nightly at 02:23 Singapore time, manual dispatch |
+| CI (GitHub Actions) | `next build`; `next start` on :3100 for E2E | A `postgres:16` service container per job | The devstack with the local demo keys; no secrets | [`ci.yml`](../.github/workflows/ci.yml): `check`, `test (unit + db)`, `build` on pull requests (opened, synchronize, reopened), pushes to `main` and manual dispatch. [`e2e.yml`](../.github/workflows/e2e.yml): pull requests labelled `e2e`, nightly at 02:23 Singapore time, manual dispatch. [`migrate.yml`](../.github/workflows/migrate.yml): `db push` to the hosted project on manual dispatch and on pushes to `main` that change `supabase/migrations/` |
 | Preview / staging | **Not set up** | `bicii-staging` planned | Planned | [RUNBOOK](RUNBOOK.md#hosted-supabase-projects-staging-and-production) |
 | Production | **Not set up** | `bicii-prod` planned | Planned | [RUNBOOK](RUNBOOK.md#vercel-environment-setup) |
 
