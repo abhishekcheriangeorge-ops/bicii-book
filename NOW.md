@@ -1,40 +1,45 @@
 # Current state
 
-Updated: 2026-10-05, Phase 8 (QR identity and labels) complete, with its
-review findings applied (the commit with this update), on `feat/p8-labels`
-(stacked on `feat/p6-consignment` at c791d4b). Evidence checked: `git
-status`, `git log`, `git worktree list` and `git for-each-ref refs/heads
-refs/remotes` at the start and end of the step; local gates on the final
-tree (below). Earlier rows: their own gates as recorded.
+Updated: 2026-10-06, Phase 10 (Shopify) step 1 of 4 complete (the
+inbound database side), on `feat/p10-shopify` (stacked on `feat/p8-labels`
+at 3f09d22). Evidence checked: `git status`, `git log`, `git worktree list`
+and `git for-each-ref refs/heads refs/remotes` at the start and end of the
+step; local gates on the final tree (below). Earlier rows: their own gates
+as recorded.
 
 ## Return in two minutes
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
-- Current objective: Phase 8 is built
-  ([PLAN Phase 8 "Shipped"](docs/PLAN.md#phase-8--qr-and-labels)): step 1
-  the database (1294e36 decisions D9 base and D56–D59, 2c4f6a3
-  `20261004003800_labels.sql`, seed jobs, types, tests; c5de022), step 2
-  the printing library, `src/lib/qr.ts` on the database base, print view,
-  PDF route and history (967b99b, cd4bbb6; 9608931), step 3 Print label
-  and the Labels card on product, unit and bike pages and Settings →
-  Labels and printers (41c1a5c, abe7e6c), step 4 the label steps of
-  journeys 3 and 4 (afaf288) and the closing docs (0dc6a41), then the
-  Phase 8 review fixes (the commit with this update). All committed
-  locally, not pushed.
-- Next action: the orchestrator pushes `feat/p6-consignment` and
-  `feat/p8-labels` and opens their PRs (Phase 8's on top of Phase 6's),
-  answering the documentation-impact question of
-  [.github/pull_request_template.md](.github/pull_request_template.md)
-  (for Phase 8: squash 41c1a5c into abe7e6c, or say that 41c1a5c's docs
-  and E2E selector fix are in abe7e6c,
-  [R-032](docs/RISKS.md#r-032--one-phase-8-commit-is-undocumented-and-fails-e2e-on-its-own));
-  then the next phase in the build order, Shopify (Phase 10). Before that
-  phase adds a decision, the orchestrator or owner opens a new main-line
-  decision range (D59 was the last,
-  [R-028](docs/RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted)).
-  The owner confirms D56–D59 and the D9 base decision (row 15 of the
-  [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions)).
+- Current objective: Phase 10 (Shopify), built in four steps
+  ([PLAN Phase 10](docs/PLAN.md#phase-10--shopify), decisions D80–D89 in
+  [ADR-020](docs/decisions/ADR-020-shopify.md)). Step 1 is done: ef1a613
+  (the decision ranges per track, D80–D89, R-028 resolved) and 8ea4dbd
+  (`20261004003900_shopify_integration.sql`,
+  `20261004004000_shopify_order_processing.sql`, the Phase 10 seed, types,
+  fixtures, `tests/db/shopify-webhooks.test.ts`, docs), plus the commit
+  with this update. Committed locally, not pushed.
+- Next action: Phase 10 step 2, the outbound product-sync database part
+  (`20261004004100_shopify_product_sync.sql`: `private.shopify_online_price`,
+  `set_publish_online`, `request_product_sync`, `set_shopify_settings`,
+  the enqueue triggers, `reporting.shopify_sync_status`,
+  `reporting.public_items.buy_online_url`). `origin/feat/p8-labels` now
+  equals 3f09d22 (pushed by the orchestrator); its PR answers the
+  documentation-impact question (for Phase 8 see
+  [R-032](docs/RISKS.md#r-032--one-phase-8-commit-is-undocumented-and-fails-e2e-on-its-own)).
+  The owner answers rows 17–19 of the
+  [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions)
+  (D89 tax basis and Shopify POS; confirm D80–D88).
+- Phase 10 step 1 in one line: every webhook is stored before processing
+  (deduplicated on its webhook id; rejected deliveries kept as body-less
+  evidence, D88); a paid order becomes one online sale through Phase 6's
+  `private.sell_line` at Shopify's discounted prices split exactly (D80),
+  or nothing, waiting for an admin with a human message (D82); a refund is
+  one `sale_refunds` row and never moves stock (D85); test and POS orders
+  are skipped and tax-exclusive orders refused (D89); retries back off and
+  admins dismiss with a reason (D87); only admins see payloads, the queue
+  and the `integration_failed` exceptions, and link variants and customers
+  (never by email, D86). No screen, route or Shopify API call yet.
 - Phase 8 in one line: labels encode only
   `{shop_settings.public_site_url}/q/{short_id}` (no fallback: nothing
   prints until an admin sets the address; the environment's address is
@@ -82,7 +87,8 @@ a separate, label-triggered run. All listed results are success.
 | Print flow on the record pages, Labels and printers settings, labels E2E (Phase 8 step 3: D9, D56–D59) | Yes, `feat/p8-labels` 41c1a5c (code and unit tests) and the commit with this update (E2E, docs): `PrintLabelButton` / `PrintLabelSheet`, the Labels card on product, unit and bike pages, `?print=1&qty=N&reprint=…`, `/settings/labels` (QR address, printers, templates), the decimal `NumberInput` stepper | Locally on the final tree: `npm run check` pass, `npm test` 108 files / 1587 tests passed (after `npm run db:reset` and a devstack restart; `print-label.test.tsx`, `printing/print-sheet.test.ts`, the decimal stepper, `publicSiteUrlInputSchema`, `resolvePrintPreset`), `npm run test:e2e` 146 passed on phone and tablet (14.5 min; build inside, pass; `labels.spec.ts` 8 × 2; a first run had 4 failures, a "Units" list-name clash in `inventory.spec.ts` and `sales.spec.ts`, fixed by naming the Labels card's list "Unit labels"), docs link check 35 files / 597 links / 0 problems; `check:types` not run (no migration) | Not deployed |
 | Journey label steps and Phase 8 closing docs (Phase 8 step 4: D9, D56–D59) | Yes, `feat/p8-labels` afaf288 (journey 3: ten identical labels through the PDF adapter; journey 4: one U- label for the consigned bike at the price "What the public sees" shows; shared `tests/e2e/label-helpers.ts`) and the closing docs commit with this update | Locally on the final tree: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 108 files / 1587 tests passed (after `npm run db:reset` and a devstack restart), `npm run test:e2e` 146 passed, 73 on phone and 73 on tablet, 0 failed (14.2 min; `npm run build` inside, pass), docs link check 35 files / 624 links / 0 problems (on the final docs) | Not deployed |
 | Phase 8 review fixes | Yes, `feat/p8-labels`, the commit with this update: the bike page asks for labels only after `notFound()` (an unknown bike is a 404 again) and `label_preview`'s P0002 is "unavailable" (`not_found`); the print view keeps only Back, status and Print / Open PDF sticky, the confirmation in the flow; printing from a `?print=1` deep link replaces its history entry, and `createPrintJobAction` refreshes; printers are a radio list in the sheet; "Did the label print correctly?" for one; the job page's printer name and type on separate rows; the template sheet's field errors on their fields after a change or Save; tests: a signed-in customer gets 403 from the PDF route and the print view, the default-printer and default-template races, the stack test independent of E2E residue, the unit label E2E on a unit it creates | Locally on the final tree: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 109 files / 1597 tests passed (before and right after an E2E run, on a `bicii_dev` holding its jobs), `npm run test:e2e` 150 passed, 75 on phone and 75 on tablet (13.3 min; `npm run build` inside, pass; a first run had 2 failures, the new unit label test asserting a condition the label truncates, fixed), the two new races fail with `create_print_job`'s retry cut to one attempt (migration restored), docs link check 35 files / 625 links / 0 problems | Not deployed |
-| Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Shopify inbound database (Phase 10 step 1: D80–D89) | Database only, `feat/p10-shopify` ef1a613 (decisions), 8ea4dbd (migrations `20261004003900`, `20261004004000`, seed, types, fixtures, tests, docs); no route, service layer or screens | Locally on the final tree: `npm run db:reset` pass (`40\|20261004004000`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check:types` pass (no diff), `npm run check` pass, `npm test` 111 files / 1666 tests passed (incl. `shopify-webhooks.test.ts` 61 tests, `meta.test.ts`, `shopify-fixtures.test.ts`), `npm run test:e2e` 152 passed on phone and tablet (16.4 min; build inside, pass; run beside the parallel track's E2E), docs link check 36 files / 666 links / 0 problems | Not deployed |
+| Phase 9 reporting, Shopify outbound sync and screens (Phase 10 steps 2–4), public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -92,16 +98,21 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   (#2) ← … ← `feat/p2-appointments` (#7) ← `feat/docs-stack`. #1–#7 are open
   drafts, pushed and equal to origin.
 - `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
-- `feat/p8-labels` (head: the commit with this update): stacked on
-  `feat/p6-consignment` (c791d4b); Phase 8 complete, committed locally,
-  not pushed (`git for-each-ref` shows no `origin/feat/p8-labels`). Step 1:
+- `feat/p10-shopify` (head: the commit with this update): stacked on
+  `feat/p8-labels` (3f09d22); Phase 10 step 1 committed locally, not
+  pushed (`git for-each-ref` shows no `origin/feat/p10-shopify`): ef1a613,
+  8ea4dbd and the commit with this update.
+- `feat/p8-labels` (3f09d22, equal to `origin/feat/p8-labels` on
+  2026-10-06; the rest of this entry is as of Phase 8): stacked on
+  `feat/p6-consignment` (c791d4b, equal to `origin/feat/p6-consignment`
+  on 2026-10-06); Phase 8 complete and pushed by the orchestrator. Step 1:
   1294e36, 2c4f6a3, c5de022; step 2: 967b99b, cd4bbb6, 9608931; step 3:
   41c1a5c, abe7e6c; step 4: afaf288 and 0dc6a41; review fixes: the
   commit with this update. Origin
   holds an older orchestrator auto-save, `wip/feat/p8-labels` (889294d,
   not reviewed).
-- `feat/p6-consignment`: stacked on `feat/docs-stack`; committed locally,
-  not pushed (34783d6 decisions D44–D53, step 1's commits, step 2's
+- `feat/p6-consignment` (pushed by the orchestrator; as of Phase 8 the
+  entry read: committed locally, not pushed): stacked on `feat/docs-stack` (34783d6 decisions D44–D53, step 1's commits, step 2's
   2d2ba0c and 2c402b2, step 3's 2137316, 5627bb0, ecc90f1 and d8ba313,
   step 4's 67b1607, b65484a, 543760f, eccd687 and a8967c7, the review
   fixes 32f19e6, and the documentation follow-up commit with this
@@ -110,8 +121,8 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   (ed7d27e, a snapshot of uncommitted work, not reviewed). The
   orchestrator pushes it and opens its PR on top of `feat/docs-stack`.
 - Parallel track: a second worktree of this clone (`bicii-book-wt`, see
-  `git worktree list`) with its own database builds purchasing and email
-  OTP. `feat/p7-purchasing` (7fed53f, equal to origin) and
+  `git worktree list`; on `feat/staff-roles` at 2026-10-06) with its own
+  database builds purchasing, email OTP and staff roles. `feat/p7-purchasing` (7fed53f, equal to origin) and
   `feat/auth-email-otp` (local 35d7a63, origin 4b3eadd: the local branch
   is ahead or differs; owned by that track) at the end of Phase 8 step 4; purchasing forks from PR #6 (no
   appointments); both are merged in a later integration step
