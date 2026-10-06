@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/database.types";
 import { getPublicEnv, getServerEnv } from "@/lib/env";
+import { CORRELATION_HEADER } from "@/lib/request-id";
 
 /**
  * Service-role client: BYPASSES RLS. Importable only from src/lib/admin/**
@@ -11,8 +12,11 @@ import { getPublicEnv, getServerEnv } from "@/lib/env";
  * eslint.config.mjs) and never from anything a browser can load
  * (`server-only`). Use it for the Auth admin API and integration workers,
  * never for reads a signed-in user could do through RLS.
+ *
+ * `correlationId` is sent as x-correlation-id on every PostgREST call
+ * (ADR-001 A8), so the rows an integration RPC writes carry it.
  */
-export function createServiceClient() {
+export function createServiceClient(options: { correlationId?: string } = {}) {
   const { NEXT_PUBLIC_SUPABASE_URL } = getPublicEnv();
   const { SUPABASE_SERVICE_ROLE_KEY } = getServerEnv();
   if (!SUPABASE_SERVICE_ROLE_KEY) {
@@ -22,5 +26,8 @@ export function createServiceClient() {
   }
   return createClient<Database>(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: options.correlationId
+      ? { headers: { [CORRELATION_HEADER]: options.correlationId } }
+      : undefined,
   });
 }
