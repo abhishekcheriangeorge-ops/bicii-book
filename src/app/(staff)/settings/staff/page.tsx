@@ -43,17 +43,23 @@ export default async function StaffSettingsPage() {
               </span>
               <span className="truncate text-sm text-dust-500">{s.email}</span>
               <span className="flex flex-wrap gap-1.5">
+                {/* What the role implies (D91), then the person's exceptions (D92). */}
                 {s.role === "admin" ? (
                   <Badge tone="info" emphasis="soft">
                     All permissions
                   </Badge>
+                ) : s.role === "manager" ? (
+                  <Badge tone="progress" emphasis="soft">
+                    All but Manage staff
+                  </Badge>
                 ) : s.grantedPermissions.length === 0 ? (
                   <span className="text-sm text-dust-500">Workshop access only</span>
-                ) : (
-                  s.grantedPermissions.map((p) => (
-                    <Badge key={p}>{PERMISSION_LABELS[p].label}</Badge>
-                  ))
-                )}
+                ) : null}
+                {s.role === "admin"
+                  ? null
+                  : s.grantedPermissions.map((p) => (
+                      <Badge key={p}>{PERMISSION_LABELS[p].label}</Badge>
+                    ))}
               </span>
             </span>
             <ChevronRightIcon className="size-5 shrink-0 text-dust-500" />
