@@ -315,6 +315,40 @@ create trigger staff_role_drop_implied_exceptions
   after update of role on public.staff
   for each row execute function private.staff_role_drop_implied_exceptions();
 
+-- Existing data: the two triggers only guard new writes. Before the roles,
+-- an admin could grant any permission to another admin and a promotion
+-- kept the person's rows, so a database migrated step by step (db:migrate,
+-- not db:reset) can already hold rows the role implies. Left in place, a
+-- later demotion would make them live again, which D92 rules out. This
+-- deletes them once, here; staff_permissions_record_history appends one
+-- permission_revoked event per row (no actor: no one is signed in during a
+-- migration) with a fixed reason. Kept as a function so a database test can
+-- build the pre-roles state and prove the clean-up.
+create function private.drop_implied_exceptions()
+returns integer
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  dropped integer;
+begin
+  perform pg_catalog.set_config(
+    'app.staff_event_reason', 'Staff roles (D92): their role already includes this permission.', true
+  );
+  delete from public.staff_permissions sp
+  using public.staff s
+  where s.id = sp.staff_id
+    and private.role_implies(s.role, sp.permission);
+  get diagnostics dropped = row_count;
+  perform pg_catalog.set_config('app.staff_event_reason', '', true);
+  return dropped;
+end;
+$$;
+
+select private.drop_implied_exceptions();
+
 comment on table public.staff is
   'Workshop staff (D90): role admin, manager or mechanic (default). Active staff are authorized by what their role implies (private.role_implies) plus their exceptions (staff_permissions); inactive staff by nothing.';
 
@@ -329,7 +363,8 @@ revoke all on function
   private.has_permission(public.permission_key),
   private.can_record_refunds(),
   private.staff_permissions_refuse_implied(),
-  private.staff_role_drop_implied_exceptions()
+  private.staff_role_drop_implied_exceptions(),
+  private.drop_implied_exceptions()
 from public, anon, authenticated, service_role;
 
 -- RLS policies call has_permission as the caller (20261004000200_staff.sql).

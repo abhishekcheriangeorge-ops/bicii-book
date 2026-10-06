@@ -106,6 +106,17 @@ describe("mapDbError", () => {
     expect(mapDbError(pgrst("P0002", "staff 123 not found"))).toMatchObject({ kind: "not_found" });
   });
 
+  it("maps the staff roles errors: an implied exception and a role changed meanwhile", () => {
+    expect(mapDbError(pgrst("P0001", "permission_implied_by_role")).message).toBe(
+      "Their role already includes that.",
+    );
+    expect(mapDbError(pgrst("P0001", "staff_role_changed"))).toMatchObject({
+      kind: "business",
+      reason: "staff_role_changed",
+      message: "Someone changed their role in the meantime. Reload and try again.",
+    });
+  });
+
   it("maps the workshop's business errors, unique indexes and checks (Phase 3)", () => {
     expect(mapDbError(pgrst("P0001", "work_order_transition_invalid"))).toMatchObject({
       kind: "business",

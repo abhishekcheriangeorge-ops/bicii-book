@@ -527,7 +527,10 @@ managers.
   does not restore removed extra access (D92).
 - If it fails: on your own row the picker is off with "You can't change
   your own role."; "The shop must keep at least one active admin." when the
-  change would leave no active admin; anyone who is not an admin sees the
+  change would leave no active admin; "Someone changed their role in the
+  meantime. Reload and try again." when another admin changed it after you
+  opened the page (nothing changes; reload to see their current role and
+  what a change would do); anyone who is not an admin sees the
   role read-only with "Only an admin changes roles." Covered by
   `tests/e2e/roles.spec.ts`.
 

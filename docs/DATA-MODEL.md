@@ -242,8 +242,17 @@ Rules:
   writer; named so it fires after `staff_record_history`) deletes it in the
   same transaction, which appends one `permission_revoked` event per row
   after the `role_changed` event, with the role change's actor and reason.
-  A later demotion does not bring removed rows back. A manager can
-  therefore carry only `manage_staff` as an exception; an admin none.
+  A later demotion does not bring removed rows back. The triggers guard new
+  writes only, so `20261006000200` also deletes, once, the rows already
+  implied when it runs (`private.drop_implied_exceptions()`, security
+  definer, EXECUTE revoked from every API role): before the roles an admin
+  could grant to an admin and a promotion kept its rows, so a database
+  migrated step by step (`db:migrate`) could hold them. Each deletion
+  appends a `permission_revoked` event with no actor (no one is signed in
+  during a migration) and the reason "Staff roles (D92): their role
+  already includes this permission."; a fresh build has none to delete. A
+  manager can therefore carry only `manage_staff` as an exception; an
+  admin none.
 - Refunds (D94): `private.can_record_refunds() returns boolean` (security
   definer, EXECUTE revoked from every API role): an active admin or
   manager. A role check, not a permission: no exception grants it.
@@ -2305,7 +2314,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) on a mechanic within the D11 ceiling (D93: a non-admin's target must be a mechanic, never themselves; never `manage_staff`; only permissions they hold) | Exception rows (`granted_by` = caller); replay-safe (no row change, no event). `grant_permission` refuses a permission the target's role implies (P0001 `permission_implied_by_role`, D92) before inserting; revoking a row that does not exist returns null. One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
 | `set_staff_active(target_staff_id, active, reason)` | A, or P(manage_staff) on a mechanic (D93) | Deactivating needs a reason (P0001 `reason_required`; `reason_too_long` over 500). Nobody deactivates themselves; only an admin changes an admin's or a manager's status (42501); the last active admin stays (55000). One `deactivated`/`reactivated` event with the reason; replaying the current state is a no-op. Deactivation also deletes the person's Supabase Auth sessions (trigger `staff_revoke_sessions`, D71). |
 | `note_sign_in_attempt(buckets, window_seconds)` | service role only (the Admin's login actions) | Counts one sign-in attempt in each bucket for the current fixed window and returns the counts (PLAN D72, §1 "Sign-in attempt counters"); 22023 for malformed arguments. Not callable with the anon key or a user session. |
-| `update_staff(target_staff_id, display_name, role, reason)` | A or P(manage_staff); role changes A only (D93) | Null leaves a field as it is. Nobody changes their own role; only an admin renames an admin or a manager (a non-admin renames mechanics only); the last active admin cannot be demoted (55000). `role_changed` (with the reason, ≤ 500 characters) / `details_changed` events; a role change also deletes the exceptions the new role implies, one `permission_revoked` event each with the same actor and reason (D92). Email is not editable (it must stay the login's email). |
+| `update_staff(target_staff_id, display_name, role, reason, expected_role)` | A or P(manage_staff); role changes A only (D93) | Null leaves a field as it is. `expected_role` (optional) is the role the caller's confirmation showed: checked against the row locked `for update`, a different current role raises P0001 `staff_role_changed` and nothing changes (the Admin always sends it, so a stale page cannot make a change its sheet did not describe). Nobody changes their own role; only an admin renames an admin or a manager (a non-admin renames mechanics only); the last active admin cannot be demoted (55000). `role_changed` (with the reason, ≤ 500 characters) / `details_changed` events; a role change also deletes the exceptions the new role implies, one `permission_revoked` event each with the same actor and reason (D92). Email is not editable (it must stay the login's email). |
 | `staff_history(target_staff_id, max_rows)` | A or P(manage_staff) | `staff_events` for one person, newest first, with the actor's display name (≤ 500 rows, default 100). |
 | `my_staff_profile()` | authenticated | Caller's staff row + effective permissions in enum order: what the role implies (`private.role_implies`: admin all, manager all but `manage_staff`, mechanic none) plus exceptions; inactive → none; zero rows for non-staff. |
 | `create_staff(auth_user_id, display_name, email, role = 'mechanic')` | A or P(manage_staff); only A creates `admin` or `manager` (D93; 42501) | Links an existing Auth login (created server-side with the service-role admin API) to a new active staff row. Email must equal the login's email (`P0001 staff_email_mismatch`); duplicate email → 23505 `staff_email_key`. |

@@ -213,6 +213,8 @@ test("an admin changes a role and the change shows in history", async ({
   await expect(sheet).toContainText(
     "Their extra access to Manage purchasing is included in the new role and will be removed.",
   );
+  // Focus starts on Cancel, not in the optional reason (DESIGN.md "Forms").
+  await expect(sheet.getByRole("button", { name: "Cancel" })).toBeFocused();
   await expectNoSideScroll(page);
   await sheet.getByLabel("Why?").fill(reason);
   await sheet.getByRole("button", { name: "Change role", exact: true }).click();
@@ -239,7 +241,7 @@ test("an admin changes a role and the change shows in history", async ({
   await page.goto("/settings/staff");
   const row = page.getByRole("link", { name: new RegExp(escapeRegExp(email)) });
   await expect(row).toContainText("Manager");
-  await expect(row).toContainText("Everything except staff management");
+  await expect(row).toContainText("Every permission except Manage staff");
 
   // The colleague signs in and sees Manager on their profile.
   const colleague = await browser.newContext({ ...testInfo.project.use });

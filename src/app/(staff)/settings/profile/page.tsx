@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 
 import { signOut } from "@/app/(auth)/login/actions";
-import { RoleBadge } from "@/components/domain/role-badge";
-import { Badge } from "@/components/ui/badge";
+import { ExtraAccessBadge, RoleBadge } from "@/components/domain/role-badge";
 import { Card } from "@/components/ui/card";
 import { CheckIcon, SignOutIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
@@ -33,7 +32,7 @@ function Capability({
       <span className="flex min-w-0 flex-col">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
           {label}
-          {extra ? <Badge tone="info">Extra access</Badge> : null}
+          {extra ? <ExtraAccessBadge /> : null}
         </span>
         <span className="text-sm text-dust-500">{description}</span>
       </span>

@@ -19,10 +19,9 @@ import {
   type StaffRole,
 } from "@/lib/auth/permissions";
 import { roleChangeSummary, roleWithArticle } from "@/lib/auth/role-change";
+import { REASON_MAX_LENGTH } from "@/lib/reasons";
 
 import { setStaffActive, setStaffPermission, setStaffRole } from "../actions";
-
-const REASON_MAX = 500;
 
 /**
  * One switch per "Extra access" exception the person's role does not
@@ -180,12 +179,20 @@ function ChangeRoleSheet({
   const [formError, setFormError] = useState<string | null>(null);
   // A double tap on "Change role…" must not reach "Change role" (DESIGN.md "Forms").
   const armed = useArmed(true);
+  // Focus starts on Cancel: the admin reads "What changes" first (removed
+  // extra access does not come back), and the reason is optional.
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const summary = roleChangeSummary(from, to, exceptions);
 
   const confirm = () => {
     if (!armed) return;
     startTransition(async () => {
-      const result = await setStaffRole({ staffId, role: to, reason: reason || undefined });
+      const result = await setStaffRole({
+        staffId,
+        role: to,
+        expected: from,
+        reason: reason || undefined,
+      });
       if (!result.ok) {
         const fieldError = result.fieldErrors?.reason?.[0];
         setReasonError(fieldError);
@@ -202,11 +209,12 @@ function ChangeRoleSheet({
       open
       onOpenChange={(next) => (next ? null : onClose())}
       dismissible={!pending}
+      initialFocus={cancelRef}
       title={`Change ${name} to ${ROLE_LABELS[to]}?`}
       description={`From ${ROLE_LABELS[from]} to ${ROLE_LABELS[to]}. Kept in their history.`}
       footer={
         <>
-          <Button variant="outline" disabled={pending} onClick={onClose}>
+          <Button ref={cancelRef} variant="outline" disabled={pending} onClick={onClose}>
             Cancel
           </Button>
           <Button disabled={!armed} pending={pending} pendingLabel="Changing…" onClick={confirm}>
@@ -230,7 +238,7 @@ function ChangeRoleSheet({
           <Textarea
             name="reason"
             rows={2}
-            maxLength={REASON_MAX}
+            maxLength={REASON_MAX_LENGTH}
             value={reason}
             onChange={(e) => {
               setReason(e.target.value);
@@ -333,7 +341,7 @@ export function AccessControl({
               ref={reasonRef}
               name="reason"
               rows={2}
-              maxLength={500}
+              maxLength={REASON_MAX_LENGTH}
               value={reason}
               onChange={(e) => {
                 setReason(e.target.value);

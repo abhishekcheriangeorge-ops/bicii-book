@@ -5,7 +5,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { ChevronRightIcon, PlusIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowLink, RowList } from "@/components/ui/row-list";
-import { RoleBadge } from "@/components/domain/role-badge";
+import { ExtraAccessBadge, RoleBadge } from "@/components/domain/role-badge";
 import { PERMISSION_LABELS, exceptionsOf } from "@/lib/auth/permissions";
 import { requireStaff } from "@/lib/auth/session";
 import { listStaff, type StaffMember } from "@/lib/domain/staff";
@@ -25,7 +25,7 @@ function StaffAccessSummary({ member }: { member: StaffMember }) {
         {member.role === "admin"
           ? "All permissions"
           : member.role === "manager"
-            ? "Everything except staff management"
+            ? "Every permission except Manage staff"
             : extra.length === 0
               ? "Workshop access only"
               : "Workshop access"}
@@ -34,7 +34,7 @@ function StaffAccessSummary({ member }: { member: StaffMember }) {
         <>
           <span className="text-sm text-dust-500">· Extra:</span>
           {extra.map((p) => (
-            <Badge key={p}>{PERMISSION_LABELS[p].label}</Badge>
+            <ExtraAccessBadge key={p}>{PERMISSION_LABELS[p].label}</ExtraAccessBadge>
           ))}
         </>
       ) : null}

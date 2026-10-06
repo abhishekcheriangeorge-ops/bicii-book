@@ -6,13 +6,13 @@ import { z } from "zod";
 import { staffAction } from "@/lib/actions";
 import { Constants } from "@/lib/database.types";
 import {
-  REASON_MAX,
   inviteStaff as invite,
   setActive,
   setPermission,
   setRole,
   type InviteResult,
 } from "@/lib/domain/staff";
+import { REASON_MAX_LENGTH } from "@/lib/reasons";
 
 export type { InviteResult };
 
@@ -60,10 +60,12 @@ export const setStaffRole = staffAction(
   z.object({
     staffId,
     role: z.enum(Constants.public.Enums.staff_role),
+    /** The role the confirmation showed (update_staff expected_role). */
+    expected: z.enum(Constants.public.Enums.staff_role),
     reason: z
       .string()
       .trim()
-      .max(REASON_MAX, { error: `Keep the reason under ${REASON_MAX} characters.` })
+      .max(REASON_MAX_LENGTH, { error: `Keep the reason under ${REASON_MAX_LENGTH} characters.` })
       .optional(),
   }),
   { name: "staff.set_role", admin: true },
@@ -81,7 +83,7 @@ export const setStaffActive = staffAction(
     reason: z
       .string()
       .trim()
-      .max(REASON_MAX, { error: `Keep the reason under ${REASON_MAX} characters.` })
+      .max(REASON_MAX_LENGTH, { error: `Keep the reason under ${REASON_MAX_LENGTH} characters.` })
       .optional(),
   }),
   { name: "staff.set_active", permission: "manage_staff" },

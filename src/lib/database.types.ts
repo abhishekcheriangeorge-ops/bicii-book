@@ -5454,6 +5454,7 @@ export type Database = {
       update_staff: {
         Args: {
           display_name?: string;
+          expected_role?: Database["public"]["Enums"]["staff_role"];
           reason?: string;
           role?: Database["public"]["Enums"]["staff_role"];
           target_staff_id: string;

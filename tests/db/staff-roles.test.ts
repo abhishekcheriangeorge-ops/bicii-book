@@ -662,6 +662,72 @@ describe.skipIf(!isolatedDatabase())("exceptions on top of the role (D92)", () =
       expect(await exceptionsOf(tx, bo.staffId)).toEqual(["manage_staff"]);
     });
   });
+
+  it("no exception row is implied by its person's role once the migrations and the seed have run", async () => {
+    await inTransaction(conn, async (tx) => {
+      await owner(tx);
+      expect(
+        await scalar<number>(
+          tx,
+          `select count(*)::int from public.staff_permissions sp
+             join public.staff s on s.id = sp.staff_id
+            where private.role_implies(s.role, sp.permission)`,
+        ),
+      ).toBe(0);
+    });
+  });
+
+  it("the roles migration's clean-up removes implied rows written before the roles, with history, so a demotion brings nothing back", async () => {
+    await inTransaction(conn, async (tx) => {
+      // The pre-roles state of a database migrated step by step: an admin
+      // granted to an admin, a promotion that kept its rows. Triggers off
+      // (replica) to write what the BEFORE INSERT refusal now prevents.
+      await owner(tx);
+      await tx.query("set local session_replication_role = replica");
+      for (const [staffId, permission] of [
+        [STAFF.admin, "view_costs"],
+        [STAFF.manager, "adjust_stock"],
+        [STAFF.manager, "manage_staff"],
+      ]) {
+        await tx.query(
+          "insert into public.staff_permissions (staff_id, permission) values ($1, $2)",
+          [staffId, permission],
+        );
+      }
+      await tx.query("set local session_replication_role = origin");
+      const since = await scalar<string>(tx, "select clock_timestamp()::text");
+
+      // The same function 20261006000200 runs once.
+      expect(await scalar<number>(tx, "select private.drop_implied_exceptions()")).toBe(2);
+      expect(await exceptionsOf(tx, STAFF.admin)).toEqual([]);
+      // manage_staff is a real exception for a manager; Marcus's view_costs too.
+      expect(await exceptionsOf(tx, STAFF.manager)).toEqual(["manage_staff"]);
+      expect(await exceptionsOf(tx, STAFF.mechanic1)).toEqual(["view_costs"]);
+      const reason = "Staff roles (D92): their role already includes this permission.";
+      expect(await eventsOf(tx, STAFF.admin, since)).toEqual([
+        expect.objectContaining({
+          event_type: "permission_revoked",
+          permission: "view_costs",
+          actor_staff_id: null,
+          reason,
+        }),
+      ]);
+      expect(await eventsOf(tx, STAFF.manager, since)).toEqual([
+        expect.objectContaining({
+          event_type: "permission_revoked",
+          permission: "adjust_stock",
+          actor_staff_id: null,
+          reason,
+        }),
+      ]);
+      // The reason does not leak into later writes of the transaction.
+      expect(await scalar(tx, "select current_setting('app.staff_event_reason', true)")).toBe("");
+
+      // A later demotion keeps only the real exception.
+      await tx.query("update public.staff set role = 'mechanic' where id = $1", [STAFF.manager]);
+      expect(await exceptionsOf(tx, STAFF.manager)).toEqual(["manage_staff"]);
+    });
+  });
 });
 
 describe.skipIf(!isolatedDatabase())("who administers which role (D93)", () => {
@@ -830,6 +896,40 @@ describe.skipIf(!isolatedDatabase())("who administers which role (D93)", () => {
         () => tx.query("update public.staff set role = 'manager' where id = $1", [STAFF.admin]),
         { code: "55000" },
       );
+    });
+  });
+
+  it("a role change confirmed against a role that changed meanwhile is refused (staff_role_changed), with no event", async () => {
+    await inTransaction(conn, async (tx) => {
+      const since = await scalar<string>(tx, "select clock_timestamp()::text");
+      await become(tx, seeded("admin"));
+      // The confirmation showed Manager; Nur Aisyah is a mechanic.
+      await failsWith(
+        tx,
+        () =>
+          tx.query(
+            "select public.update_staff($1, role => 'admin', expected_role => 'manager', reason => 'Stale page')",
+            [STAFF.mechanic2],
+          ),
+        { code: "P0001", message: "staff_role_changed" },
+      );
+      await owner(tx);
+      expect(
+        await scalar<string>(tx, "select role::text from public.staff where id = $1", [
+          STAFF.mechanic2,
+        ]),
+      ).toBe("mechanic");
+      expect(await eventsOf(tx, STAFF.mechanic2, since)).toEqual([]);
+
+      // The role it showed: the change goes through.
+      await become(tx, seeded("admin"));
+      expect(
+        await scalar<string>(
+          tx,
+          "select (public.update_staff($1, role => 'manager', expected_role => 'mechanic')).role::text",
+          [STAFF.mechanic2],
+        ),
+      ).toBe("manager");
     });
   });
 

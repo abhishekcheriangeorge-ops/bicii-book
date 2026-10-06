@@ -55,6 +55,8 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   staff_permission_immutable: "Remove the permission and grant the new one instead.",
   // Staff roles (D92): an exception the person's role already implies.
   permission_implied_by_role: "Their role already includes that.",
+  // Staff roles: update_staff's expected_role no longer matches (stale page).
+  staff_role_changed: "Someone changed their role in the meantime. Reload and try again.",
   // Customers and bikes (Phase 1)
   customer_archived: "That customer is archived. Unarchive them first.",
   bike_archived: "That bike is archived. Unarchive it before changing its owner or stocking it.",

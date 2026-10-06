@@ -168,19 +168,19 @@ export async function setPermission(
   );
 }
 
-export const REASON_MAX = 500;
-
 /**
  * Change someone's role (RPC update_staff; PLAN D90, D93): admins only,
  * never their own, and the last active admin stays (55000). The change
  * appends role_changed with the optional reason, and drops the exceptions
  * the new role implies, each with a permission_revoked event (D92). The
  * cheap refusals become precise messages here; the database decides.
+ * `expected` is the role the confirmation showed: if someone changed it
+ * meanwhile, the database refuses (staff_role_changed) and nothing changes.
  */
 export async function setRole(
   supabase: ServerSupabase,
   actor: StaffDTO,
-  input: { staffId: string; role: StaffRole; reason?: string },
+  input: { staffId: string; role: StaffRole; expected: StaffRole; reason?: string },
 ): Promise<void> {
   const reason = input.reason?.trim() || undefined;
   const blocker = roleChangeBlocker(actor, { staffId: input.staffId, role: input.role });
@@ -189,6 +189,7 @@ export async function setRole(
     await supabase.rpc("update_staff", {
       target_staff_id: input.staffId,
       role: input.role,
+      expected_role: input.expected,
       reason,
     }),
   );

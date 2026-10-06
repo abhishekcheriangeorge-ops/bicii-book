@@ -1040,7 +1040,9 @@ URLs, or customer data in this file.
   it Mechanic (`roleLabel` in `src/lib/auth/permissions.ts`,
   `describeStaffEvent` in `src/lib/staff-events.ts`); a raw reader sees
   both spellings for the same role. Nothing is hosted (R-001), so only
-  developer databases and the seed's history have such rows.
+  developer databases migrated step by step from before
+  `20261006000100_staff_role_values.sql` have such rows; `db:reset` and
+  the seed write "mechanic" (a fresh `bicii_dev_wt` had 0 such events).
 - Evidence and confidence: high; `tests/unit/auth-helpers.test.ts`
   (the test that reads the legacy history value `"staff"` as Mechanic),
   `tests/unit/staff-roles-screens.test.ts`.
@@ -1083,3 +1085,33 @@ URLs, or customer data in this file.
   [PRODUCT owner question 20](PRODUCT.md#open-assumptions-and-owner-questions).
 - Revisit trigger: the owner's answer.
 - Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-054 — The change-role sheet checks the role it showed, not the extra access
+
+- Category: accepted compromise (D92, D93).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: two admins work on the same person at once: one opens the
+  change-role sheet, the other changes that person's extra access before
+  the first confirms.
+- Impact: the sheet's "What changes" lines were worked out from the extra
+  access shown when the page loaded. The role itself is checked: the
+  Admin sends the role the sheet showed (`update_staff` `expected_role`),
+  and a role changed meanwhile is refused with "Someone changed their role
+  in the meantime. Reload and try again." (`staff_role_changed`). An
+  exception granted meanwhile is not checked, so the sheet may not list
+  it among what the new role removes; the role change still removes it
+  (D92) and History records that removal with the role change's reason.
+- Evidence and confidence: high; `update_staff` in
+  `20261006000300_staff_role_administration.sql`;
+  `tests/db/staff-roles.test.ts` ("a role change confirmed against a role
+  that changed meanwhile is refused …"); `ChangeRoleSheet` in
+  `src/app/(staff)/settings/staff/[staffId]/staff-controls.tsx`. Not
+  observed in use.
+- Why accepted: it needs two admins acting on one person within seconds;
+  nothing is lost silently (History has every removal), and removed extra
+  access can be granted again.
+- Workaround or containment: History on the person's page.
+- Next action: none planned.
+- Revisit trigger: the shop has several admins who administer staff at
+  the same time, or a removal is reported as unexpected.
+- Last checked: 2026-10-06 (staff roles, review fixes).

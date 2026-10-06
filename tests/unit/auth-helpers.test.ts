@@ -198,7 +198,7 @@ describe("roles (D90, D91, mirrors private.role_implies)", () => {
     expect(ROLE_LABELS).toEqual({ admin: "Admin", manager: "Manager", mechanic: "Mechanic" });
     expect(ROLE_DESCRIPTIONS).toEqual({
       admin: "Everything, including staff, roles and shop settings",
-      manager: "Every permission except managing staff, and refunds",
+      manager: "Every permission except Manage staff, plus refunds",
       mechanic: "Workshop work; extra access only if granted",
     });
   });

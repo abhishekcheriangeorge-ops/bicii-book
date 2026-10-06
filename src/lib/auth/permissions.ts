@@ -78,7 +78,7 @@ export const ROLE_LABELS: Record<StaffRole, string> = {
 /** One line per role: what it can do (D91, D94). */
 export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
   admin: "Everything, including staff, roles and shop settings",
-  manager: "Every permission except managing staff, and refunds",
+  manager: "Every permission except Manage staff, plus refunds",
   mechanic: "Workshop work; extra access only if granted",
 };
 

@@ -231,12 +231,20 @@ $$;
 -- mechanics only. The reason reaches role_changed and any permission_revoked
 -- events through set_staff_event_reason. The last active admin cannot be
 -- demoted (trigger). Email is not editable here (staff_enforce_rules).
+-- expected_role is the role the caller's confirmation showed: when given and
+-- the locked row holds another role (someone changed it meanwhile), nothing
+-- changes and staff_role_changed is raised, so a stale page cannot make a
+-- change its confirmation did not describe. Replaces the four-argument
+-- version (an added parameter is a new signature, not a replacement).
 -- ---------------------------------------------------------------------------
-create or replace function public.update_staff(
+drop function public.update_staff(uuid, text, public.staff_role, text);
+
+create function public.update_staff(
   target_staff_id uuid,
   display_name text default null,
   role public.staff_role default null,
-  reason text default null
+  reason text default null,
+  expected_role public.staff_role default null
 )
 returns public.staff
 language plpgsql
@@ -258,6 +266,13 @@ begin
   select s.* into target from public.staff s where s.id = target_staff_id for update;
   if not found then
     raise exception 'staff % not found', target_staff_id using errcode = 'P0002';
+  end if;
+
+  if update_staff.expected_role is not null and update_staff.expected_role <> target.role then
+    raise exception using
+      errcode = 'P0001',
+      message = 'staff_role_changed',
+      detail = 'Their role changed in the meantime.';
   end if;
 
   if update_staff.role is not null and update_staff.role <> target.role then
@@ -283,8 +298,8 @@ begin
 end;
 $$;
 
-comment on function public.update_staff(uuid, text, public.staff_role, text) is
-  'Admin or manage_staff: rename (non-admins: mechanics only), or change role (admins only, never their own; the last active admin stays). A role change appends role_changed with the reason and drops exceptions the new role implies (D92, D93).';
+comment on function public.update_staff(uuid, text, public.staff_role, text, public.staff_role) is
+  'Admin or manage_staff: rename (non-admins: mechanics only), or change role (admins only, never their own; the last active admin stays). A role change appends role_changed with the reason and drops exceptions the new role implies (D92, D93). With expected_role, refuses (staff_role_changed) when the role is no longer the one the caller confirmed against.';
 
 -- ---------------------------------------------------------------------------
 -- Privileges (restated for every function replaced here)
@@ -297,12 +312,12 @@ revoke all on function
   public.create_staff(uuid, text, text, public.staff_role),
   public.grant_permission(uuid, public.permission_key),
   public.set_staff_active(uuid, boolean, text),
-  public.update_staff(uuid, text, public.staff_role, text)
+  public.update_staff(uuid, text, public.staff_role, text, public.staff_role)
 from public, anon, authenticated, service_role;
 
 grant execute on function
   public.create_staff(uuid, text, text, public.staff_role),
   public.grant_permission(uuid, public.permission_key),
   public.set_staff_active(uuid, boolean, text),
-  public.update_staff(uuid, text, public.staff_role, text)
+  public.update_staff(uuid, text, public.staff_role, text, public.staff_role)
 to authenticated;

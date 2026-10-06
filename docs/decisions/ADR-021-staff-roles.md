@@ -97,6 +97,20 @@ and makes a demotion grant nothing by itself.
   `src/lib/auth/permissions.ts`), never offered.
 - Managers record refunds on their own decision, within the cap
   ([R-050](../RISKS.md#r-050--managers-record-refunds-with-no-second-approval)).
+- "Cannot exist" (D92) holds for existing data too: the triggers guard new
+  writes, and `20261006000200` deletes once, through
+  `private.drop_implied_exceptions()`, any implied row written before the
+  roles (an admin's grant to an admin, a promotion that kept its rows), so
+  a database migrated step by step cannot carry a dormant row into a later
+  demotion. Each deletion is a `permission_revoked` event with no actor
+  and a fixed reason. Both orders of a race between a direct insert and a
+  role change are tested on two connections (`staff-concurrency.test.ts`).
+- A role change is confirmed against the role the admin was shown:
+  `update_staff`'s `expected_role` makes a change based on a stale page
+  (another admin changed the role meanwhile) refuse with
+  `staff_role_changed` instead of silently making a different transition
+  from the one the sheet described. Extra access changed meanwhile is not
+  checked ([R-054](../RISKS.md#r-054--the-change-role-sheet-checks-the-role-it-showed-not-the-extra-access)).
 - A role change reaches pages already open only on their next request
   ([R-051](../RISKS.md#r-051--a-role-change-reaches-open-pages-only-on-their-next-request)).
 - History written before the rename keeps `"staff"`
@@ -117,7 +131,7 @@ rename would then need a data migration plan).
   `20261006000100_staff_role_values.sql`,
   `20261006000200_staff_role_permissions.sql`,
   `20261006000300_staff_role_administration.sql`.
-- Tests: `tests/db/staff-roles.test.ts` (44), `tests/db/sales.test.ts`,
+- Tests: `tests/db/staff-roles.test.ts` (47), `tests/db/staff-concurrency.test.ts`, `tests/db/sales.test.ts`,
   `tests/db/staff-history.test.ts`, `tests/db/staff-management.test.ts`,
   `tests/unit/auth-helpers.test.ts`, `tests/unit/session-guard.test.ts`,
   `tests/unit/staff-roles-screens.test.ts`, `tests/unit/purchasing.test.ts`,
