@@ -1,12 +1,12 @@
 # Current state
 
-Updated: 2026-10-06, Phase 9 (reporting and reconciliation) step 1 of 4,
-the database for period reporting, on `feat/p9-reporting` (created from
-`feat/staff-roles` at 5c9fbc7, which is equal to
+Updated: 2026-10-06, Phase 9 (reporting and reconciliation) step 2 of 4,
+the app for period reports and CSV export, on `feat/p9-reporting`
+(created from `feat/staff-roles` at 5c9fbc7, which is equal to
 `origin/feat/staff-roles`), in the second worktree
-`/home/user/bicii-book-wt`. Before that, the staff roles on
-`feat/staff-roles`. Evidence checked: `git status` (clean after the
-commits), `git worktree list` (`/home/user/bicii-book` on
+`/home/user/bicii-book-wt`. Before that, step 1 (the database) and the
+staff roles on `feat/staff-roles`. Evidence checked: `git status` (clean
+after the commits), `git worktree list` (`/home/user/bicii-book` on
 `feat/p10-shopify`, this worktree on `feat/p9-reporting`), no
 `origin/feat/p9-reporting` (nothing pushed), and the local gates below.
 Earlier rows keep the evidence of their own phase.
@@ -54,8 +54,18 @@ Earlier rows keep the evidence of their own phase.
   `reporting.report_lines`, the summary, series, breakdown, line-item,
   activity and by-mechanic RPCs, stock value at last cost; refunds beside
   gross (D102, the build default for owner question 12); risks R-055 and
-  R-056; owner question 21. Next action: step 2, the `/reports` and
-  `/reports/lines` screens and the CSV Route Handler on these RPCs.
+  R-056; owner question 21.
+- Phase 9 reporting, step 2 of 4 (app), committed locally on
+  `feat/p9-reporting`, not pushed: `/reports` (period and date-basis
+  controls in the URL, figures with cost tiles hidden without View costs,
+  refunds beside gross, buckets, the breakdown by seven dimensions, stock
+  at last cost now, activity and jobs by mechanic), `/reports/lines` (one
+  group's lines; View financial reports, a real 403) and the app's first
+  Route Handler, the CSV export `/reports/export` (R-057: 50,000 rows at
+  most, 409 when the counts move); `ComingSoon` placeholders at
+  `/reports/exceptions` and `/reports/reconciliation`. Next action:
+  step 3, the database for stock reconciliation (D106) and the extended
+  exceptions (D107, D108, the integration placeholder).
 - Main uncertainty: nothing hosted exists
   ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
 
@@ -83,7 +93,8 @@ a separate, label-triggered run. All listed results are success.
 | Labels (Phase 8) | On `feat/p8-labels` in the other worktree; not on this branch | Not verified here | Not deployed |
 | Staff roles (D90–D94: admin, manager and mechanic; `private.role_implies`; "Extra access" exceptions; role administration; refunds for managers; seed `manager@bicii.test`; staff screens with the role picker and invites by role) | Yes, `feat/staff-roles`: 0657397, 28de036 (database), bfc5ea2, dd94665 (app model, guards, refunds, profile), ae9763b, 080a796 (staff screens, E2E), a5441dd and the evidence commit (integration review, documentation), then the review-fixes commit after b83ce42; local only, not pushed | Locally after the review fixes (one-time clean-up of implied exceptions in `20261006000200` via `private.drop_implied_exceptions()`; two-connection D92 race tests; `update_staff` `expected_role` with `staff_role_changed`; shared `REASON_MAX_LENGTH`; manager wording; `ExtraAccessBadge`; focus on Cancel; PLAN D11, R-052, R-054): `npm run db:reset` pass (`47\|20261006000300`), `npm run db:types` committed (the `expected_role` argument), `npm run check` pass, `npm run check:types` pass, `BICII_REQUIRE_STACK=1 npm test` 113 files / 1686 tests passed (unit 57 / 738, database 56 / 948; both new concurrency tests failed once by hand with the refusal trigger's lock weakened to `FOR KEY SHARE`, then the lock was restored), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.1 min, no failures, flaky or skipped), docs link check 37 files / 691 links / 0 problems. Before that, locally (database `bicii_dev_wt`) after the step 4 review fixes (a5441dd): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 113 files / 1680 tests passed (unit 57 / 737, database 56 / 943), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (16.8 min, no failures, flaky or skipped; it reset the database: 47 migrations, `47\|20261006000300`, seed applied), docs link check 37 files / 690 links / 0 problems. Earlier steps: step 1 112 / 1632 and 152 E2E; step 2 112 / 1669 and 152 E2E; step 3 113 / 1680 and 158 E2E, all passing | Not deployed |
 | Period reporting database (Phase 9 step 1: D100–D105; date bases, report lines, summary / series / breakdown / line items / activity / by-mechanic RPCs with cost gating, purchases, stock value at last cost, six indexes, volume bench) | Database only, `feat/p9-reporting`, the step 1 commits after 5c9fbc7; local only, not pushed; no screens yet | Locally (database `bicii_dev_wt`): `npm run db:reset` pass (`49\|20261006001100`, seed applied), `npm run db:types` committed, `npm run check` pass (47 s), `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 114 files / 1720 tests passed (unit 57 / 739, database 57 / 981; `period-reports.test.ts` 33 tests; Phase 5's and Phase 6's reporting tests unchanged and passing; 107 s), `npm run build` pass (30 s), `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.4 min, no failures, flaky or skipped; it reset the database), docs link check 38 files / 724 links / 0 problems; bench `scripts/bench/report-volume.sql` on a throwaway clone (every target met, timings in DATA-MODEL §14) | Not deployed |
-| Phase 9 screens, reconciliation and exceptions (steps 2–4), Shopify, public-site integration, hardware adapter | No (Shopify on `feat/p10-shopify` in the other worktree) | Not built here | Not deployed |
+| Period report screens and CSV export (Phase 9 step 2: `/reports`, `/reports/lines`, `/reports/export` with kinds series, breakdown, lines, stock_value and mechanics; D30, D100–D105) | Yes, `feat/p9-reporting`, the three step 2 commits after c5c1fd7 and the evidence commit; local only, not pushed | Locally (database `bicii_dev_wt`): `npm run check` pass (58 s), `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 118 files / 1761 tests passed (unit 60 / 776 with the new `period-reports`, `csv` and `report-exports` tests; database 58 / 985 with `period-report-exports.stack.test.ts`; 108 s), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 168 passed on phone and tablet (17.4 min, no failures, flaky or skipped; `reports.spec.ts` 5 tests on each project; it reset the database), docs link check 38 files / 737 links / 0 problems | Not deployed |
+| Phase 9 reconciliation and exceptions (steps 3–4), Shopify, public-site integration, hardware adapter | No (Shopify on `feat/p10-shopify` in the other worktree) | Not built here | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -93,8 +104,8 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   appointments, the docs stack and Phase 6. The local `main` ref is stale;
   use `origin/main`.
 - `feat/p9-reporting` (this worktree, `/home/user/bicii-book-wt`): created
-  from `feat/staff-roles` at 5c9fbc7; Phase 9 step 1 committed locally,
-  not pushed (no `origin/feat/p9-reporting`). Labels (Phase 8) and Shopify
+  from `feat/staff-roles` at 5c9fbc7; Phase 9 steps 1 and 2 committed
+  locally, not pushed (no `origin/feat/p9-reporting`). Labels (Phase 8) and Shopify
   (Phase 10) are not on it; Phase 10 is read through
   `git show feat/p10-shopify:<path>` only.
 - `feat/staff-roles` (pushed: local and `origin/feat/staff-roles` equal at 5c9fbc7): created
@@ -158,5 +169,7 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   Phase 9 notes the build default D102 on row 12 and adds row 21 (confirm
   the reporting build defaults D100–D105,
   [R-055](docs/RISKS.md#r-055--past-report-periods-change-after-a-reopen-a-back-dated-sale-or-a-back-dated-receipt),
-  [R-056](docs/RISKS.md#r-056--stock-value-uses-each-products-last-cost-not-the-cost-of-the-units-on-hand)).
+  [R-056](docs/RISKS.md#r-056--stock-value-uses-each-products-last-cost-not-the-cost-of-the-units-on-hand));
+  step 2 adds [R-057](docs/RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export)
+  (export limits) and no owner question.
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).
