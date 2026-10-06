@@ -59,6 +59,14 @@ export const serverEnvSchema = z
      * token are set, else Shopify is off.
      */
     SHOPIFY_ADAPTER: z.enum(["live", "fake"]).optional(),
+    /**
+     * 'true' only when a Preview deployment's SHOPIFY_* variables belong to a
+     * separate Shopify development store (RUNBOOK "Vercel environment setup").
+     * Without it the live adapter is off in Preview (VERCEL_ENV=preview), so
+     * a preview build on the staging database can never push into the live
+     * store (its handles bicii-<short id> collide with production's).
+     */
+    SHOPIFY_ALLOW_PREVIEW: z.enum(["true"]).optional(),
     /** Bearer secret of /api/cron/integrations (the Vercel cron sends it). Secret. */
     CRON_SECRET: nonEmpty.optional(),
     /** Set by Vercel (production | preview | development); read to refuse the fake in production. */

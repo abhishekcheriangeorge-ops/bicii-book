@@ -194,3 +194,15 @@ describe("fake Shopify", () => {
     expect(fake.products.size).toBe(0);
   });
 });
+
+describe("which Shopify a deployment talks to", () => {
+  it("keeps the live adapter off in a Vercel Preview unless its store is a development store", async () => {
+    const { liveShopifyAllowed } = await import("@/lib/integrations/shopify/client");
+    expect(liveShopifyAllowed({})).toBe(true);
+    expect(liveShopifyAllowed({ VERCEL_ENV: "production" })).toBe(true);
+    expect(liveShopifyAllowed({ VERCEL_ENV: "development" })).toBe(true);
+    // A preview build on the staging database must never push into the live store.
+    expect(liveShopifyAllowed({ VERCEL_ENV: "preview" })).toBe(false);
+    expect(liveShopifyAllowed({ VERCEL_ENV: "preview", SHOPIFY_ALLOW_PREVIEW: "true" })).toBe(true);
+  });
+});

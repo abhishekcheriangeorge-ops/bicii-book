@@ -39,8 +39,10 @@ import {
   requestProductSync,
   setPublishOnline,
 } from "@/lib/domain/shopify";
+import { afterCommit } from "@/lib/integrations/shopify/after-commit";
 import { defaultDeps } from "@/lib/integrations/shopify/deps";
 import { runJobById } from "@/lib/integrations/shopify/queue";
+import { SYNC_QUEUED_MESSAGE } from "@/lib/shopify";
 import { productIdSchema, publishOnlineSchema } from "@/lib/shopify-forms";
 
 /**
@@ -283,16 +285,24 @@ export const searchShopBikes = staffAction(
 export const setPublishOnlineAction = staffAction(
   publishOnlineSchema,
   { name: "shopify.set_publish_online", permission: "manage_inventory" },
-  async ({ productId, publish }, { supabase, correlationId }) => {
+  async ({ productId, publish }, { supabase, correlationId, log }) => {
+    // Committed here; what follows only speeds the sync up (D87).
     const result = await setPublishOnline(supabase, productId, publish);
-    if (result.jobId) await runJobById(result.jobId, defaultDeps(correlationId));
-    const after = await productSyncStatus(supabase, productId);
+    const after = await afterCommit(
+      "run the publish sync",
+      log,
+      async () => {
+        if (result.jobId) await runJobById(result.jobId, defaultDeps(correlationId));
+        const status = await productSyncStatus(supabase, productId);
+        return {
+          syncStatus: status.syncStatus,
+          message: status.syncStatus === "error" ? status.lastError : null,
+        };
+      },
+      { syncStatus: result.syncStatus, message: SYNC_QUEUED_MESSAGE },
+    );
     refresh();
-    return {
-      publishOnline: result.publishOnline,
-      syncStatus: after.syncStatus,
-      message: after.syncStatus === "error" ? after.lastError : null,
-    };
+    return { publishOnline: result.publishOnline, ...after };
   },
 );
 
@@ -300,13 +310,20 @@ export const setPublishOnlineAction = staffAction(
 export const syncNowAction = staffAction(
   productIdSchema,
   { name: "shopify.sync_now", permission: "manage_inventory" },
-  async ({ productId }, { supabase, correlationId }) => {
+  async ({ productId }, { supabase, correlationId, log }) => {
+    // Committed here; what follows only speeds the sync up (D87).
     const jobId = await requestProductSync(supabase, productId);
-    const outcome = await runJobById(jobId, defaultDeps(correlationId));
-    const report = await describeRun(
-      supabase,
-      { kind: "product_sync", productId, eventId: null },
-      outcome,
+    const job = { kind: "product_sync" as const, productId, eventId: null };
+    const report = await afterCommit(
+      "run the sync",
+      log,
+      async () => describeRun(supabase, job, await runJobById(jobId, defaultDeps(correlationId))),
+      {
+        title: "Sync queued",
+        description: SYNC_QUEUED_MESSAGE,
+        tone: "neutral",
+        saleNumber: null,
+      },
     );
     refresh();
     return report;

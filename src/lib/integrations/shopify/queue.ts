@@ -134,14 +134,21 @@ export async function runJobById(jobId: string, deps: IntegrationDeps): Promise<
 
 /**
  * Claim and run due jobs one at a time, oldest due first, until `limit`
- * jobs ran, none is due, or `budgetMs` is spent (a claimed job is always
- * run, so nothing is left running unattended).
+ * jobs ran, none is due, or it is past `claimUntil` (epoch ms; config's
+ * lastClaimAt: a claimed job always runs to its end, so the runner claims
+ * one only while its worst case, MAX_JOB_MS, still ends before the
+ * function is stopped; nothing is left running unattended). `now` is the
+ * clock (tests pass a fake one).
  */
 export async function runDueJobs(
-  { limit = 10, budgetMs = 20_000 }: { limit?: number; budgetMs?: number },
+  {
+    limit = 10,
+    claimUntil,
+    now = Date.now,
+  }: { limit?: number; claimUntil: number; now?: () => number },
   deps: IntegrationDeps,
 ): Promise<DueJobsSummary> {
-  const started = Date.now();
+  const started = now();
   const summary: DueJobsSummary = {
     claimed: 0,
     done: 0,
@@ -149,7 +156,7 @@ export async function runDueJobs(
     needsAttention: 0,
     deferred: 0,
   };
-  while (summary.claimed < limit && Date.now() - started < budgetMs) {
+  while (summary.claimed < limit && now() <= claimUntil) {
     const { data, error } = await deps.supabase.rpc("claim_integration_jobs", { max_jobs: 1 });
     if (error) {
       deps.log.error({ code: error.code, err: error.message }, "claim_integration_jobs failed");
@@ -164,6 +171,6 @@ export async function runDueJobs(
     else if (outcome === "needs_attention") summary.needsAttention += 1;
     else summary.failed += 1;
   }
-  deps.log.info({ ...summary, durationMs: Date.now() - started }, "integration queue run");
+  deps.log.info({ ...summary, durationMs: now() - started }, "integration queue run");
   return summary;
 }

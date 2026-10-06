@@ -40,6 +40,9 @@ const order = JSON.stringify(
   }),
 );
 
+/** The fake clock's request time: due jobs may be claimed until T0 + 10 s (lastClaimAt). */
+const T0 = 1_800_000_000_000;
+
 function deps(overrides: Partial<WebhookDeps> = {}) {
   const records: RecordWebhookInput[] = [];
   const tasks: (() => Promise<void>)[] = [];
@@ -61,6 +64,7 @@ function deps(overrides: Partial<WebhookDeps> = {}) {
     runDue,
     rejectedLimiter: new SlidingWindowLimiter(30),
     log: pino({ level: "silent" }),
+    now: () => T0,
     ...overrides,
   };
   return { d, records, tasks, runEvent, runDue };
@@ -224,7 +228,10 @@ describe("handleShopifyWebhook", () => {
     expect(tasks).toHaveLength(1);
     await tasks[0]();
     expect(runEvent).toHaveBeenCalledExactlyOnceWith("j-1", "req-abcdef12");
-    expect(runDue).toHaveBeenCalledExactlyOnceWith({ limit: 5, budgetMs: 10_000 }, "req-abcdef12");
+    expect(runDue).toHaveBeenCalledExactlyOnceWith(
+      { limit: 5, claimUntil: T0 + 10_000 },
+      "req-abcdef12",
+    );
     expect(runEvent.mock.invocationCallOrder[0]).toBeLessThan(runDue.mock.invocationCallOrder[0]);
   });
 

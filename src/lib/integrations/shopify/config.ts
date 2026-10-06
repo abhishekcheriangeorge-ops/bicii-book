@@ -42,4 +42,40 @@ export const WEBHOOK_HEADER_ALLOWLIST = [
 ] as const;
 
 /** A Shopify call that has not answered by then is abandoned (retriable). */
-export const SHOPIFY_TIMEOUT_MS = 15_000;
+export const SHOPIFY_TIMEOUT_MS = 10_000;
+
+// ---------------------------------------------------------------------------
+// Queue-runner time (D87): a claimed job always runs to its end, so a
+// runner claims one only while the worst case of that job still ends
+// before the function is stopped. Otherwise a job could be killed mid-run
+// and stay `running` until the ten-minute reclaim.
+// ---------------------------------------------------------------------------
+
+/** The most Shopify calls one job makes (a product sync: location, product, quantity, overwrite). */
+export const SHOPIFY_CALLS_PER_JOB_MAX = 4;
+
+/** Postgres RPCs and logging around a job's Shopify calls. */
+export const JOB_OVERHEAD_MS = 5_000;
+
+/** The longest one job can run: every Shopify call at its timeout, plus the overhead (45 s). */
+export const MAX_JOB_MS = SHOPIFY_CALLS_PER_JOB_MAX * SHOPIFY_TIMEOUT_MS + JOB_OVERHEAD_MS;
+
+/**
+ * How long the runner routes may run: `maxDuration` (seconds) in
+ * src/app/api/cron/integrations/route.ts and src/app/api/shopify/webhooks/route.ts,
+ * which must stay literals (route segment config is read statically);
+ * tests/unit/shopify-cron-route.test.ts checks they match.
+ */
+export const RUNNER_MAX_DURATION_MS = 60_000;
+
+/** Kept free at the end of the function (the response, the summary log). */
+export const RUNNER_MARGIN_MS = 5_000;
+
+/**
+ * The last instant (epoch ms) a runner that started at `startedAt` may
+ * claim a job: the job's worst case still ends `RUNNER_MARGIN_MS` before
+ * the function's limit (startedAt + 10 s with the values above).
+ */
+export function lastClaimAt(startedAt: number): number {
+  return startedAt + RUNNER_MAX_DURATION_MS - RUNNER_MARGIN_MS - MAX_JOB_MS;
+}

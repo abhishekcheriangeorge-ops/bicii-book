@@ -12,10 +12,23 @@ import { createGraphqlShopifyAdmin } from "./graphql-admin";
  *   SHOPIFY_ADAPTER=fake               -> the in-memory fake, one per server
  *                                         process (local development, E2E;
  *                                         env.ts refuses it in production)
- *   SHOPIFY_SHOP_DOMAIN + ADMIN_TOKEN  -> the live GraphQL adapter
+ *   SHOPIFY_SHOP_DOMAIN + ADMIN_TOKEN  -> the live GraphQL adapter, except
+ *                                         in a Vercel Preview without
+ *                                         SHOPIFY_ALLOW_PREVIEW=true (a
+ *                                         separate development store): a
+ *                                         preview on the staging database must
+ *                                         never write to the live store
  *   otherwise                          -> null: Shopify is off, syncs fail
  *                                         retriably with shopify_not_configured
  */
+
+/** False in a Vercel Preview unless its Shopify variables are a development store's. */
+export function liveShopifyAllowed(env: {
+  VERCEL_ENV?: string;
+  SHOPIFY_ALLOW_PREVIEW?: "true";
+}): boolean {
+  return env.VERCEL_ENV !== "preview" || env.SHOPIFY_ALLOW_PREVIEW === "true";
+}
 
 const FAKE_KEY = Symbol.for("bicii.shopify.fake-admin");
 type GlobalWithFake = typeof globalThis & { [FAKE_KEY]?: FakeShopifyAdmin };
@@ -32,7 +45,7 @@ let live: { key: string; admin: ShopifyAdmin } | undefined;
 export function getShopifyAdmin(): ShopifyAdmin | null {
   const env = getServerEnv();
   if (env.SHOPIFY_ADAPTER === "fake") return processFakeShopifyAdmin();
-  if (env.SHOPIFY_SHOP_DOMAIN && env.SHOPIFY_ADMIN_TOKEN) {
+  if (env.SHOPIFY_SHOP_DOMAIN && env.SHOPIFY_ADMIN_TOKEN && liveShopifyAllowed(env)) {
     const key = `${env.SHOPIFY_SHOP_DOMAIN}|${env.SHOPIFY_ADMIN_TOKEN}`;
     if (live?.key !== key) {
       live = {

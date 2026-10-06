@@ -14,6 +14,7 @@ import {
   saveShopifySettings,
   type RunReport,
 } from "@/lib/domain/shopify";
+import { afterCommit } from "@/lib/integrations/shopify/after-commit";
 import { defaultDeps } from "@/lib/integrations/shopify/deps";
 import { runJobById } from "@/lib/integrations/shopify/queue";
 import {
@@ -41,21 +42,28 @@ import {
  *
  * After a retry the action runs exactly the job the RPC returned
  * (runJobById with the service-role deps, D86) and reports its new state.
+ * That run is best effort (afterCommit): if it cannot happen, the action
+ * still succeeds with "Retry queued" and the queue runs the job.
  */
 
 /** Queue a job again now and run it; the toast says what happened. */
 export const retryJobAction = staffAction(
   jobIdSchema,
   { name: "shopify.retry_job" },
-  async ({ jobId }, { supabase, staff, correlationId }): Promise<RunReport> => {
+  async ({ jobId }, { supabase, staff, correlationId, log }): Promise<RunReport> => {
     // Admins have every permission; manage_inventory alone may only retry
     // product syncs, which the RPC enforces.
     if (!hasPermission(staff, "manage_inventory")) {
       throw new ActionError("Only an admin can retry this.");
     }
+    // Committed here; the run only speeds it up (D87).
     const job = await retryJob(supabase, jobId);
-    const outcome = await runJobById(job.id, defaultDeps(correlationId));
-    const report = await describeRun(supabase, job, outcome);
+    const report = await afterCommit(
+      "run the retried job",
+      log,
+      async () => describeRun(supabase, job, await runJobById(job.id, defaultDeps(correlationId))),
+      await describeRun(supabase, job, null),
+    );
     refresh();
     return report;
   },
@@ -76,16 +84,21 @@ export const dismissJobAction = staffAction(
 export const linkVariantAction = staffAction(
   linkVariantSchema,
   { name: "shopify.link_variant", admin: true },
-  async (input, { supabase, correlationId }): Promise<RunReport> => {
+  async (input, { supabase, correlationId, log }): Promise<RunReport> => {
     await linkVariant(supabase, {
       productId: input.productId,
       productGid: input.shopifyProductGid,
       variantGid: input.shopifyVariantGid,
       reason: input.reason,
     });
+    // Both committed here; the run only speeds it up (D87).
     const job = await retryJob(supabase, input.jobId);
-    const outcome = await runJobById(job.id, defaultDeps(correlationId));
-    const report = await describeRun(supabase, job, outcome);
+    const report = await afterCommit(
+      "run the linked job",
+      log,
+      async () => describeRun(supabase, job, await runJobById(job.id, defaultDeps(correlationId))),
+      await describeRun(supabase, job, null),
+    );
     refresh();
     return report;
   },

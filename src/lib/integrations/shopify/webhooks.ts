@@ -10,7 +10,12 @@ import { getServerEnv } from "@/lib/env";
 import { child } from "@/lib/logger";
 import { REQUEST_ID_HEADER, requestIdFrom } from "@/lib/request-id";
 
-import { MAX_REJECTED_PER_MINUTE, MAX_WEBHOOK_BYTES, WEBHOOK_HEADER_ALLOWLIST } from "./config";
+import {
+  MAX_REJECTED_PER_MINUTE,
+  MAX_WEBHOOK_BYTES,
+  WEBHOOK_HEADER_ALLOWLIST,
+  lastClaimAt,
+} from "./config";
 import { defaultDeps, type ServiceSupabase } from "./deps";
 import { verifyShopifyHmac } from "./hmac";
 import { runDueJobs, runJobById } from "./queue";
@@ -91,9 +96,14 @@ export type WebhookDeps = {
   record: (input: RecordWebhookInput) => Promise<RecordWebhookResult>;
   schedule: (task: () => Promise<void>) => void;
   runEvent: (jobId: string, correlationId: string) => Promise<unknown>;
-  runDue: (options: { limit: number; budgetMs: number }, correlationId: string) => Promise<unknown>;
+  runDue: (
+    options: { limit: number; claimUntil: number },
+    correlationId: string,
+  ) => Promise<unknown>;
   rejectedLimiter: { allow(): boolean };
   log: Logger;
+  /** The clock (tests pass a fake one). */
+  now: () => number;
 };
 
 /** Store one delivery through public.record_shopify_webhook (service role). */
@@ -144,6 +154,9 @@ export async function handleShopifyWebhook(
 ): Promise<Response> {
   // 1. Correlation id (the proxy does not run on this route).
   const correlationId = requestIdFrom(request.headers.get(REQUEST_ID_HEADER));
+  const now = overrides.now ?? Date.now;
+  // The function's clock starts with the request; after() shares its maxDuration.
+  const startedAt = now();
   const has = (key: keyof WebhookDeps) => Object.prototype.hasOwnProperty.call(overrides, key);
   const env = has("secret") && has("shopDomain") ? null : getServerEnv();
   const deps: WebhookDeps = {
@@ -157,6 +170,7 @@ export async function handleShopifyWebhook(
     runDue: overrides.runDue ?? ((options, cid) => runDueJobs(options, defaultDeps(cid))),
     rejectedLimiter: overrides.rejectedLimiter ?? processLimiter,
     log: overrides.log ?? child(correlationId, { integration: "shopify", route: "webhooks" }),
+    now,
   };
 
   const topic = header(request, "x-shopify-topic");
@@ -286,7 +300,8 @@ export async function handleShopifyWebhook(
   deps.schedule(async () => {
     try {
       if (jobId && !duplicate) await deps.runEvent(jobId, correlationId);
-      await deps.runDue({ limit: 5, budgetMs: 10_000 }, correlationId);
+      // Claim only while a job's worst case still ends inside maxDuration (D87).
+      await deps.runDue({ limit: 5, claimUntil: lastClaimAt(startedAt) }, correlationId);
     } catch (e) {
       deps.log.error(
         { ...logBase, eventId: stored.event_id, err: e instanceof Error ? e.message : String(e) },

@@ -9,6 +9,7 @@ import { child } from "@/lib/logger";
 import { REQUEST_ID_HEADER, requestIdFrom } from "@/lib/request-id";
 
 import { defaultDeps } from "./deps";
+import { lastClaimAt } from "./config";
 import { runDueJobs, type DueJobsSummary } from "./queue";
 
 /**
@@ -24,10 +25,12 @@ import { runDueJobs, type DueJobsSummary } from "./queue";
 export type CronDeps = {
   secret: string | undefined;
   runDue: (
-    options: { limit: number; budgetMs: number },
+    options: { limit: number; claimUntil: number },
     correlationId: string,
   ) => Promise<DueJobsSummary>;
   log: Logger;
+  /** The clock (tests pass a fake one). */
+  now: () => number;
 };
 
 function respond(status: number, body: unknown): Response {
@@ -50,12 +53,15 @@ export async function handleCronRequest(
   overrides: Partial<CronDeps> = {},
 ): Promise<Response> {
   const correlationId = requestIdFrom(request.headers.get(REQUEST_ID_HEADER));
+  const now = overrides.now ?? Date.now;
+  const startedAt = now();
   const deps: CronDeps = {
     secret: Object.prototype.hasOwnProperty.call(overrides, "secret")
       ? overrides.secret
       : getServerEnv().CRON_SECRET,
     runDue: overrides.runDue ?? ((options, cid) => runDueJobs(options, defaultDeps(cid))),
     log: overrides.log ?? child(correlationId, { integration: "shopify", route: "cron" }),
+    now,
   };
   if (!deps.secret) {
     deps.log.warn({ status: 503 }, "integration cron called without CRON_SECRET configured");
@@ -65,6 +71,10 @@ export async function handleCronRequest(
     deps.log.warn({ status: 401 }, "integration cron refused a bad bearer");
     return respond(401, { error: "unauthorized" });
   }
-  const summary = await deps.runDue({ limit: 25, budgetMs: 25_000 }, correlationId);
+  // Claim only while a job's worst case still ends inside maxDuration (D87).
+  const summary = await deps.runDue(
+    { limit: 25, claimUntil: lastClaimAt(startedAt) },
+    correlationId,
+  );
   return respond(200, summary);
 }
