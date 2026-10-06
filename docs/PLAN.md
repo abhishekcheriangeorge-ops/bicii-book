@@ -718,10 +718,63 @@ fixture payload.
 
 ### Phase 11 — Public-site integration (in the `bicii` repo)
 
-Separate plan, written when Phase 6 is done: Supabase auth, `/q/[shortId]`
-public item pages against `reporting.public_items`, appointments, My Bikes,
-customer-visible service history, "Buy online" handing off to Shopify. No
-business rules in that repo.
+SPEC §18 in two steps, one per repository. The public site (repository
+`georgieboys/BICII`) is a second client of this database: it calls only
+the customer `my_*` RPCs, the anonymous booking reads,
+`reporting.public_items` and the step 1 objects below, and holds no
+business rule (decisions D120–D125, record
+[ADR-023](decisions/ADR-023-public-site.md)). Migrations sort after
+everything live (the go-live rule: hosted migrations are only appended).
+
+**Step 1, this repository: the missing backend.** Migration
+`20261006103000_public_site`:
+
+- `claim_my_customer(create_if_missing, first_name, last_name, phone)`:
+  links a confirmed login to its customer record by email (D121), or makes
+  one at the first booking (D122); `setof customer_profile`, EXECUTE for
+  authenticated, an advisory lock per address.
+- `bookable_slots(from_day, to_day, appointment_type_id)`: the range
+  wrapper over `private.available_slots_at` PLAN Phase 2 reserved (D123);
+  anon and authenticated, at most 31 days.
+- Storage policy `media_internal_select_customer` with
+  `private.customer_can_read_media(name)`: customers read the objects of
+  their own customer-visible bike and job photos (D124).
+- The magic-link email says "the BICII sign-in screen" (customers receive
+  it too).
+
+Tests: `tests/db/public-site.test.ts` (claim: anon refused, unconfirmed
+refused, nothing without a booking, create once with a name, links one
+match in any case and keeps staff data, refuses two matches, skips
+archived and taken records, refuses an archived own record, keeps the link
+after email changes, a two-connection race makes one record; slots: equals
+`available_slots` day by day for anon, a customer and staff, D37's public
+types, the 31-day limit and bad bounds; photos: exactly the caller's
+customer-visible bike and job photos, gone when the bike is archived or the
+job cancelled, nothing for anon or a login without a record, no writes;
+and every short-ID prefix the Admin's `/q` resolves, which closes this
+phase's "every prefix resolves" check), the API surface fixture and the
+generated types.
+
+**Step 2, repository `bicii`: the screens.** Supabase clients and a
+`proxy.ts` session refresh limited to the account, booking and item
+routes, so the marketing pages stay static. `/sign-in` (email, then the
+6-digit code, from the browser, D120; then `claim_my_customer`), `/account`
+(profile, upcoming and past appointments with Cancel until D37's cutoff,
+bikes, jobs), `/account/bikes/[id]` (photos and service history, D12, D17),
+`/account/jobs/[id]` (status, lines, timeline and photos, D8, D17), `/book`
+(type, two weeks of times from `bookable_slots`, an optional bike and
+note; the first booking asks for a name and creates the record, D122;
+replay-safe client ids, D37) and `/q/[shortId]` (D125). Unit tests for the
+helpers, and E2E journey 6 (SPEC §27.3: a customer signs in and sees only
+their own appointments, bikes and history) against this repository's
+devstack, in that repository's CI. Its pull request merges only once the
+Admin is live on the same hosted database.
+
+Not in Phase 11: Buy online (waits for Phase 10's storefront addresses,
+D125), a services listing for anonymous visitors (no screen needs one;
+DATA-MODEL §5 (d) stays open), rescheduling and customer messages
+([R-017](RISKS.md#r-017--appointments-mvp-has-no-reschedule-and-no-customer-messages)),
+and any sign in the Admin that a customer has a website login.
 
 ### Phase 12 — Hardware label adapter
 
@@ -879,6 +932,12 @@ D140 and up later.
 | D92 | ROLE-EXCEPTIONS | A staff_permissions row is an "Extra access" exception for one person on top of their role (already built; history in staff_events). A row the person's role already implies cannot exist: grant_permission refuses it with P0001 permission_implied_by_role, and a BEFORE INSERT trigger on staff_permissions refuses it for every writer (seed, SQL editor). When a role change makes a row implied, the trigger staff_role_drop_implied_exceptions (AFTER UPDATE OF role on staff, every writer) deletes it in the same transaction, which appends one permission_revoked event per row with the role change's actor and reason. A later demotion does not bring removed rows back. Rows already implied when the roles migration runs (written before the roles: an admin's grant to an admin, a promotion that kept its rows) are deleted once by that migration (private.drop_implied_exceptions(), one permission_revoked event each, no actor), so the rule also holds for a database migrated step by step. A manager can therefore carry only manage_staff as an exception (granted by an admin); an admin carries none. | Staff roles (2026-10-06): `20261006000200_staff_role_permissions`, `20261006000300_staff_role_administration` | Accepted: build default within the owner's decision; owner to confirm ([PRODUCT owner question 20](PRODUCT.md#open-assumptions-and-owner-questions), [R-053](RISKS.md#r-053--the-staff-roles-build-defaults-d92-and-d93-are-unconfirmed)); built | [ADR-021](decisions/ADR-021-staff-roles.md) |
 | D93 | ROLE-ADMINISTRATION (restates D11 for roles) | Only an admin invites anyone as admin or manager, changes anyone's role (promote or demote, update_staff role), and changes an admin's or a manager's row (rename, deactivate, reactivate, exceptions). A manage_staff holder who is not an admin invites mechanics only and acts on mechanics' rows only, within the unchanged D11 ceiling: only permissions they hold themselves, never manage_staff, never their own row. Nobody changes their own role; the last active admin cannot be demoted or deactivated (staff_keep_an_active_admin unchanged). Every role change appends one staff_events role_changed row ({"role": {"from", "to"}}) with its actor and an optional reason of at most 500 characters. A role change from the Admin is confirmed against the role its sheet showed (update_staff expected_role; staff_role_changed when someone changed it meanwhile). | Staff roles (2026-10-06): `20261006000300_staff_role_administration` | Owner decision 2026-10-06 for "only admins manage admins and managers"; the mechanics-only reach of a non-admin manage_staff holder over rename/deactivate is a build default, owner to confirm ([PRODUCT owner question 20](PRODUCT.md#open-assumptions-and-owner-questions), [R-053](RISKS.md#r-053--the-staff-roles-build-defaults-d92-and-d93-are-unconfirmed)); built | [ADR-021](decisions/ADR-021-staff-roles.md), [ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md) |
 | D94 | REFUND-ROLES (amends D49) | Retail refunds are recorded by an active admin or manager (private.can_record_refunds(), a role check, not a permission: view_financial_reports is still never enough and no exception grants it). The cap (sale total minus earlier refunds), the mandatory reason, the replay by refund id and the financial-only effect (D7: no stock or unit change) are unchanged. | Staff roles (2026-10-06): `20261006000200_staff_role_permissions` | Owner decision 2026-10-06; built | [ADR-021](decisions/ADR-021-staff-roles.md) |
+| D120 | CUSTOMER-SIGNUP: how customers sign in on the public site | With an emailed 6-digit code, the same code-only email as staff (D10, D70); the first code creates the login (`shouldCreateUser: true`; Auth's "Allow new users to sign up" on). No passwords. Auth is called from the visitor's browser, so its per-IP limits count each visitor; the site keeps no limits of its own | Phase 11 | Accepted: build default, owner to confirm | [ADR-023](decisions/ADR-023-public-site.md) |
+| D121 | CUSTOMER-LINK: which customer record a website login gets | `claim_my_customer` links the login to the one non-archived customer with the same email (case-insensitive) and no login yet, without changing what staff recorded. Several such records: nothing is linked (`customer_link_ambiguous`), the customer contacts the shop. Archived records are never linked; a login whose own record is archived is refused (`customer_archived`). Once linked, the link stays whatever either email says later | Phase 11 | Accepted: build default, owner to confirm | [ADR-023](decisions/ADR-023-public-site.md) |
+| D122 | CUSTOMER-CREATE: when a website customer gets a record | Not at sign-in: at the first booking of a login with no record, with a first name (required), last name and phone from the booking form and the login's email | Phase 11 | Accepted: build default, owner to confirm | [ADR-023](decisions/ADR-023-public-site.md) |
+| D123 | BOOKABLE-RANGE: bookable times for a range of days | `bookable_slots(from_day, to_day, type)`: up to 31 shop days per call, each start tagged with its shop day, equal to `available_slots` day by day (D37's rules stay there); everyone may call it | Phase 11 | Accepted: build default, owner to confirm | [ADR-023](decisions/ADR-023-public-site.md) |
+| D124 | CUSTOMER-PHOTOS: how customers see their photos | A customer reads the `media-internal` objects behind exactly the photos `my_bike_attachments` and `my_work_order_attachments` return to them (a Storage policy), through short-lived signed URLs from their own session; public photos keep public URLs; never a write, a listing of others or any other entity's photos | Phase 11 | Accepted: build default, owner to confirm | [ADR-023](decisions/ADR-023-public-site.md) |
+| D125 | ITEM-PAGE: what the public `/q/[shortId]` shows | Exactly `reporting.public_items`; any other ID shows one "not listed" page, except a signed-in customer's own bike, which opens in their account. Not indexed. Purchase action: a message to the shop on Instagram until Phase 10 gives items a storefront address; a Staff link to the Admin's own `/q` | Phase 11 | Accepted: build default, owner to confirm | [ADR-023](decisions/ADR-023-public-site.md) |
 
 ## 7. Out of scope (restated from SPEC §30)
 

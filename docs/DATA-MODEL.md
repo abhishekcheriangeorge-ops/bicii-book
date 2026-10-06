@@ -45,10 +45,10 @@ This section was added by the documentation retrofit (2026-10-05, inspected
 at `c6bf6d0`). The numbered sections below are never renumbered; code and
 migration comments cite them as "DATA-MODEL §n".
 
-**Authority.** The schema source is the 47 files in
+**Authority.** The schema source is the 48 files in
 [supabase/migrations/](../supabase/migrations/), from
 `20261004000100_foundation.sql` to
-`20261006000300_staff_role_administration.sql` (Phase 6 added `20261004003300` to `20261004003700`; Phase 7, purchasing,
+`20261006103000_public_site.sql` (Phase 6 added `20261004003300` to `20261004003700`; Phase 7, purchasing,
 integrated onto the main line on `feat/p7-purchasing`, added
 `20261005000100` to `20261005000500`, which sort after every `20261004…`
 file; staff email sign-in, integrated on `feat/auth-email-otp`, added
@@ -62,7 +62,11 @@ roles, on `feat/staff-roles`, added `20261006000100_staff_role_values`,
 replace, with the same signatures, `private.has_permission`,
 `public.my_staff_profile`, `public.record_sale_refund`, `create_staff`,
 `private.authorize_permission_change`, `grant_permission`,
-`set_staff_active` and `update_staff`, D90–D94).
+`set_staff_active` and `update_staff`, D90–D94; Phase 11 step 1 added
+`20261006103000_public_site`, which creates only new objects:
+`claim_my_customer`, `bookable_slots`,
+`private.customer_can_read_media` and the Storage policy
+`media_internal_select_customer`, D120–D125).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
@@ -99,8 +103,8 @@ the `20261004` prefix; Phase 7's keep `20261005`). For planned tables, the rows 
 | Section | Status | Where, or what is missing |
 |---|---|---|
 | §1 Identity and authorization | Implemented | `000200_staff`, `000300_staff_management`, `000500_staff_history`; staff email sign-in: `20261005005000_staff_session_revocation` (D71) and `20261005006000_sign_in_throttle` (D72); staff roles (D90–D94): `20261006000100_staff_role_values`, `20261006000200_staff_role_permissions`, `20261006000300_staff_role_administration`, all three applied locally (`47\|20261006000300`; screens: `src/app/(staff)/settings/staff/`, `src/app/(staff)/settings/profile/`; integration-reviewed 2026-10-06) |
-| §2 Customers, bikes, attachments | Implemented | `000600_customers`, `000700_bikes`, `000800_media_storage`, `000900_attachments`, `001000_customer_access`, `001100_staff_search` |
-| §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2) |
+| §2 Customers, bikes, attachments | Implemented | `000600_customers`, `000700_bikes`, `000800_media_storage`, `000900_attachments`, `001000_customer_access`, `001100_staff_search`; Phase 11's customer link and photo policy in `20261006103000_public_site` |
+| §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2); `bookable_slots` in `20261006103000_public_site` (Phase 11) |
 | §4 Workshop | Implemented | `001300_work_orders`, `001500_workshop_rpcs`, `001600_workshop_customer_access`, `001700_workshop_search` |
 | §5 Services and line items | Implemented | `001200_workshop_catalog`, `001400_work_order_lines`, `001500_workshop_rpcs`; consigned-part columns `003300_consignment`, their rules `003400_consignment_job_parts` (D44) |
 | §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; `003300_consignment` adds the units' consignment foreign key, ownership rules and the consignment branch of `private.selling_price`; the sale-line columns have their foreign keys since `003500_sales`; Shopify reference columns wait for Phase 10; `supplier_products` is Phase 7's (§10) |
@@ -122,8 +126,8 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 
 | Actor | Reaches | Enforced by | Test evidence |
 |---|---|---|---|
-| anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`; objects in the public bucket `media-public` by URL, with no listing ([§2](#2-customers-bikes-attachments), [§15](#15-row-level-security-matrix)); nothing else | grants, RLS, definer projections, public bucket (`20261004000800_media_storage.sql`) | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access` |
-| customer (signed in) | own rows only, through `my_*` RPCs; base tables return nothing | staff-only RLS, `private.current_customer_id()` | `customer-access`, `workshop-customer-access`, `appointment-customer-access` |
+| anon | `reporting.public_items`, `public_appointment_types()`, `public_shop_hours()`, `available_slots()`, `bookable_slots()` (Phase 11, D123); objects in the public bucket `media-public` by URL, with no listing ([§2](#2-customers-bikes-attachments), [§15](#15-row-level-security-matrix)); nothing else | grants, RLS, definer projections, public bucket (`20261004000800_media_storage.sql`) | `tests/db/meta.test.ts`, `inventory-publication`, `appointment-customer-access` |
+| customer (signed in) | own rows only, through `my_*` RPCs; base tables return nothing; `claim_my_customer` links or creates their record (D121, D122); the `media-internal` objects of their own customer-visible bike and job photos (D124) | staff-only RLS, `private.current_customer_id()`, the Storage policy `media_internal_select_customer` | `customer-access`, `workshop-customer-access`, `appointment-customer-access`, `public-site` |
 | staff (active) | base tables through RLS; cost columns hidden | `private.is_staff()`, column grants, `*_staff` views | `staff-rls`, `work-order-lines`, `inventory-catalog` |
 | staff with a permission (by role or as an exception) | costs, inventory writes, stock changes, financial reports, staff management, consignment money, purchasing (`manage_purchasing` held as an exception also sees purchase costs on purchasing surfaces, D60). A manager holds every permission except `manage_staff` by role (D91) | `private.require_permission` / `has_permission` (through `private.role_implies`) in RPCs; `private.can_view_purchase_costs()` | `staff-roles`, `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger`, `purchasing-access` |
 | manager or admin | retail refunds (D94, a role check: `private.can_record_refunds()`) | `record_sale_refund` | `staff-roles`, `sales` |
@@ -164,9 +168,12 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 
 **Integration contracts.**
 
-- Public site (Phase 11 consumes them; nothing in that repo uses them yet):
-  the `my_*` RPCs, the three anonymous functions above and
-  `reporting.public_items` (§11, §15).
+- Public site (Phase 11; repository `bicii`): the `my_*` RPCs,
+  `claim_my_customer`, the anonymous `available_slots`, `bookable_slots`,
+  `public_appointment_types` and `public_shop_hours`,
+  `reporting.public_items` and the customer Storage policy (§11, §15,
+  §16; ADR-023). Shapes only ever gain columns at the end
+  ([R-067](RISKS.md#r-067--the-public-site-depends-on-this-repositorys-rpc-shapes)).
 - Errors: business refusals are `P0001` with a stable snake_case code in
   `MESSAGE`, mapped to user messages in
   [src/lib/db-errors.ts](../src/lib/db-errors.ts) (§16).
@@ -2107,12 +2114,12 @@ written out, e.g. `A, M or P(view_costs)`.
 | staff_permissions (exceptions, D92) | A, own | RPC `grant_permission` (A, or P(manage_staff) on mechanics within D11, D93; never a permission the role implies: `permission_implied_by_role`, also a trigger for every writer) | — | RPC `revoke_permission` (same reach); trigger `staff_role_drop_implied_exceptions` on a role change |
 | staff_events | A or P(manage_staff) via `staff_history()` | triggers only | never | never |
 | private.sign_in_attempts (D72) | nobody (RLS on, no policy, no grant) | service role via RPC `note_sign_in_attempt` | the same RPC (counts) | the same RPC (counters older than a day) |
-| customers | S; C own via `my_customer_profile()` | S (no `auth_user_id`, `shopify_customer_id`); C on sign-up via RPC (Phase 11) | S (same columns, `archived_at`); C own name/phone via `update_my_profile()` | — (archive) |
+| customers | S; C own via `my_customer_profile()` | S (no `auth_user_id`, `shopify_customer_id`); C via RPC `claim_my_customer` (Phase 11: links the one unlinked record with the login's email, D121, or creates one at the first booking, D122) | S (same columns, `archived_at`); C own name/phone via `update_my_profile()` | — (archive) |
 | bikes | S; C own current, non-archived via `my_bikes()` | S (no `short_id`: server-assigned) | S (no `short_id`, `customer_id`, `inventory_unit_id`); owner via RPC `transfer_bike_ownership` | — (archive) |
 | bike_ownership_events | S | trigger only | never | never |
 | attachments | S; C `customer`/`public` rows of own bikes via `my_bike_attachments()` and of own jobs via `my_work_order_attachments()` | RPC `record_attachment` (S) | S caption only; visibility via RPC `set_attachment_visibility` (S) | RPC `delete_attachment` (S, reason) |
 | attachment_events | S | triggers only | never | never |
-| storage `media-internal` | S | S | — | S, only objects no attachment points at |
+| storage `media-internal` | S; C the objects of their own customer- or public-visible bike photos (current, non-archived bikes) and job photos (jobs not cancelled), policy `media_internal_select_customer` over `private.customer_can_read_media` (Phase 11, D124) | S | — | S, only objects no attachment points at |
 | storage `media-public` | S (everyone else only by public URL; nobody lists it) | S | — | S, only objects no attachment points at |
 | shop_settings | S; nobody else (anon/C read none of it) | — (one row, inserted by the migration) | RPC `update_shop_settings` (A) | never (`shop_settings_required`) |
 | shop_hours | S; anon/C active weekly rows via `public_shop_hours()` | RPC `set_shop_hours` (A) | RPC `set_shop_hours` (A) | RPC `set_shop_hours` (A) |
@@ -2239,6 +2246,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `public_appointment_types()` → `id, name, description, duration_minutes` | everyone (anon, authenticated) | Built (Phase 2). Active and public types by sort_order, name; never capacity units. |
 | `public_shop_hours()` → `weekday, opens_at, closes_at` | everyone | Built (Phase 2). Active weekly rows by weekday, opens_at; closures are not listed. |
 | `available_slots(day date, appointment_type_id uuid)` → `slot_start, slot_end, remaining_units` | everyone (D37; Phase 11 must not revoke anon) | Built (Phase 2). `private.available_slots_at(day, type, now(), private.is_staff())`; `remaining_units` NULL for non-staff; null arguments → 22004. Phase 11's `bookable_slots` range wrapper calls `private.available_slots_at`. |
+| `bookable_slots(from_day date, to_day date, appointment_type_id uuid)` → `slot_day, slot_start, slot_end` | everyone (D123) | Built (Phase 11). For each day from `from_day` to `to_day` (at most 31 days: `slot_range_too_long`; reversed: `slot_range_invalid`; null arguments → 22004), `private.available_slots_at(day, type, now(), private.is_staff())`, ordered by start; equal to `available_slots` day by day. |
 | `book_appointment(appointment_id, customer_id, appointment_type_id, starts_at timestamptz, bike_id = null, customer_note = null, internal_note = null)` → `appointments` | S | Built (Phase 2). `private.book_appointment_core(…, 'staff')`, in order: 22004 on nulls; `shop_settings` FOR SHARE; the day lock; replay by id (same customer, type and start → the row, no event; else `appointment_conflict`); P0002 / `appointment_type_unavailable` (inactive); P0002 / `customer_archived`; bike P0002 / `appointment_bike_archived` / `appointment_bike_not_owned`; `appointment_in_past` (ends_at ≤ now); `private.appointment_slot_problem` (misaligned, outside hours, closed, capacity); insert with the snapshots. |
 | `mark_appointment_status(appointment_id, status, reason = null)` → `appointments` | S | Built (Phase 2, D39). `shop_settings` FOR SHARE, the row FOR UPDATE (P0002); targets confirmed / arrived / no_show only (`appointment_use_check_in`, `appointment_use_cancel`, `appointment_transition_invalid` for booked/completed); same status → replay; `appointment_transition_invalid`; `appointment_not_started`; no_show → arrived only on its own shop-local date, then the day lock and `appointment_capacity_exceeded`. One event with the optional reason. |
 | `cancel_appointment(appointment_id, reason)` → `appointments` | S | Built (Phase 2). `reason_required` / `reason_too_long` first; the row FOR UPDATE (P0002); already cancelled → the row (no event); only booked, confirmed or arrived (`appointment_transition_invalid`); `cancelled_via` = staff. |
@@ -2328,6 +2336,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `staff_search(q, kinds, max_results, archived)` | S | Typed hits `(kind, id, title, subtitle, short_id, rank)` across customers (name words in any order, email, phone digits with or without +65), bikes (short ID and serial ignoring case/spaces/dashes, brand/model/variant/colour plus owner name) and, from Phase 3, jobs (`work_order`: job number ignoring case/spaces/dashes, exact 1.0, contains ≥ 3 characters 0.6; title the bike, subtitle the customer · the first 80 characters of the requested work, short_id the job number; every status) and, from Phase 4, products (`product`: exact P- ID or SKU key, i.e. upper-cased without punctuation, 1.0; SKU key containing q's key, ≥ 3 characters, 0.7; every word of q in name/brand/SKU 0.45 + 0.4 × word similarity; title the name, subtitle `SKU · brand · N in stock` with N the ledger on-hand across locations, or `Unique item`, plus `Inactive` for an inactive product, which is still found) and units (`inventory_unit`: exact U- ID or serial key 1.0; serial key containing q's key, ≥ 3 characters, 0.7; every word of q in the product's name 0.45 + 0.4 × word similarity; title the product's name, subtitle `status · location · S/N serial` with status Available, Reserved, On a job, Sold, Written off or Returned to consignor). Exact short ID, serial, SKU or job number rank 1.0, exact email/phone 0.95, fuzzy below. Archived rows excluded, or (`archived` true) searched alone with the same matching, for the Archived lists (jobs are never archived, so none then; a unit by its own `archived_at`); `kinds` null = all, unknown kind 22023; `max_results` clamped to 1..100 (callers ask for one more than they show, to know the list is cut off). Phase 6 step 2 adds `consignor` (every word in name/email 0.5 + 0.4 × word similarity, phone digits contained 0.6, exact email or phone 0.95; title the name, subtitle email · phone; archived consignors only with `archived` true), `consignment_item` (exact C- ID 1.0, C- ID containing the key ≥ 3 0.6, every word in product name/brand and consignor name 0.45 + 0.4 × word similarity; title the product name, subtitle `consignor · status · U-…` or `Qty n`; never archived) and `sale` (exact S- number 1.0, number containing the key ≥ 3 0.6; title `S-… · $total`, subtitle the customer or `Walk-in` · the shop day; never archived; voided left out). From Phase 7 (`20261005000400_purchasing_search.sql`), suppliers (`supplier`: every word of q in name/contact/email/account reference 0.5 + 0.4 × word similarity, exact email or exact phone (with or without +65) 0.95, phone digits contained 0.6; title the name, subtitle `contact · phone · email`, no short_id; archived suppliers only with `archived`) and purchase orders (`purchase_order`: exact PO number key — `PO-000002`, `po 000002`, `PO000002` — 1.0, exact supplier reference key 0.95, PO number containing the key (≥ 3 characters) 0.6, every word of q in the supplier's search text 0.4 + 0.4 × word similarity; title the supplier's name, short_id the PO number, subtitle `status · expected 12 Oct 2026 · R of N received` (the date only when set, the count only when the PO has lines); POs are never archived, so none with `archived`; cancelled and received POs are found). **Merge hazard:** each phase's migration replaces the whole function, so the latest definition must contain every branch; the merged line's latest is `20261005000400_purchasing_search.sql`, which carries Phase 6's three kinds and Phase 7's two. `tests/db/staff-search.test.ts` checks that staff_search accepts every `SEARCH_KINDS` entry of `src/lib/search.ts`, which the app asks for by default. Later phases add a `private.search_<kind>` function and a branch. |
 | `my_customer_profile()` | authenticated (C) | The caller's own `customer_profile` (id, names, email, phone, created_at); zero rows for non-customers. |
 | `update_my_profile(first_name, last_name, display_name, phone)` | C | Own row only; null keeps a field, '' clears it; 42501 without a customers row. |
+| `claim_my_customer(create_if_missing = false, first_name = null, last_name = null, phone = null)` → `setof customer_profile` | authenticated (any login; 42501 for anon) | Built (Phase 11, D121, D122). Refuses a login without a confirmed email (`customer_email_unconfirmed`); an advisory lock per address; the login's own record if it has one (archived: `customer_archived`); else the one non-archived record with that email (citext) and no login, linked without changing its fields; two or more: `customer_link_ambiguous`; none: nothing, or with `create_if_missing` a new record with the login's email (`customer_name_required`, `customer_name_too_long`, `customer_phone_too_long`). |
 | `my_bikes()` | authenticated (C) | The caller's current, non-archived bikes without internal notes. |
 | `my_bike_attachments(bike_id)` | authenticated (C) | `customer`/`public` attachments of one of the caller's own bikes; empty for anyone else's. |
 | `my_work_orders()` | authenticated (C) | The caller's jobs (not cancelled), newest first: `id, job_number, bike_id, bike_short_id, bike_title, status customer_job_status, checked_in_at, completed_at, ready_for_collection_at, collected_at, currency, sale_total` (live lines). D17: by `work_orders.customer_id`, whatever the bike's owner or archived state now. |

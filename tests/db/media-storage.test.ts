@@ -3,8 +3,11 @@
  * policies must enforce visibility"; DATA-MODEL §2):
  *
  *   media-internal  private: active staff read and add; anonymous
- *                   visitors, signed-in customers and inactive staff can
- *                   do nothing.
+ *                   visitors and inactive staff can do nothing; a
+ *                   signed-in customer reads only the objects of their own
+ *                   customer-visible bike and job photos (Phase 11, D124,
+ *                   tested in public-site.test.ts), never an object no
+ *                   attachment of theirs points at (below).
  *   media-public    public bucket: files are served at public URLs (which
  *                   skip RLS; stack.smoke.test.ts fetches one), but only
  *                   active staff may read or list it through the API, and

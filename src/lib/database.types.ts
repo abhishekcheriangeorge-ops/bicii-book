@@ -3760,6 +3760,14 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      bookable_slots: {
+        Args: { appointment_type_id: string; from_day: string; to_day: string };
+        Returns: {
+          slot_day: string;
+          slot_end: string;
+          slot_start: string;
+        }[];
+      };
       cancel_appointment: {
         Args: { appointment_id: string; reason: string };
         Returns: {
@@ -3866,6 +3874,21 @@ export type Database = {
           to: "appointment_check_in";
           isOneToOne: true;
           isSetofReturn: false;
+        };
+      };
+      claim_my_customer: {
+        Args: {
+          create_if_missing?: boolean;
+          first_name?: string;
+          last_name?: string;
+          phone?: string;
+        };
+        Returns: Database["public"]["CompositeTypes"]["customer_profile"][];
+        SetofOptions: {
+          from: "*";
+          to: "customer_profile";
+          isOneToOne: false;
+          isSetofReturn: true;
         };
       };
       consignor_payout_details: { Args: { consignor_id: string }; Returns: string };
