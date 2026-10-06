@@ -1,14 +1,21 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { RowList } from "@/components/ui/row-list";
 import { Sheet } from "@/components/ui/sheet";
 import { StatusPill } from "@/components/ui/status-pill";
 import type { QueueRow } from "@/lib/domain/shopify";
-import { attemptText, jobKindLabel, jobStatusLabel, jobStatusTone } from "@/lib/shopify";
+import {
+  attemptText,
+  jobClosed,
+  jobKindLabel,
+  jobStatusLabel,
+  jobStatusTone,
+  jobTitle,
+} from "@/lib/shopify";
 
 import { JobPanel } from "./job-panel";
 
@@ -19,6 +26,12 @@ import { JobPanel } from "./job-panel";
  * words. Tapping a row opens its sheet with the full reason and what can
  * be done (JobPanel). `?job=<id>` (Today's exception row) opens that job's
  * sheet; closing it drops the parameter.
+ *
+ * The sheet holds only the open job's id and reads the row from the
+ * server's rows on every render, so after a Retry or a link (each ends in
+ * refresh()) it shows the job's new status, attempts, reason and lines.
+ * It closes itself when the job it was opened on closes (done or
+ * dismissed) or leaves the view.
  */
 export function QueueList({
   rows,
@@ -31,17 +44,35 @@ export function QueueList({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const [open, setOpen] = useState<QueueRow | null>(deepLinkJob);
+  const [opened, setOpened] = useState<{ id: string; wasOpen: boolean } | null>(
+    deepLinkJob ? { id: deepLinkJob.id, wasOpen: !jobClosed(deepLinkJob.status) } : null,
+  );
+  const [busy, setBusy] = useState(false);
+  const open: QueueRow | null = opened
+    ? (rows.find((r) => r.id === opened.id) ?? (deepLinkJob?.id === opened.id ? deepLinkJob : null))
+    : null;
 
   const close = () => {
-    setOpen(null);
-    if (params.has("job")) {
-      const next = new URLSearchParams(params);
-      next.delete("job");
-      const qs = next.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    }
+    setOpened(null);
+    setBusy(false);
   };
+
+  // The job left the view, or closed while its sheet was open (a retry
+  // that ended "Closed without recording"): close the sheet during render
+  // (React's "adjusting state when a prop changes"), never on a stale row.
+  if (opened !== null && (open === null || (opened.wasOpen && jobClosed(open.status)))) {
+    close();
+  }
+
+  // No sheet open: drop ?job= so a reload does not reopen it.
+  const hasJobParam = params.has("job");
+  useEffect(() => {
+    if (opened !== null || !hasJobParam) return;
+    const next = new URLSearchParams(params);
+    next.delete("job");
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [opened, hasJobParam, params, pathname, router]);
 
   return (
     <>
@@ -51,7 +82,7 @@ export function QueueList({
             <li key={r.id} className="group/row">
               <button
                 type="button"
-                onClick={() => setOpen(r)}
+                onClick={() => setOpened({ id: r.id, wasOpen: !jobClosed(r.status) })}
                 className="flex min-h-16 w-full items-center gap-4 px-4 py-3 text-left focus-inset transition-colors group-first/row:rounded-t-[15px] group-last/row:rounded-b-[15px] hover:bg-dust-100"
               >
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -89,7 +120,8 @@ export function QueueList({
         onOpenChange={(o) => {
           if (!o) close();
         }}
-        title={open ? `${jobKindLabel(open.kind, open.topic)} ${open.subject}` : "Queue item"}
+        dismissible={!busy}
+        title={open ? jobTitle(open.kind, open.topic, open.subject) : "Queue item"}
       >
         {open ? (
           <div className="flex flex-col gap-4">
@@ -112,7 +144,14 @@ export function QueueList({
             {open.status === "dismissed" && open.resolutionReason ? (
               <p className="break-words text-dust-700">Dismissed: {open.resolutionReason}</p>
             ) : null}
-            <JobPanel job={open} inSheet showOpenEvent onDone={close} />
+            <JobPanel
+              key={open.id}
+              job={open}
+              inSheet
+              showOpenEvent
+              onDone={close}
+              onBusyChange={setBusy}
+            />
           </div>
         ) : null}
       </Sheet>

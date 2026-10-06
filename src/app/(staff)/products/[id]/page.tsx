@@ -43,7 +43,7 @@ import { describeProductEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
 import { parsePrintParams } from "@/lib/printing/print-sheet";
 import { qrUrl } from "@/lib/qr";
-import { publishBlockedReason, relativeAgo } from "@/lib/shopify";
+import { offlineReason, publishBlockedReason, relativeAgo } from "@/lib/shopify";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
 
@@ -415,6 +415,13 @@ export default async function ProductPage({ params, searchParams }: PageProps<"/
           // A unique product's online price is its oldest unit's (D81): the
           // database decides; a counted one needs its selling price.
           hasPrice: !counted || product.salePrice !== null,
+        })}
+        offlineReason={offlineReason({
+          active: product.active,
+          archived,
+          ownershipType: product.ownershipType,
+          publicationStatus: product.publicationStatus,
+          trackingType: product.trackingType,
         })}
         canManage={manage}
         fakeMode={shopifyConnection().mode === "fake"}

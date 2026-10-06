@@ -11,7 +11,13 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { requireAdmin } from "@/lib/auth/session";
 import { formatDateTime } from "@/lib/dates";
 import { listSyncedProducts } from "@/lib/domain/shopify";
-import { PRODUCT_FILTERS, readProductFilter, syncStatusLabel, syncStatusTone } from "@/lib/shopify";
+import {
+  OFFLINE_WHILE_PUBLISHED,
+  PRODUCT_FILTERS,
+  readProductFilter,
+  syncStatusLabel,
+  syncStatusTone,
+} from "@/lib/shopify";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Shopify products" };
@@ -71,6 +77,9 @@ export default async function ShopifyProductsPage({
                   {p.lastPushedAt ? `Synced ${formatDateTime(p.lastPushedAt)}` : "Never synced"}
                   {p.lastPushedQuantity !== null ? ` · quantity ${p.lastPushedQuantity}` : ""}
                 </span>
+                {p.publishOnline && p.syncStatus === "unpublished" ? (
+                  <span className="text-sm text-dust-700">{OFFLINE_WHILE_PUBLISHED}</span>
+                ) : null}
                 {p.syncStatus === "error" && p.lastError ? (
                   <span className="line-clamp-2 text-sm text-danger-deep">{p.lastError}</span>
                 ) : null}

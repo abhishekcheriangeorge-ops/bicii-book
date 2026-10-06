@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 
 import { LinkPending } from "./link-pending";
-import { MORE_ITEMS, TABS, isItemActive, type NavItem } from "./nav";
+import { TABS, isItemActive, moreItemsFor, type NavItem } from "./nav";
 
 function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = isItemActive(pathname, item);
@@ -36,8 +36,12 @@ function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
   );
 }
 
-/** iPad and desktop navigation: a labelled rail on the left, from md up. */
-export function SideRail() {
+/**
+ * iPad and desktop navigation: a labelled rail on the left, from md up.
+ * Admin-only destinations (Shopify) are listed for admins only; the staff
+ * layout passes `isAdmin` once the session is read (StaffSideRail).
+ */
+export function SideRail({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
   const primary = TABS.filter((t) => t.href !== "/more");
   return (
@@ -64,7 +68,7 @@ export function SideRail() {
       <div className="flex flex-col gap-1">
         <p className="eyebrow px-3 text-dust-500">More</p>
         <ul className="flex flex-col gap-1">
-          {MORE_ITEMS.map((item) => (
+          {moreItemsFor(isAdmin).map((item) => (
             <RailLink key={item.href} item={item} pathname={pathname} />
           ))}
         </ul>

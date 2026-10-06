@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import {
   dismissJobAction,
@@ -45,23 +45,57 @@ export type JobPanelJob = Pick<
  *
  * `inSheet`: the link form replaces the actions inside the queue's sheet
  * (no sheet on a sheet); elsewhere it opens in its own LinkVariantSheet.
+ * Cancel, or a link whose retry did not close the item, returns to the
+ * panel with focus on the line's "Link to a BICII product" button (or the
+ * Retry button when the line is linked now). While a retry or a link is
+ * saving, `onBusyChange(true)` lets the queue's sheet refuse to close.
  */
 export function JobPanel({
   job,
   inSheet = false,
   showOpenEvent = false,
   onDone,
+  onBusyChange,
 }: {
   job: JobPanelJob;
   inSheet?: boolean;
   showOpenEvent?: boolean;
   /** After a dismiss, or a link or retry that closed the item. */
   onDone?: () => void;
+  /** True while a retry or a link is being saved (the sheet stays open). */
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { toast } = useToast();
   const [retrying, startRetry] = useTransition();
-  const [linking, setLinking] = useState<UnmappedLine | null>(null);
+  const [linking, setLinking] = useState<{ line: UnmappedLine; key: string } | null>(null);
+  const [linkPending, setLinkPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const refocus = useRef<string | null>(null);
+  const linkButtons = useRef(new Map<string, HTMLButtonElement>());
+  const retryRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    onBusyChange?.(retrying || linkPending);
+  }, [retrying, linkPending, onBusyChange]);
+
+  // Back from the link form: focus the button that opened it, else Retry,
+  // else the panel's first control (never the page behind the sheet).
+  useEffect(() => {
+    if (refocus.current === null || linking) return;
+    const target =
+      linkButtons.current.get(refocus.current) ??
+      retryRef.current ??
+      panelRef.current?.querySelector<HTMLElement>("button, a[href]");
+    refocus.current = null;
+    target?.focus();
+  }, [linking]);
+
+  const backFromLink = (key: string) => {
+    setLinking(null);
+    setLinkPending(false);
+    refocus.current = key;
+  };
   const open = job.status === "needs_attention" || job.status === "queued";
   const isOrder = job.kind === "shopify_event" && job.topic === "orders/paid";
 
@@ -81,14 +115,23 @@ export function JobPanel({
     });
 
   if (linking && inSheet) {
+    const key = linking.key;
     return (
       <LinkVariantForm
         jobId={job.id}
-        line={linking}
-        onCancel={() => setLinking(null)}
-        onDone={() => {
-          setLinking(null);
-          onDone?.();
+        line={linking.line}
+        onPendingChange={setLinkPending}
+        onCancel={() => backFromLink(key)}
+        onDone={(tone) => {
+          if (tone === "success") {
+            setLinking(null);
+            setLinkPending(false);
+            onDone?.();
+          } else {
+            // Linked, but the retry did not close the item (e.g. another
+            // line is still unknown): back to the refreshed panel.
+            backFromLink(key);
+          }
         }}
       />
     );
@@ -97,10 +140,10 @@ export function JobPanel({
   const unmapped = job.code === "shopify_variant_unmapped" ? job.unmappedLines : [];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={panelRef} className="flex flex-col gap-4">
       {open && !confirming ? (
         <div className="flex flex-wrap gap-2">
-          <Button pending={retrying} pendingLabel="Retrying…" onClick={retry}>
+          <Button ref={retryRef} pending={retrying} pendingLabel="Retrying…" onClick={retry}>
             Retry
           </Button>
         </div>
@@ -108,35 +151,39 @@ export function JobPanel({
 
       {open && unmapped.length > 0 && !confirming ? (
         <ul aria-label="Lines BICII does not know" className="flex flex-col gap-3">
-          {unmapped.map((line, i) => (
-            <li
-              key={`${line.lineItemId ?? "line"}-${i}`}
-              className="flex flex-col gap-2 rounded-xl border border-hairline p-3"
-            >
-              <span className="font-medium break-words">{unmappedLineTitle(line)}</span>
-              {line.variantGid ? (
-                <>
-                  <span className="font-mono text-xs break-all text-dust-700">
-                    {line.variantGid}
+          {unmapped.map((line, i) => {
+            const key = `${line.lineItemId ?? "line"}-${i}`;
+            return (
+              <li key={key} className="flex flex-col gap-2 rounded-xl border border-hairline p-3">
+                <span className="font-medium break-words">{unmappedLineTitle(line)}</span>
+                {line.variantGid ? (
+                  <>
+                    <span className="font-mono text-xs break-all text-dust-700">
+                      {line.variantGid}
+                    </span>
+                    <div>
+                      <Button
+                        ref={(el) => {
+                          if (el) linkButtons.current.set(key, el);
+                          else linkButtons.current.delete(key);
+                        }}
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Link to a BICII product: ${unmappedLineTitle(line)}`}
+                        onClick={() => setLinking({ line, key })}
+                      >
+                        Link to a BICII product
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-sm text-dust-700">
+                    Custom Shopify line — record it by hand if needed, then dismiss
                   </span>
-                  <div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Link to a BICII product: ${unmappedLineTitle(line)}`}
-                      onClick={() => setLinking(line)}
-                    >
-                      Link to a BICII product
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <span className="text-sm text-dust-700">
-                  Custom Shopify line — record it by hand if needed, then dismiss
-                </span>
-              )}
-            </li>
-          ))}
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 
@@ -171,13 +218,13 @@ export function JobPanel({
       {!inSheet ? (
         <LinkVariantSheet
           jobId={job.id}
-          line={linking}
+          line={linking?.line ?? null}
           onOpenChange={(o) => {
-            if (!o) setLinking(null);
+            if (!o && linking) backFromLink(linking.key);
           }}
-          onDone={() => {
+          onDone={(tone) => {
             setLinking(null);
-            onDone?.();
+            if (tone === "success") onDone?.();
           }}
         />
       ) : null}
@@ -212,21 +259,31 @@ export function ProductLinkPicker({
   );
 }
 
+/** The retry's tone after a link: "success" means the item closed. */
+type LinkTone = "success" | "error" | "neutral";
+
 /**
  * Link one Shopify line's variant to a BICII product (D84: mapping only;
  * the order is then retried). The line, its variant and product ids are
  * shown read-only; the product comes from the picker; a reason is required.
+ * With `formId` the buttons are the caller's (a sheet footer pointing at
+ * the form); otherwise they end the form.
  */
 export function LinkVariantForm({
   jobId,
   line,
+  formId,
   onCancel,
   onDone,
+  onPendingChange,
 }: {
   jobId: string;
   line: UnmappedLine;
+  formId?: string;
   onCancel: () => void;
-  onDone: () => void;
+  /** After a saved link, with the retry's tone. */
+  onDone: (tone: LinkTone) => void;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const { toast } = useToast();
   const [product, setProduct] = useState<PickerOption | null>(null);
@@ -239,6 +296,10 @@ export function LinkVariantForm({
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
 
   const submit = () =>
     start(async () => {
@@ -267,11 +328,12 @@ export function LinkVariantForm({
         description: result.data.description ?? undefined,
         tone: result.data.tone,
       });
-      onDone();
+      onDone(result.data.tone);
     });
 
   return (
     <form
+      id={formId}
       noValidate
       className="flex flex-col gap-4"
       onSubmit={(e) => {
@@ -327,24 +389,30 @@ export function LinkVariantForm({
           }}
         />
       </Field>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={onCancel} disabled={pending}>
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          pending={pending}
-          pendingLabel="Linking…"
-          disabled={!line.productGid || !line.variantGid}
-        >
-          Link and retry
-        </Button>
-      </div>
+      {formId ? null : (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={onCancel} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            pending={pending}
+            pendingLabel="Linking…"
+            disabled={!line.productGid || !line.variantGid}
+          >
+            Link and retry
+          </Button>
+        </div>
+      )}
     </form>
   );
 }
 
-/** LinkVariantForm in its own sheet (the event inspector). */
+/**
+ * LinkVariantForm in its own sheet (the event inspector): Cancel and "Link
+ * and retry" in the sheet's footer, pointing at the form, and the sheet
+ * cannot be closed while the link is being saved (DESIGN.md "Forms").
+ */
 export function LinkVariantSheet({
   jobId,
   line,
@@ -354,20 +422,46 @@ export function LinkVariantSheet({
   jobId: string;
   line: UnmappedLine | null;
   onOpenChange: (open: boolean) => void;
-  onDone: () => void;
+  onDone: (tone: LinkTone) => void;
 }) {
+  const formId = useId();
+  const [pending, setPending] = useState(false);
   return (
     <Sheet
       open={line !== null}
       onOpenChange={onOpenChange}
+      dismissible={!pending}
       title={line ? `Link “${unmappedLineTitle(line)}”` : "Link to a BICII product"}
+      footer={
+        line ? (
+          <>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form={formId}
+              pending={pending}
+              pendingLabel="Linking…"
+              disabled={!line.productGid || !line.variantGid}
+            >
+              Link and retry
+            </Button>
+          </>
+        ) : undefined
+      }
     >
       {line ? (
         <LinkVariantForm
           jobId={jobId}
           line={line}
+          formId={formId}
+          onPendingChange={setPending}
           onCancel={() => onOpenChange(false)}
-          onDone={onDone}
+          onDone={(tone) => {
+            setPending(false);
+            onDone(tone);
+          }}
         />
       ) : null}
     </Sheet>

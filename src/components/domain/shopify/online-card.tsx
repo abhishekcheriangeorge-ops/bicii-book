@@ -22,7 +22,10 @@ import { CopyText } from "../copy-text";
  *     online" / "Taken offline"), only for manage_inventory holders. When
  *     it cannot be switched on, the reason sits beside it (not public,
  *     customer-owned, archived, no price, or "Needs Manage inventory").
- *     The server action runs the one sync job the RPC returned.
+ *     The server action runs the one sync job the RPC returned. With the
+ *     switch on but the product not public, active or unarchived, the
+ *     description says why it is not listed (offlineReason) instead of
+ *     "Listed on the Shopify store".
  *   - The sync status as a pill with words, when it last synced and the
  *     quantity Shopify was given at the online location.
  *   - A product linked to one made in Shopify (origin external) gets only
@@ -36,6 +39,7 @@ export function OnlineCard({
   online,
   syncedAgo,
   blockedReason,
+  offlineReason = null,
   canManage,
   fakeMode,
 }: {
@@ -45,6 +49,11 @@ export function OnlineCard({
   syncedAgo: string | null;
   /** Why the switch is disabled (publishBlockedReason), or null. */
   blockedReason: string | null;
+  /**
+   * Why the product is not listed although Publish online is on (offlineReason:
+   * not public, archived, inactive or customer-owned), or null when it is.
+   */
+  offlineReason?: string | null;
   canManage: boolean;
   fakeMode: boolean;
 }) {
@@ -102,7 +111,7 @@ export function OnlineCard({
           description={
             blockedReason ??
             (optimistic
-              ? "Listed on the Shopify store at its selling price."
+              ? (offlineReason ?? "Listed on the Shopify store at its selling price.")
               : "Sell it on the Shopify store at its selling price.")
           }
           checked={optimistic}

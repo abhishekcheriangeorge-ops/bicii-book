@@ -26,6 +26,11 @@ export type NavItem = {
   description?: string;
   /** Other sections this item is active for (Inventory: products and units). */
   also?: readonly string[];
+  /**
+   * Only admins can open it (its pages call requireAdmin()), so it is not
+   * listed for anyone else (as /settings hides Labels and Staff).
+   */
+  adminOnly?: boolean;
 };
 
 /** Bottom tab bar on phones; Scan sits in the middle, raised. */
@@ -69,6 +74,7 @@ export const MORE_ITEMS: readonly NavItem[] = [
     label: "Shopify",
     icon: BagIcon,
     description: "Online sync, orders and errors",
+    adminOnly: true,
   },
   {
     href: "/purchasing",
@@ -85,6 +91,11 @@ export const MORE_ITEMS: readonly NavItem[] = [
     description: "Profile, staff and app",
   },
 ];
+
+/** The More destinations this staff member can open (admin-only ones for admins). */
+export function moreItemsFor(isAdmin: boolean): readonly NavItem[] {
+  return MORE_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+}
 
 /** True when `pathname` is `href` or below it ("/" only matches itself). */
 export function isActive(pathname: string, href: string): boolean {

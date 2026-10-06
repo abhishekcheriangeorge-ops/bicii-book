@@ -21,8 +21,9 @@ export default function Forbidden() {
       }
     >
       <p>
-        Your account doesn&apos;t have permission for this page. If you need it for your work, ask
-        an admin to grant it under Settings → Staff. If your access was removed, sign out.
+        Your account doesn&apos;t have permission for this page. Some pages are for admins only; for
+        the others, if you need one for your work, ask an admin to grant it under Settings → Staff.
+        If your access was removed, sign out.
       </p>
     </StatusScreen>
   );
