@@ -30,7 +30,9 @@ flowchart LR
     auth --> db
     storage --> db
   end
-  public["Public site, repo bicii<br/>(not integrated yet, Phase 11)"] -.-> rest
+  public["Public site, repo bicii<br/>(Phase 11: backend built, screens in step 2)"] -.-> rest
+  public -.-> auth
+  public -.-> storage
   shopify["Shopify<br/>(planned, Phase 10)"] -.-> app
   printer["Label printer<br/>(planned, Phases 8 and 12)"] -.- app
   auth --> mail["Email (SMTP)<br/>sign-in codes; hosted provider not set up"]
@@ -160,6 +162,7 @@ reasoning is ADR-001's; the "small team" point is inferred.
 | Purchasing: cost visibility, last cost, receipts, reorder | [ADR-018](decisions/ADR-018-purchasing.md) |
 | Staff sign in with emailed one-time codes; deactivation ends sessions; the Admin's own sign-in limits | [ADR-019](decisions/ADR-019-staff-email-sign-in.md) |
 | Three staff roles (admin, manager, mechanic) with per-person exceptions; refunds for admins and managers | [ADR-021](decisions/ADR-021-staff-roles.md) |
+| The public site signs customers in with codes, links them to their record by email, and reads only the customer RPCs, the anonymous projections and the customer Storage policy | [ADR-023](decisions/ADR-023-public-site.md) |
 
 All records: [decisions/README.md](decisions/README.md).
 
@@ -183,12 +186,15 @@ All records: [decisions/README.md](decisions/README.md).
   manager), mirrored by `{ admin: true }` and `{ roles: [...] }` in the
   app's guards ([ADR-021](decisions/ADR-021-staff-roles.md)).
 - Who reaches which data: staff-only base tables; customers only through
-  security definer `my_*` RPCs; anonymous visitors only through
-  `reporting.public_items`, `public_appointment_types`, `public_shop_hours`
-  and `available_slots`; the service role only in `src/lib/admin/`
+  security definer `my_*` RPCs and `claim_my_customer` (Phase 11);
+  anonymous visitors only through `reporting.public_items`,
+  `public_appointment_types`, `public_shop_hours`, `available_slots` and
+  `bookable_slots`; the service role only in `src/lib/admin/`
   ([ADR-003](decisions/ADR-003-customer-access.md),
   [DATA-MODEL §15](DATA-MODEL.md#15-row-level-security-matrix)).
-- Storage: bucket `media-internal` is private (staff policies);
+- Storage: bucket `media-internal` is private (staff policies, plus a
+  customer's read of their own customer-visible bike and job photos,
+  D124, so the public site signs URLs with the customer's session);
   `media-public` is public by URL with no listing policy for anonymous
   users ([20261004000800_media_storage.sql](../supabase/migrations/20261004000800_media_storage.sql)).
 - Money: `numeric` domains in Postgres do the authoritative arithmetic;

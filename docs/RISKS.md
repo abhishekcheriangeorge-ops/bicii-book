@@ -411,7 +411,11 @@ URLs, or customer data in this file.
   snapshots intact. Consignors' personal and payout details have the same
   gap ([R-026](#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history)).
 - Revisit trigger: before customers sign in (Phase 11).
-- Last checked: 2026-10-05.
+- Phase 11 (2026-10-06): still open. Customers will create their own
+  records on the public site, so the gap now covers self-registered
+  customers too; D122 keeps that to people who book (a sign-in alone
+  creates no record), which limits how much is collected.
+- Last checked: 2026-10-06.
 
 ## R-017 — Appointments MVP has no reschedule and no customer messages
 
@@ -428,7 +432,10 @@ URLs, or customer data in this file.
 - Workaround or containment: the screens flag affected appointments.
 - Next action: none until requested.
 - Revisit trigger: customer self-booking goes live (Phase 11).
-- Last checked: 2026-10-05.
+- Phase 11 (2026-10-06): unchanged. The public site offers Cancel (until
+  D37's cutoff) and a new booking; it says to cancel and book again to
+  change a time, and sends nothing to the customer.
+- Last checked: 2026-10-06.
 
 ## R-018 — Four sections are placeholder pages
 
@@ -552,7 +559,11 @@ URLs, or customer data in this file.
   internal photos (then the item page shows them to all staff).
 - Revisit trigger: the owner's answer, or Phase 11's attachment access
   review.
-- Last checked: 2026-10-05.
+- Phase 11's attachment access review (2026-10-06): customers never read
+  consignment-item attachments. The customer Storage policy (D124) admits
+  only bike and job photos marked customer or public, and D52 keeps
+  agreement photos internal; the staff-side question above is unchanged.
+- Last checked: 2026-10-06.
 
 ## R-023 — A consigned unit's cost preview leaves out shop-paid charges
 
@@ -918,6 +929,12 @@ URLs, or customer data in this file.
 - Next action: revisit before Phase 11 signs customers in, whose addresses
   may be private.
 - Revisit trigger: Phase 11; an Auth version that changes the answer.
+- Phase 11 (2026-10-06): the public site asks for codes with
+  `shouldCreateUser: true` (D120), so once sign-ups are on, every address
+  gets a code and a login and the answer reveals nothing on that path.
+  The staff path and a direct API call with `shouldCreateUser: false`
+  behave as above. Until the owner turns sign-ups on, the public site
+  shows one message for every refused address.
 - Last checked: 2026-10-06.
 
 ## R-038 — A visitor who knows a staff email can delay its sign-in
@@ -1115,3 +1132,70 @@ URLs, or customer data in this file.
 - Revisit trigger: the shop has several admins who administer staff at
   the same time, or a removal is reported as unexpected.
 - Last checked: 2026-10-06 (staff roles, review fixes).
+
+## R-065 — A mistyped customer email lets someone else claim that record
+
+- Category: security concern (non-exploitable summary; D121).
+- Status and owner: accepted for MVP; owner to confirm with question 30.
+- Trigger: staff save a customer with an email address that belongs to
+  someone else, and that person signs in on the public site.
+- Impact: the website links their login to that record (D121), so they see
+  its bikes, customer-visible photos, jobs and appointments, and can book
+  under it. Costs, notes and other staff-only data stay hidden (ADR-003).
+- Evidence and confidence: high; `claim_my_customer` in
+  `20261006103000_public_site.sql`; `tests/db/public-site.test.ts` ("links
+  the one unlinked record with the same email").
+- Why accepted: the code email proves the person controls that address,
+  which is the address the shop recorded; two records with one address
+  link nothing (`customer_link_ambiguous`).
+- Workaround or containment: staff check the email at intake; a wrong link
+  is undone by clearing the record's login link in the database (no
+  screen yet) and correcting the email.
+- Next action: the owner answers question 30; if wanted, an Admin screen
+  shows and removes a customer's website login.
+- Revisit trigger: the first wrong link reported, or the owner's answer.
+- Last checked: 2026-10-06.
+
+## R-066 — Anyone can create a website login
+
+- Category: accepted compromise (D120, D122).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: the owner turns on "Allow new users to sign up" for the public
+  site's accounts.
+- Impact: anyone who can read a code sent to an address can create a
+  Supabase Auth login. A login with no customer record sees nothing but the
+  public pages, and the Admin refuses it (no staff row), but the logins
+  accumulate in Auth, and every booking by a new login adds a customer
+  record staff will see.
+- Evidence and confidence: high for the behaviour; ADR-003's staff-only
+  base tables and `requireStaff`; `claim_my_customer` creates records only
+  with `create_if_missing` (`tests/db/public-site.test.ts`).
+- Why accepted: SPEC §18 asks for customer sign-up; codes keep logins tied
+  to real mailboxes, and Auth's rate limits and D37's booking limits bound
+  the volume.
+- Workaround or containment: archive unwanted customer records in the
+  Admin; delete stray logins in the Supabase dashboard.
+- Next action: none until abuse is seen; a captcha on the code request is
+  the next step if it is.
+- Revisit trigger: unexpected customer records or Auth sign-ups.
+- Last checked: 2026-10-06.
+
+## R-067 — The public site depends on this repository's RPC shapes
+
+- Category: dependency.
+- Status and owner: open; build agent.
+- Trigger: a migration changes the columns or arguments of a `my_*` RPC,
+  `available_slots`, `bookable_slots`, `public_appointment_types`,
+  `public_shop_hours`, `claim_my_customer` or `reporting.public_items`.
+- Impact: the public site (repository `bicii`) breaks on the next deploy or
+  as soon as the migration is applied, because it is a second client of
+  the same database with no copy of the schema.
+- Evidence and confidence: high; DATA-MODEL "Integration contracts" and
+  §15–§16 list the contract; the public site keeps its own row types for
+  these calls.
+- Workaround or containment: the contract functions only ever gain columns
+  at the end and keep their arguments; journey 6 in the public site's CI
+  runs against this repository's `main`.
+- Next action: run the public site's CI after any change to these objects.
+- Revisit trigger: any migration that touches them.
+- Last checked: 2026-10-06.

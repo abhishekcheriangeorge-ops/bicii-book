@@ -1,57 +1,47 @@
 # Current state
 
-Updated: 2026-10-06, staff roles complete (steps 1–4, the last being the
-integration review and documentation closure, then the review fixes:
-implied exceptions cleaned up on existing data, the D92 race tested on two
-connections, role changes confirmed against the role shown, wording,
-badge and focus fixes) on `feat/staff-roles`
-(created from `feat/auth-email-otp` at 85077c9, equal to
-`origin/feat/auth-email-otp`), in the second worktree
-`/home/user/bicii-book-wt`; before that, the staff email sign-in
-integration with main and purchasing on `feat/auth-email-otp`. Evidence
-checked: `git status` (clean after the commits), `git worktree list`,
-`git log origin/feat/auth-email-otp..HEAD` (the roles commits, none
-pushed; remote-tracking refs as last fetched) and the local gates on this
-branch (below). Earlier rows keep the evidence of their own phase.
+Updated: 2026-10-06 18:24 SGT by the go-live session (GO-LIVE, see
+`HANDOVER.md` on `handover/go-live`), on `claude/brave-clarke-kfqhgt` from
+`main` 5f688c6: Phase 11 step 1 (the public site's backend) is built and
+tested locally; go-live is under way. Evidence checked: `git status`,
+`git log origin/main`, the hosted Supabase project's migration history
+(read-only), the Vercel project's deployments, the `migrate.yml` runs.
+Earlier rows keep the evidence of their own phase.
 
 ## Return in two minutes
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
-- Current objective: staff sign in with emailed one-time codes on the
-  whole main line. `origin/feat/p7-purchasing` (current `main` 6042e6e plus
-  purchasing) is merged into `feat/auth-email-otp` (a merge commit, no
-  rebase), so this branch is main + purchasing + email codes and PR #10
-  merges after PR #9. No password sign-in path remains: main's API test
-  helper and the seeded customer login were moved to codes. Decisions D10
-  (rewritten), D70–D72, record
-  [ADR-019](docs/decisions/ADR-019-staff-email-sign-in.md), risks R-035 to
-  R-039. Committed locally, not pushed.
-- Next action: the orchestrator runs CI with the `e2e` label on PRs #9
-  and #10 and merges #9 then #10 (`feat/p7-purchasing` 7fed53f and
-  `feat/auth-email-otp` 85077c9 are pushed); after #10 merges it pushes
-  `feat/staff-roles`, opens its pull request against `main` (body: the
-  step 4 report's documentation-impact answer) and runs CI with the `e2e`
-  label; then integrates labels (Phase 8) the same way. The owner answers
-  questions 18 (confirm D70–D72), 19 (the SMTP provider) and 20 (confirm
-  the staff-roles build defaults D92 and D93) in
-  [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions).
-- Before any hosted deploy of this release: configure SMTP and run the
-  REQUIRED password reset in
-  [RUNBOOK](docs/RUNBOOK.md#hosted-supabase-projects-staging-and-production)
-  ([R-035](docs/RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset),
-  [R-039](docs/RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)).
-- Staff roles (admin, manager, mechanic; owner decision 2026-10-06): built
-  and committed locally on `feat/staff-roles`, not pushed (D90–D94,
-  [ADR-021](docs/decisions/ADR-021-staff-roles.md)): the database
-  (`private.role_implies`, exceptions, role administration, refunds for
-  managers), the app's permission model and guards, the profile page, and
-  the staff screens (role picker, Extra access, invites by role). D60 now
-  covers only a mechanic holding `manage_purchasing` as an exception
-  ([R-034](docs/RISKS.md#r-034--a-manage_purchasing-exception-shows-unit-costs-on-purchasing-screens));
-  what stays open is R-050 to R-054.
-- Main uncertainty: nothing hosted exists
-  ([R-001](docs/RISKS.md#r-001--nothing-is-deployed)).
+- On `main`: phases 0–7, staff email sign-in, staff roles (PRs #1–#11,
+  #13) and the hosted migration workflow (PR #14, `migrate.yml`).
+- Go-live state (2026-10-06): the Vercel project is linked to this
+  repository and deploys `main` to production (functions in sin1); the
+  sign-in page answers 200. The hosted database still has only
+  `20261004000100_foundation`: `migrate.yml` stops at its first step
+  because the `SUPABASE_DB_URL` Actions secret is not set (owner). The
+  Vercel project lacks `SUPABASE_SERVICE_ROLE_KEY` (owner; without it
+  nobody can sign in). The first admin waits for the loaded database.
+- Current objective: Phase 11, the public site
+  ([PLAN Phase 11](docs/PLAN.md#phase-11--public-site-integration-in-the-bicii-repo),
+  D120–D125, [ADR-023](docs/decisions/ADR-023-public-site.md)). Step 1
+  (this repository): `20261006103000_public_site` with
+  `claim_my_customer`, `bookable_slots` and the customer Storage policy;
+  `tests/db/public-site.test.ts`. Step 2 (repository `bicii`): the
+  screens, merged only after the Admin is live on the same database.
+- Next action: the owner sets `SUPABASE_DB_URL` (Actions secret) and
+  `SUPABASE_SERVICE_ROLE_KEY` (Vercel, production); then dispatch
+  `migrate.yml`, run the advisors, create the first admin
+  (george@chaosactive.com) and sign in. In parallel: merge PR #12 (labels)
+  once the build session pushes its integrated head, then Shopify, then
+  reporting, renaming their migrations past everything live
+  (`HANDOVER.md` "Migrations after go-live").
+- Owner questions: 18 (D70–D72), 19 (SMTP provider), 20 (D92, D93) and
+  30 (the public-site defaults D120–D125) in
+  [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions); the
+  Supabase dashboard checklist in `HANDOVER.md` (SMTP, templates, Auth
+  settings, rate limits, site URL).
+- Main uncertainty: hosted email delivery and Auth settings are unverified
+  ([R-039](docs/RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)).
 
 ## What is actually working
 
@@ -76,7 +66,9 @@ a separate, label-triggered run. All listed results are success.
 | Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment` 32f19e6 (the follow-up commit corrects DATA-MODEL's authority and applied state, PLAN's Phase 6 test list and this file's owner-question list) | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems; rerun at the documentation follow-up: `npm run db:reset` pass (`37\|20261004003700`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.6 min, build inside, no failures, flaky or skipped), docs link check 34 files / 545 links / 0 problems | Not deployed |
 | Labels (Phase 8) | On `feat/p8-labels` in the other worktree; not on this branch | Not verified here | Not deployed |
 | Staff roles (D90–D94: admin, manager and mechanic; `private.role_implies`; "Extra access" exceptions; role administration; refunds for managers; seed `manager@bicii.test`; staff screens with the role picker and invites by role) | Yes, `feat/staff-roles`: 0657397, 28de036 (database), bfc5ea2, dd94665 (app model, guards, refunds, profile), ae9763b, 080a796 (staff screens, E2E), a5441dd and the evidence commit (integration review, documentation), then the review-fixes commit after b83ce42; local only, not pushed | Locally after the review fixes (one-time clean-up of implied exceptions in `20261006000200` via `private.drop_implied_exceptions()`; two-connection D92 race tests; `update_staff` `expected_role` with `staff_role_changed`; shared `REASON_MAX_LENGTH`; manager wording; `ExtraAccessBadge`; focus on Cancel; PLAN D11, R-052, R-054): `npm run db:reset` pass (`47\|20261006000300`), `npm run db:types` committed (the `expected_role` argument), `npm run check` pass, `npm run check:types` pass, `BICII_REQUIRE_STACK=1 npm test` 113 files / 1686 tests passed (unit 57 / 738, database 56 / 948; both new concurrency tests failed once by hand with the refusal trigger's lock weakened to `FOR KEY SHARE`, then the lock was restored), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.1 min, no failures, flaky or skipped), docs link check 37 files / 691 links / 0 problems. Before that, locally (database `bicii_dev_wt`) after the step 4 review fixes (a5441dd): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 113 files / 1680 tests passed (unit 57 / 737, database 56 / 943), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (16.8 min, no failures, flaky or skipped; it reset the database: 47 migrations, `47\|20261006000300`, seed applied), docs link check 37 files / 690 links / 0 problems. Earlier steps: step 1 112 / 1632 and 152 E2E; step 2 112 / 1669 and 152 E2E; step 3 113 / 1680 and 158 E2E, all passing | Not deployed |
-| Phase 9 reporting, Shopify, public-site integration, hardware adapter | No | Not built | Not deployed |
+| Hosted migrations from GitHub Actions (`migrate.yml`: history, dry run, `db push`, history; never seed or `--include-all`) | Yes, PR #14 merged (5f688c6) | CI on the PR: check, test, build passed; dispatched twice on `main`, both stopped at "Check the connection secret is set" (secret missing) | Workflow on `main`; hosted database not loaded |
+| Public site backend (Phase 11 step 1: `claim_my_customer`, `bookable_slots`, customer photo policy; D120–D125) | Yes, `claude/brave-clarke-kfqhgt`, migration `20261006103000_public_site` | Locally (database `bicii_dev`, devstack on this container): `npm run db:reset` pass (48 migrations), `npm run db:types` committed, `tests/db/public-site.test.ts` 27 passed, `meta` and `media-storage` passed; full gate in the pull request's CI | Not deployed |
+| Phase 9 reporting, Shopify, public-site screens, hardware adapter | Reporting and Shopify on the build session's branches (not on `main`); public-site screens are Phase 11 step 2 | Not verified here | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 

@@ -130,9 +130,9 @@ and `bicii-prod`. The owner creates them; agents never see production keys.
      in `supabase/config.toml`.
    - **Sign In / Providers → Email**: enabled; OTP length **6**; OTP expiry
      **600** seconds (`OTP_LENGTH`, `OTP_EXPIRY_MINUTES` in
-     `src/lib/auth/otp.ts`). Turn **off** "Allow new users to sign up" (keep
-     it off at least until the public site's customer sign-in ships in
-     Phase 11): invites create logins through the Auth admin API, which
+     `src/lib/auth/otp.ts`). Turn **off** "Allow new users to sign up" until
+     the public site's customer accounts go live
+     ([The public site: customer accounts](#the-public-site-customer-accounts)): invites create logins through the Auth admin API, which
      works with sign-ups off, and sign-in asks for a code with
      `shouldCreateUser: false`, so it never creates an account.
    - **Rate Limits**: the minimum interval between emails to one address
@@ -411,6 +411,57 @@ One Vercel project for the Admin, connected to this repository.
    counts its attempt with `SUPABASE_SERVICE_ROLE_KEY` first (PLAN D72), so
    a missing or wrong key shows "Sign-in is unavailable right now" to
    everyone ([OPERATIONS](OPERATIONS.md) incident table).
+
+## The public site: customer accounts
+
+Phase 11 (ADR-023, D120–D125). The public site (repository `bicii`, its own
+Vercel project) signs customers in against this project's Auth and reads
+the customer RPCs and public projections. Do these steps once per hosted
+project, in this order, when the public site's account pages are deployed
+against it. Until then the site's account pages show that online accounts
+are not open, and nothing below affects staff.
+
+1. Migrations: `20261006103000_public_site` must be applied (it is part of
+   `main`; [Applying migrations](#applying-migrations-to-a-hosted-project)).
+2. Authentication → Emails → Templates → **Magic Link**: paste the current
+   `supabase/templates/magic_link.html` again. It now says "the BICII
+   sign-in screen", because customers receive it too.
+3. Sign In / Providers → Email → **Allow new users to sign up: ON**
+   (D120). Staff sign-in is unaffected: the Admin asks for codes with
+   `shouldCreateUser: false`, and a login without an active staff row is
+   refused by the Admin and sees nothing through RLS. The public site asks
+   with `shouldCreateUser: true`, so a customer's first code creates their
+   login.
+4. Rate limits: no change. The public site calls Auth from each visitor's
+   browser, so Auth's per-IP limits count each visitor separately.
+5. URL configuration: no change. Emails carry codes only, never links.
+6. The public site's Vercel project, Settings → Environment Variables
+   (Production; Preview only if previews may use this project):
+   `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (this
+   project's URL and anon or publishable key, the same values the Admin
+   uses), and `NEXT_PUBLIC_ADMIN_URL` (the Admin's production address, for
+   the Staff link on item pages). **Never** give the public site the
+   service-role key: it needs none. Redeploy after changing any of them
+   (they are inlined at build time).
+7. Check, from a private browser window on the public site: an item page
+   `/q/<short ID>` of a published product shows it; an unknown ID shows
+   "not listed"; sign in with a test address you control (a code arrives),
+   book a time with your name, see it under your account, cancel it. Then
+   archive the test customer in the Admin.
+
+Customer support, in the Admin and the SQL editor:
+
+- "We can't link your account" (`customer_link_ambiguous`, D121): two or
+  more unarchived customers share the customer's email. Archive the
+  duplicate or correct its email in the Admin; the customer signs in again.
+- "Your account is closed" (`customer_archived`): the login belongs to an
+  archived customer. Unarchive the customer in the Admin if they should be
+  back.
+- A login linked to the wrong customer
+  ([R-065](RISKS.md#r-065--a-mistyped-customer-email-lets-someone-else-claim-that-record)):
+  in the SQL editor, `update public.customers set auth_user_id = null where
+  id = '<customer id>';`, then correct the customer's email in the Admin.
+  There is no screen for this yet.
 
 ## The camera scanner on phones and iPads
 

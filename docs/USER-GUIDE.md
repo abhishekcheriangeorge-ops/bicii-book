@@ -469,6 +469,29 @@ managers.
   reschedule: cancel and book again, and phone the customer
   ([R-017](RISKS.md#r-017--appointments-mvp-has-no-reschedule-and-no-customer-messages)).
 
+### Help a customer with their website account
+
+Customers sign in on the BICII website, not in this app (Phase 11; the
+website's account pages go live when the owner switches them on,
+[RUNBOOK](RUNBOOK.md#the-public-site-customer-accounts)).
+
+- How it works: the customer enters their email on the website and types
+  the 6-digit code they are sent. The website links them to the customer
+  here whose **Email** is the same address, so record emails carefully at
+  intake. Customers who are not here yet get a customer record when they
+  first book online; it then appears in **Customers** like any other.
+- What they see there: their upcoming and past appointments (they can
+  cancel until the cutoff), their bikes with the photos marked **Customer**
+  or **Public**, and their jobs with status, lines, prices, totals and
+  customer photos. Never internal notes, internal photos, costs or other
+  customers.
+- If it fails: "We can't link your account" means two customers here share
+  that email: archive the duplicate or correct one email, then ask them to
+  sign in again. "Your account is closed" means their customer is archived:
+  unarchive it if they should be back. A customer linked to the wrong
+  record needs the fix in
+  [RUNBOOK](RUNBOOK.md#the-public-site-customer-accounts) (no screen yet).
+
 ### Read Today
 
 - Steps: **Today**. Right now (Received, Waiting, Ready to start, In

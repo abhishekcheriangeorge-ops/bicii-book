@@ -19,6 +19,8 @@
  */
 export const ANON_FUNCTIONS: readonly string[] = [
   "public.available_slots(date, uuid)",
+  // Phase 11 (D123): the public site's range wrapper over the same rules
+  "public.bookable_slots(date, date, uuid)",
   "public.public_appointment_types()",
   "public.public_shop_hours()",
 ];
@@ -164,6 +166,11 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.book_my_appointment(uuid, uuid, timestamp with time zone, uuid, text)",
   "public.cancel_my_appointment(uuid, text)",
   "public.my_appointments(boolean)",
+  // Public site (Phase 11): link the login to its customer record or make
+  // one at the first booking (D121, D122); the range of bookable starts
+  // (D123), as for anon
+  "public.bookable_slots(date, date, uuid)",
+  "public.claim_my_customer(boolean, text, text, text)",
   // Purchasing (Phase 7): every write, the cost defaults and the receipt
   // lookup need manage_purchasing (D60 D-PO-COSTS)
   "public.cancel_purchase_order(uuid, text)",

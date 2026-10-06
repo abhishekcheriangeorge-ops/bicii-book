@@ -245,6 +245,16 @@ export const BUSINESS_ERRORS: Record<string, string> = {
   settlement_already_reversed: "That settlement has already been reversed.",
   // Reporting (Phase 5; Phase 9 reuses it)
   report_range_invalid: "Pick a start day on or before the end day, within the allowed range.",
+  // Public site (Phase 11, D121–D123). The public site shows its own
+  // wording; these are for staff reading a log or the same refusal here.
+  customer_email_unconfirmed: "Confirm the email address with a code first.",
+  customer_link_ambiguous:
+    "More than one customer has this email address. Archive the duplicate or correct an email.",
+  customer_name_required: "Enter a first name.",
+  customer_name_too_long: "Keep first and last names under 100 characters each.",
+  customer_phone_too_long: "Keep the phone number under 40 characters.",
+  slot_range_invalid: "Pick a start day on or before the end day.",
+  slot_range_too_long: "Ask for at most 31 days of times at once.",
   // Appointments and schedule (Phase 2)
   appointment_slot_misaligned: "Pick one of the listed times.",
   appointment_outside_hours: "The shop is not open for the whole of that time.",
