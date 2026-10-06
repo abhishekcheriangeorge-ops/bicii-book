@@ -6,6 +6,12 @@ D30, D31, D33, D34 accepted (build defaults, not individually confirmed by
 the owner). Decision owner: Abhishek Cherian George (owner) for business
 meaning; defaults proposed by the build agent.
 
+Status note (2026-10-06): Phase 9 step 1 built the period reports on D32:
+the sale basis is `reporting.financial_lines` itself, the other bases
+(check-in, completion, collection) read the same lines, and D30's gate
+applies to every report RPC. The reports' own decisions (D100–D105) are in
+[ADR-022](ADR-022-reporting.md); this record is otherwise unchanged.
+
 ## Context
 
 SPEC §19 asks for a daily dashboard and period views, and SPEC §4.2 makes

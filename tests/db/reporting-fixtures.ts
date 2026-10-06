@@ -79,6 +79,8 @@ export type InsertJobArgs = {
   customerId?: string;
   bikeId?: string;
   currency?: string;
+  /** The job's lead mechanic (public.staff id); none by default (Phase 9). */
+  leadMechanicId?: string | null;
   checkedInAt: string;
   requestedWork?: string;
   path?: JobStep[];
@@ -176,6 +178,14 @@ export async function insertJob(tx: pg.Client, a: InsertJobArgs): Promise<Insert
     );
     const jobId = inserted.rows[0].id;
     const currency = inserted.rows[0].currency;
+    if (a.leadMechanicId) {
+      // The lead is set only through an assignment (Phase 3), at check-in.
+      await tx.query(
+        `insert into public.work_order_assignments (work_order_id, staff_id, role, assigned_at)
+         values ($1, $2, 'lead', $3)`,
+        [jobId, a.leadMechanicId, a.checkedInAt],
+      );
+    }
 
     let location: string | null = null;
     const results: InsertedLine[] = lines.map((l) => ({
@@ -512,6 +522,14 @@ export const OPERATIONAL_EXCEPTIONS_COLUMNS = [
   "days",
   "quantity",
   "since",
+  // Phase 9 (D106-D108) appends these after Phase 5's nine (a documented
+  // contract change: the first nine are unchanged).
+  "issue",
+  "short_id",
+  "title",
+  "detail",
+  "amount",
+  "currency",
 ] as const;
 
 export const FINANCIAL_LINES_COLUMNS = [

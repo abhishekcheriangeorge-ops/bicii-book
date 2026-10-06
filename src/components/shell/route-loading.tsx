@@ -11,7 +11,7 @@ import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
  * requireStaff(). A loading boundary makes the response stream, which
  * commits it to HTTP 200 before the page runs (Next docs, loading.js
  * "Status Codes"): a permission page under it would answer forbidden()
- * with a 200. So permission-gated subtrees (/settings/staff, later
+ * with a 200. So permission-gated subtrees (/settings/staff,
  * /reports) and the group root have no loading.tsx; the nav links' pending
  * state (LinkPending) acknowledges taps there. DESIGN.md "Loading".
  */

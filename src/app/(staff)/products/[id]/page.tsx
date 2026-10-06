@@ -26,6 +26,7 @@ import { ChevronRightIcon } from "@/components/ui/icons";
 import { RowList } from "@/components/ui/row-list";
 import { StatusPill } from "@/components/ui/status-pill";
 import { hasPermission } from "@/lib/auth/permissions";
+import { reconciliationHref } from "@/lib/reconciliation";
 import { requireStaff } from "@/lib/auth/session";
 import { CONSIGNED_STOCK_NOTE, consignmentStatusPill } from "@/lib/consignment";
 import { consignmentsForProduct } from "@/lib/domain/consignment";
@@ -280,6 +281,13 @@ export default async function ProductPage({ params, searchParams }: PageProps<"/
               <NoActiveLocation />
             </p>
           ) : null}
+          {/* Phase 9 (D106): this product's records against the movement ledger. */}
+          <Link
+            href={reconciliationHref({ all: true, productId: product.id })}
+            className="mt-3 inline-flex min-h-tap items-center text-sm font-semibold underline"
+          >
+            Check against the ledger
+          </Link>
         </Card>
 
         <Card title="Prices">

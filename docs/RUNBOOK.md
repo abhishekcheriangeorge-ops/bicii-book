@@ -863,6 +863,56 @@ project. Before the shop orders through the Admin:
    latest delivery (D5, D63); check the costs entered before go-live,
    because the first deliveries overwrite them.
 
+## When reconciliation or exceptions show a problem
+
+Reports → Exceptions and Inventory → Reconcile stock (Phase 9, D106–D108)
+are read only: they never fix anything, and an exception clears by itself
+once its cause is fixed. Fix through the record the row opens. Stock
+movements are the ledger, so a correction is always a new movement with a
+reason, never an edit.
+
+| Issue (code) | Means | Likely cause | Fix in the app |
+|---|---|---|---|
+| Stock below zero (`negative_on_hand`, exception `negative_stock`) | The ledger has fewer than zero at a location | A part used on a job before the stock was received (allowed, D23) | Count the shelf; receive the missing delivery, or Adjust stock with a reason |
+| `unit_count_mismatch` | A unique product's items in stock at a location differ from the ledger's count | A unit's status or location changed outside a movement | Open the product with **Open stock reconciliation**: the Unique items rows name the item; follow that item's row |
+| `unique_movement_without_unit` | A movement of a unique product names no item | Data entered outside the app | Report it (an RPC or data defect) |
+| `ledger_out_of_range` | The ledger counts one item more than once, or in two places | Data entered outside the app | Report it with the item's movement history |
+| `sale_without_sold_status` | The ledger says sold, the item is not marked sold | A status changed outside a sale | Report it; do not re-sell |
+| `sold_without_sale` | Marked sold with no sale or completed job | A status changed outside a sale | Report it |
+| `held_without_open_job` | Held for a customer, but the ledger's last movement is not an open job's | A hold the job flows did not make | Report it (a plain stale hold, the item held with no open job using it, is the separate `unit_hold_stale`: open the item and release it, or use it on the job) |
+| `in_stock_without_ledger` | Marked in stock, but the ledger says it left | A status changed back without a movement | Report it; count the item first |
+| `ledger_without_stock_status` | The ledger has it in stock, the item says otherwise | A status changed without a movement | Report it with the item's movement history |
+| `location_mismatch` | The item's location is not where the ledger last moved it | A location edited outside a transfer | Report it; a transfer moves both together, so it does not repair a mismatch |
+| `consignment_status_mismatch` | The consignment record and the item disagree (sold or returned) | A return or sale recorded on only one side | Open the consignment item; report it |
+| Unsettled consignment (`unsettled_consignment`) | Money owed to a consignor longer than the threshold after the latest sale | A payout not recorded | Consignment → the consignor → Record a payment (settle), or restock if the sale was undone |
+| Lines in another currency (`currency_mismatch`) | A job or sale line not in the shop currency is left out of every total (D104) | A product or price set in another currency | Void the line and add it again in SGD, or correct the product |
+
+- **A unit or stock issue that persists after the right fix is an RPC
+  bug.** Every path the app offers keeps the records and the ledger in
+  step (`tests/db/stock-reconciliation.test.ts`), and Phase 4's deferred
+  trigger refuses most unit drift at commit, so an item issue means
+  something bypassed the app (a restore, a hand fix in SQL). Report it to the build
+  agent with the item's short ID, the issue code from the CSV (Unique
+  items → Export CSV) and its movement history (the item page's History
+  and Inventory → Movements); never hand-edit the database to clear it.
+- **Exports.** Every table on these pages has Export CSV, a snapshot of
+  the moment. Exceptions export at most 200 rows and reconciliation 1,000;
+  more is refused ("Fix the most urgent… first", "Choose Problems only or
+  one product"); period exports stop at 50,000 rows
+  ([R-057](RISKS.md#r-057--csv-exports-stop-at-50000-rows-and-refuse-when-figures-change-mid-export)).
+  The link opens a new window (`target=_blank`): in the iPhone or iPad
+  app, use Share → Save to Files.
+- **The unsettled-consignment threshold.** An admin changes it on the
+  Exceptions page (Change, 1–365 shop days, 30 by default; D107). It is
+  stored in `shop_settings.consignment_settlement_alert_days`, changed only
+  through `set_consignment_settlement_alert_days`, and recorded in the
+  schedule history.
+- **Shopify (Phase 10).** "Shopify needs attention" stays empty on this
+  branch. When Phase 10 merges, its `private.integration_exceptions()`
+  supplies the rows (admins only, D86/D108); Phase 9 creates a placeholder
+  only when the function is absent, so Phase 10's body is kept
+  ([R-058](RISKS.md#r-058--phase-9s-exceptions-migration-must-be-re-verified-when-phase-10-merges)).
+
 ## CI
 
 `.github/workflows/ci.yml` runs `check`, `test` and `build` on every pull

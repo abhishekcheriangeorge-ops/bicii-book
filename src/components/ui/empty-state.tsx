@@ -7,11 +7,20 @@ export type EmptyStateProps = {
   icon?: ReactNode;
   /** The next useful step, e.g. a "New intake" button. */
   action?: ReactNode;
+  /** "done" for an all-clear (No exceptions): the icon in the done tone. */
+  tone?: "neutral" | "done";
   className?: string;
 };
 
 /** Says what is missing and what to do next (SPEC §22: useful empty states). */
-export function EmptyState({ title, description, icon, action, className }: EmptyStateProps) {
+export function EmptyState({
+  title,
+  description,
+  icon,
+  action,
+  tone = "neutral",
+  className,
+}: EmptyStateProps) {
   return (
     <div
       className={cn(
@@ -22,7 +31,10 @@ export function EmptyState({ title, description, icon, action, className }: Empt
       {icon ? (
         <div
           aria-hidden="true"
-          className="flex size-12 items-center justify-center rounded-full bg-dust-100 text-dust-700"
+          className={cn(
+            "flex size-12 items-center justify-center rounded-full",
+            tone === "done" ? "bg-done-soft text-done-deep" : "bg-dust-100 text-dust-700",
+          )}
         >
           {icon}
         </div>

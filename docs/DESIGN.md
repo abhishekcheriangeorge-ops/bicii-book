@@ -154,9 +154,12 @@ The pattern every Server Action form follows (`staffAction` +
 - A loading boundary makes the response stream, which commits it to HTTP
   200 before the page runs (Next docs, `loading.js` "Status Codes"): a page
   under it that calls `forbidden()` or `notFound()` shows the right UI with
-  a 200. So permission-gated subtrees (`/settings/staff`, later `/reports`)
-  have none, nor do the group root (`/`) and `/settings` (whose subtree
-  includes `/settings/staff`), keeping their real 403s.
+  a 200. So permission-gated subtrees (`/settings/staff`, `/reports`) have
+  none, nor do the group root (`/`) and `/settings` (whose subtree includes
+  `/settings/staff`), keeping their real 403s. `/reports` has no
+  `loading.tsx` anywhere: `/reports/lines` answers a real 403 without View
+  financial reports, and `/reports` streams each section in its own
+  `<Suspense>` after `requireStaff()` instead ([Reports](#reports)).
 - Every nav link (tab bar, rail) marks its icon while its navigation is
   pending (`LinkPending`, `useLinkStatus`), which also covers the sections
   without a `loading.tsx`.
@@ -667,8 +670,15 @@ consignor liability" (view_financial_reports and view_costs, D30) to
   lines owe their consignors; links to Consignment) always show an amount.
   Money also counts in-store sales: Gross sales is jobs completed and
   sales recorded on the day.
-- **Placeholders are extension points.** The `ExceptionList` is the list
-  Phase 9 links from `/reports/exceptions`.
+- **Needs attention links to the full list (Phase 9).** Beside the
+  section's count, "See all" (named "See all exceptions" for screen
+  readers, the low-stock "See all" pattern) opens `/reports/exceptions`,
+  and the capped-list note ("Showing the 20 most urgent of 45") is a link
+  there too. Nothing else on Today changed: the same `ExceptionList`, the
+  same 20 rows, no second tile. The Activity and Stock grids are
+  `grid-cols-1` on phones (with `min-w-0` items), so a long customer or
+  bike name truncates instead of widening the page (found in Phase 9 step
+  4's E2E run).
 - **Streaming.** The dashboard row loads first; each list (financial
   entries, adjustments, low stock, exceptions, activity, last 7 days) is a
   `SectionLoader` (async) in its own `<Suspense>` with a `SectionSkeleton`,
@@ -695,7 +705,7 @@ consignor liability" (view_financial_reports and view_costs, D30) to
 | `ActivityList` | One flow's jobs from `work_order_activity_on`: J- number, status pill, Overdue badge, customer, bike, sale total; the heading's id is the flow tile's anchor. Checked in, Completed and Collected always; Started, Ready for collection and Cancelled when not empty; "Nothing happened on this day" for a quiet day. |
 | `AdjustmentList` | The day's adjustments and damaged stock: signed delta, P- link, reason, type · location · actor · time, a "Significant" badge (D33) and the value at cost when present. Significant ones first, then newest first; the first `ADJUSTMENT_ROWS` (5) listed and the rest behind a `<details>` "Show N more" (no JavaScript), so an opening stock count does not push "Needs attention" screens down. |
 | `LowStockList` | The first 5 of P4's `reporting.low_stock` (largest shortfall first) with `StockBadge`; "See all" opens `/inventory?filter=low`. |
-| `ExceptionList` | D34 exceptions, danger first: pill (tone and words; Overdue is danger, as on the Overdue tile and the board's badge, while Not collected and other warnings are waiting), short ID, subject, `exceptionCopy` sentence; rows link through `exceptionHref` (a line opens its job via `/q/J-…`; an `integration_failed` row, admins only (D86), shows "Shopify needs attention", the order or product, the human message as its subject line and "Fix it in the Shopify queue", and opens `/shopify/queue?job=<id>` with that job's sheet open); unknown kinds render a generic sentence; keyed by `exceptionKeys` (a product below zero at two locations is two rows); Today lists the 20 most urgent and, when there are more, says "Showing the 20 most urgent of 45" under them (Phase 9 makes it a link to `/reports/exceptions`); EmptyState "Nothing needs attention". |
+| `ExceptionList` | D34 exceptions, danger first: pill (tone and words; Overdue is danger, as on the Overdue tile and the board's badge, while Not collected and other warnings are waiting), short ID, subject, `exceptionCopy` sentence; rows link through `exceptionHref` (a line opens its job via `/q/J-…`; an `integration_failed` row, admins only (D86), shows "Shopify needs attention", the order or product, the human message as its subject line and "Fix it in the Shopify queue", and opens `/shopify/queue?job=<id>` with that job's sheet open); unknown kinds render a generic sentence; keyed by `exceptionKeys` (a product below zero at two locations is two rows); Today lists the 20 most urgent and, when there are more, says "Showing the 20 most urgent of 45" under them (Phase 9 makes it a link to `/reports/exceptions`); EmptyState "Nothing needs attention".; rows link through `exceptionHref` (a line opens its job via `/q/J-…`); unknown kinds render a generic sentence; keyed by `exceptionKeys` (a product below zero at two locations is two rows); Today lists the 20 most urgent and, when there are more, says "Showing the 20 most urgent of 45" under them (with `moreHref`, a link to `/reports/exceptions`); EmptyState "Nothing needs attention". Phase 9 adds optional props only (`detailed`, `action`, `label`, `empty`, `moreHref`): without them a row renders exactly as before (a unit test compares the markup). |
 | `FinancialEntries` | `<details id="financial-entries">` "What makes up these figures" (open with `?entries=open`): the day's `financial_lines` grouped by job (J- link), description, quantity, sale, and yield and Cult Commons when visible; "Sold at a loss" and "Cost pending" badges. It adds nothing up. |
 | `WeekStrip` | "Last 7 days" ending at the day shown: completed, collected, and gross sales, yield and Cult Commons when visible; each day links to `/?day=`; the day shown has `aria-current="date"` and a bold row. A table from md, stacked cards on a phone. |
 | `SectionLoader`, `SectionSkeleton`, `SectionError` (`section-loader.tsx`) | The streaming pattern above. |
@@ -975,3 +985,149 @@ view survives reload and sharing, as on `/sales`):
   shortened" when capped), Payload (`JsonView`; a rejected body is never
   stored, D88; a purged one says "Payload removed after the retention
   period").
+
+### Reports
+
+Phase 9 (SPEC §19.2, §21, §22; PLAN D30, D100–D105;
+[ADR-022](decisions/ADR-022-reporting.md)). `/reports` and `/reports/lines`,
+components in `src/components/domain/reports/` (`report-controls.tsx`
+client, `report-sections.tsx` server), reads in
+`src/lib/domain/period-reports.ts` over the step 1 RPCs, the vocabulary,
+period model and URL state in `src/lib/period-reports.ts`, the CSV export
+table in `src/lib/report-exports.ts`.
+
+- **Period and basis live in the URL** (`period, date, from, to, basis,
+  by`, and the cursors `after_total, after_key` on `/reports`, `after_at,
+  after_id` on `/reports/lines`). `ReportControls`, sticky under the app
+  header: the Period segmented control (Day, Week, Month, Custom), a
+  stepper ("Previous week" / "Next week", 44 px; Next is disabled when the
+  next period would start after today), the range as a button (a native
+  date picker for day, week and month; the Custom sheet for a range) and a
+  ghost Today when the period does not contain today. `[` and `]` step
+  the period when focus is not in a text field. The Custom sheet checks
+  the range with the database's own messages (`report_range_invalid`,
+  `report_range_too_long`) and keeps the values on an error. Weeks are ISO
+  (Monday–Sunday), months calendar months, days shop days. Every change is
+  `router.replace` in a transition (scroll and focus kept, a spinner on
+  the control), like `SearchField`. `BasisControl` (Sale date, Check-in,
+  Completed, Collected, D100) shows the basis's description under it and
+  changes only `basis`; changing it keeps the period and `by`.
+- **Tiles and cost gating.** The figures are `dl/dt/dd` tiles (Today's
+  `StatTile` and `MoneyTile`), two columns on a phone and six across at
+  `lg`: Gross sales and "Jobs · sales · lines" always; Direct costs,
+  Yield (danger and the word "Loss" when negative), Cult Commons ("Sum of
+  30% of each line's positive yield") and BICII after Cult Commons with
+  View costs only. A withheld figure (NULL from the database, D30) is
+  hidden, never shown as 0; without View costs one line says so. On the
+  sale basis a second row adds consignment sales and, with View costs,
+  new consignor liability, settlements paid and received from suppliers;
+  refunds are their own line, "Refunds recorded: $x (n) — not deducted
+  from the figures above" (D102). Lines in another currency are a warning
+  linking to `/reports/exceptions` (D104). Without View financial reports
+  the financial part is one sentence and there is no basis control.
+- **Buckets.** Not for a single day: one row per day, ISO week or month
+  (`autoGrain`: days up to 31, weeks up to 184, else months), partial
+  buckets marked, with a thin `aria-hidden` bar whose width is the
+  bucket's gross over the largest gross (two database strings divided
+  with `toDecimal` for presentation only; the value is in text).
+- **Breakdown rows versus the table.** A link strip of the dimensions
+  (`aria-current` on the chosen one; it changes only `by`). Phones get
+  `RowList` rows (label, detail, gross on the right; with View costs
+  "Yield $x · CC $y", a loss in danger-deep); from `md` a dense table
+  (caption, `th scope`, sticky header, tabular numbers; Qty for products;
+  Cost, Yield, Cult Commons and After CC with View costs) scrolling inside
+  its own box. 25 groups a page, "Showing the top 25" and "Show more"
+  with the keyset cursor. A job or sale group opens its page; every other
+  group opens `/reports/lines`. An empty period says "Nothing recorded for
+  this period on the <basis> basis." and, on Sale date and Completed,
+  "Jobs not completed yet only show on the Check-in basis."
+- **Now versus the period.** "Stock at cost now" (D105) is a figure for
+  this moment whatever period is chosen, and says so: quantity on hand and
+  units per ownership, shop-owned items without a cost ("n items have no
+  cost and are not valued"), and with View costs the shop-owned value;
+  consigned and customer-owned stock is counted, never valued. Activity
+  (everyone) counts each job on its own date (D31), appointments by the
+  day they were booked for (D41), and lists jobs by lead mechanic (D103;
+  inactive staff marked, lead-less jobs "Unassigned").
+- **Export links** are plain `<a target="_blank" rel="noopener">` with an
+  `aria-label` naming the table ("Export CSV: breakdown by Job / sale"),
+  never `next/link`, whose prefetch would run the export. `_blank` because
+  in the iOS standalone PWA a download in the app's own window replaces
+  the app with the file; a new window opens Safari's viewer, with Share
+  and Save to Files (SPEC §22, ADR-001 A7).
+- **No loading.tsx under `/reports`** ([Loading](#loading)):
+  `requireStaff()` / `requireStaff('view_financial_reports')` runs before
+  anything streams, then each section streams in its own `<Suspense>`
+  with a `SectionSkeleton`; a failed section says so in place
+  (`SectionLoader`). `/reports/lines` reads its header group before
+  streaming, so an unknown key is a real not-found.
+- **More reports.** The links at the bottom of `/reports` open
+  Exceptions (with the caller's count as a Badge, waiting tone when above
+  zero, from `report_exception_counts`; nothing while it loads) and Stock
+  reconciliation.
+
+#### Exceptions and reconciliation (Phase 9 step 4)
+
+PLAN D34, D104, D106–D108. `/reports/exceptions` and
+`/reports/reconciliation`, both `requireStaff()` (any active staff
+member; the database decides which exceptions each person sees, D108),
+no `loading.tsx`, each part streamed in its own `<Suspense>`. Words and
+URL state in `src/lib/reconciliation.ts`, reads in
+`src/lib/domain/reconciliation.ts`.
+
+- **Read-only screens link to the guarded fix, never fix.** Nothing on
+  either page changes stock, status or money (D106). A row opens its
+  record (product, unit, consignment item, job, sale), where the guarded
+  flow lives: Adjust stock with a reason, restock, settle, void, return.
+  For adjust_stock holders an issue row on Reconciliation adds "Fix with
+  a stock adjustment", a link to the product page where Adjust stock is.
+  The only write on either page is the admin's threshold.
+- **Exceptions.** PageHeader "Exceptions" ("Things the records say cannot
+  be right, or that need someone's attention. They clear themselves when
+  the cause is fixed.") with Export CSV. Sections in this order, each an
+  h2 with a count Badge and shown only with rows: Stock below zero (with
+  a note: a job part may take stock below zero, so count and adjust),
+  Items in an impossible state, Shopify needs attention (Phase 10's
+  failed jobs, admins only, D86, D108; never a fake row), Lines in another currency, Unsettled
+  consignments, then Overdue jobs, Not collected and Stale holds; a later
+  phase's unknown kind falls under "Other". Each section is
+  `ExceptionList` with `detailed`: a StatusPill "Critical" (danger) or
+  "Needs attention" (waiting) because the heading names the kind, the
+  short ID, the title, the subject, the sentence (`exceptionCopy`; for a
+  consignment "Sold 45 days ago; $2,000.00 outstanding to <consignor>",
+  the amount as the database computed it), the database's detail when it
+  says more, and the age ("45 days", the date on hover and "· since
+  21 Aug 2026" from md up). Stock and unit rows add a secondary link
+  under the row, "Open stock reconciliation", filtered to the product
+  (`RowLink`'s `after` slot: links never nest). A line above says how
+  many exceptions there are and when they were checked; when the counts
+  exceed the 200 listed, it says so. All clear: EmptyState (done tone)
+  "No exceptions" with the time checked.
+- **Threshold sheet.** Admins see "Alert unsettled consignments after N
+  days" and Change, which opens a Sheet ("When to flag unsettled
+  consignments") with a quantity `NumberInput` (1–365, steppers, "days"
+  suffix) in a Field; the value typed stays on failure with the error
+  under the field ([Forms](#forms)); Save closes with a toast "Alert
+  unsettled consignments after N days". Everyone else sees the sentence
+  as text.
+- **Reconciliation.** PageHeader "Stock reconciliation" ("Stock on hand
+  is always the sum of the movement ledger. This page checks the records
+  that summarise it — each unique item's status and location — against
+  that ledger."). A SegmentedControl "Show" (Problems only, the default;
+  Everything) kept in the URL as `all=1`, and the `product` filter (set by
+  links from Exceptions and from the product page's "Check against the
+  ledger") as a removable chip (a link that drops it). Sections: Stock
+  below zero (its own note: allowed, but count and adjust), Products by
+  location (short ID and name, location, ledger on hand, items in stock
+  for unique products, the issue sentence) and Unique items (short ID,
+  product, status, location versus "ledger says <location>", the
+  disposition with its S-/J- reference, ledger on hand versus expected,
+  the issue sentence with the database's detail, last movement date).
+  Rows on phones, a dense table from md up (as the breakdown). Clear:
+  EmptyState (done tone) "Every product reconciles with the ledger" /
+  "Every item reconciles with the ledger". At the RPC cap of 1,000 rows a
+  line says "Showing the first 1,000. Choose a product to see the rest."
+  Export CSV for products by location and for unique items, honouring
+  `all` and `product`.
+- **Inventory.** The `/inventory` PageHeader has a "Reconcile stock"
+  outline ButtonLink beside Movements.

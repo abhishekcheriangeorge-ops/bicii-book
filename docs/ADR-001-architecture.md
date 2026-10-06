@@ -90,6 +90,17 @@ Supabase client (RLS) and Postgres RPCs (security definer, transactional)
   (through the RLS-scoped client) and writes (through RPCs). They return plain
   DTOs with only the fields the caller needs; cost and yield fields are only
   included when the caller has `view_costs`.
+- Route Handlers are public endpoints to Next, and the `(staff)` layout
+  does not run for them. The first one is the period-report CSV export
+  (Phase 9, `src/app/(staff)/reports/export/route.ts`): it lives beside the
+  screen it exports, not under `src/app/api/**`, relies on `proxy.ts` only
+  for the signed-out browser redirect, and authorizes itself with
+  `getSession()`, `getStaff()` and `hasPermission()`, answering its own
+  401, 403, 400, 409 and 413 as `text/plain` (never `requireStaff`,
+  `forbidden()` or `redirect()`). It reads through the domain module like
+  any page and pages around PostgREST's max-rows (1,000) with keyset
+  cursors, a 50,000-row cap and an integer line-count check against
+  `report_period_summary` (one retry, then 409).
 - Anything that mutates stock, money, settlements, unit status, publication
   state, appointments or Shopify state goes through a Postgres RPC listed in
   DATA-MODEL.md §16. Those RPCs are the invariant enforcers. Direct inserts to
@@ -212,6 +223,10 @@ repo and may cache; this app does not.
 - A hand-written `public/sw.js` registered from the root layout; MVP scope is
   install + app-shell caching of static assets only. No offline mutations:
   stock and money commits require a live connection by design.
+- Downloads (the report CSV exports) open in a new window
+  (`target="_blank" rel="noopener"`): in the iOS standalone PWA a download
+  in the app's own window replaces the app with the file, while a new
+  window opens Safari's viewer with Share and Save to Files.
 - Camera capture via `<input type="file" accept="image/*" capture="environment">`
   uploading straight to Storage from the client with a signed upload URL
   minted by an action; the action then records the `attachments` row.
