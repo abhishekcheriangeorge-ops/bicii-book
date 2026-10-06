@@ -263,7 +263,18 @@ One Vercel project for the Admin, connected to this repository.
    | `SUPABASE_SERVICE_ROLE_KEY` | prod service/secret key | staging key | Sensitive; server only |
    | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | own value | own value | Sensitive; `openssl rand -base64 32` |
    | `LOG_LEVEL` | `info` | `debug` | optional |
-   | `SHOPIFY_*`, `CRON_SECRET` | see [Shopify](#shopify-environment-variables-and-fake-mode) | same | Sensitive; never `SHOPIFY_ADAPTER=fake` in Production |
+   | `SHOPIFY_*` | see [Shopify](#shopify-environment-variables-and-fake-mode) | **unset**, or a separate Shopify development store's values with `SHOPIFY_ALLOW_PREVIEW=true`; never the live store's | Sensitive; never `SHOPIFY_ADAPTER=fake` in Production |
+   | `CRON_SECRET` | own value | own value | Sensitive; the cron route's bearer |
+
+   Preview never gets the live store's `SHOPIFY_ADMIN_TOKEN` or
+   `SHOPIFY_WEBHOOK_SECRET`. Preview runs on the staging database, whose
+   short IDs (and so its Shopify handles `bicii-<short id>`) repeat
+   production's: a preview build's first Publish online or Sync now would
+   overwrite the live product with the same handle with staging data.
+   The code keeps the live adapter off in Preview (`VERCEL_ENV=preview`)
+   unless `SHOPIFY_ALLOW_PREVIEW=true`, which is set only when the Preview
+   values belong to a development store
+   ([R-047](RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)).
 
    The CLI equivalent is `vercel env add <NAME> production` (or `preview`).
    Do not `vercel env pull` into `.env.local` for everyday work: local
@@ -434,11 +445,12 @@ logged (`shopify_rejected_rate_limited`;
 
 | Variable | Where | Notes |
 |---|---|---|
-| `SHOPIFY_SHOP_DOMAIN` | Vercel (Production, Preview) | `<name>.myshopify.com`; env.ts refuses anything else |
-| `SHOPIFY_ADMIN_TOKEN` | Vercel, Sensitive | the custom app's Admin API token |
-| `SHOPIFY_WEBHOOK_SECRET` | Vercel, Sensitive | the webhook signing secret |
-| `SHOPIFY_ADAPTER` | unset in Production | `fake` only for local development, CI and E2E |
-| `CRON_SECRET` | Vercel, Sensitive | the cron route's bearer (below) |
+| `SHOPIFY_SHOP_DOMAIN` | Vercel Production (the live store); Preview only a development store's | `<name>.myshopify.com`; env.ts refuses anything else |
+| `SHOPIFY_ADMIN_TOKEN` | Vercel Production, Sensitive; Preview only a development store's | the custom app's Admin API token |
+| `SHOPIFY_WEBHOOK_SECRET` | Vercel Production, Sensitive; Preview only a development store's | the webhook signing secret |
+| `SHOPIFY_ALLOW_PREVIEW` | Vercel Preview only, and only with a development store's values | `true` lets the live adapter run in Preview; unset, Shopify is off there |
+| `SHOPIFY_ADAPTER` | unset in Production and Preview | `fake` only for local development, CI and E2E |
+| `CRON_SECRET` | Vercel (Production, Preview), Sensitive | the cron route's bearer (below) |
 
 With none set, Shopify is off: webhooks answer 503 (kept as rejected
 evidence) and product syncs wait, retried with backoff, with "Shopify is
@@ -454,16 +466,26 @@ database that a real store also writes to.
 `vercel.json` schedules `GET /api/cron/integrations` every 5 minutes
 (D87). Vercel sends `Authorization: Bearer <CRON_SECRET>`; without
 `CRON_SECRET` the route answers 503, with a wrong bearer 401. Each run
-claims and runs up to 25 due jobs within 25 s and returns
-`{claimed, done, failed, needsAttention, deferred}`. Every webhook also
-runs its own event's job and up to 5 due jobs after it has answered, and
-Publish online / Sync now / Retry run exactly the job the RPC returned.
+claims and runs up to 25 due jobs and returns
+`{claimed, done, failed, needsAttention, deferred}`. A claimed job always
+runs to its end, so a runner claims one only while that job's worst case
+(`MAX_JOB_MS`: four Shopify calls at the 10 s timeout plus 5 s, 45 s)
+still ends 5 s before the routes' `maxDuration` of 60 s, that is during
+its first 10 s (`lastClaimAt` in `config.ts`). Every webhook also
+runs its own event's job and up to 5 due jobs after it has answered (the
+same claim window, counted from the request), and Publish online / Sync
+now / Retry run exactly the job the RPC returned.
 
-**Hobby plan fallback**: Vercel's Hobby plan runs crons at most once a
-day, so the 5-minute schedule needs a Pro plan, or an external scheduler
-calling the cron route with the bearer every 5 minutes. On Hobby alone,
-retries and deferred syncs wait until the next webhook, a staff Retry or
-Sync now, or the daily run
+**Choose the Vercel plan before the first deployment.** Vercel's Hobby
+plan allows only cron expressions that run at most once a day and
+**fails the deployment** of any other ("Hobby accounts are limited to
+daily cron jobs"), so with `vercel.json` as committed (`*/5 * * * *`)
+the Admin cannot deploy on Hobby at all. On Pro, keep it. On Hobby,
+change the schedule in `vercel.json` to a daily one (for example
+`"0 5 * * *"`, 13:00 Singapore) in the deploying branch, and have an
+external scheduler call the cron route with the bearer every 5 minutes
+(the `curl` below). Without that scheduler, retries and deferred syncs
+wait until the next webhook, a staff Retry or Sync now, or the daily run
 ([R-049](RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)).
 To run the queue by hand: `curl -H "Authorization: Bearer $CRON_SECRET"
 https://<admin host>/api/cron/integrations`.
@@ -484,7 +506,14 @@ reclaimed after 10 minutes.
   at the online location, a refused line; D82): either link the variant
   (an admin, with a reason) or fix the stock, then Retry; or refund the
   order in Shopify and Dismiss the job with a reason. Its waiting refunds
-  then close themselves. Nothing was recorded, so nothing is undone.
+  and any other delivery of the same order then close themselves.
+  Nothing was recorded, so nothing is undone. A dismissal is final
+  (D87): the same order or refund delivered again, even under a new
+  webhook id, is skipped ("Earlier delivery closed, not recorded").
+  Dismiss only an order you have refunded in Shopify or recorded by hand.
+- **The same order failed under two webhook ids**: fix the cause and
+  Retry one; recording it closes the other as a duplicate of the same
+  sale, so Today keeps no stale row.
 - **A product that already exists in Shopify**: link its variant
   (`link_shopify_variant`, admin and reason). BICII then pushes only that
   variant's price and stock level once it is published online, never the
@@ -517,9 +546,12 @@ reclaimed after 10 minutes.
 ### Shopify: rotating secrets
 
 - Admin API token: in Shopify, rotate or reinstall the custom app, put the
-  new token in Vercel, redeploy. Syncs fail retriably with
-  `shopify_auth_failed` ("Shopify refused the access token…") until then;
-  retry them afterwards.
+  new token in Vercel, redeploy. Until then each sync that calls Shopify
+  needs attention at once with `shopify_auth_failed` ("Shopify refused
+  the access token…"; not retriable, so the cron does not back off and
+  retry it) and shows on Today as "Shopify needs attention". After the new
+  token is deployed, Retry them in `/shopify/queue`, or let the next
+  change of each product supersede them.
 - Webhook secret: set the new value in Vercel and redeploy at the same
   time as Shopify starts signing with it; deliveries signed with the old
   one are refused (401) and kept as `hmac_invalid` evidence. Shopify
@@ -559,6 +591,12 @@ On a development store with the custom app, `SHOPIFY_ADAPTER` unset and
    records one online sale; replay it from the Shopify admin → one sale;
    a refund → `refunds/create` records one refund. Then turn
    `accept_test_orders` off again.
+9. The Vercel plan: Pro with `vercel.json` unchanged, or Hobby with the
+   daily schedule and an external 5-minute scheduler (the cron section
+   above); the first deployment succeeds and `/api/cron/integrations`
+   answers 200 with the bearer.
+10. Preview deployments have no live-store `SHOPIFY_*` values (unset, or a
+    development store's with `SHOPIFY_ALLOW_PREVIEW=true`).
 
 ### Shopify: purging old webhook data
 

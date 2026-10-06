@@ -184,7 +184,15 @@ event inspector and links under `/shopify`, Today's exception row)
    job; a run stalled for 10 minutes is reclaimed (D87). After the
    response, in `after()`, the route runs the new event's own job
    (`runJobById`), then up to 5 due jobs; `GET /api/cron/integrations`
-   (Vercel cron every 5 minutes, bearer `CRON_SECRET`) runs up to 25.
+   (Vercel cron every 5 minutes, bearer `CRON_SECRET`) runs up to 25. A
+   claimed job always runs to its end, so each runner claims a job only
+   while that job's worst case (`MAX_JOB_MS`: four Shopify calls at the
+   10 s timeout plus 5 s) still ends 5 s before the routes' 60 s
+   `maxDuration` (`lastClaimAt` in `config.ts`). A Server Action that
+   runs a job after its committed write (Publish online, Sync now, Retry,
+   link) treats that run as best effort (`after-commit.ts`): if it
+   throws, the action still succeeds with "Saved. The sync runs from the
+   queue in a moment." and the queue runs the job.
 3. **Process in one subtransaction.** `process_shopify_event` locks the
    event row (a processed event is a replay with no effect), then runs
    every business write inside one plpgsql `begin … exception … end`
@@ -248,8 +256,10 @@ Publish online toggle and sync status on the product page in step 4
    quantity; when Shopify's count moved the job is deferred once, then
    overwritten without a compare (BICII is the stock truth, D83). Every
    call goes through the `ShopifyAdmin` interface: `graphql-admin.ts`
-   (live, pinned version, 15 s timeout, retriable vs person-must-act error
-   mapping) or `fake-admin.ts` (in memory, for tests and E2E).
+   (live, pinned version, 10 s timeout, retriable vs person-must-act error
+   mapping; off in a Vercel Preview unless `SHOPIFY_ALLOW_PREVIEW=true`
+   marks a development store) or `fake-admin.ts` (in memory, for tests
+   and E2E).
 5. **Record the outcome.** `record_product_sync_result`: `pushed` (ids,
    handle, what was pushed), `unchanged`, `deferred` (two minutes, no
    attempt used) or `failed` (backoff or needs attention, D87). The status

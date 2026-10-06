@@ -1939,7 +1939,8 @@ integration_events    (every inbound webhook, stored before processing)
   external_event_id text (≤ 200)           -- X-Shopify-Webhook-Id; 'missing:' || sha for
                                            --   a rejected delivery without one
   shopify_event_id, shop_domain, api_version, triggered_at (X-Shopify-Triggered-At)
-  subject (≤ 200)                          -- '#1042'; 'Refund <id> of order <id>'
+  subject (≤ 200)                          -- '#1042'; 'Refund <id> of #1042' (the name of
+                                           --   the order's delivery), else 'Refund <id> of order <id>'
   shopify_order_gid (gid Order)            -- the order an event is about; never raises
   test_delivery boolean                    -- payload test or header X-Shopify-Test (D89)
   payload jsonb null                       -- null when rejected or purged (D88)
@@ -1953,7 +1954,7 @@ integration_events    (every inbound webhook, stored before processing)
   attempts, processed_at
   outcome text (sale_recorded | duplicate_order | refund_recorded | duplicate_refund |
      no_money_refunded | refund_not_allocated | topic_not_handled | test_order |
-     pos_order | order_not_recorded | dismissed)
+     pos_order | order_not_recorded | earlier_delivery_skipped | dismissed)
   result jsonb                             -- the sale and lines, a refund's amounts, or
                                            --   unmapped_lines (admin only)
   last_error_code, last_error (the human message), last_error_detail (SQLSTATE: message
@@ -2002,7 +2003,11 @@ is a POS order (`pos_order`, D89); otherwise it gets a queued
 2. Inside one plpgsql subtransaction: validate the REST payload
    (`shopify_payload_invalid` names the field); take the advisory lock
    'bicii.shopify.order:' ‖ order gid; if a sale with that
-   `shopify_order_id` exists the outcome is `duplicate_order`. Check the
+   `shopify_order_id` exists the outcome is `duplicate_order` (and the
+   order's other open deliveries close the same way); if another
+   `orders/paid` event of the order is `skipped` (dismissed, test or POS)
+   the event is skipped / `earlier_delivery_skipped`: a dismissal is final
+   for the order (D87), whatever the webhook id. Check the
    settings, the shop currency (D35) and the tax basis (D89). Map every
    line `variant_id → products.shopify_variant_id`; any unmapped or custom
    line is one `shopify_variant_unmapped`. Insert the sale header (lock
@@ -2017,8 +2022,12 @@ is a POS order (`pos_order`, D89); otherwise it gets a queued
    Shopify's discounted line totals (D80); refresh unique products'
    publication last (D26).
 3. On success the event is `processed` (`sale_recorded`, `result` = the
-   sale and its lines), its job `done`, and any refund job waiting for the
-   order is queued now (D87). On failure nothing of step 2 survives: the
+   sale and its lines), its job `done`, the order's other `pending` or
+   `failed` deliveries (another webhook id) `processed` / `duplicate_order`
+   with the sale and their jobs `done`
+   (`private.shopify_close_order_siblings`, id order, SKIP LOCKED), so the
+   queue and Today keep no failure for a recorded order, and any refund
+   job waiting for the order is queued now (D87). On failure nothing of step 2 survives: the
    event is `failed` with the code and a human message (`result` keeps the
    unmapped lines), and its job (created if none) is `needs_attention`, or
    `queued` with `private.integration_backoff` for a transient code
@@ -2035,7 +2044,12 @@ read them): `shopify_variant_unmapped`, `shopify_unit_unavailable`,
 
 **Processing a refund** (`process_shopify_refund`): the same lock, replay,
 test and subtransaction pattern; the order's advisory lock, then the sale
-FOR UPDATE. A known refund id is `duplicate_refund`. No sale: a skipped
+FOR UPDATE. A known refund id (a `sale_refunds.shopify_refund_id`, or
+another delivery of the same refund id that is `processed`) is
+`duplicate_refund`; another delivery of the same refund id that is
+`skipped` makes it skipped / `earlier_delivery_skipped` (a dismissal is
+final, D87; matched on the stored payloads' refund id, so it holds until
+the owner purges them, R-040). No sale: a skipped
 `orders/paid` event of that order (dismissed, test or POS) makes it
 `order_not_recorded`; otherwise `shopify_refund_order_unknown` (retried, and
 queued again when the order is recorded). The amount (D85) is the
@@ -2051,7 +2065,8 @@ Delivering a webhook ten times yields one event; processing it ten times
 yields one sale and one movement per line (`inventory_movements_sale_line_once`).
 
 **Staff side** (§16): `retry_integration_job`, `dismiss_integration_job`
-(dismissing an order also closes its waiting refunds), `link_shopify_variant`
+(dismissing an order is final for it: unless a sale exists, its other
+open deliveries and its waiting refunds close too), `link_shopify_variant`
 (mapping only, D84) and `link_shopify_customer` (never by email; recorded
 sales are never edited, D86), each with an `integration_audit_events` row.
 The service layer (`src/lib/integrations/shopify/`, step 3) owns every
@@ -2185,7 +2200,7 @@ never exposed.
 | `consignor_ledger` / `consignor_item_ledger` | Built (Phase 6 step 2, D46, D47): per consignor / per item liability, consignor charges, owed, paid (settlements not reversed), outstanding, counts and dates; derived, never stored; no API grant ([§9](#9-consignment)). |
 | `purchase_order_progress` | Ordered vs received per line. |
 | `shopify_sync_status` | Built (Phase 10 step 2, D86). One row per product with a sync row: `product_id`, `short_id`, `name`, `tracking_type`, `publication_status`, `publish_online`, `shopify_origin`, `sync_status`, `last_pushed_at`, `last_pushed_quantity`, `last_error_code`, `last_error`, `shopify_product_id`, `shopify_variant_id`, and the open sync job (`open_job_id`, `open_job_status`, `open_job_next_attempt_at`: running, else queued, else needs_attention). security_invoker, SELECT to authenticated: active staff read the rows; the job columns are NULL for non-admins (the queue's RLS); customers and anon read nothing. |
-| `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at, buy_online_url`; price from `private.selling_price`; public photos only. `buy_online_url` (Phase 10 step 2, D84; the single Buy-online rule Phase 11 reads) = `shopify_settings.storefront_url ‖ '/products/' ‖ shopify_product_sync.shopify_handle`, only when the row's own `availability` is `available`, `publish_online`, `sync_status = 'synced'`, the origin is `bicii` with a handle, and the storefront is set; otherwise NULL (an external-origin product never has one). It exposes no Shopify id, sync state, cost or payload. Definer view (it reads the sync row and settings as its owner), security_barrier, SELECT for anon and authenticated. Rules in §11. |
+| `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at, buy_online_url`; price from `private.selling_price`; public photos only. `buy_online_url` (Phase 10 step 2, D84; the single Buy-online rule Phase 11 reads) = `shopify_settings.storefront_url ‖ '/products/' ‖ shopify_product_sync.shopify_handle`, only when the row's own `availability` is `available`, `publish_online`, `sync_status = 'synced'`, the origin is `bicii` with a handle, and the storefront is set, and the row is what Shopify sells (D81, D58): a unit row only when it is the unit an online order takes (the oldest available, non-customer-owned, non-archived unit at `online_location_id`, as `private.shopify_online_price`), a product row only when its `sale_price` is not distinct from the online price (for a unique product, `selling_price` of that unit); otherwise NULL (an external-origin product never has one). It exposes no Shopify id, sync state, cost or payload. Definer view (it reads the sync row and settings as its owner), security_barrier, SELECT for anon and authenticated. Rules in §11. |
 
 Materialise `daily_summary` only if measured to be slow; refresh then runs
 `after()` completion/sale mutations.
@@ -2427,7 +2442,7 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `claim_integration_jobs(max_jobs integer, only_job_id uuid = null)` → setof `integration_retry_queue` | service role only | Built (Phase 10 step 1, D87). Dismisses a running product sync stalled 10 minutes when its product has a queued one; claims up to clamp(max_jobs, 1, 50) jobs: queued and due (or the one named, even before it is due) or running and stalled 10 minutes, oldest due first, `FOR UPDATE SKIP LOCKED`, one product sync per product and never beside a fresh running one; each → running, `locked_at` now, attempts + 1. |
 | `process_shopify_order_paid(event_id)` / `process_shopify_refund(event_id)` / `process_shopify_event(event_id)` → `event_status, outcome, sale_id, error_code, error_message` | service role only | Built (Phase 10 step 1, D80–D82, D85, D87, D89): §13's algorithm; `process_shopify_event` dispatches by topic (others → skipped `topic_not_handled`). P0002 unknown event; 22023 wrong topic. Business failures never raise: they return `failed` with the code and the human message and leave the job `needs_attention` (or queued with backoff when transient). |
 | `retry_integration_job(job_id)` → `integration_retry_queue` | A; P(manage_inventory) for product-sync jobs only (42501 otherwise) | Built (Phase 10 step 1, D86, D87). The job FOR UPDATE (P0002); done/dismissed → `integration_job_closed`; running → unchanged; else queued now with `max_attempts` ≥ attempts + 3, `last_retried_by/at`; audit `job_retried`. |
-| `dismiss_integration_job(job_id, reason)` → `integration_retry_queue` | A | Built (Phase 10 step 1, D86, D87). `reason_required` / `reason_too_long` (`private.require_reason`); running → `integration_job_running`; done/dismissed → `integration_job_closed`; dismissed with the reason; a `shopify_event` job's event → skipped / `dismissed` (keeps its last error); an `orders/paid` event also closes the order's waiting refund jobs ('The order was dismissed: ' ‖ reason; their events skipped / `order_not_recorded`); audit `job_dismissed` {closed_refund_job_ids}. |
+| `dismiss_integration_job(job_id, reason)` → `integration_retry_queue` | A | Built (Phase 10 step 1, D86, D87). `reason_required` / `reason_too_long` (`private.require_reason`); running → `integration_job_running`; done/dismissed → `integration_job_closed`; dismissed with the reason; a `shopify_event` job's event → skipped / `dismissed` (keeps its last error); an `orders/paid` event of an order with no sale is final for the order (D87): every `orders/paid` event of the order is locked in id order, its other open deliveries' queued or needs_attention jobs are dismissed ('Another delivery of this order was dismissed: ' ‖ reason; their events skipped / `dismissed`), and the order's waiting refund jobs close ('The order was dismissed: ' ‖ reason; their events skipped / `order_not_recorded`); a later delivery of the order is `earlier_delivery_skipped`. audit `job_dismissed` {closed_refund_job_ids, closed_order_job_ids}. |
 | `link_shopify_variant(product_id, shopify_product_id, shopify_variant_id, reason)` → `shopify_product_sync` | A | Built (Phase 10 step 1, D84). Numeric ids or gids (`shopify_gid_invalid`); reason required; the product FOR UPDATE; another variant already on it, or a Shopify product BICII created for another product → `shopify_ids_conflict`; a variant on another product → 23505 `products_shopify_variant_id_key`; sets the two product columns with the reason (P4's history records `details_changed`); upserts the sync row as `external` (unless `bicii`), no handle, Publish online untouched; same ids → no-op; audit `variant_linked` {from, to}. |
 | `link_shopify_customer(customer_id, shopify_customer_id, reason)` → `shopify_customer_link_result (customer_id, shopify_customer_id, earlier_online_sales)` | A | Built (Phase 10 step 1, D86). A composite result (a `returns table` would clash with the argument names). Reason required; the customer FOR UPDATE; a different id already linked → `shopify_customer_already_linked`; an id on another customer → 23505 `customers_shopify_customer_id_key`; never by email; recorded sales are never edited (`earlier_online_sales` counts the online sales of that Shopify customer still without a customer); same id → no-op; audit `customer_linked`. |
 | `private.integration_exceptions()` → P5's nine exception columns | no API role | Built (Phase 10 step 1, D86): §14. |

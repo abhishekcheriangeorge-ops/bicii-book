@@ -72,10 +72,10 @@ rule that nets no refund (D49). Those are reused unchanged in meaning.
 | D81 SHOP-UNIQUE | A unique product is one Shopify variant; online quantity = available, non-customer-owned, non-archived units at the online location; price = `private.selling_price` of the oldest such unit (D58); sync refuses when such units' prices differ; orders sell the oldest available unit(s) | Accepted: build default, owner to confirm | Orders: `process_shopify_order_paid` (step 1); sync: step 2 |
 | D82 SHOP-STOCK | When the ledger cannot fulfil a paid order (no unit, on-hand below the quantity at the online location, no single consignment covering a consigned quantity line, a NULL cost, any `sell_line` refusal) nothing is recorded; the event needs attention with a human reason; staff fix and retry, or refund in Shopify and dismiss with a reason | Accepted: build default, owner to confirm | `process_shopify_order_paid`'s subtransaction and failure branch (step 1) |
 | D83 SHOP-LOCATION | One online BICII location mapped to one Shopify location; BICII pushes its absolute ledger quantity, defers while an order is in flight, pushes with a compare quantity and overwrites a moved count after one 2-minute deferral | Accepted: build default, owner to confirm | `shopify_settings.online_location_id` (step 1); the push is step 2–3 |
-| D84 SHOP-PUBLISH | Publish online needs public, a selling price, not archived, not customer-owned; only BICII-created Shopify products get the full productSet and are drafted at 0 when unpublished; products linked to Shopify-made products get price and inventory only and no Buy-online link; `products.shopify_product_id` not unique, `shopify_variant_id` unique; `buy_online_url` only when available, published online, synced, with a handle and a storefront URL | Accepted: build default, owner to confirm | Columns, constraints and `link_shopify_variant` (step 1); publishing and `buy_online_url` step 2 |
+| D84 SHOP-PUBLISH | Publish online needs public, a selling price, not archived, not customer-owned; only BICII-created Shopify products get the full productSet and are drafted at 0 when unpublished; products linked to Shopify-made products get price and inventory only and no Buy-online link; `products.shopify_product_id` not unique, `shopify_variant_id` unique; `buy_online_url` only when available, published online, synced, with a handle and a storefront URL, and only on the row Shopify sells (the unit an online order takes; a product row whose price is the online price) | Accepted: build default, owner to confirm | Columns, constraints and `link_shopify_variant` (step 1); publishing and `buy_online_url` step 2 |
 | D85 SHOP-REFUND | One `sale_refunds` row = the line-attributable refund, never above the money refunded, capped at the remaining total; shipping and excess in the event result; status as `record_sale_refund`; reports net nothing (D49); stock, units, consignment and lines never change (D7); netting and claw-back stay owner question 12 / R-021 for Phase 9; `orders/cancelled` not subscribed | Accepted: build default, owner to confirm | `process_shopify_refund`, `private.shopify_refund_line_amount` (step 1) |
 | D86 SHOP-ACCESS | Integration administration (inspector, queue, dismiss, links, settings, integration exception rows) admin-only (payloads hold PII); `manage_inventory` publishes, syncs and retries product-sync jobs; all staff see sync status; customers linked only by an admin with a reason, never by email; a link applies to later orders | Accepted: build default, owner to confirm | RLS and RPC guards, `link_shopify_customer`, `private.integration_exceptions` (step 1) |
-| D87 SHOP-RETRY | Transient failures back off 1 minute doubling to 6 hours, at most 8 attempts, then needs attention; business failures need attention at once; a waiting refund re-queues when its order lands and closes when the order is dismissed; a 5-minute cron behind `CRON_SECRET` plus a few due jobs after each webhook | Accepted: build default, owner to confirm | `private.integration_backoff`, `claim_integration_jobs`, the processors and `dismiss_integration_job` (step 1); cron and route step 3 |
+| D87 SHOP-RETRY | Transient failures back off 1 minute doubling to 6 hours, at most 8 attempts, then needs attention; business failures need attention at once; a waiting refund re-queues when its order lands and closes when the order is dismissed; recording an order closes its other open deliveries (`duplicate_order`); a dismissal is final for the order or refund (its other deliveries close with it, a later delivery under any webhook id is `earlier_delivery_skipped`); a 5-minute cron behind `CRON_SECRET` plus a few due jobs after each webhook, each runner claiming a job only while its worst case fits `maxDuration` | Accepted: build default, owner to confirm | `private.integration_backoff`, `claim_integration_jobs`, the processors and `dismiss_integration_job` (step 1); cron and route step 3 |
 | D88 SHOP-REJECTED | Rejected deliveries kept as evidence (capped headers, size, SHA-256; never the body), never in the dedupe key, one row per bad body with a count; not stored above 30/min/instance; 413 over 1 MiB; purged only by the owner-only `private.purge_integration_events` (≥ 30 days), never failed or pending events, no cron | Accepted: build default, owner to confirm | `record_shopify_webhook`, `integration_events` constraints and immutability trigger, the purge function (step 1); rate limit and 413 in the route (step 3) |
 | D89 SHOP-TAX-TEST | Tax-inclusive prices recorded when `taxes_included`; tax-exclusive orders with tax refused; test deliveries stored but skipped unless `accept_test_orders` (admin + reason + audit; dev/E2E seed only); `source_name` 'pos' orders skipped | OPEN for the owner: tax basis and Shopify POS ([PRODUCT questions 17 and 18](../PRODUCT.md#open-assumptions-and-owner-questions)); the rest accepted | `process_shopify_order_paid`, `record_shopify_webhook` (step 1) |
 
@@ -99,7 +99,11 @@ Rationale:
 - D83: BICII is the stock truth (SPEC §17); one location keeps the mapping
   explainable to staff.
 - D84: pushing a full product into a product someone built in Shopify
-  would overwrite their work; linking a variant is a mapping only.
+  would overwrite their work; linking a variant is a mapping only. The
+  Buy-online link sits only on a row whose item and price are what the
+  link sells (D58/D81): another unit of a unique product, or a product
+  row showing a different price, would sell a different bike or charge
+  another price than the page shows.
 - D85: D7 and D49 already decide that a refund is a financial fact capped
   at the sale; shipping was never a sale line, so its refund cannot be
   either.
@@ -108,7 +112,10 @@ Rationale:
   recorded sale is immutable (Phase 6), so a link cannot rewrite history.
 - D87: transient failures (a network error, a refund before its order)
   resolve themselves; business failures do not, and retrying them only
-  hides them.
+  hides them. An admin dismisses an order after refunding it in Shopify
+  or recording it by hand, so recording it later would count it twice:
+  a dismissal is final, and a replay has one business effect whatever
+  its webhook id.
 - D88: a delivery that fails verification may be an attack or a
   misconfiguration; its evidence is useful, its body is not trustworthy and
   may be large.
@@ -196,8 +203,19 @@ Rationale:
   the rejected-delivery limit is per server instance
   ([R-048](../RISKS.md#r-048--the-rejected-delivery-limit-is-per-server-instance));
   queued jobs wait for the cron, a webhook or a staff action, and Vercel's
-  Hobby plan runs crons daily
+  Hobby plan refuses to deploy the 5-minute cron (a daily schedule plus
+  an external scheduler is the Hobby fallback; the plan is chosen before
+  the first deployment)
   ([R-049](../RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)).
+- A Preview deployment must never hold the live store's credentials: the
+  staging database's handles repeat production's. The live adapter is off
+  in Preview unless `SHOPIFY_ALLOW_PREVIEW=true` marks a development
+  store ([R-047](../RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)).
+- A dismissal is final: an order or refund an admin dismissed is never
+  recorded later, even when Shopify (or anyone holding a signed body)
+  delivers it again under a new webhook id. The refund match reads the
+  stored payload, so it holds until the owner purges that payload
+  ([R-040](../RISKS.md#r-040--shopify-webhook-payloads-hold-customer-personal-data-until-purged-by-hand)).
 
 ## Revisit trigger
 

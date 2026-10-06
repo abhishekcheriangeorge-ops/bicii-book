@@ -905,6 +905,12 @@ URLs, or customer data in this file.
   `private.purge_integration_events(older_than)` (at least 30 days) must be
   run by hand, and failed or pending events are never purged (D88). This
   adds to [R-016](#r-016--no-retention-or-deletion-policy-for-customer-personal-data).
+  The payload is also what recognises a dismissed refund delivered again
+  under a new webhook id (D87: a dismissal is final, matched on the
+  refund id in the stored payload): after its payload is purged, such a
+  redelivery of a refund of a recorded sale would be recorded. Orders are
+  matched on the stored order gid, which a purge keeps. Shopify retries
+  keep their webhook id, so this needs a new id at least 30 days later.
 - Evidence and confidence: high;
   `supabase/migrations/20261004003900_shopify_integration.sql` (no cron);
   `tests/db/shopify-webhooks.test.ts` "Webhook evidence is immutable".
@@ -1022,10 +1028,17 @@ URLs, or customer data in this file.
   the public page can show **Buy online** while Shopify, which only sees
   the online location (D83), shows the item sold out. The shopper reaches
   a sold-out Shopify page; no sale is recorded wrongly (an order BICII
-  cannot fulfil waits for an admin, D82).
+  cannot fulfil waits for an admin, D82). Since the Phase 10 review the
+  link never sells something other than the page shows: a unit row gets
+  it only when it is the unit an online order takes (the oldest
+  available, non-customer-owned, non-archived unit at the online
+  location, D81), and a unique product's row only when its shown price
+  equals the online price. What remains is only this sold-out case, on a
+  product (quantity) row.
 - Evidence and confidence: high; the view definition in
   `20261004004100_shopify_product_sync.sql` and
-  `tests/db/shopify-sync.test.ts` "Buy online link".
+  `tests/db/shopify-sync.test.ts` "Buy online link" and "links only what
+  Shopify sells".
 - Workaround or containment: keep online stock at the online location;
   staff move stock with a transfer.
 - Next action: Phase 11 or the owner decides whether the link should
@@ -1033,7 +1046,7 @@ URLs, or customer data in this file.
   view).
 - Revisit trigger: Phase 11 builds the public `/q` page, or the shop keeps
   sellable stock at a second location.
-- Last checked: 2026-10-06.
+- Last checked: 2026-10-06, Phase 10 review fixes.
 
 ## R-046 — The product-sync queue is coarse
 
@@ -1094,7 +1107,16 @@ URLs, or customer data in this file.
   attention after 8 attempts); a wrong stale code would make a moved count
   a non-retriable `shopify_user_error` instead of the 2-minute deferral.
   No money or stock is recorded wrongly: the ledger never depends on a
-  push.
+  push. A further hazard is configuration: a Preview deployment runs on
+  the staging database, whose short IDs and so Shopify handles
+  (`bicii-<short id>`) repeat production's, and a product with no sync
+  row is upserted by handle; with the live store's token, a preview's
+  Publish online or Sync now would overwrite a live product with staging
+  data. The RUNBOOK gives Preview no live-store values, and the client
+  keeps the live adapter off when `VERCEL_ENV=preview` unless
+  `SHOPIFY_ALLOW_PREVIEW=true` (set only for a development store;
+  `tests/unit/shopify-fake-admin.test.ts` "which Shopify a deployment
+  talks to").
 - Evidence and confidence: medium; `tests/unit/shopify-graphql-admin.test.ts`
   proves what BICII sends and how it maps answers, against a mocked fetch
   only. The idempotency key is BICII's own: a UUID-shaped SHA-256 of the
@@ -1107,8 +1129,8 @@ URLs, or customer data in this file.
   [RUNBOOK "Verify before go-live"](RUNBOOK.md#shopify-verify-before-go-live)
   on a development store and correct the documents and the tests together.
 - Revisit trigger: a development store exists; `SHOPIFY_API_VERSION`
-  changes.
-- Last checked: 2026-10-06, Phase 10 step 3.
+  changes; Preview deployments get Shopify variables.
+- Last checked: 2026-10-06, Phase 10 review fixes.
 
 ## R-048 — The rejected-delivery limit is per server instance
 
@@ -1145,21 +1167,30 @@ URLs, or customer data in this file.
 - Impact: nothing runs jobs on its own except the cron
   (`/api/cron/integrations`, every 5 minutes in `vercel.json`) and the
   work after each webhook (its own event, then up to 5 due jobs). Vercel's
-  Hobby plan runs crons at most daily, so on Hobby a retry backing off a
-  minute, a deferred stock push (D83) or a refund waiting for its order
-  can wait until the next webhook, staff action or the daily run. The
-  work after a webhook runs in `after()` within the function's
-  `maxDuration` (60 s); if the platform stops it, the job stays `running`
-  and is reclaimed only after 10 minutes. The same happens when a runner
-  cannot store a result (the database unreachable).
-- Evidence and confidence: medium; the plan limit is Vercel's documented
-  behaviour, not checked against the owner's account (no Vercel project,
+  Hobby plan allows only crons that run at most once a day and **fails
+  the deployment** of a more frequent one, so with `vercel.json` as
+  committed the Admin cannot deploy on Hobby at all; the Hobby fallback is
+  a daily schedule in `vercel.json` plus an external scheduler. Without
+  that scheduler a retry backing off a minute, a deferred stock push
+  (D83) or a refund waiting for its order can wait until the next
+  webhook, staff action or the daily run. A runner claims a job only
+  while that job's worst case (four Shopify calls at the 10 s timeout plus
+  5 s) still ends 5 s before the function's `maxDuration` (60 s), so a
+  slow Shopify no longer runs a claimed job past the limit
+  (`tests/unit/shopify-cron-route.test.ts` "the runner's time budget").
+  If the platform stops the function anyway, or a runner cannot store a
+  result (the database unreachable), the job stays `running` and is
+  reclaimed only after 10 minutes.
+- Evidence and confidence: high for the Hobby limit: Vercel's page
+  "Cron jobs: usage and pricing" (last updated 2026-07-15) says
+  expressions that run more than once a day fail during deployment on
+  Hobby; not checked against the owner's account (no Vercel project,
   R-001).
-- Workaround or containment: a Pro plan, or an external scheduler calling
-  the cron route with the bearer every 5 minutes
-  ([RUNBOOK](RUNBOOK.md#shopify-the-cron-and-the-queue)); staff Retry and
-  Sync now run their job immediately.
-- Next action: the owner chooses the Vercel plan before go-live of the
-  online channel.
+- Workaround or containment: a Pro plan, or on Hobby a daily schedule plus
+  an external scheduler calling the cron route with the bearer every 5
+  minutes ([RUNBOOK](RUNBOOK.md#shopify-the-cron-and-the-queue)); staff
+  Retry and Sync now run their job immediately.
+- Next action: the owner chooses the Vercel plan before the first
+  deployment of this branch (RUNBOOK "Verify before go-live" item 9).
 - Revisit trigger: the Vercel project is created.
-- Last checked: 2026-10-06, Phase 10 step 3.
+- Last checked: 2026-10-06, Phase 10 review fixes.

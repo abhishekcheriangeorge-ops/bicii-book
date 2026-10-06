@@ -515,6 +515,12 @@ Settings → Your profile.
 - Afterwards every stock, price, name or public-photo change is sent once,
   automatically. **Sync now** sends it again; on a failed sync the card
   shows the reason in red above it.
+- If the product later stops being public, is archived or made inactive,
+  the switch stays on but the card says why it is not listed, for example
+  "Not listed: the product is not public. It goes back online when you
+  publish it again."; Shopify has it as a draft until then.
+- If the change is saved but the sync cannot run straight away, the toast
+  says "Saved. The sync runs from the queue in a moment."
 - Switching it off hides the product in Shopify (draft, quantity 0). A
   product linked to one made in Shopify says "Linked to a product made in
   Shopify: BICII sends price and stock only" and never gets a Buy-online
@@ -538,7 +544,15 @@ Settings → Your profile.
 - Too little stock, a unit already sold in the shop, or an order taxed on
   top: fix the stock (or record it by hand) and tap **Retry**, or refund
   the order in Shopify and **Dismiss…** it with a reason. Dismissing an
-  order also closes refunds of it that are waiting.
+  order also closes refunds of it that are waiting, and any other delivery
+  of the same order. A dismissal is final: if Shopify sends the order (or
+  a dismissed refund) again, it is not recorded ("Earlier delivery
+  closed, not recorded"), so dismiss only an order you refunded or
+  recorded by hand.
+- The item's sheet follows the item: after **Retry** it shows the new
+  status, attempt count and reason, and it closes by itself when the item
+  is done. It cannot be closed while a retry or a link is being saved.
+- Shopify is listed under More (and on the iPad rail) for admins only.
 - Items under **Waiting** are retried automatically (1 minute, doubling, up
   to 8 tries); **Recent** shows what was done or dismissed in the last 7
   days. **Open event** shows what Shopify sent.
@@ -561,7 +575,8 @@ Settings → Your profile.
   public item pages); and **Record Shopify test orders as sales**, which
   needs a reason to change and shows a warning while it is on. Setup and
   recovery: [RUNBOOK "Shopify"](RUNBOOK.md#shopify).
-- **Events** lists every webhook, searchable by order name or webhook id
+- **Events** lists every webhook, searchable by order name (which also
+  finds the order's refunds, named "Refund … of #1042") or webhook id
   and filterable (Failed, Rejected, Processed, Skipped). A delivery whose
   signature did not match is **Rejected** and keeps no body; nothing was
   recorded from it.
