@@ -66,14 +66,16 @@ describe("select", () => {
     const rows = await asStaff(conn, STAFF.mechanic2, (tx) =>
       tx.query("select * from public.staff_directory()").then((r) => r.rows),
     );
-    expect(ids(rows)).toEqual([STAFF.admin, STAFF.mechanic1, STAFF.mechanic2].sort());
+    expect(ids(rows)).toEqual(
+      [STAFF.admin, STAFF.manager, STAFF.mechanic1, STAFF.mechanic2].sort(),
+    );
     expect(Object.keys(rows[0]).sort()).toEqual(["active", "display_name", "id", "role"]);
   });
 
   it("admins see every staff row and every permission row", async () => {
     await asStaff(conn, STAFF.admin, async (tx) => {
       expect(ids((await tx.query("select id from public.staff")).rows)).toEqual(
-        [STAFF.admin, STAFF.mechanic1, STAFF.mechanic2].sort(),
+        [STAFF.admin, STAFF.manager, STAFF.mechanic1, STAFF.mechanic2].sort(),
       );
       const perms = await tx.query("select staff_id, permission from public.staff_permissions");
       expect(perms.rows).toEqual([{ staff_id: STAFF.mechanic1, permission: "view_costs" }]);
@@ -114,7 +116,7 @@ describe("select", () => {
     const n = await asServiceRole(conn, (tx) =>
       scalar<number>(tx, "select count(*)::int from public.staff"),
     );
-    expect(n).toBe(3);
+    expect(n).toBe(4);
   });
 });
 
@@ -131,7 +133,7 @@ describe("writes by non-admins", () => {
     const names = await conn.query("select display_name, role from public.staff where id = $1", [
       STAFF.mechanic1,
     ]);
-    expect(names.rows[0]).toEqual({ display_name: "Marcus Tan", role: "staff" });
+    expect(names.rows[0]).toEqual({ display_name: "Marcus Tan", role: "mechanic" });
   });
 
   it("cannot insert staff", async () => {
@@ -268,7 +270,7 @@ describe("admin writes", () => {
   it("the last active admin cannot be demoted or deactivated", async () => {
     await expect(
       inTransaction(conn, (tx) =>
-        tx.query("update public.staff set role = 'staff' where id = $1", [STAFF.admin]),
+        tx.query("update public.staff set role = 'mechanic' where id = $1", [STAFF.admin]),
       ),
     ).rejects.toMatchObject({ code: "55000" });
     await expect(

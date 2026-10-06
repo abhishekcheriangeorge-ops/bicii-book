@@ -77,9 +77,43 @@ reused, so they would burn IDs in a database you keep).
 
 `tests/db/stack.smoke.test.ts` goes one step further when the devstack is
 running (`npm run db:reset && npm run devstack:start`): it signs in through
-the gateway with supabase-js as `admin@bicii.test`, calls
-`rpc('my_staff_profile')`, and round-trips an object through Storage with
-the service key. `tests/db/photo-moves.stack.test.ts` runs the app's own
+the gateway with supabase-js as `admin@bicii.test` the way staff do (PLAN
+D10, D70: `signInWithOtp` with `shouldCreateUser: false`, the code read
+from the devstack's mail catcher with `scripts/devstack/mail-client.mjs`,
+`verifyOtp` with type `email`), checks the email carries our subject ("Your
+BICII sign-in code") and template, calls `rpc('my_staff_profile')`, and
+round-trips an object through Storage with the service key. It also pins
+the code rules Auth enforces: an unknown address with `shouldCreateUser:
+false` gets 422 `otp_disabled` (the Admin will show it as sent, D70),
+creates no `auth.users` row and receives no email; asked again while Auth's
+per-address interval is held open (`recovery_sent_at` set ahead, as the
+hosted 60 s would), an address with a login gets 429
+`over_email_send_rate_limit` and an unknown one 422 `otp_disabled` again,
+and `classifyCodeRequestError` makes "sent" of every one of them (D70); a
+code works once (the second `verifyOtp` is 403 `otp_expired`); a newer
+code voids the older one; and setting a password on a session aged past
+24 h is refused with `reauthentication_needed` (secure password change,
+PLAN D10).
+Those cases use unique throwaway `.test` logins made with the admin API and
+deleted after the file. Every other live test signs in with
+`tests/db/stack.ts`: `otpClient(email)` gets the code from the service-role
+admin API (`auth.admin.generateLink({ type: 'magiclink' })` returns
+`properties.email_otp` and sends no email) and verifies it with
+`verifyOtp`; `staffClient(who)` is `otpClient` for a seeded login and
+`serviceClient()` is the service-role client.
+`tests/db/staff-sessions.stack.test.ts` invites a uniquely named throwaway
+staff login, signs it in and deactivates it (PLAN D71); staff rows are
+history and are never deleted, so it stays, deactivated, until the next
+`npm run db:reset`. `tests/db/sign-in-throttle.stack.test.ts` drives the
+Admin's own sign-in limits (PLAN D72) through the app's module
+(`countSignInAttempt` in `src/lib/admin/sign-in-throttle.ts`) and
+PostgREST with the real limits: an email past its limit is refused from
+any client while other emails and its verifications are not; a client
+past its limit is refused for any email while other clients are not; a
+staff email reaches its limit no later than an unknown one; the anon key
+and a staff session get 42501, and the anon key in the service role's
+place makes `checkSignInAttempt` answer "unavailable" with the cause the
+login actions log (`rpc_error`, 42501, never the email). `tests/db/photo-moves.stack.test.ts` runs the app's own
 photo domain code (`src/lib/domain/attachments.ts`, loaded with
 `server-only` aliased to its empty module in the db project) as mechanic2
 against real Storage: moves between buckets, deletes, refused moves and
@@ -127,8 +161,8 @@ fixed 2031 dates) and `tests/fixtures/appointment-transitions.ts` (the
 status machine); step 3's TypeScript mirror uses both. Check-in tests
 (`appointment-check-in.test.ts`) build their own customer, bike, type and
 appointment as the owner and call `check_in_appointment` as staff. One
-customer login is seeded (`CUSTOMER_LOGIN.chloe`, Chloe Lim, the local
-password): read-only customer checks may act as her
+customer login is seeded (`CUSTOMER_LOGIN.chloe`, Chloe Lim, no usable
+password since the email sign-in integration): read-only customer checks may act as her
 (`customerClaims(CUSTOMER_LOGIN.chloe.authUserId)`); tests that change a
 customer's login or bookings link a fresh login to a fresh customer
 (`linkCustomerLogin`), never to `CUSTOMER.chloe`.
@@ -164,6 +198,203 @@ The devstack and database commands (`devstack:setup`, `devstack:start` /
 are described in one place:
 [ENGINEERING.md "Commands"](ENGINEERING.md#commands).
 
+### The devstack mail catcher
+
+Staff sign in with emailed codes (PLAN D10, D70), so the devstack runs a
+mail catcher, `scripts/devstack/mailcatcher.mjs` (dependency-free; Phase 11
+reuses it for customer codes). It listens on 127.0.0.1 only: SMTP on
+`BICII_SMTP_PORT` (2525) and a JSON API on `BICII_MAIL_HTTP_PORT` (8025).
+Supabase Auth sends to it (`GOTRUE_SMTP_*` in `scripts/devstack/services.mjs`:
+no credentials, no TLS, sender `no-reply@bicii.test`) and fetches its email
+templates from it (`GOTRUE_MAILER_TEMPLATES_*` point at
+`/templates/<name>.html`, served from `supabase/templates`). The devstack's
+Auth also gets 6-digit codes valid for 600 s (`GOTRUE_MAILER_OTP_*`), a 1 s
+per-address interval and local-only rate limits of 100000
+(`GOTRUE_RATE_LIMIT_EMAIL_SENT`, `_VERIFY`, `_OTP`, `_TOKEN_REFRESH`) so
+E2E can sign in hundreds of times. Messages are kept in `.devstack/mail/`
+as `<id>.json` (parsed) and `<id>.eml` (raw); ids keep increasing across
+restarts and the newest 1000 are kept.
+
+| Request | Answer |
+|---|---|
+| `GET /health` | `{ok:true}` |
+| `GET /messages?to=&after=&limit=` | `{messages:[…]}`, newest first: id, receivedAt, envelopeFrom, envelopeTo, from, to, subject, code |
+| `GET /messages/latest?to=&after=` | the newest full message (adds text and html) to that recipient with id > after, else 404 `{error:'not_found'}` |
+| `GET /messages/:id`, `GET /messages/:id/raw` | one message as JSON, or its raw `.eml` |
+| `DELETE /messages[?to=]` | `{deleted:n}` |
+| `GET /templates/<name>.html` | a template file; only `^[a-z0-9_-]+\.html$`, anything else 404 |
+
+`to` matches the envelope recipients (RCPT TO), case-insensitively. `code`
+is the first standalone run of 6–10 digits in the text part, else in the
+tag-stripped HTML (`scripts/devstack/mail-parse.mjs`), so templates must
+not contain another run of six or more digits. By hand:
+`curl "http://127.0.0.1:${BICII_MAIL_HTTP_PORT:-8025}/messages/latest?to=admin@bicii.test"`.
+
+Tests read codes with `scripts/devstack/mail-client.mjs`: take
+`mailCursor(email)` before asking for a code, then
+`waitForCode({ to: email, after: cursor })` (or `waitForMessage` for the
+whole message; both poll every 200 ms for up to 15 s and name the address
+and mail URL when nothing arrives); `clearMail(to?)` deletes. The base URL
+is `BICII_MAIL_URL`, else the devstack's. With `supabase start`
+(`E2E_EXTERNAL_STACK=1`) set `BICII_MAIL_KIND=mailpit`: the client then
+reads Mailpit on :54324 through its documented API (`GET
+/api/v1/search?query=to:"<addr>"`, `GET /api/v1/message/<ID>`). That
+adapter is written from Mailpit's documentation and has **not been run**
+(no Docker here).
+
+Verification of the mail catcher step (2026-10-05, OTP phase step 1, in
+a second worktree with the ports moved by `BICII_*_PORT`):
+
+- `npm run devstack:stop && npm run devstack:start`: mail on its HTTP and
+  SMTP ports, then Auth, PostgREST, Storage, gateway; `devstack:status`
+  all ok: **pass**.
+- A code requested by hand (`POST /auth/v1/otp`, `create_user: false`)
+  arrived with subject "Your BICII sign-in code", our template and a
+  6-digit code; an unknown address got 422 `otp_disabled`: **pass**.
+- 40 rapid code requests for 40 new throwaway addresses: all 200, 40
+  emails, no 429: **pass**.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 71 files, 942
+  tests: **pass**.
+- `npm run test:e2e -- tests/e2e/auth.spec.ts` (global setup signs in with
+  a generated code and needs the mail catcher; the password form is still
+  the app's sign-in until the next step): 24 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
+Verification of the code sign-in step (2026-10-05, OTP phase step 2: the
+`/login` form asks for an emailed code, invites create no password, the
+password paths are gone), same worktree and ports:
+
+- Established on the devstack (Auth 2.178) before writing the specs: a
+  login made by `auth.admin.createUser` without a password stores the
+  bcrypt hash of a random secret (`$2a$10$…`, not `''` or NULL; the seed
+  now writes the same shape); a wrong code leaves the real one usable; an
+  email code's expiry is read from `auth.users.recovery_sent_at` (ageing
+  `auth.one_time_tokens.created_at` alone left the code valid); an unknown
+  email gets 422 `otp_disabled`.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 71 files, 951
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, every spec signing in with codes
+  from the mail catcher): 98 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
+Verification of the deactivation step (2026-10-05, OTP phase step 3:
+deactivation deletes the person's Auth sessions, PLAN D71; final sweep of
+the phase), same worktree and ports:
+
+- Established on the devstack before writing the specs: after the
+  trigger deletes the sessions, Auth 2.178 answers the old access token
+  with 403 `session_not_found` (supabase-js turns it into
+  `AuthSessionMissingError`) and the refresh token with
+  `refresh_token_not_found`; PostgREST still accepts the unexpired token
+  on its own. `staff-sessions.test.ts` fails (3 of its tests) with the
+  migration removed.
+- `npm run devstack:status` lists mail, auth, rest, storage and gateway,
+  all ok: **pass**.
+- The final sweep's grep (password, temporary, `SEED_PASSWORD`,
+  `signInWithPassword`, `grant_type=password`, "Change password",
+  "one-time password" over `src/`, `tests/`, `scripts/`, `supabase/`,
+  `docs/`, README and `.github/`) finds only generic secret handling,
+  `PGPASSWORD`/`POSTGRES_PASSWORD`, the `roles.sql` service-role
+  passwords, the invite's "No password needed." copy, Auth's own password
+  settings in `config.toml` and the devstack (commented: unused) and
+  history in these notes: **pass**.
+- `npm run check`: **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 73 files, 960
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet): 98 tests: **pass**.
+- `BICII_MAIL_KIND=mailpit` with `supabase start`: **not run** (no
+  Docker).
+
+Verification of the review fixes (2026-10-05, OTP phase: per-address
+limit shown as sent, D70; the Admin's own sign-in limits, D72; the
+inactive-session 403 tests, D71; secure password change; devstack
+restarts on a changed configuration), same worktree and ports:
+
+- Established on the devstack before the fix (`POST /auth/v1/otp`,
+  `create_user: false`, twice in a row): an address with a login got 200
+  then 429 `over_email_send_rate_limit`, an unknown one 422 `otp_disabled`
+  both times.
+- `npm run devstack:start` after the change restarted every service whose
+  recorded configuration differed (here all five, none had a record yet);
+  a second run left all five running; with `rest` and `auth` marked stale
+  it restarted them and the services after them, gateway first: **pass**.
+  (Before stopping the clients first, a restarted PostgREST failed to bind
+  its port: TIME_WAIT from the gateway's connections.)
+- Mutation checks: with `guard()`'s `!staff.active` removed,
+  `session-guard.test.ts` (2 tests) and the E2E "hosted window" test
+  fail; with the per-address code classified as before, the E2E "asking
+  twice in a row" test fails: **pass** (both restored).
+- `npm run check`: **pass**. `npm run check:types` (fresh database):
+  **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 77 files, 986
+  tests: **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet): 102 tests: **pass**.
+- Hosted steps (password reset SQL, "Secure password change", Auth's
+  per-IP limits): **not run** (no hosted project; owner's step).
+
+Verification of the integration with main and purchasing (2026-10-06,
+`origin/feat/p7-purchasing` merged into `feat/auth-email-otp`; second
+worktree, database `bicii_dev_wt`, `E2E_PORT=3200`):
+
+- Before the gates: main's `tests/e2e/api.ts` `signInApi(email,
+  password)` (Auth's password grant, used by `appointments.spec.ts` and
+  `appointment-settings.spec.ts` for the admin and the seeded customer)
+  became `signInApi(email)` with a generated code; Chloe Lim's seeded
+  login got a random secret's hash. A grep over `src/`, `tests/`,
+  `scripts/` and `supabase/` for `SEED_PASSWORD`, `signInWithPassword`,
+  `grant_type=password` and `bicii-dev-password` finds only
+  `seed-logins.test.ts`, which asserts that the former password matches
+  no seeded login: **pass**.
+- `npm run db:reset`: 44 migrations, `44|20261005006000`, seed applied;
+  `npm run db:types`: no diff: **pass**.
+- `npm run check`: **pass**. `npm run check:types` (fresh database):
+  **pass**.
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 111 files, 1585
+  tests (unit 56 / 686, database 55 / 899): **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, every spec signing in with codes):
+  152 passed in 18.2 min, no failures, flaky or skipped: **pass** (run
+  before `seed-logins.test.ts` and the documentation were added; neither
+  touches the app or the specs).
+- Docs link check: **pass** (counts in [NOW.md](../NOW.md)).
+- After the integration review fixes (the sign-in throttle's logged
+  `cause`, the stack test's wrong-key case, docs): `npm run check`
+  **pass**, `npm run check:types` **pass** (no diff),
+  `BICII_REQUIRE_STACK=1 npm test` 111 files / 1585 tests **pass**,
+  `npm run build` **pass**, `npm run test:e2e` 152 passed in 15.7 min
+  **pass** (the first run, while the other worktree's E2E suite shared the
+  CPUs, had 151 passed and 1 failed: the phone run of
+  `consignment.spec.ts` "a consigned bike is received…" timed out because
+  the click on "Void… the charge" right after "Charge added" did not open
+  the reason field; the rerun passed unchanged), docs link check **pass**.
+
+Verification of the staff roles (2026-10-06, step 4 of 4, the integration
+review, on `feat/staff-roles` in the second worktree, database
+`bicii_dev_wt`, `E2E_PORT=3200`; one command at a time):
+
+- Review: `record_sale_refund` in
+  `20261006000200_staff_role_permissions.sql` diffed against
+  `20261004003500_sales.sql`: only the guard and its comment differ; no
+  `staff_role` literal `'staff'` remains in `supabase/`, `src/`, `tests/`
+  or `scripts/` (the `'staff'` left are `appointment_source` /
+  `cancelled_via` values, historic migrations and the legacy-label tests):
+  **pass**.
+- `npm run check`: **pass**. `npm run check:types`: **pass** (no diff).
+- `BICII_REQUIRE_STACK=1 npm test` with the devstack up: 113 files, 1680
+  tests (unit 57 / 737, database 56 / 943): **pass**.
+- `npm run build`: **pass**.
+- `npm run test:e2e` (phone and tablet, with the new 375 px side-scroll
+  checks in `roles.spec.ts`): 158 passed in 16.8 min, no failures, flaky
+  or skipped: **pass**.
+- Docs link check: 37 files / 690 links / 0 problems: **pass**.
+
 ## What is tested where
 
 ### Unit (SPEC §27.1)
@@ -176,7 +407,43 @@ are described in one place:
 - Appointment slot generation from shop hours + closures + capacity (pure
   function mirrored from the SQL, tested against the same fixtures).
 - Publication state machine transitions.
-- Permission resolution (`admin` implies all; inactive staff has none).
+- Permission resolution (`auth-helpers.test.ts`; D91: `admin` implies
+  all, `manager` all but `manage_staff`, `mechanic` none, exceptions on top;
+  inactive staff has none) and the refund role check (`consignment.test.ts`;
+  D94: an active admin or manager; a mechanic holding every permission as
+  exceptions cannot).
+- The Staff screens' role wording (`staff-roles-screens.test.ts`, D90-D93):
+  `describeStaffEvent` (src/lib/staff-events.ts) reads "Added as <Role>",
+  "Role changed from <From> to <To>" (the pre-D90 payload value "staff"
+  reads Mechanic) and "Extra access: <Permission> granted/removed";
+  `roleWithArticle` ("an Admin", "a Manager"); and `roleChangeSummary`
+  (src/lib/auth/role-change.ts): which exceptions a new role includes and
+  so removes (D92), which stay, and what is lost (permissions, Record
+  refunds, Admin settings), for mechanic to manager, manager to mechanic,
+  manager to admin and admin to manager.
+- Staff sign-in codes (PLAN D10, D70): `otp.test.ts` (6 digits, 10
+  minutes, 60 s cooldown; `normaliseCode` drops spaces and hyphens from a
+  pasted code and refuses anything else; `resendSecondsLeft` rounds up and
+  never exceeds the cooldown; the countdown text) and
+  `sign-in-errors.test.ts` (asking for a code: Auth's per-address
+  `over_email_send_rate_limit` counts as sent, exactly like 422
+  `otp_disabled` for an unknown email and every other 4xx; per-IP
+  `over_request_rate_limit`, a bare 429 and outages say so; verifying:
+  every other 4xx is one invalid-code failure; the agreed messages).
+- The Admin's own sign-in limits (PLAN D72, `sign-in-limits.test.ts`):
+  the client address (first `x-forwarded-for` entry, else `x-real-ip`;
+  IPv6 per /64, IPv4-mapped as IPv4, ports dropped, anything else null),
+  buckets per client and per email holding SHA-256 digests (email
+  lower-cased; no address in clear; clients without an address share one
+  bucket), requests and verifications apart, the multiplier, and "over the
+  limit" only past it. `env.test.ts`: `SIGN_IN_LIMIT_MULTIPLIER` defaults
+  to 1 and takes whole numbers 1-100000.
+- The staff guard (PLAN D71, `session-guard.test.ts`, with Next's
+  `forbidden`/`redirect` and the Supabase client mocked): `authorizeStaff`,
+  `requireStaff` and `requireAdmin` answer 403 for an inactive person
+  whose session still verifies, even with no permission required and even
+  for an inactive admin; a login with no staff row is 403, a signed-out
+  caller goes to `/login`, active staff pass.
 - Label rendering (Phase 8 step 2, below): the QR decodes to exactly the
   job's database payload.
 - Shopify payload mapping (variant → product; unmapped → structured error).
@@ -307,6 +574,20 @@ are described in one place:
   390 × 844 (the page never scrolls sideways, so nothing else catches a
   figure running into the next card), that "Right now" says "Awaiting
   collection", and that a `?day=` before `EARLIEST_SHOP_DAY` shows today.
+- OTP phase, the devstack mail catcher: `mail-parse.test.ts` (pure:
+  folded headers, RFC 2047 B and Q words, quoted-printable with soft
+  breaks, nested multipart with base64 and iso-8859-1 parts, attachments
+  skipped, raw 8-bit utf-8, `htmlToText`, `extractCode` taking only
+  standalone 6–10 digit runs from the text part, else the tag-stripped
+  HTML, never a colour or a digit inside a tag) and `mailcatcher.test.ts`
+  (node environment, ports 0, a temp directory: two messages on one raw
+  SMTP connection, pipelined and split mid-terminator, with a dot-stuffed
+  line and mixed-case recipients; EHLO without STARTTLS, AUTH PLAIN and
+  LOGIN, 503 / 502 / 252 replies, 552 above 10 MB with the connection kept;
+  `/messages/latest` with and without `after`, `/messages`, `/raw`,
+  `/templates` refusing traversal, ids continuing after a restart,
+  `DELETE`, and `mail-client.mjs` cursors, `waitForCode` and its timeout
+  error, `clearMail`).
 - Phase 2 (appointments, step 3): the slot mirror's parity with SQL
   (`appointment-slots.test.ts`): every `slotCases` case of
   `tests/fixtures/appointment-slot-cases.ts` through `availableSlots`
@@ -492,13 +773,25 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Appointment counts (Phase 2, D30, D41) | `appointment-reporting.test.ts`: `public.appointment_daily` over the seeded days (anchor −10 … +21) equals the counts the appointments table implies by scheduled shop day and current status, zero-filled, and `reporting.appointment_daily` (owner) holds exactly the days with appointments; `daily_summary`'s three appointment columns equal its booked / arrived / no_shows for every seeded day; `today_dashboard(null)` gives mechanic2 the same counts as the admin; customers (Chloe's login) and anon 42501; the range rules match `daily_summary`; booking, arriving, a no-show and a cancel today move today's counts exactly, and a no-show marked now on an older appointment counts on its own day; every checked_in or completed appointment has exactly one work order with its customer and bike. `reporting.test.ts` checks the columns against `appointment_daily` on test days with appointments; `reporting-access.test.ts` lists the RPC and the view. |
 | Seeded schedule and appointments (Phase 2) | `appointment-seed.test.ts` (reads only, days from the anchor): settings, the eight weekly rows (inactive Monday, split Saturday), the four types (one staff-only; anon sees the three public ones in order), the two closures as whole days within 14 days; each appointment's customer, bike, type snapshot, day, time, status and source as in `ids.ts`, booked ahead; nothing beyond 14 days, upcoming days Tuesday–Friday off the closures; Daniel has no upcoming booked/confirmed appointment, Chloe at most two upcoming online bookings, today at most three expected arrivals; Tan's appointment linked to J-000014 and completed at its completion, J-000014's timeline `checked_in, appointment_linked, …`; each status reached one update at a time; Chloe's login linked and `my_appointments()` exactly her upcoming rows with the D42 keys. |
 | Schedule configuration (Phase 2, D35, D38) | `schedule-settings.test.ts`: only admins call `update_shop_settings`, `set_shop_hours`, `save_closure_override`, `delete_closure_override`, `save_appointment_type` (mechanic1, mechanic2, anon → 42501); no time zone or currency parameter and an owner write of an unknown time zone → `shop_timezone_invalid`; null keeps, values round-trip (`customer_cancel_cutoff_minutes`; 10081 → `shop_settings_cancel_cutoff_check`; a slot length not dividing 1440 → `shop_settings_slot_minutes_check`); `shop_capacity_below_type` (inactive types ignored); the row cannot be deleted; `set_shop_hours` replaces atomically, rejects overlaps (also for the owner), bad JSON and weekdays (22023) and inverted intervals, a replay appends nothing; closure shapes store the documented Singapore instants; `closure_custom_hours_overlap`; `closure_invalid_range` and reason rules; is_new replays, `closure_conflict` / `appointment_type_conflict` after an edit (the edit survives), P0002 for a missing edit; deletion needs a reason and is kept in `schedule_events`; `appointment_type_capacity_too_large`, names unique ignoring case; one `schedule_events` row per real change with its actor, append-only. `appointments.test.ts`: `private.shop_timezone()` / `shop_currency()` follow the settings row. |
-| Duplicate receipt cannot double stock | `receive_purchase` same idempotency key twice → one receipt, stock +18 once; partial then remainder → PO `received`; over-receipt → raises. |
+| Duplicate receipt cannot double stock | Phase 7, proven at every layer. Database (`purchasing.test.ts`, `purchasing-concurrency.test.ts`): `receive_purchase` with the same idempotency key twice → the first receipt back, one receipt, one line, one movement, stock +18 once and the cost set once; the same key with other lines or on another PO → `purchase_receipt_key_reused` and nothing written; a replay that omits the cost matches the stored cost (an omitted cost is the PO line's); the same key from two connections at once → one receipt, stock added once; `purchase_receipt_by_key` returns that receipt (zero or one row). Ledger backstop: Phase 4's unique index `inventory_movements_receipt_line_once` (one `purchase_received` movement per receipt line, the only unique index on the column). App: `receive-form.test.ts` (the key is kept across reloads and refusals, an unknown outcome locks the form until the lookup, a retry reuses the key and the values, a new key only with fresh values). E2E (`purchasing.spec.ts`): a double-clicked "Receive 18 items" makes one receipt and one `Received +18` movement; a lost response (server committed, connection dropped) is found by the lookup and shown as recorded, one receipt, stock +6 once; a lost request (never sent) is checked, not recorded, and retried with the same key, one new receipt. |
+| Partial receipt adds the right stock (Phase 7) | 18 of 20 → `partially_received`, on hand +18, outstanding 2 in `reporting.purchase_order_progress`; the remaining 2 → `received` with `received_at`; quantities reduced to what arrived complete the PO; seeded PO-000002 is SPEC §14's 20/18/2, overdue (`purchasing.test.ts`, `purchasing-seed.test.ts`; E2E "18 of 20 received · 2 to come"). |
+| Over-receipt is refused and a received PO is closed (D65) | more than outstanding (summed per PO line across a receipt's locations) → `purchase_over_receipt`, nothing written; draft → `purchase_order_not_submitted`; received or cancelled → `purchase_order_closed`; two racing keys each receiving 18 of 20 → one succeeds, one over-receipt; receipts and their lines refuse UPDATE/DELETE (`purchase_receipt_immutable`). App: typing more than is to come shows "Only 2 still to come. Raise the ordered quantity on the order first." and blocks the commit; the receive page of a received PO shows the closed state with "Start a new order for this supplier" (E2E). |
+| Last cost by received_at; 0 is a known cost; snapshots untouched (D5, D63, D24 as amended) | a receipt sets `products.default_direct_cost` and the supplier link's `last_unit_cost` only when no later-received receipt holds the product (a back-dated receipt entered after a newer one changes no cost; ties by created_at then id; within a receipt the highest line number); `last_received_at` is the greatest; receiving upserts the supplier link; a 0 line cost and a 0 actual cost are accepted and become the last cost; the cost change is Phase 4's `cost_changed` event with "Received on PO-… (delivery note …)"; earlier `work_order_line_items` and `inventory_movements` snapshots are unchanged (`purchasing.test.ts`, concurrency file for racing receipts). E2E: received at $12.50 → the product's supplier shows "Last cost $12.50". Unit: `buildReceiptLines` keeps "0.00", `receivePurchaseSchema` accepts 0. |
+| Back-dated receipt dating (D64) | `received_at` defaults to now; up to 30 days back accepted, older → `purchase_receipt_too_old`; more than 5 minutes ahead → `purchase_receipt_in_future`; before `submitted_at` → `purchase_receipt_before_submission`; the movement's reason carries the shop-time delivery date. Unit: `receivedAtBounds` and `receivedAtForSubmit` (sent only when changed, from shop time); the three codes land on the Received field (reducer test). |
+| Purchase cost visibility (D60) | `purchasing-access.test.ts`: mechanic2 reads suppliers, PO quantities, statuses and dates, but no cost column (42501 on the base tables' cost columns, 0 rows from the four `*_staff` views, no history) and writes nothing; mechanic1 (view_costs) reads costs and history but writes nothing; a manage_purchasing-only holder reads purchase costs and writes, gets the `purchase_cost_defaults` prefill only for an orderable product (a unique, consigned, customer-owned, inactive or archived product's id returns no row), and the Phase 3/4/5 cost surfaces stay closed to them (`products.default_direct_cost`, `product_costs`, `inventory_unit_costs`, `inventory_movement_costs`, `inventory_movements.unit_cost_snapshot`, `services_staff`, `work_order_line_items_staff`, `work_order_totals_staff`, `work_order_yield`, `financial_lines`, the money in `daily_summary` / `today_dashboard`). E2E: mechanic2's PO page has no "$", no Totals or History, no Receive link; the receive and reorder routes are a real 403. |
+| Purchase history is append-only (Phase 7) | every PO change appends one `purchase_order_events` row with actor, correlation ID and reason (cancel and line changes after submission need one); replays append none; UPDATE/DELETE refused for the owner too (`purchase_order_history_append_only`). |
+| Reorder suggestions (D66) | `purchasing-reorder.test.ts`: `suggested_reorder_quantity` = max(2 × reorder point − on hand − on order, 0); `reorder_suggestions` lists shop-owned `reporting.low_stock` products only, on order counts submitted and partially received POs (never drafts), names drafts holding the product, carries no cost; `create_purchase_order_from_low_stock` makes one draft, a 0 suggestion ordered at 1, cost = supplier last cost, else product cost (0 included), else 0, replay by id adds nothing; manage_purchasing only. E2E: after receiving 18 of 20 and using 1, the product is pre-ticked with on order 2 and suggestion 21, and the draft has it × 21 at $12.50. |
+| Consigned stock is never purchased (Phase 7 integration with Phase 6, D45, D62) | `purchasing.test.ts` "Phase 6's consigned stock is never purchased": the seeded consignment-owned jerseys (counted, active, in stock) are refused as a PO line, in `create_purchase_order_from_low_stock` and as a supplier link (`purchase_line_not_shop_owned`), and `purchase_cost_defaults` returns no row for them. For `reorder_suggestions` the test first gives the jersey a reorder point above its stock and proves it is in `reporting.low_stock`, then that the suggestions (with and without a supplier) still return no row: only its ownership keeps it out. |
 | Manual adjustment records actor/time/reason | `adjust_stock` without reason → raises; with reason → row has `created_by`, `reason`. |
 | Public QR exposes only published | `public_items` as anon: draft/internal rows absent; public row shows no cost; sold unique shows `sold`. Built in Phase 4: `inventory-publication.test.ts` (row below). |
 | Archived entities stay referenceable | archive a service used on a historical job → job line still joins. Phase 3: the service, the job's bike and its customer archived → the line still joins the service and the job its bike and customer; the archived service is refused for new lines. |
 | Money is numeric | information_schema check that no money column is `real`/`double precision`; money and rate domains reject `NaN` (23514). |
 | Staff changes leave history (SPEC §2, §22) | each grant, revoke, deactivation, reactivation, creation, role change and rename appends exactly one `staff_events` row with its actor; replays append none; deactivation without a reason raises `reason_required`; `staff_events` refuses update/delete (`staff-history.test.ts`). |
 | Staff rules hold for every writer | no direct staff writes for API roles; staff.email must equal the login's email even for the owner; nobody signed in deactivates their own row; a manage_staff holder grants only permissions they hold, never manage_staff, never on themselves or admins (PLAN D11). |
+| Three staff roles (D90–D94) | `staff-roles.test.ts`. The enums are `admin \| manager \| mechanic` and the seven permissions in the app's order; `private.role_implies` equals `roleImplies()` from `src/lib/auth/permissions.ts` for every role × permission (parity), a null role implies nothing, and no API role may execute `role_implies` or `can_record_refunds`; `staff.role` and `create_staff`'s role default to `mechanic`. The role × permission matrix: for the admin, the seeded manager, the manager with a `manage_staff` exception, mechanic2, mechanic1 (`view_costs` exception), a throwaway mechanic granted each single permission in turn, a mechanic holding all seven as exceptions, an inactive manager and an inactive admin, `private.has_permission` and `my_staff_profile().permissions` give exactly the expected set, plus `can_record_refunds` and `is_admin`. One gate per family, called as each of them (42501 for refused callers, anything else for allowed ones with bogus ids): `work_order_yield`, rows of `product_costs` and `services_staff` (view_costs); `create_service` and a `categories` insert under RLS (manage_inventory); `adjust_stock`, `write_off_unit`; `consignor_payout_details`, `create_consignment_item`; `create_purchase_order`, `purchase_cost_defaults`; `financial_lines`; `staff_roster`, `staff_history`, `grant_permission`, `create_staff`, `set_staff_active`, `update_staff` (manage_staff); `record_sale_refund` (admin and manager only); `update_shop_settings`, `schedule_cult_commons_rate` (admin only). Exceptions (D92): granting a permission the role implies (manager + any of six, admin + any) is `permission_implied_by_role`, also for a direct superuser insert; an admin grants `manage_staff` to a manager, who then holds all seven; promoting a mechanic with `view_costs` + `manage_purchasing` to manager deletes both rows and appends `role_changed` then two `permission_revoked` events with the admin and the reason; a replayed role change appends nothing; demoting brings nothing back; promoting to admin drops every row, and a role change by SQL drops implied rows too; after the migrations and the seed no row is implied by its person's role; the roles migration's one-time clean-up (`private.drop_implied_exceptions()`, run by `20261006000200`) removes implied rows written before the roles (built with triggers off: an admin's `view_costs`, a manager's `adjust_stock`), each with a `permission_revoked` event with no actor and the fixed reason, keeps real exceptions (the manager's `manage_staff`, Marcus's `view_costs`), and a later demotion brings nothing back. `staff-concurrency.test.ts` (two committed connections, its own database): a direct insert that waits on a concurrent promotion is refused (`permission_implied_by_role`) once it commits, and a promotion that waits on a concurrent direct insert deletes that row once it commits (`permission_granted`, `role_changed`, `permission_revoked`, in that order); both fail if the refusal trigger's `FOR SHARE` is weakened to `FOR KEY SHARE` (checked once by hand). Administration (D93): only an admin invites a manager or an admin (a mechanic and a manager holding `manage_staff` invite mechanics only); a non-admin `manage_staff` holder grants only what they hold to a mechanic and is refused (42501) on a manager's or an admin's row for grant, revoke, rename, deactivate and role change, and on their own row; the admin renames, deactivates, reactivates and demotes a manager; nobody changes their own role; the last active admin cannot be demoted (55000); a role change whose `expected_role` is not the current role (a stale confirmation) is `staff_role_changed`, changes nothing and appends no event, and goes through with the current role; a role-change reason over 500 characters is `reason_too_long`. `sales.test.ts`: a manager records a refund; mechanics, with `view_financial_reports` or all seven exceptions, are refused (D94). `staff-history.test.ts`: promoting Marcus to admin appends `role_changed`, then the `permission_revoked` of his `view_costs` with the same actor and reason, then the rename. |
+| The Admin's sign-in limits (PLAN D72) | `sign-in-throttle.test.ts`: `note_sign_in_attempt` adds one per bucket per call (a bucket named twice counts once) and returns the counts; a new window starts a new count, windows are aligned, counters older than a day are deleted; 6 concurrent committed calls count 6; anon and staff get 42501 on the function and the table, the service role on the table; malformed arguments (no, 0 or 9 buckets, an empty, null or 201-character key, a window under 60 s, over 3600 s or null) are 22023. Live: `sign-in-throttle.stack.test.ts` (above). |
+| No seeded login has a usable password (PLAN D10) | `seed-logins.test.ts`: every seeded staff login and the seeded customer login store a bcrypt hash (cost 10) that is not the shared local password the seed used before email codes, and no two share a hash. |
+| Deactivation ends Auth sessions (PLAN D71) | `staff-sessions.test.ts`, with sessions and refresh tokens inserted for mechanic1 and mechanic2: the admin deactivating mechanic2 (with a reason) deletes mechanic2's sessions and refresh tokens (with and without a session) and leaves mechanic1's; a replayed deactivation (with or without a reason) neither errors nor deletes; reactivation deletes nothing; a `manage_staff` holder who is not an admin deactivating a non-admin has the same effect; a refused deactivation (P0001 `reason_required`) leaves the sessions intact; a direct superuser `update staff set active = false` revokes too (false over false and updates of other columns do not); the migration's first statement passes for the migration role and fails, naming RUNBOOK, for a role without DELETE on `auth.sessions`. Live (`staff-sessions.stack.test.ts`): a throwaway staff login (admin API without a password, then `create_staff` as the admin) signs in with a code and is deactivated by the admin; Auth then answers its access token with 403 `session_not_found` (supabase-js: `AuthSessionMissingError`), its refresh token gets `refresh_token_not_found`, PostgREST still accepts the unexpired token but `my_staff_profile` says `active = false` (the hosted window), and a fresh code still verifies at Auth while `my_staff_profile` says `active = false`, which the Admin's `verifyCode` and `requireStaff` refuse. |
 | RLS: customer A cannot read B | bikes, appointments, work orders, attachments. Phase 1 (`customer-access.test.ts`): a signed-in customer reads zero rows from every base table; `my_customer_profile`, `my_bikes`, `my_bike_attachments` return only their own rows, never `internal_notes` or `internal` photos; another customer's bike id returns nothing; PLAN D12: after a transfer the new owner sees photos taken before it and the previous owner none (also on the seeded sale), and an archived bike's photos disappear. Phase 3: a signed-in customer reads nothing of their own job (job, assignments, events, lines, line and totals views, services, categories, rates) and cannot call the workshop RPCs (42501); their projection is tested in `workshop-customer-access.test.ts` (row below). Phase 2 (`appointment-customer-access.test.ts`): a signed-in customer with their own booking reads zero rows from `appointments`, `appointment_events`, `appointment_types`, `shop_hours`, `closure_overrides`, `shop_settings` and `schedule_events`; `my_appointments()` returns only their own upcoming rows soonest first and `my_appointments(true)` the past ones after them, latest first, with exactly the `my_appointment` keys (D42: never `internal_note`, `cancellation_reason`, capacity units, source or actors); after the bike is archived or transferred (D12) its fields are NULL for them; `book_my_appointment` books for themselves only (source customer, their login), another customer's or an unknown bike → `appointment_bike_not_owned` with a neutral detail; `cancel_my_appointment` on someone else's id → NULL and nothing changes. |
 | Ownership changes preserve history (SPEC §5) | `transfer_bike_ownership` appends one event with actor, reason and correlation ID and leaves earlier events untouched; empty/blank reason → `reason_required`; replay → no event; plain updates of `customer_id` refused (42501 for staff, `reason_required` for the owner); events append-only; concurrent transfers form one chain (`customers-bikes.test.ts`). |
 | Stable physical identity | bike short IDs are server-assigned `B-######`, increasing, unique, never client-supplied (42501) and immutable (`bike_short_id_immutable`). |
@@ -575,6 +868,7 @@ Each invariant from SPEC §23 has at least one test, named after it:
 | Print jobs are snapshots, history and RPC-only (Phase 8; SPEC §2, §23) | `labels.test.ts`: renaming and repricing the product leaves the job's content unchanged while `label_preview` shows the new values; template and printer snapshots; a replay with the same id → the same row and one row, another quantity, record or printer → `print_job_conflict`, a replay without a printer after the default moved → the original job; staff insert/update/delete → 42501; owner update of quantity or content and delete → `print_job_immutable`; archived product, unit (and a unit whose product is archived) and bike keep their jobs readable while new jobs, previews and reprints → `label_entity_archived`; a reprint of another record → `print_job_reprint_mismatch`. |
 | Print job status machine (Phase 8; D59) | `labels.test.ts`, table-driven from `tests/fixtures/print-transitions.ts`: `private.print_job_transition_allowed` for all 16 pairs; `set_print_job_status` from each status to each: allowed moves stamp `rendered_at` / `completed_at` and `status_changed_by` = the caller, same status is a no-op (a failed job keeps its first error), the rest `print_job_transition_invalid` (also for the owner, by the trigger); failed without, with a blank or with a 501-character error → `print_job_error_required` / `reason_too_long`. |
 | Templates and printers: staff read, admins write (Phase 8) | `labels.test.ts`: mechanic2 reads the three built-in templates and two profiles, insert → 42501, update affects 0 rows, `set_default_*` → 42501; the admin inserts and renames (trimmed, `created_by` set); `is_default` and delete → 42501; switching off a default → `*_default_required`; `set_default_*` leaves one default per kind / one printer and refuses an inactive target; inactive printer or template and a template of another kind refused by `create_print_job`; no default for a kind → `label_template_missing`; kind / adapter changes → `*_immutable`; `bluetooth` and `network_raw` → 23514 `printer_profiles_adapter_available`; config v1; width / height checks; `label_mm` rejects NaN. Layout v1 from `tests/fixtures/label-layouts.ts` (shared with step 2's zod schema): every case through `private.label_layout_problem`, and every invalid one through an admin insert → `label_layout_invalid` with the sentence as DETAIL. |
+| A manager prints labels but is not a labels admin (Phase 8 under the staff roles; D91) | `labels.test.ts` "a manager prints labels but writes no template, printer or QR address (D91)": the seeded manager creates a print job (`requested_by` = the manager) and marks it printed, reads the three templates, and gets 42501 inserting a template or a printer, 0 rows renaming a template, 42501 from both `set_default_*` RPCs and from `update_shop_settings(public_site_url)`; the merge of `main` into `feat/p8-labels` added it |
 | Customers and anonymous visitors read nothing about labels (Phase 8; SPEC §4.2) | `labels.test.ts`: a linked customer reads 0 rows from `label_templates`, `printer_profiles`, `print_jobs` and gets 42501 from the five label RPCs; anon has no privilege on the tables and cannot execute the functions (also `meta.test.ts`'s allow-lists). |
 | Labels under concurrency (Phase 8; SPEC §25) | `labels-concurrency.test.ts` (committed, real connections; each case proves the second call waits on a lock): the same print job from two devices → one job, the second returns the first's row; another quantity → `print_job_conflict`, one row; two admins making different templates (and printers) default → exactly one default, the second's target, no 23505; printed and failed at once → one wins, the other `print_job_transition_invalid`; a print naming no printer (no template) while an admin moves the default waits on `set_default_*`'s row locks and then uses the NEW default (adapter `pdf`; the new template's snapshot), which only `create_print_job`'s two-attempt `for share` read makes pass (checked by cutting the loop to one attempt: both cases fail). |
 | The labels domain module against the devstack (Phase 8 step 2) | `labels-domain.stack.test.ts` (skips without the devstack unless `BICII_REQUIRE_STACK=1`): `getPrintJob` maps the seeded queued job from its snapshots (payload `${SHOP.publicSiteUrl}/q/P-000011`, PDF printer, 58 × 40 template, requester), keeps the failed job's reason and the reprint link; `listPrintJobs` filters To confirm, Failed, a short ID (any case) and a name, and pages by `(created_at, id)` without gaps; `listJobsFor` returns two jobs the test creates (and confirms) on `BIKE.tanTarmac` newest first, and the seeded unit's two jobs in order within a limit of 50: nothing assumes the seeded jobs are a record's newest, so jobs that E2E runs leave in `bicii_dev` cannot turn it red (they did, until the Phase 8 review); `getLabelContext` offers the counted product (default template and printer first, last printed price), and returns `unique_product`, `archived` and, for an id that does not exist, `not_found` without throwing, and `publication: null` for a bike; `getReprintPreset` only for the same record (with the reprinted job's price); `resolvePrintPreset` turns `?print=1&qty=…&reprint=…` into the sheet's preset (null without `print=1`; another record's job opens the sheet without the link); one job created replay-safely as mechanic2, marked rendered then printed, and refused failed afterwards. |
@@ -583,11 +877,15 @@ Each invariant from SPEC §23 has at least one test, named after it:
 
 Harness (`playwright.config.mts`, `tests/e2e/`): Chromium only, two projects
 — `phone` (iPhone 13, 390 px: bottom tab bar) and `tablet` (iPad gen 7,
-810 px: side rail). `webServer` runs `npm run build && next start -p 3100`
-with the devstack URL and local demo keys passed explicitly (so `.env.local`
-does not matter). `tests/e2e/global-setup.mts` resets and seeds `bicii_dev`
-(`E2E_RESET=0` skips), starts the devstack if needed, and waits until the
-seeded admin can sign in through the gateway and call `my_staff_profile`.
+810 px: side rail). `webServer` runs `npm run build && next start -p $E2E_PORT`
+(default 3100) with the devstack URL and local demo keys passed explicitly
+(so `.env.local` does not matter). `tests/e2e/global-setup.mts` resets and
+seeds the dev database, `PGDATABASE` (default `bicii_dev`; `E2E_RESET=0`
+skips), starts the devstack if needed, and waits until the
+seeded admin can sign in through the gateway and call `my_staff_profile`
+(with an email code: the service-role admin API generates it, Auth
+verifies it, no email is sent) and the mail catcher answers `GET /health`
+(skipped for `E2E_EXTERNAL_STACK=1` unless `BICII_MAIL_KIND` is set).
 Tests run serially (one shared database). The browser is
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when set, else `/opt/pw-browsers/chromium`
 when it exists (the build agent's container, where browsers are never
@@ -596,10 +894,14 @@ downloaded), else Playwright's own Chromium, installed once with
 ([ENGINEERING.md](ENGINEERING.md#prerequisites-and-access)).
 
 ```sh
-npm run test:e2e                       # build + start on :3100, reset bicii_dev, run
+npm run test:e2e                       # build + start on E2E_PORT (3100), reset PGDATABASE (bicii_dev), run
 E2E_REUSE_SERVER=1 npm run test:e2e    # reuse an app already on E2E_PORT (3100)
-E2E_RESET=0 npm run test:e2e           # keep bicii_dev as it is
+E2E_RESET=0 npm run test:e2e           # keep the dev database as it is
 ```
+
+A second checkout (README "Postgres somewhere else?") sets its own
+`PGDATABASE`, `BICII_*_PORT` and `E2E_PORT` first, so its E2E run resets
+only its own database and serves on its own port.
 
 The seed's history is relative to the day it was reset (DATA-MODEL §18
 "Phase 5 part"). Global setup reads that anchor day once, from the seeded
@@ -609,20 +911,108 @@ inherit it); specs use `seedAnchor()` and `anchorDay(n)` from
 `E2E_EXTERNAL_STACK=1` or a run across Singapore midnight the anchor is not
 today.
 
+Signing in (PLAN D10, D70; `tests/e2e/helpers.ts`): every spec signs in
+through the real `/login` form with an emailed code. `signIn(page, who,
+next?)` and `signInOnForm(page, who)` (seeded staff) and `signInAs(page,
+email, next?)` / `signInOnFormAs(page, email)` (any login) all end off
+`/login`. Underneath, `requestCodeOnForm(page, email)` takes a mail cursor
+(`mailCursor`) BEFORE pressing "Email me a code", expects "Check your
+email" and returns `waitForCode({ to, after: cursor })` from the mail
+catcher, so an older email to the same address is never used. Auth sends
+at most one email per address per second (`max_frequency` 1s, kept in the
+devstack and config.toml) and the Admin shows a refusal there as "Check
+your email" (D70), so the helper waits until 1.1 s have passed since this
+worker last asked for that address, and if no email arrives within 5 s it
+goes back with "Use a different email", waits again and asks again, up to
+5 times. The app runs with `SIGN_IN_LIMIT_MULTIPLIER=1000`
+(`playwright.config.mts`): the suite signs in hundreds of times from one
+address, past the Admin's own limits (D72), which the unit and stack
+tests cover. Specs reach the mail client through
+`tests/e2e/mail.ts` (a dynamic import: Playwright compiles specs to
+CommonJS) and the database through `tests/e2e/db.ts` (`sql()` on
+`devDatabaseUrl()`, for the two assertions no screen can make).
+
 Phase 0 specs (`auth.spec.ts`, `staff.spec.ts`): signed-out `/` redirects to
 `/login`; `?next=` deep links survive sign-in and cannot leave the origin
 (absolute, `//host`, `/\host`, dot segments such as `/.//host`, including
-the server-side redirect a signed-in visit to `/login` makes); wrong
-password gives one generic error; the admin lands on Today with the tab
-bar (phone) or rail (iPad); sign-out ends the session; mechanic2 gets a
-real 403 on `/settings/staff`; a permission the admin grants shows on
-mechanic2's profile and in the staff history (then is revoked), and on a
-phone the confirmation toast leaves the Scan tab tappable; a rejected
-invite keeps the typed name and email; an invited colleague signs in with
-the temporary password as active staff with no granted permissions (Today
-opens; `/settings/staff` is 403), must give the current password to change
-it, and when the admin deactivates them (a reason is required and shows in
-their history) their open session loses access.
+the server-side redirect a signed-in visit to `/login` makes); an unknown
+email (`e2e-unknown-<project>-<time>@bicii.test`) gets exactly the "Check
+your email" text a staff email gets (compared with the address
+substituted), no `auth.users` row and no email within 2 s; a wrong code
+(a six-digit value that differs from the real one) gets the one
+invalid-code message, keeps the email, is not echoed and puts focus back
+on Code, and the real code (pasted as "123 456") then signs in (Auth
+2.178 does NOT void a code after a wrong attempt); an expired code is
+refused (the spec moves `auth.users.recovery_sent_at` back 11 minutes:
+for an email code to an existing confirmed login Auth 2.178 times the
+code from `recovery_sent_at` and ignores `auth.one_time_tokens.created_at`,
+established on the devstack by ageing each separately); a used code is
+refused in a second browser context that asked for a newer code; "Send a
+new code" is disabled with a live countdown ("Send a new code in 0:59"),
+"Use a different email" returns to the email step with the email kept
+and focused, and after the countdown (the page clock fast-forwarded)
+"Send a new code" announces "We've sent a new code.", restarts the
+countdown, and only the newest code works; a confirmed login with no
+staff row gets the not-staff message after its code and keeps no session;
+the admin lands on Today with the tab bar (phone) or rail (iPad);
+sign-out ends the session; mechanic2 gets a real 403 on
+`/settings/staff`; asking twice in a row ("Use a different email", then
+the same address) gives an address with a login and an unknown address
+the same "Check your email" screen both times (the main region's markup
+compared with the address, React ids and countdown digits normalised,
+plus the focused field), while Auth's per-address interval is held open
+for the login (`recovery_sent_at` set ahead; a direct `/otp` call then
+gets 429 `over_email_send_rate_limit`, D70); a permission the admin grants shows on mechanic2's
+profile and in the staff history (then is revoked), and on a phone the
+confirmation toast leaves the Scan tab tappable; a rejected invite keeps
+the typed name and email; the invite's success view says how to sign in
+and shows no credential; the invited colleague (unique per project and
+run) signs in with an emailed code as active staff with no granted
+permissions (Today opens; `/settings/staff` is 403), and when the admin
+deactivates them (a reason is required and shows in their history) their
+open session ends at once (PLAN D71: the deactivation deleted their Auth
+sessions, and on the devstack's HS256 keys `getClaims` asks Auth, so their
+next navigation lands on `/login?next=…`); they can still ask for a code
+and see the same "Check your email" screen, but after typing the emailed
+code they stay on `/login` with the not-staff message, and `/` still
+redirects to `/login`. The hosted window of D71 is driven too: a second
+invited colleague signs in, is deactivated with `staff_revoke_sessions`
+disabled inside that one transaction (`sqlTransaction` in
+`tests/e2e/db.ts`), so their session still verifies at Auth, and `/` and
+`/settings/profile` (no permission needed) show the 403 page ("403 · No
+access", "You can't open this") and none of their data. The HTTP status
+is not asserted there: a page whose shell has started streaming keeps
+200 (Next's `forbidden()` docs).
+
+Staff roles spec (`roles.spec.ts`, D90-D94; every record it creates
+carries `tagFor(testInfo)`, seeded records are only read): **a manager**
+(the seeded Kavya Menon) sees the Money section on Today and the seeded
+job J-000002's Cost and Cult Commons, has no Staff row in Settings and a
+403 on `/settings/staff`, creates and stocks a product (manage_inventory,
+adjust_stock), sells it with the cost preview, records a partial refund
+with a reason ("Refund of $6.00 recorded"), and their profile shows the
+Manager badge, View costs, View financial reports and Record refunds but
+not Manage staff or Admin settings. **A mechanic** (mechanic2) sees no
+Money, no cost on J-000002, no Record refund on the seeded S-000004, a 403
+on `/settings/staff`, and a profile reading Mechanic and "Workshop access
+only". **An admin** finds their own row's role picker disabled with "You
+can't change your own role." and nothing extra to grant; invites a
+colleague (unique per project and run) with the Role picker offering
+Admin, Manager, Mechanic and Mechanic chosen; grants Extra access "Manage
+purchasing" (seven switches for a mechanic); changes the role to Manager
+through the sheet (it names the extra access the role includes, and
+focus starts on Cancel) with a reason; then sees "<name> is now a Manager", the Manager badge, one switch
+left (Manage staff) under "Included in the Manager role: …", and in
+History one "Role changed from Mechanic to Manager" with the admin and the
+reason and "Extra access: Manage purchasing removed" with the same reason;
+the list row reads "Every permission except Manage staff"; the colleague
+signs in and their profile shows Manager and Record refunds; the admin
+then deactivates them so no extra active staff remain. On the phone
+project that test runs at 375 px wide (an iPhone SE) and checks that the
+admin's own row, the invite form, the colleague's page and the change-role
+sheet do not scroll sideways (`expectNoSideScroll`); on the iPad at its own
+width. `staff.spec.ts`'s
+invite test also checks "They join as a Mechanic." and "Set extra access".
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a
 tag made of the project name and a timestamp, so the phone and iPad runs and
@@ -801,12 +1191,17 @@ exceptions are relative to it): J-000017 overdue and J-000016 waiting for
 collection, each opening its job.
 
 Phase 2 spec (`appointments.spec.ts`, step 3; API helpers in
-`tests/e2e/api.ts`: `signInApi(email, password)` through the gateway's
-Auth, `rpc(token, name, args)` and `select(token, pathAndQuery)` through
-PostgREST as that user, throwing with PostgREST's error; global setup
-hands them the gateway URL and anon key as `E2E_GATEWAY_URL` /
-`E2E_ANON_KEY`, because specs load as CommonJS and cannot import
-`scripts/devstack/config.mjs`). These tests use the live shop day
+`tests/e2e/api.ts`: `signInApi(email)` signs in with an email code
+without sending email (the service-role admin API generates it, Auth
+verifies it, as `tests/db/stack.ts` `otpClient` does; it tells the UI
+helper the address just had a code, so the next form request waits out
+Auth's per-address interval), `rpc(token, name, args)` and
+`select(token, pathAndQuery)` through PostgREST as that user, throwing
+with PostgREST's error; global setup hands them the gateway URL and keys
+as `E2E_GATEWAY_URL`, `E2E_ANON_KEY` and `E2E_SERVICE_ROLE_KEY`, because
+specs load as CommonJS and cannot import `scripts/devstack/config.mjs`.
+Until the email sign-in integration (2026-10-06) it used Auth's password
+grant with the shared seed password; no password path remains). These tests use the live shop day
 (`shopToday()`), not the seed's anchor: a customer books ahead of now.
 `beforeAll`, as the admin through the API and idempotent for the second
 project or a retry, sets the online notice to 0 and the capacity to 4,
@@ -845,8 +1240,7 @@ accessible name starts with the booked time and Chloe Lim, "Still
 expected" is at least 1, and Arrived is read; after check-in Today's
 Arrived is exactly one higher (read before and after with `readCount`,
 never absolute counts, D41) and the booking left the arrivals list. Chloe
-Lim (`CUSTOMER_LOGIN.chloe`, the seed password in
-[ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)) is the one
+Lim (`CUSTOMER_LOGIN.chloe`, signed in with `signInApi`, an email code) is the one
 seeded customer login, used here and in the customer-access tests. "Staff
 book for a customer and capacity closes the slot": mechanic2 (no
 permissions), on the first Tuesday at least 21 days after `shopToday()`
@@ -941,6 +1335,55 @@ mechanic2 sells one "DSP 3.2mm bar tape" (only "Below the asking price"
 warns; no Preview, cost, yield or Cult Commons in the sheet or on the
 sale, no "$26.00", no Record refund) and the stock drops by one.
 
+Phase 7 (`purchasing.spec.ts`, phone and iPad; suppliers, products and
+orders tagged with `tagFor`, the seeded orders `PURCHASE_ORDER` only read;
+helpers in `tests/e2e/purchasing-helpers.ts`: `createSupplier`,
+`startOrderFromSupplier`, `addOrderLine`, `submitOrder`,
+`createSubmittedOrder`, `openReceive`, `receiveLine` and
+`interceptReceiveActions`, which drops the receive page's Server Action
+POSTs (`next-action` header) on purpose). Suppliers and orders: a buyer
+adds a supplier (tel: and https links), orders from it with the supplier
+preset, changes a line, submits and finds the PO from the header search
+however typed; mechanic2 follows PO-000002 (18 of 20, Overdue, DN-5531)
+without any cost or control; a cancel needs a reason and keeps it in the
+history; a received PO is closed. Journey 3's receiving step: a counted
+product (reorder point 20, cost 12.00) and a tagged supplier; an order of
+20 × $12.00 submitted and received: the line defaults to 20, 18 at an
+actual cost of $12.50 ("Differs"), the default location, the commit
+button DOUBLE-CLICKED; the order shows the toast "Received 18 items. 2
+still to come.", Partially received and "18 of 20 received · 2 to come"
+with one receipt; the product shows 18 in stock before and after a reload,
+exactly one `Received +18` movement, the supplier with "Last cost $12.50"
+and "On order: 2"; one part used on a job → 17; `/purchasing/reorder` for
+the supplier lists it ticked with on order 2 and "Suggested 21", and
+Create draft order opens a draft with it × 21 at $12.50. Lost response:
+the receive POST reaches the server and the connection is then reset →
+the error toast, the form read-only while checking, then "This delivery
+was recorded … (6 items)" with no Retry; one receipt, stock +6 once;
+"Receive another delivery" shows 4 to come with an empty delivery note,
+and typing the same note (any case) shows the duplicate warning with the
+commit disabled until "This is a different delivery" is ticked. Lost
+request: the next POST is reset before it leaves → checking → "It was not
+recorded. Retrying is safe…" → Retry → "Order fully received.", exactly
+two receipts, 10 in stock. The receive page of PO-000001 shows the closed
+state; mechanic2 gets a real 403 on `/purchasing/receive/<PO-000002>` and
+`/purchasing/reorder` and sees no Receive or Reorder link; the admin sees
+Receive on an open PO, "Submit the order before receiving" on a draft,
+and Reorder on the Inventory low-stock filter. Phase 4's journey-3 spec
+still seeds its stock by an opening count and prints its labels from the
+product page.
+
+E2E residue and Today's low-stock list (found merging `main` into labels,
+first on `feat/p10-shopify`): `bicii_dev` is reset once per run, and Today lists
+only the first five low-stock products by shortfall, where
+`today.spec.ts` expects the seeded hydraulic hose, cable kit and sealant.
+`createProduct` (`tests/e2e/helpers.ts`) therefore sets a reorder point
+only when a test passes one: the purchasing spec's two products need
+theirs (one per project, shortfall 3); the labels spec's product no
+longer has one. With both, the tablet run's Today list had seven
+candidates and dropped the sealant (the first gate run on that merged
+tree: 199 passed, 1 failed).
+
 Phase 8 step 2 (`print-view.spec.ts`, phone and iPad, READ-ONLY on the
 seeded print jobs: it never clicks Print, Open PDF or a confirmation).
 `payload` is `${SHOP.publicSiteUrl}/q/P-000011` (the database base,
@@ -988,8 +1431,10 @@ sees no Labels and printers row and gets a 403 at `/settings/labels`; the
 admin's "{tag} 50 × 30" template shows "does not fit" with Save disabled
 for a 30 mm QR, saves with 24 mm, prints 2 labels with `@page` 50.0 × 30.0
 mm and is switched off; a signed-out context ends on /login for a print view
-and a PDF (that is proxy.ts); the seeded customer login (Chloe), signed in,
-gets a 403 from the PDF route (not `application/pdf`, no `%PDF`) and a 403
+and a PDF (that is proxy.ts); the seeded customer login (Chloe), signed in
+(her session cookies made by `sessionCookiesFor` in `tests/e2e/api.ts`
+through `@supabase/ssr`, because the login form signs anyone who is not
+staff out straight after the code, D70), gets a 403 from the PDF route (not `application/pdf`, no `%PDF`) and a 403
 "You can't open this" print view with no label: the handlers' own staff
 checks; `/bikes/{random uuid}` shows "Nothing here", not the error page.
 Two cases still print on seeded records (mechanic2 on `BIKE.priyaTern`, the
@@ -1056,6 +1501,10 @@ database, signed in as the seeded admin and mechanic:
 
 `supabase/seed.sql` is both the demo dataset and the test fixture. Fixed
 UUIDs are exported from `tests/fixtures/ids.ts` so tests never query by name.
+Four staff logins (D90): `admin` (role admin), `manager` (Kavya Menon, role
+manager, no exceptions), `mechanic1` (role mechanic, `view_costs` as an
+exception) and `mechanic2` (role mechanic, none); tests that list or count
+staff expect all four.
 What each seeded record demonstrates is in DATA-MODEL.md §18. Tests that
 create their own workshop rows pick service and category names the seed
 does not use (active names are unique) and scope counts to their own job or
@@ -1090,8 +1539,8 @@ one job are listed (a bike awaiting collection may take a newer job).
 Since Phase 2 the seed also holds the shop's schedule (settings, weekly
 hours with an inactive Monday and a split Saturday, four appointment types
 with one staff-only, two closures within 14 days), **one customer login**
-(Chloe Lim, `CUSTOMER_LOGIN.chloe`: chloe.lim@example.com with the local
-password, linked to `CUSTOMER.chloe`, for E2E journey 2 and read-only
+(Chloe Lim, `CUSTOMER_LOGIN.chloe`: chloe.lim@example.com, no usable
+password like every seeded login, `seed-logins.test.ts`; linked to `CUSTOMER.chloe`, for E2E journey 2 and read-only
 customer checks) and nine appointments from three days back to at most 14
 days ahead (`APPOINTMENT`; Tan's linked to J-000014 and completed with it).
 `SEED_DAYS` carries their D41 counts. Guarantees other tests rely on,
@@ -1160,7 +1609,10 @@ fine).
   so a label can never post skipped required checks): `npx playwright install --with-deps chromium`, the devstack on the
   service database, then `npm run test:e2e` (production build on :3100,
   phone + iPad projects, one retry in CI). On failure the HTML report,
-  traces and devstack logs are uploaded as an artifact.
+  traces, devstack logs and the mail catcher's messages (`.devstack/mail/`,
+  local codes only) are uploaded as an artifact. `devstack:start` brings the
+  mail catcher up in both workflows; `ci.yml`'s "Devstack logs" step prints
+  `mail.log` with the others.
 
 Secrets in CI: none. E2E runs against the devstack (real Supabase Auth,
 PostgREST and Storage with the local demo keys), not staging, so it works

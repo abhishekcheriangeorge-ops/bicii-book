@@ -23,7 +23,7 @@ import { currentCultCommonsRate } from "./services";
  *     adjust_stock, plus manage_consignments for a consigned unit (D46);
  *     keyed by the sale line (a restocked line is a no-op);
  *   record_sale_refund(refund_id, sale_id, amount, reason)
- *     admins only (D49); financial only (D7).
+ *     admins and managers (D94); financial only (D7).
  *
  * Money visibility (D48): sale headers, lines, quantities, prices, totals
  * and refunds reach every staff member; cost, yield, Cult Commons, rate
@@ -569,7 +569,7 @@ export async function restockUnit(supabase: ServerSupabase, input: RestockInput)
 
 export type RefundInput = { refundId: string; saleId: string; amount: string; reason: string };
 
-/** Records a refund (record_sale_refund; admins only, D49; money only, D7). */
+/** Records a refund (record_sale_refund; admins and managers, D94; money only, D7). */
 export async function recordSaleRefund(
   supabase: ServerSupabase,
   input: RefundInput,

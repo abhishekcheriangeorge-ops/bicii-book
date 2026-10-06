@@ -2,14 +2,25 @@
 // files and logs under .devstack/ (git-ignored).
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 
 import {
   ANON_KEY,
   GATEWAY_URL,
   JWT_SECRET,
+  MAIL_URL,
   PATHS,
   PORTS,
   ROOT,
@@ -41,10 +52,30 @@ function postgrestConfig(url) {
   return file;
 }
 
-/** Service definitions in start order; the gateway goes last. */
+/**
+ * Service definitions in start order: the mail catcher first (Auth sends
+ * through it and fetches its email templates from it), the gateway last.
+ * `extraPorts` are further ports a service listens on (not HTTP); start
+ * refuses to run when one is taken.
+ */
 export function services() {
   const url = databaseUrl();
   return [
+    {
+      name: "mail",
+      port: PORTS.mailHttp,
+      extraPorts: [PORTS.smtp],
+      health: "/health",
+      command: () => [
+        process.execPath,
+        [path.join(ROOT, "scripts", "devstack", "mailcatcher.mjs")],
+      ],
+      cwd: ROOT,
+      env: () => ({
+        BICII_SMTP_PORT: String(PORTS.smtp),
+        BICII_MAIL_HTTP_PORT: String(PORTS.mailHttp),
+      }),
+    },
     {
       name: "auth",
       port: PORTS.auth,
@@ -69,11 +100,51 @@ export function services() {
         // do not use (GOTRUE_JWT_EXP = jwt_expiry is in authEnv). Without the
         // reuse interval (no default in the binary: 0s) two requests racing
         // to refresh an expired session could trip reuse detection.
-        // password_requirements = "" is the binary's default (no env).
+        // password_requirements = "" is the binary's default (no env). The
+        // Admin has no password path (PLAN D10) and no staff login has a
+        // password anyone knows (seed and invites: a random secret's hash),
+        // but Auth's password grant and password change stay reachable with
+        // the anon key, so setting a password needs reauthentication (an
+        // emailed nonce) once a session is older than 24 h, as config.toml's
+        // secure_password_change and the hosted "Secure password change"
+        // (RUNBOOK) require.
         GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true",
         GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10",
         GOTRUE_PASSWORD_MIN_LENGTH: "6",
-        GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: "false",
+        GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: "true",
+        // Email sign-in codes (PLAN D10, D70). Auth sends through the
+        // devstack's mail catcher (mailcatcher.mjs) on 127.0.0.1, which
+        // accepts any or no credentials, so GOTRUE_SMTP_USER and
+        // GOTRUE_SMTP_PASS stay unset (no AUTH is attempted) and no STARTTLS
+        // is offered. The sender is a .test address: nothing leaves the box.
+        GOTRUE_SMTP_HOST: "127.0.0.1",
+        GOTRUE_SMTP_PORT: String(PORTS.smtp),
+        GOTRUE_SMTP_ADMIN_EMAIL: "no-reply@bicii.test",
+        GOTRUE_SMTP_SENDER_NAME: "BICII",
+        // Minimum gap between two emails to one address: config.toml's
+        // [auth.email] max_frequency. Hosted projects use 60 s (RUNBOOK).
+        GOTRUE_SMTP_MAX_FREQUENCY: "1s",
+        // D70: 6-digit codes valid for 10 minutes (config.toml otp_length,
+        // otp_expiry).
+        GOTRUE_MAILER_OTP_LENGTH: "6",
+        GOTRUE_MAILER_OTP_EXP: "600",
+        // Our templates (supabase/templates), served by the catcher because
+        // Auth fetches templates by URL. Codes only: they carry
+        // {{ .Token }} and no link (D70). signInWithOtp for a confirmed user
+        // sends magic_link; an unconfirmed one gets confirmation.
+        GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: "Your BICII sign-in code",
+        GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: `${MAIL_URL}/templates/magic_link.html`,
+        GOTRUE_MAILER_SUBJECTS_CONFIRMATION: "Your BICII code",
+        GOTRUE_MAILER_TEMPLATES_CONFIRMATION: `${MAIL_URL}/templates/confirmation.html`,
+        // Local only: generous rate limits so the E2E suite and the stack
+        // tests can ask for and verify hundreds of codes from 127.0.0.1
+        // (emails sent per hour; OTP requests, verifications and token
+        // refreshes per 5 minutes per IP). Hosted limits are set in the
+        // dashboard (RUNBOOK); config.toml raises its own for `supabase start`.
+        GOTRUE_RATE_LIMIT_EMAIL_SENT: "100000",
+        GOTRUE_RATE_LIMIT_VERIFY: "100000",
+        GOTRUE_RATE_LIMIT_OTP: "100000",
+        GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "100000",
       }),
     },
     {
@@ -117,6 +188,39 @@ export function pidFile(name) {
   return path.join(PID_DIR, `${name}.pid`);
 }
 
+/** Where start.mjs keeps the fingerprint of the configuration a service was started with. */
+export function configFile(name) {
+  return path.join(PID_DIR, `${name}.config`);
+}
+
+/**
+ * A digest of everything a service is started with: command, arguments,
+ * working directory and env, with each argument that is a file in this
+ * checkout (a script, the PostgREST config) replaced by its contents. When
+ * it differs from the one recorded at start, the running process serves an
+ * older configuration (say, an Auth started before sign-in codes, with no
+ * SMTP settings) and start.mjs restarts it.
+ */
+export function fingerprint(service) {
+  const [command, args] = service.command();
+  const resolved = args.map((arg) => {
+    if (typeof arg !== "string" || !arg.startsWith(ROOT) || !existsSync(arg)) return arg;
+    return statSync(arg).isFile() ? readFileSync(arg, "utf8") : arg;
+  });
+  return createHash("sha256")
+    .update(JSON.stringify({ command, args: resolved, cwd: service.cwd, env: service.env() }))
+    .digest("hex");
+}
+
+/** The fingerprint recorded when the running process was started, or null. */
+export function readFingerprint(name) {
+  try {
+    return readFileSync(configFile(name), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function logFile(name) {
   return path.join(LOG_DIR, `${name}.log`);
 }
@@ -151,6 +255,38 @@ export function probe(port, pathname, timeout = 1500) {
   });
 }
 
+/**
+ * True when something accepts TCP connections on 127.0.0.1:port.
+ * @param {number} port
+ */
+export function portOpen(port, timeout = 1000) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    const done = (/** @type {boolean} */ open) => {
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(timeout, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+
+/**
+ * Waits until nothing listens on the service's ports any more (a stopped
+ * process can hold its socket for a moment after it exits). True when free.
+ */
+export async function waitPortsFree(service, timeoutMs = 10000) {
+  const ports = [service.port, ...(service.extraPorts ?? [])];
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const open = await Promise.all(ports.map((port) => portOpen(port)));
+    if (!open.some(Boolean)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
 export function startDetached(service) {
   mkdirSync(LOG_DIR, { recursive: true });
   mkdirSync(PID_DIR, { recursive: true });
@@ -165,6 +301,7 @@ export function startDetached(service) {
   });
   child.unref();
   writeFileSync(pidFile(service.name), `${child.pid}\n`);
+  writeFileSync(configFile(service.name), `${fingerprint(service)}\n`);
   return child.pid;
 }
 
@@ -184,6 +321,7 @@ export async function stopService(name, timeoutMs = 8000) {
   const pid = readPid(name);
   if (!pid || !isAlive(pid)) {
     rmSync(pidFile(name), { force: true });
+    rmSync(configFile(name), { force: true });
     return "not running";
   }
   // Each service is its own process group leader (detached), so signal the
@@ -206,5 +344,6 @@ export async function stopService(name, timeoutMs = 8000) {
   }
   if (isAlive(pid)) signal("SIGKILL");
   rmSync(pidFile(name), { force: true });
+  rmSync(configFile(name), { force: true });
   return "stopped";
 }

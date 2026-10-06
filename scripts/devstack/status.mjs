@@ -4,7 +4,7 @@
 //
 //   npm run devstack:status
 
-import { GATEWAY_URL, databaseUrl, redact } from "./config.mjs";
+import { GATEWAY_URL, MAIL_URL, databaseUrl, redact } from "./config.mjs";
 import { isAlive, probe, readPid, services } from "./services.mjs";
 
 async function main() {
@@ -28,6 +28,7 @@ async function main() {
   console.log(line(widths.map((w) => "-".repeat(w))));
   for (const r of rows) console.log(line(columns.map((c) => r[c])));
   console.log(`\ngateway:  ${GATEWAY_URL}`);
+  console.log(`mail:     ${MAIL_URL}`);
   console.log(`database: ${redact(databaseUrl())}`);
   process.exitCode = rows.every((r) => r.health.startsWith("ok")) ? 0 : 1;
 }

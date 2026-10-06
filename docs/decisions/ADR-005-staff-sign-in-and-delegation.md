@@ -1,10 +1,28 @@
 # ADR-005: Staff sign-in method and the staff-management delegation ceiling
 
 Date: D10 2026-10-04 (PR #1); D11 2026-10-04 (PR #2); D10 changed by the
-owner 2026-10-05. Status: D10 changed by the owner (replacement not on this
-branch); D11 accepted (build default, not individually confirmed).
+owner 2026-10-05. Status: D10 changed by the owner 2026-10-05 and
+superseded by [ADR-019](ADR-019-staff-email-sign-in.md) (email codes,
+integrated 2026-10-06); D11 accepted (build default, not individually
+confirmed).
 Decision owner: Abhishek Cherian George (owner) for business meaning;
 defaults proposed by the build agent.
+
+Status update 2026-10-06: the email-code sign-in is integrated into the
+main line ([ADR-019](ADR-019-staff-email-sign-in.md), D10 rewritten, D70–D72).
+D10 as first built (email + password) is superseded by ADR-019; D11's
+ceiling is unchanged; its temporary-password residual risk is gone for
+every invite (no password is created or shown) and, for logins created
+before the switch, once RUNBOOK's required reset has run
+([R-035](../RISKS.md#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset)).
+The owner's note "D11 changed" is read as the sign-in method, as the
+orchestrator's owner-decision list records. The sections below are kept as
+written on 2026-10-05.
+
+Since [ADR-021](ADR-021-staff-roles.md) (2026-10-06): D11 is restated for
+the roles admin, manager and mechanic by D93 (only admins act on admins and
+managers; a non-admin `manage_staff` holder invites and acts on mechanics
+only, within this ceiling).
 
 ## Context
 

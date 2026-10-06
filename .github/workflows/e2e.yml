@@ -77,6 +77,8 @@ jobs:
       # global setup resets bicii_dev again and checks a seeded login works.
       - name: Playwright
         run: npm run test:e2e
+      # .devstack/mail/ holds the sign-in emails the mail catcher received:
+      # local devstack codes for seeded .test logins, nothing secret.
       - name: Upload Playwright report and traces
         if: failure()
         uses: actions/upload-artifact@v4
@@ -86,6 +88,7 @@ jobs:
             playwright-report/
             test-results/
             .devstack/logs/
+            .devstack/mail/
           retention-days: 14
           if-no-files-found: ignore
           include-hidden-files: true

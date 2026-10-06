@@ -23,7 +23,7 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { DEFAULT_DB_NAME, databaseUrl, withDatabase } from "../../scripts/devstack/config.mjs";
+import { devDatabaseUrl } from "../../scripts/devstack/config.mjs";
 import { INTERNAL_BUCKET, PUBLIC_BUCKET, type PhotoTarget } from "@/lib/attachments";
 import {
   deletePhoto,
@@ -63,7 +63,7 @@ beforeAll(async () => {
   if (!reachable) return;
   // supabase-js and @supabase/ssr build the same client class.
   staff = (await staffClient("mechanic2")) as unknown as ServerSupabase;
-  db = new pg.Client({ connectionString: withDatabase(databaseUrl(), DEFAULT_DB_NAME) });
+  db = new pg.Client({ connectionString: devDatabaseUrl() });
   await db.connect();
 });
 

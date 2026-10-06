@@ -6,12 +6,13 @@ import { z } from "zod";
 import { staffAction } from "@/lib/actions";
 import { Constants } from "@/lib/database.types";
 import {
-  REASON_MAX,
   inviteStaff as invite,
   setActive,
   setPermission,
+  setRole,
   type InviteResult,
 } from "@/lib/domain/staff";
+import { REASON_MAX_LENGTH } from "@/lib/reasons";
 
 export type { InviteResult };
 
@@ -24,7 +25,7 @@ const inviteSchema = z.object({
     .min(1, { error: "Enter their name." })
     .max(80, { error: "Keep the name under 80 characters." }),
   email: z.email({ error: "Enter a valid email address." }).trim().toLowerCase(),
-  role: z.enum(Constants.public.Enums.staff_role).default("staff"),
+  role: z.enum(Constants.public.Enums.staff_role).default("mechanic"),
 });
 
 /** Invite a colleague (src/lib/domain/staff.ts inviteStaff). */
@@ -54,6 +55,27 @@ export const setStaffPermission = staffAction(
   },
 );
 
+/** Change someone's role (admins only, D93; src/lib/domain/staff.ts setRole). */
+export const setStaffRole = staffAction(
+  z.object({
+    staffId,
+    role: z.enum(Constants.public.Enums.staff_role),
+    /** The role the confirmation showed (update_staff expected_role). */
+    expected: z.enum(Constants.public.Enums.staff_role),
+    reason: z
+      .string()
+      .trim()
+      .max(REASON_MAX_LENGTH, { error: `Keep the reason under ${REASON_MAX_LENGTH} characters.` })
+      .optional(),
+  }),
+  { name: "staff.set_role", admin: true },
+  async (input, { staff, supabase }) => {
+    await setRole(supabase, staff, input);
+    refresh();
+    return null;
+  },
+);
+
 export const setStaffActive = staffAction(
   z.object({
     staffId,
@@ -61,7 +83,7 @@ export const setStaffActive = staffAction(
     reason: z
       .string()
       .trim()
-      .max(REASON_MAX, { error: `Keep the reason under ${REASON_MAX} characters.` })
+      .max(REASON_MAX_LENGTH, { error: `Keep the reason under ${REASON_MAX_LENGTH} characters.` })
       .optional(),
   }),
   { name: "staff.set_active", permission: "manage_staff" },

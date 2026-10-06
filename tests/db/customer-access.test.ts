@@ -205,6 +205,18 @@ describe("a signed-in customer and the base tables", () => {
           "work_order_line_items_staff",
           "work_order_totals",
           "work_order_totals_staff",
+          // Purchasing (Phase 7): base tables and the costed views
+          "suppliers",
+          "supplier_products",
+          "supplier_products_staff",
+          "purchase_orders",
+          "purchase_order_lines",
+          "purchase_order_lines_staff",
+          "purchase_order_events",
+          "purchase_order_totals_staff",
+          "purchase_receipts",
+          "purchase_receipt_lines",
+          "purchase_receipt_lines_staff",
         ]) {
           expect(await scalar(tx, `select count(*)::int from public.${table}`)).toBe(0);
         }

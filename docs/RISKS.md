@@ -78,8 +78,11 @@ URLs, or customer data in this file.
   - `supabase/devstack/roles.sql` recreates the platform roles and default
     grants that hosted Supabase provides;
   - Auth settings in `scripts/devstack/services.mjs` (sign-up enabled,
-    mailer autoconfirm, no SMTP, password minimum 6) differ from the hosted
-    settings RUNBOOK prescribes (sign-ups off, minimum 12);
+    mailer autoconfirm, mail to the local catcher instead of an SMTP
+    provider, a 1-second per-address interval and raised rate limits) differ
+    from the hosted settings RUNBOOK prescribes (sign-ups off, custom SMTP,
+    60 seconds, sized limits;
+    [R-039](#r-039--hosted-email-delivery-and-auth-settings-are-unverified));
   - the devstack and CI run Postgres 16, `supabase/config.toml` sets
     `major_version = 17` for the Docker CLI, and the hosted version is
     unknown;
@@ -106,32 +109,29 @@ URLs, or customer data in this file.
 ## R-004 — Staff sign-in change pending (email OTP)
 
 - Category: deliberate shortcut / unverified assumption.
-- Status and owner: open; owner (decision), build agent (integration).
-- Trigger: any staff invitation on this branch.
-- Impact: the owner changed staff sign-in to Supabase email OTP on
-  2026-10-05 (recorded as D10 here). This branch still uses email +
-  password, and the inviter sees the new login's temporary password, so a
-  manager could keep a second login at their own permission level (D11's
-  residual risk). OTP is being built on the parallel track and is not on
-  this branch. RUNBOOK's hosted Auth steps describe the password settings
-  and will need revising when OTP merges. Hosted email delivery (SMTP),
-  which OTP needs, is not configured anywhere.
-- Evidence and confidence: high for the current behaviour
-  (`src/app/(staff)/settings/staff/new/invite-form.tsx` shows the
-  temporary password). The OTP work is on `feat/auth-email-otp` (4b3eadd,
-  local and on origin, equal; checked out in the second worktree
-  `bicii-book-wt`), not on this branch; it was not inspected or verified
-  here. Whether OTP removes the residual risk is unverified.
-- Why accepted: MVP default ([ADR-005](decisions/ADR-005-staff-sign-in-and-delegation.md)).
-- Workaround or containment: only admins and trusted `manage_staff` holders
-  invite; the D11 ceiling limits what an inviter can grant.
-- Next action: owner confirms that the note "D11 changed (staff email OTP)"
-  meant the sign-in method (D10 on this branch) and that the D11 ceiling
-  stays; integrate the OTP work, revise RUNBOOK's hosted Auth steps, and
-  configure SMTP for staging.
-- Revisit trigger: the OTP branch is integrated into this line.
-- Last checked: 2026-10-05 (Phase 6 review fixes), `git for-each-ref
-  refs/heads refs/remotes`, `git worktree list`, the invite form.
+- Status and owner: closed 2026-10-06 by the integration of
+  `feat/auth-email-otp` into this line; what remains is tracked in R-035 to
+  R-039.
+- Trigger: any staff invitation (before the integration).
+- Impact (as recorded on 2026-10-05): the owner changed staff sign-in to
+  Supabase email OTP; this line still used email + password and the
+  inviter saw the new login's temporary password (D11's residual risk).
+- Resolution: staff now sign in with emailed codes (D10 rewritten,
+  D70–D72, [ADR-019](decisions/ADR-019-staff-email-sign-in.md)); invites
+  create no password and show none; RUNBOOK's hosted Auth step describes
+  SMTP, the code templates, the rate limits and the REQUIRED password reset
+  for logins created before the switch
+  ([R-035](#r-035--logins-created-before-email-codes-keep-a-known-password-until-the-pre-deploy-reset));
+  hosted email delivery is still unverified
+  ([R-039](#r-039--hosted-email-delivery-and-auth-settings-are-unverified)).
+  The owner's note "D11 changed" is read as the sign-in method, as the
+  orchestrator's owner-decision list records.
+- Evidence: `tests/e2e/auth.spec.ts`, `tests/e2e/staff.spec.ts`,
+  `tests/db/stack.smoke.test.ts`, `tests/db/seed-logins.test.ts`; no test
+  or helper signs in with a password (`grep` for the password grant and
+  `signInWithPassword` finds none, 2026-10-06).
+- Last checked: 2026-10-06, merge of `origin/feat/p7-purchasing` into
+  `feat/auth-email-otp`.
 
 ## R-005 — Cost-pending lines overstate yield and Cult Commons
 
@@ -241,31 +241,35 @@ URLs, or customer data in this file.
 ## R-009 — The seven-PR stack is unmerged and the purchasing track forks from PR #6
 
 - Category: operational gap.
-- Status and owner: open; owner (merges), build agent (integration).
-- Trigger: merging the stack and integrating the parallel tracks.
-- Impact: PRs #1–#7 are open drafts stacked on each other; `main` holds only
-  the initial commit 1594c78. `feat/p7-purchasing` (a0fc1d2, local and on
-  origin, equal: pushed) forks from PR #6's head d3e2101, so it has no
-  appointments (Phase 2). Expected conflict points: PLAN §6 (it adds
-  D60–D66 after D35), migration order (its `20261005…` files after this
-  line's `20261004…` files), `tests/fixtures/api-surface.ts`,
-  `src/lib/database.types.ts` and `src/lib/db-errors.ts`. The email OTP
-  work is on `feat/auth-email-otp` (4b3eadd, local and on origin, equal),
-  checked out in the second worktree; neither track was verified here.
-  `feat/p6-consignment` has no origin branch; origin holds an
-  orchestrator auto-save of it, `wip/feat/p6-consignment`.
-- Evidence and confidence: high; GitHub REST pull list, `git branch -vv`,
-  `git merge-base feat/p7-purchasing feat/p2-appointments` = d3e2101 and
-  `git show feat/p7-purchasing:docs/PLAN.md` on 2026-10-05; the heads and
-  pushed state re-read with `git for-each-ref refs/heads refs/remotes`
-  and `git worktree list` at the Phase 6 review fixes (the remote refs
-  are as last fetched; their reflogs record the pushes).
-- Workaround or containment: each PR head is green in CI (R-010).
-- Next action: owner reviews and merges the stack bottom-up; the build agent
-  integrates purchasing and OTP afterwards, regenerating types and the
-  API-surface fixture and re-running all gates.
-- Revisit trigger: PR #1 merges.
-- Last checked: 2026-10-05.
+- Status and owner: mostly resolved; owner (merges), build agent
+  (integration). The heading is kept so links stay valid.
+- Trigger: integrating the parallel tracks into `main`.
+- Impact: the stack (PRs #1–#7), the docs stack (#8), Phase 6 (#11),
+  purchasing (#9), staff email sign-in (#10) and the staff roles (#13)
+  are merged into `main` (`a1aebf6` on 2026-10-06). Labels (Phase 8,
+  `feat/p8-labels`) is not: `origin/main` is merged into `feat/p8-labels`
+  (a merge commit, no rebase; local only until pushed) with every conflict
+  resolved keeping both sides: the seed runs Phase 7's part after Phase
+  6's and before Phase 8's print jobs; the labels risks that collided with
+  purchasing's R-030–R-032 became R-075–R-077; the labels owner questions
+  became rows 21–22 after main's 15–20; the API-surface allow-list holds
+  both the label and the purchasing grants; and the labels E2E's signed-in
+  customer gets its session through the API, because the login form now
+  signs non-staff out (D70). No function, view, policy, grant, trigger or
+  type is defined both by the labels migration and by a purchasing,
+  sign-in or roles migration ([DATA-MODEL](DATA-MODEL.md#authority-applied-state-and-implementation-status)
+  "Authority"), so no reconciling migration was needed. Shopify (Phase 10,
+  `feat/p10-shopify`, stacked on labels) and reporting (Phase 9) are on
+  their own branches.
+- Evidence and confidence: high; `git merge-base` before the merge
+  (c791d4b), the merge commit's parents (3f09d22 and a1aebf6); the gates on
+  the merged tree are in [NOW.md](../NOW.md).
+- Workaround or containment: each integration reruns every gate on the
+  merged tree.
+- Next action: push `feat/p8-labels`, open its PR against `main`, let CI
+  and the `e2e` label run, and merge; then bring Shopify up to date.
+- Revisit trigger: the labels PR merges.
+- Last checked: 2026-10-06 (the merge of `main` into `feat/p8-labels`).
 
 ## R-010 — E2E is not a required check, and branch protection is unverified
 
@@ -401,19 +405,21 @@ URLs, or customer data in this file.
 - Category: security concern (non-exploitable summary).
 - Status and owner: mitigated by procedure; operator.
 - Trigger: running `supabase/seed.sql` on a hosted project.
-- Impact: the seed creates staff logins and one customer login whose
-  shared password is published: in the docs only in
-  [ENGINEERING.md](ENGINEERING.md#clean-checkout-to-running-application)
-  (other docs link there), and in the public code (`supabase/seed.sql`,
-  `scripts/devstack/db.mjs`, `tests/fixtures/ids.ts`). Seeding a hosted
-  project would therefore open it to anyone.
-- Evidence and confidence: high; RUNBOOK "Hosted Supabase projects" step 5
-  says never to run it on a hosted project.
+- Impact: the seed creates staff logins (one of them an admin) and one
+  customer login at published `.test` and `example.com` addresses, with
+  fixed, published UUIDs. Since email codes (D10) none of them has a usable
+  password (the hash of a random secret), so on a hosted project they
+  would open nothing by themselves, but a seeded admin row would be an
+  admin whose mailbox the shop does not control, and the demo data would
+  mix with the shop's.
+- Evidence and confidence: high; `tests/db/seed-logins.test.ts`; RUNBOOK
+  "Hosted Supabase projects" step 5 says never to run the seed on a hosted
+  project.
 - Workaround or containment: create the first hosted admin as RUNBOOK
   describes.
 - Next action: follow RUNBOOK when the first hosted project is created.
 - Revisit trigger: R-001.
-- Last checked: 2026-10-05, RUNBOOK.
+- Last checked: 2026-10-06, RUNBOOK, `supabase/seed.sql`.
 
 ## R-016 — No retention or deletion policy for customer personal data
 
@@ -463,19 +469,18 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phases 7 and 9). Consignment stopped
-  being a placeholder in Phase 6 step 3 and Labels in Phase 8 (the print
-  history in step 2, printing from the record pages and Labels and
-  printers in step 3; `feat/p8-labels`, local only); two remain. The
-  heading is kept so links stay valid.
-- Trigger: staff open Purchasing or Reports.
-- Impact: those pages render the `ComingSoon` component
-  (`src/components/shell/coming-soon.tsx`), which reads "Arrives in Phase
-  N (…)"; none of their features exist on
-  this branch.
-- Evidence and confidence: high; `src/app/(staff)/{purchasing,reports}/page.tsx`.
+- Status and owner: open; build agent (Phase 9). Consignment stopped
+  being a placeholder in Phase 6 step 3, Purchasing in Phase 7 (on the
+  main line since the integration on `feat/p7-purchasing`) and Labels in
+  Phase 8 (the print history, printing from the record pages, and Labels
+  and printers); Reports remains. The heading is kept so links stay valid.
+- Trigger: staff open Reports.
+- Impact: the page renders the `ComingSoon` component
+  (`src/components/shell/coming-soon.tsx`), which names the phase it
+  arrives in; none of its features exist on this branch.
+- Evidence and confidence: high; `src/app/(staff)/reports/page.tsx`.
 - Workaround or containment: none.
-- Next action: Phases 7 (parallel track) and 9.
+- Next action: Phase 9 (other worktree).
 - Revisit trigger: each phase ends.
 - Last checked: 2026-10-05.
 
@@ -529,9 +534,10 @@ URLs, or customer data in this file.
 
 - Category: deliberate shortcut.
 - Status and owner: accepted (D49, build default, owner to confirm);
-  owner, with Phase 9's refund-reporting row (working name DR5).
-- Trigger: an admin records a refund on a sale (`record_sale_refund`), or
-  staff restock a sold unit (`restock_unit`).
+  owner, with Phase 9's refund-reporting row (in D100–D119).
+- Trigger: an admin or a manager records a refund on a sale
+  (`record_sale_refund`, D94), or staff restock a sold unit
+  (`restock_unit`).
 - Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
   Today and the financial reports) keep every sale line at its snapshot:
   a refunded or restocked sale still counts in gross sales, yield and Cult
@@ -547,7 +553,8 @@ URLs, or customer data in this file.
   includes it (passed in `npm test` on 2026-10-05).
 - Workaround or containment: refunds and restocks show on the sale, in
   `list_sales` (`refunded_total`, `restocked_lines`) and on the consignor
-  ledger; refunds are admin-only and capped at the sale total (D49). Since
+  ledger; refunds are for admins and managers (D94) and capped at the sale
+  total (D49). Since
   Phase 6 step 4 the sale page's Yield card says "Refunds and restocks do
   not change these figures yet", the Sales list marks Partly refunded /
   Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
@@ -747,44 +754,460 @@ URLs, or customer data in this file.
 - Impact: [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) reserves
   D43–D59 for this line and D60 and up for the purchasing track (D60–D66
   on `feat/p7-purchasing`). Phase 8 took D56–D59, the last four numbers,
-  so there is no free main-line number; a later phase that picks one on
-  its own risks a collision at the integration step.
-- Evidence and confidence: high; PLAN §6 on `feat/p8-labels` ends at D59
-  (checked again at the end of Phase 8, step 4, which added no decision);
-  the purchasing range is stated in PLAN §6 and
-  [decisions/README.md](decisions/README.md).
-- Workaround or containment: none; a phase needing a decision row stops
-  and asks.
-- Next action: the orchestrator or owner opens a new main-line range (for
-  example D70–D89) in PLAN §6 and decisions/README.md before the next
-  phase that adds a decision.
-- Revisit trigger: the next main-line decision; the integration of the
-  purchasing track.
-- Last checked: 2026-10-05.
+  so there was no free main-line number; a later phase picking one on its
+  own risked a collision at the integration step.
+- Evidence and confidence: high. Resolved by the orchestrator's allocation
+  of 2026-10-06, now stated in PLAN §6's introduction,
+  [decisions/README.md](decisions/README.md), AGENTS.md's maintenance
+  contract and [ENGINEERING.md](ENGINEERING.md): D60–D69 purchasing,
+  D70–D79 staff email sign-in, D80–D89 Shopify (used by Phase 10, ADR-020),
+  D90–D99 staff roles, D100–D119 Phase 9 reporting, D120–D139 Phase 11
+  public site, D140 and up later; ADR-018 to ADR-023 likewise; and the
+  RISKS ranges in AGENTS.md (R-028–R-029 labels, R-030–R-034 purchasing,
+  R-035–R-039 email sign-in, R-040–R-049 Shopify, R-050–R-054 roles,
+  R-055–R-064 reporting, R-065–R-074 public site). At the merge of `main`
+  into `feat/p8-labels` (2026-10-06) the D-rows and records met without a
+  collision (D56–D59, D60–D66, D70–D72, D90–D94); the labels
+  risks numbered R-030–R-032 before the ranges existed collided with
+  purchasing's and became R-075–R-077, with every link updated.
+- Workaround or containment: none needed.
+- Next action: none; each phase uses only its own range.
+- Revisit trigger: a phase exhausts its range.
+- Last checked: 2026-10-06 (the merge of `main` into `feat/p8-labels`).
 
 ## R-029 — The purchase receive screen has no "Print N labels" shortcut yet
 
 - Category: compromise (integration deferred).
-- Status and owner: open; build agent, integration step.
+- Status and owner: open; build agent (the follow-up to the merge of
+  `main` into `feat/p8-labels`).
 - Trigger: staff receive a purchase order and want labels for what came in.
-- Impact: Phase 8 builds labels on this line, where purchasing (Phase 7)
-  does not exist; the receive screen's shortcut to print one label per
-  received unit, or N for a quantity line, cannot be built here. Staff
-  open the product or unit and print from its Labels card instead (one
-  more step). Split-off units (Phase 4) and consignment intake (Phase 6)
-  already land on, or link to, the unit page.
-- Evidence and confidence: high; Phase 7 lives only on
-  `feat/p7-purchasing` ([R-009](#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
-  Phase 8 closed without it (step 4): journey 3's label step prints from
-  the product page after an opening stock count, because this line has no
-  receiving (`tests/e2e/inventory.spec.ts`).
+- Impact: Phase 8 built labels where purchasing (Phase 7) did not exist,
+  so the receive screen has no shortcut to print one label per received
+  unit, or N for a quantity line. Purchasing is now on this branch (the
+  merge of `main` into `feat/p8-labels`, 2026-10-06), but the merge
+  changed no screen: staff open the product from the order's line and
+  print from its Labels card instead (one more step).
+- Evidence and confidence: high; `src/app/(staff)/purchasing/receive/[id]/`
+  has no print control; journey 3's receiving step
+  (`tests/e2e/purchasing.spec.ts`) prints nothing.
 - Workaround or containment: print from the product or unit page.
-- Next action: the integration step adds the shortcut to the receive
-  screen, calling `create_print_job` per received line.
-- Revisit trigger: the purchasing track is merged into this line.
+- Next action: add the shortcut where receiving lands, with an E2E step
+  in journey 3.
+- Revisit trigger: the follow-up commit.
+- Last checked: 2026-10-06.
+
+## R-030 — A wrong delivery cannot be reversed, only adjusted
+
+- Category: known limitation (D65; owner question 16).
+- Status and owner: open; owner (whether a reverse-receipt is wanted),
+  build agent for any change.
+- Trigger: staff record a delivery with the wrong count, the wrong product
+  line or the wrong actual cost.
+- Impact: receipts and their lines are immutable
+  (`purchase_receipt_immutable`). A wrong count is corrected with a
+  reasoned Phase 4 stock adjustment, and the PO line raised or lowered if
+  the supplier will send more; the order's received figures keep the wrong
+  count. A wrong actual cost has already become the product's cost and the
+  supplier's last cost (D5, D63) and stays so until a `view_costs` holder
+  edits the product cost or a later delivery sets it; nothing restores the
+  earlier cost.
+- Evidence and confidence: high; `supabase/migrations/20261005000300_purchase_receiving.sql`
+  (header and `private.purchase_receipts_immutable`);
+  `tests/db/purchasing.test.ts` (receipts refuse UPDATE and DELETE).
+- Workaround or containment: the Receive screen shows what is still to
+  come and the "Differs" flag before the commit; every receipt names who
+  recorded it and when; the product's `cost_changed` event says which
+  delivery set the cost.
+- Next action: the owner answers question 16; if yes, a reverse-receipt
+  RPC writing linked ledger reversals and restoring the earlier last cost.
+- Revisit trigger: the first wrong delivery in use, or the owner's answer.
 - Last checked: 2026-10-05.
 
-## R-030 — Label output is unverified on a real label printer and on iOS
+## R-031 — Two staff can record the same delivery twice
+
+- Category: known limitation (D65).
+- Status and owner: open; build agent.
+- Trigger: two people receive the same paper delivery note on two
+  devices, each with its own submission.
+- Impact: the idempotency key makes one submission's retries safe, not two
+  submissions of one delivery. The second is refused only when it exceeds
+  what is still to come (`purchase_over_receipt`); otherwise it adds stock
+  again. The guard is soft: the Receive screen lists recent receipts and
+  makes staff tick "This is a different delivery" when the delivery-note
+  reference matches one already recorded on that order (any case); there
+  is no database uniqueness on the reference, because suppliers reuse it
+  for split deliveries.
+- Evidence and confidence: high; `src/components/domain/purchasing/receive-form.tsx`
+  (`duplicateReference`), `tests/e2e/purchasing.spec.ts` (the duplicate
+  warning), PLAN D65.
+- Workaround or containment: over-receipt is refused, so a duplicate can
+  only use up what was still to come; a stock adjustment with a reason
+  corrects it.
+- Next action: none planned; revisit if it happens.
+- Revisit trigger: the first duplicate delivery in use.
+- Last checked: 2026-10-05.
+
+## R-032 — Purchase movements carry the recording time, not the delivery time
+
+- Category: known limitation (D64).
+- Status and owner: open; build agent (Phase 9 reporting).
+- Trigger: a delivery is back-dated (up to 30 days) when it is received.
+- Impact: Phase 4's ledger has no effective-date column and is
+  append-only, so a `purchase_received` movement's `created_at` is when it
+  was recorded; its reason names the delivery time in shop time ("PO-000002
+  received 2 Oct 2026 11:30"), and the receipt holds `received_at`. Stock
+  reports by movement date place the stock on the recording day. The seed
+  shows it: its receipts are back-dated, their movements carry seed time.
+- Evidence and confidence: high; `private.record_receipt_movement` and
+  `receive_purchase` in `20261005000300_purchase_receiving.sql`;
+  `tests/db/purchasing-seed.test.ts`.
+- Workaround or containment: purchasing reports and the last-cost order
+  use `purchase_receipts.received_at`; Phase 5's daily summary and Today
+  count no `purchase_received` movement.
+- Next action: Phase 9 decides whether stock reports need the delivery
+  date (join the receipt) or an effective-date column on the ledger.
+- Revisit trigger: Phase 9 stock or valuation reports.
+- Last checked: 2026-10-05.
+
+## R-033 — Unique items bought from a supplier have no purchase order
+
+- Category: known limitation (D62; owner question 17).
+- Status and owner: open; owner (whether it is wanted), build agent.
+- Trigger: the shop buys a frame, a bike or another unique item from a
+  supplier.
+- Impact: a PO holds counted products only
+  (`purchase_line_unique_product`). A unique item is registered in Stock
+  with `create_unique_unit` and its cost, so no supplier, order, delivery
+  note or last cost is recorded for it, and "on order" never counts it.
+- Evidence and confidence: high; `set_purchase_order_line` in
+  `20261005000300_purchase_receiving.sql`; `tests/db/purchasing.test.ts`
+  ("submit needs a line; lines order shop-owned quantity products once
+  each").
+- Workaround or containment: the unit's internal notes can name the
+  supplier and invoice.
+- Next action: the owner answers question 17; if yes, a unique-unit
+  purchase flow (a PO line that registers units on receipt).
+- Revisit trigger: the owner's answer.
+- Last checked: 2026-10-05.
+
+## R-034 — A manage_purchasing exception shows unit costs on purchasing screens
+
+- Category: unverified assumption (D60; the owner was informed on
+  2026-10-06 and has not objected).
+- Status and owner: open; owner.
+- Trigger: an admin grants `manage_purchasing` to a mechanic as a
+  single-permission exception (managers hold `view_costs` through their
+  role since the staff roles, D91, so this is the exception case).
+- Impact: that mechanic sees purchase costs on purchasing screens: PO line
+  costs and totals, actual receipt costs, supplier last costs, the cost
+  prefill (the product's cost for products a PO can hold) and PO history.
+  Because by D5 a receipt's cost becomes the product's cost, they in
+  effect learn the unit cost of every orderable product. They still see no
+  yield, margin, Cult Commons or report figure and no Phase 3/4/5 cost
+  surface: the product page's "Suppliers & orders" card shows supplier
+  last costs to `view_costs` holders only (`canSeeProductPageSupplierCosts`
+  in `src/lib/purchasing.ts`, since the integration review; before it the
+  card used the purchasing rule and showed them to the exception holder
+  too). Since the staff roles (D90–D94; in the database on
+  `feat/staff-roles`, `private.role_implies`), a manager holds
+  `view_costs` and `manage_purchasing` through the role and an exception
+  the role implies cannot exist (D92), so this applies only to a mechanic
+  holding `manage_purchasing` as an exception.
+- Evidence and confidence: high; `private.can_view_purchase_costs()` in
+  `20261005000100_suppliers.sql`; `tests/db/purchasing-access.test.ts`
+  ("manage_purchasing alone runs purchasing and sees purchase costs, but no
+  Phase 3/4/5 cost surface" and the prefill test); `tests/unit/purchasing.test.ts`
+  ("shows supplier last costs on the product page to view_costs holders
+  and admins only", and since the staff roles a manager seeing purchase
+  costs through View costs while a mechanic with the exception sees them on
+  purchasing screens only); `tests/db/staff-roles.test.ts` (an exception the
+  role implies is refused).
+- Workaround or containment: grant the exception only to people trusted
+  with unit costs, or make a buyer who needs costs a manager; Settings →
+  Staff shows each person's role and extra access, and the role-change
+  sheet says what a person keeps.
+- Next action: none unless the owner objects. The staff roles (D90–D94,
+  built on `feat/staff-roles`) resolved the earlier next action: a
+  manager now sees costs through the role, and a mechanic's exception is
+  the only case left; hiding costs from it would make that buyer order
+  blind.
+- Revisit trigger: the owner objects to the exception case, or asks for a
+  buyer role.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-035 — Logins created before email codes keep a known password until the pre-deploy reset
+
+- Category: security concern (non-exploitable summary; D10, D11).
+- Status and owner: mitigated by procedure; operator.
+- Trigger: deploying the release that switches sign-in to codes on a
+  project whose staff logins were created by the old password flow.
+- Impact: the Admin has no password form, but Supabase Auth's password
+  grant stays callable with the public anon key while the Email provider
+  is on (codes need it). A login invited before the switch has the
+  temporary password its inviter saw, so the inviter could still sign in
+  as that person, which was D11's residual risk. Nothing is hosted yet
+  (R-001), so no such login exists outside developer machines; the local
+  seed's logins already have no usable password.
+- Evidence and confidence: high for the mechanism (`tests/db/stack.smoke.test.ts`
+  shows the seeded logins have no usable password; RUNBOOK "Hosted
+  Supabase projects" step 2 holds the reset); the reset SQL itself has not
+  run on a hosted project.
+- Workaround or containment: RUNBOOK's REQUIRED step replaces every staff
+  login's password with the hash of a random secret and ends their
+  sessions, after SMTP works and before the code release is deployed.
+- Next action: run the step on each hosted project when it exists and
+  record the row count.
+- Revisit trigger: the first hosted project (R-001).
+- Last checked: 2026-10-06, RUNBOOK, `supabase/seed.sql`.
+
+## R-036 — Auth's password grant and password change stay reachable
+
+- Category: security concern (non-exploitable summary; D10).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: anyone holding a staff session, or Auth's API called directly
+  with the public anon key.
+- Impact: Supabase Auth serves codes and passwords through one Email
+  provider, so its password grant and its password change endpoint stay
+  on even though the Admin offers neither. With "Secure password change"
+  on (config.toml `secure_password_change`, the devstack's
+  `GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION`, RUNBOOK's
+  hosted step), setting a password needs an emailed nonce once a session is
+  more than 24 hours old; a session younger than 24 hours can set one
+  without it. Someone who set a password could later sign in without the
+  mailbox. Deactivation still blocks them (D71: `requireStaff`, RLS and the
+  RPC guards check `staff.active`).
+- Evidence and confidence: high; `tests/db/stack.smoke.test.ts` ("setting
+  a password needs reauthentication once a session is a day old").
+- Why accepted: the Email provider cannot serve codes without also
+  serving passwords; staff are trusted with their own login.
+- Workaround or containment: keep "Secure password change" on; deactivate
+  people who leave.
+- Next action: revisit if Supabase allows codes without the password grant,
+  or if the owner wants passwords disabled by an Auth hook.
+- Revisit trigger: an Auth version bump. (The staff roles, D90–D94, did
+  not change this: roles decide what a signed-in person may do, not how
+  they sign in; checked 2026-10-06.)
+- Last checked: 2026-10-06, `scripts/devstack/services.mjs`,
+  `supabase/config.toml`.
+
+## R-037 — Auth's OTP endpoint reveals whether an address has a login
+
+- Category: security concern (non-exploitable summary; D70).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: a direct call to Supabase Auth's code request with the public
+  anon key.
+- Impact: Auth answers an unknown email differently from one with a login,
+  so a direct API caller can learn whether an address has a login. The
+  Admin's screens never show it (an unknown email gets the same "Check your
+  email" screen and no account is created), and staff addresses are not
+  secret.
+- Evidence and confidence: high; `src/lib/auth/sign-in-errors.ts`
+  (`otp_disabled` treated as sent), `tests/unit/sign-in-errors.test.ts`,
+  `tests/e2e/auth.spec.ts`.
+- Why accepted: it is Auth's behaviour, outside the Admin's control.
+- Workaround or containment: none needed for staff addresses.
+- Next action: revisit before Phase 11 signs customers in, whose addresses
+  may be private.
+- Revisit trigger: Phase 11; an Auth version that changes the answer.
+- Last checked: 2026-10-06.
+
+## R-038 — A visitor who knows a staff email can delay its sign-in
+
+- Category: security concern (non-exploitable summary; D72).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: repeated code requests or verifications for one staff email, or
+  from many client addresses at once.
+- Impact: the Admin's own per-email limits (D72) can be used up by someone
+  who knows the address, keeping its owner waiting up to 5 minutes at a
+  time; many client addresses together can still fill Auth's shared
+  per-IP limit, which counts the Admin's server. The per-client limits
+  rely on the host setting the client's address in `x-forwarded-for` and
+  overwriting what the client sent (Vercel does; another host might not).
+- Evidence and confidence: high for the design (`src/lib/auth/sign-in-limits.ts`,
+  `tests/unit/sign-in-limits.test.ts`, `tests/db/sign-in-throttle.test.ts`);
+  never observed in use.
+- Why accepted: MVP; the window is short and staff can ask an admin.
+- Workaround or containment: Auth's hosted per-IP limits sized well above
+  the Admin's (RUNBOOK); logs show `auth.request_code` warnings.
+- Next action: revisit if it is ever observed, or before moving off
+  Vercel.
+- Revisit trigger: a report of locked-out staff; a hosting change.
+- Last checked: 2026-10-06.
+
+## R-039 — Hosted email delivery and Auth settings are unverified
+
+- Category: unverified assumption / operational gap (D10, D70, D71).
+- Status and owner: open; owner (SMTP provider and hosted projects), build
+  agent (procedure).
+- Trigger: the first hosted project; any change of mail provider.
+- Impact: without working email nobody can sign in. The hosted SMTP
+  provider, the code-only templates, OTP length and expiry, the
+  per-address interval, Auth's per-IP limits, sign-ups off and "Secure
+  password change" are described in RUNBOOK but never applied. The
+  session-revocation migration needs DELETE on Auth's session tables and
+  refuses to apply without it, and a project that verifies JWTs locally
+  accepts an access token already issued for up to `jwt_expiry` after
+  deactivation (the guards refuse it). The Docker CLI path
+  (`BICII_MAIL_KIND=mailpit`, Mailpit) was written from Mailpit's API
+  documentation and has never run (no Docker here). Every sign-in also
+  needs `SUPABASE_SERVICE_ROLE_KEY` (the D72 counters run first), so a
+  missing or wrong key in Vercel locks everyone out while Auth's own log
+  looks healthy; the login actions log the cause (`limit: "admin"`,
+  `cause`), and RUNBOOK's deploy and rotation steps now end with a code
+  sign-in from a fresh browser (2026-10-06 review).
+- Evidence and confidence: high for absence (R-001); the devstack path is
+  covered by `tests/db/stack.smoke.test.ts` and `tests/e2e/auth.spec.ts`
+  through the mail catcher.
+- Workaround or containment: RUNBOOK says to test SMTP with the owner's own
+  address before deploying the code release.
+- Next action: owner chooses an SMTP provider; the build agent follows
+  RUNBOOK step 2 against staging and records what differs.
+- Revisit trigger: R-001.
+- Last checked: 2026-10-06, RUNBOOK.
+
+## R-050 — Managers record refunds with no second approval
+
+- Category: accepted compromise (D94, amending D49).
+- Status and owner: accepted for MVP; owner.
+- Trigger: a manager records a retail refund.
+- Impact: money goes out on one person's decision. Before the roles only
+  an admin could; now every manager can, up to the sale total minus
+  earlier refunds, with a mandatory reason. No second person approves it
+  and no daily limit applies. A refund is financial only (D7) and is
+  replay-safe by its id.
+- Evidence and confidence: high; `private.can_record_refunds()` and
+  `public.record_sale_refund` in
+  `20261006000200_staff_role_permissions.sql` (the body otherwise
+  identical to `20261004003500_sales.sql`); `tests/db/sales.test.ts`
+  ("only admins and managers refund (D94 amends D49) …");
+  `tests/unit/session-guard.test.ts` (the `roles` requirement);
+  `tests/e2e/roles.spec.ts` (a manager records a $6.00 refund).
+- Why accepted: the owner decided on 2026-10-06 that managers may refund;
+  the cap, the reason and the refund list on the sale page leave a trail.
+- Workaround or containment: the sale page lists every refund with who
+  recorded it and why; make someone a manager only if they may refund.
+- Next action: revisit if the owner wants an approval step or a limit per
+  refund or per day; Phase 9's refund reporting (owner question 12) will
+  show refunds by person.
+- Revisit trigger: a disputed refund; Phase 9 reporting.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-051 — A role change reaches open pages only on their next request
+
+- Category: accepted compromise (D90–D93).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: an admin demotes someone, or removes their extra access, while
+  that person has the Admin open.
+- Impact: pages already on their screen keep showing what was rendered
+  before the change (for example costs on a job page, or a Record refund
+  button) until they navigate or refresh. Nothing they do afterwards goes
+  through on the old role: every page request, Server Action, RLS policy
+  and RPC reads the person's role and exceptions again
+  (`my_staff_profile`, `private.has_permission`, `can_record_refunds`).
+- Evidence and confidence: high for the mechanism; `getStaff()` in
+  `src/lib/auth/session.ts` is memoised per request only;
+  `tests/unit/session-guard.test.ts`; `tests/db/staff-roles.test.ts` (the
+  role × permission matrix through `has_permission` and
+  `my_staff_profile` takes effect in the same transaction as the change);
+  `public/sw.js` caches no pages. Not observed in use.
+- Why accepted: the same window as deactivation's open pages (D71); the
+  data already on the screen was allowed when it was loaded.
+- Workaround or containment: ask the person to close the Admin, or
+  deactivate them when access must end at once (D71 ends their sessions).
+- Next action: none planned.
+- Revisit trigger: the owner wants a demotion to clear open screens at
+  once.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-052 — History written before the rename says "staff", not "mechanic"
+
+- Category: compromise (D90).
+- Status and owner: accepted; build agent.
+- Trigger: anyone reading `staff_events` payloads written before
+  `20261006000100_staff_role_values.sql` other than through the Admin, for
+  example a SQL export or a future report.
+- Impact: `created` and `role_changed` events keep the role text of the
+  time, `"staff"`, because `staff_events` is append-only. The Admin labels
+  it Mechanic (`roleLabel` in `src/lib/auth/permissions.ts`,
+  `describeStaffEvent` in `src/lib/staff-events.ts`); a raw reader sees
+  both spellings for the same role. Nothing is hosted (R-001), so only
+  developer databases migrated step by step from before
+  `20261006000100_staff_role_values.sql` have such rows; `db:reset` and
+  the seed write "mechanic" (a fresh `bicii_dev_wt` had 0 such events).
+- Evidence and confidence: high; `tests/unit/auth-helpers.test.ts`
+  (the test that reads the legacy history value `"staff"` as Mechanic),
+  `tests/unit/staff-roles-screens.test.ts`.
+- Why accepted: rewriting append-only history would break its own rule;
+  the rename itself is recorded in ADR-021.
+- Workaround or containment: read history through `staff_history()` and
+  the Admin, or map `"staff"` to mechanic in any export.
+- Next action: Phase 9 maps the value if it reports on `staff_events`.
+- Revisit trigger: a report or export of staff history.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-053 — The staff roles build defaults D92 and D93 are unconfirmed
+
+- Category: unverified assumption (D92, D93).
+- Status and owner: open; owner.
+- Trigger: the owner reads the roles differently from the build.
+- Impact: four behaviours were chosen by the build within the owner's
+  decision: (1) an exception the role already includes cannot exist, and
+  a role change removes the exceptions the new role includes (D92); (2) a
+  later demotion does not bring them back, so demoting a manager who was
+  once a mechanic with `manage_purchasing` leaves them with no extra
+  access; (3) a `manage_staff` holder who is not an admin acts on
+  mechanics only, also for renaming, deactivating and reactivating (D93);
+  (4) such a holder can still rename themselves, as before the roles. If
+  the owner wanted otherwise, people would have more or less access than
+  expected after a role change.
+- Evidence and confidence: high for what is built;
+  `20261006000200_staff_role_permissions.sql` (triggers
+  `staff_permissions_refuse_implied`, `staff_role_drop_implied_exceptions`),
+  `20261006000300_staff_role_administration.sql`;
+  `tests/db/staff-roles.test.ts` ("promoting a mechanic to manager drops
+  the exceptions the role implies, with history; … demoting brings
+  nothing back", "a mechanic with manage_staff acts on mechanics within
+  the ceiling, …" including the self-rename); the role-change sheet says
+  so beforehand (`roleChangeSummary` in `src/lib/auth/role-change.ts`).
+- Workaround or containment: the change-role sheet lists what is removed
+  and that changing back does not restore it; History records every
+  removal with the role change's reason.
+- Next action: the owner answers
+  [PRODUCT owner question 20](PRODUCT.md#open-assumptions-and-owner-questions).
+- Revisit trigger: the owner's answer.
+- Last checked: 2026-10-06 (staff roles, integration review).
+
+## R-054 — The change-role sheet checks the role it showed, not the extra access
+
+- Category: accepted compromise (D92, D93).
+- Status and owner: accepted for MVP; build agent.
+- Trigger: two admins work on the same person at once: one opens the
+  change-role sheet, the other changes that person's extra access before
+  the first confirms.
+- Impact: the sheet's "What changes" lines were worked out from the extra
+  access shown when the page loaded. The role itself is checked: the
+  Admin sends the role the sheet showed (`update_staff` `expected_role`),
+  and a role changed meanwhile is refused with "Someone changed their role
+  in the meantime. Reload and try again." (`staff_role_changed`). An
+  exception granted meanwhile is not checked, so the sheet may not list
+  it among what the new role removes; the role change still removes it
+  (D92) and History records that removal with the role change's reason.
+- Evidence and confidence: high; `update_staff` in
+  `20261006000300_staff_role_administration.sql`;
+  `tests/db/staff-roles.test.ts` ("a role change confirmed against a role
+  that changed meanwhile is refused …"); `ChangeRoleSheet` in
+  `src/app/(staff)/settings/staff/[staffId]/staff-controls.tsx`. Not
+  observed in use.
+- Why accepted: it needs two admins acting on one person within seconds;
+  nothing is lost silently (History has every removal), and removed extra
+  access can be granted again.
+- Workaround or containment: History on the person's page.
+- Next action: none planned.
+- Revisit trigger: the shop has several admins who administer staff at
+  the same time, or a removal is reported as unexpected.
+- Last checked: 2026-10-06 (staff roles, review fixes).
+
+## R-075 — Label output is unverified on a real label printer and on iOS
 
 - Category: verification gap.
 - Status and owner: open; owner (a test print on the shop's printer).
@@ -819,7 +1242,7 @@ URLs, or customer data in this file.
 - Revisit trigger: the first real print, or Phase 12's hardware adapter.
 - Last checked: 2026-10-05.
 
-## R-031 — Print success is confirmed by hand
+## R-076 — Print success is confirmed by hand
 
 - Category: operational shortcut (D59, by design).
 - Status and owner: open; owner (whether staff keep up with confirming),
@@ -847,7 +1270,7 @@ URLs, or customer data in this file.
   Phase 12.
 - Last checked: 2026-10-05.
 
-## R-032 — One Phase 8 commit is undocumented and fails E2E on its own
+## R-077 — One Phase 8 commit is undocumented and fails E2E on its own
 
 - Category: process gap (commit history, not code).
 - Status and owner: open; the orchestrator (who opens the pull request).

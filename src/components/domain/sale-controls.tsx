@@ -15,9 +15,9 @@ import { newId } from "@/lib/uuid";
 import { ReasonConfirm } from "./reason-confirm";
 
 /**
- * "Record refund" (admins only, D49): opens RefundSheet. The page renders
- * it only for canRecordRefund and when something is left to refund; the
- * action and the RPC refuse anyone else.
+ * "Record refund" (admins and managers, D94 amending D49): opens
+ * RefundSheet. The page renders it only for canRecordRefund and when
+ * something is left to refund; the action and the RPC refuse anyone else.
  */
 export function RecordRefundButton({
   saleId,

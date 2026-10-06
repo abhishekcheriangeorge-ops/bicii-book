@@ -46,6 +46,68 @@ export function isPermissionKey(value: unknown): value is PermissionKey {
   return typeof value === "string" && (PERMISSIONS as readonly string[]).includes(value);
 }
 
+export const STAFF_ROLES: readonly StaffRole[] = Constants.public.Enums.staff_role;
+
+/**
+ * What each role implies (PLAN D91 ROLE-PERMISSIONS), mirroring
+ * private.role_implies: an admin every permission; a manager every
+ * permission except manage_staff; a mechanic none. A database test
+ * (tests/db/staff-roles.test.ts) proves the two agree for every role and
+ * permission.
+ */
+export const ROLE_PERMISSIONS: Record<StaffRole, readonly PermissionKey[]> = {
+  admin: PERMISSIONS,
+  manager: PERMISSIONS.filter((p) => p !== "manage_staff"),
+  mechanic: [],
+};
+
+/** Whether `role` implies `permission` (D91); mirrors private.role_implies. */
+export function roleImplies(role: StaffRole, permission: PermissionKey): boolean {
+  return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;
+}
+
+/** The roles in enum order (admin, manager, mechanic), as the screens list them. */
+export const ROLES: readonly StaffRole[] = STAFF_ROLES;
+
+export const ROLE_LABELS: Record<StaffRole, string> = {
+  admin: "Admin",
+  manager: "Manager",
+  mechanic: "Mechanic",
+};
+
+/** One line per role: what it can do (D91, D94). */
+export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
+  admin: "Everything, including staff, roles and shop settings",
+  manager: "Every permission except Manage staff, plus refunds",
+  mechanic: "Workshop work; extra access only if granted",
+};
+
+/**
+ * A role's label for display, including values read from history: the
+ * append-only staff_events payloads written before D90 renamed the enum
+ * value keep the text "staff", which is today's mechanic.
+ */
+export function roleLabel(value: string): string {
+  if (value === "staff") return ROLE_LABELS.mechanic;
+  return (ROLE_LABELS as Record<string, string>)[value] ?? value;
+}
+
+/**
+ * Whether `permission` would be an "Extra access" exception for someone
+ * with `role` (D92): true when the role does not already imply it.
+ */
+export function isExceptionFor(role: StaffRole, permission: PermissionKey): boolean {
+  return !roleImplies(role, permission);
+}
+
+/** The permissions in `permissions` that are exceptions on top of `role` (D92). */
+export function exceptionsOf(
+  role: StaffRole,
+  permissions: readonly PermissionKey[],
+): PermissionKey[] {
+  return permissions.filter((p) => isExceptionFor(role, p));
+}
+
 /** What the DAL hands to pages and actions: no tokens, no Auth internals. */
 export type StaffDTO = {
   staffId: string;
@@ -53,15 +115,15 @@ export type StaffDTO = {
   displayName: string;
   email: string;
   role: StaffRole;
-  /** Effective permissions: every permission for an active admin, none when inactive. */
+  /** Effective permissions: what the role implies plus exceptions; none when inactive. */
   permissions: PermissionKey[];
   active: boolean;
 };
 
 /**
- * Effective permissions, the same rule as private.has_permission: inactive
- * staff have none; an active admin has every permission; active staff have
- * what was granted.
+ * Effective permissions, the same rule as private.has_permission (D91):
+ * inactive staff have none; active staff have what their role implies plus
+ * their exceptions (`granted`), in enum order.
  */
 export function effectivePermissions(
   role: StaffRole,
@@ -69,8 +131,7 @@ export function effectivePermissions(
   granted: readonly PermissionKey[],
 ): PermissionKey[] {
   if (!active) return [];
-  if (role === "admin") return [...PERMISSIONS];
-  return PERMISSIONS.filter((p) => granted.includes(p));
+  return PERMISSIONS.filter((p) => roleImplies(role, p) || granted.includes(p));
 }
 
 export function hasPermission(
@@ -84,11 +145,16 @@ type Actor = Pick<StaffDTO, "staffId" | "role" | "active" | "permissions">;
 type Target = { staffId: string; role: StaffRole };
 
 /**
- * Why `actor` may not grant or revoke `permission` on `target`, or null when
- * they may. Mirrors private.authorize_permission_change, the delegation
- * ceiling of PLAN D11: admins may change anything; a manage_staff holder
- * only other non-admins, never manage_staff, and only permissions they hold
- * themselves, so managing staff never escalates anyone past the manager.
+ * Why `actor` may not grant or revoke the exception `permission` on
+ * `target`, or null when they may. Mirrors private.authorize_permission_change
+ * (the D11 ceiling, restated for roles by D93) plus grant_permission's
+ * implied-permission refusal (D92, P0001 permission_implied_by_role):
+ *   - a permission the target's role implies is not an exception to grant;
+ *   - an admin may change any other exception;
+ *   - anyone else needs manage_staff, acts on mechanics only, never on
+ *     their own row, never on manage_staff, and only on permissions they
+ *     hold themselves, so managing staff never escalates anyone past the
+ *     person doing it.
  */
 export function permissionChangeBlocker(
   actor: Actor,
@@ -96,30 +162,74 @@ export function permissionChangeBlocker(
   permission: PermissionKey,
 ): string | null {
   if (!actor.active) return "Only active staff can change permissions.";
+  // grant_permission: private.role_implies(target role, permission).
+  if (roleImplies(target.role, permission)) {
+    return `Included in the ${ROLE_LABELS[target.role]} role.`;
+  }
+  // authorize_permission_change: an admin passes every check below.
   if (actor.role === "admin") return null;
+  // require_permission('manage_staff').
   if (!hasPermission(actor, "manage_staff")) return "You need the Manage staff permission.";
+  // target.id = actor.
   if (target.staffId === actor.staffId) return "Only an admin can change your permissions.";
-  if (target.role === "admin") return "Admins have every permission.";
+  // target.role <> 'mechanic' and not an admin (D93).
+  if (target.role !== "mechanic") return "Only an admin changes an admin's or a manager's access.";
+  // permission = 'manage_staff'.
   if (permission === "manage_staff") return "Only an admin can grant or remove Manage staff.";
+  // not private.has_permission(permission).
   if (!hasPermission(actor, permission)) return "You can only grant permissions you have yourself.";
   return null;
 }
 
 /**
  * Why `actor` may not deactivate or reactivate `target`, or null when they
- * may. Mirrors set_staff_active: nobody deactivates themselves, and only an
- * admin changes an admin's access.
+ * may. Mirrors set_staff_active (D93): an admin acts on anyone but
+ * themselves; anyone else needs manage_staff and acts on mechanics only;
+ * nobody deactivates themselves.
  */
 export function accessChangeBlocker(actor: Actor, target: Target): string | null {
   if (!actor.active) return "Only active staff can change access.";
-  if (target.staffId === actor.staffId) return "You can't deactivate yourself.";
-  if (target.role === "admin" && actor.role !== "admin") {
-    return "Only an admin can change an admin's access.";
-  }
+  // require_permission('manage_staff') unless private.is_admin().
   if (actor.role !== "admin" && !hasPermission(actor, "manage_staff")) {
     return "You need the Manage staff permission.";
   }
+  // target.id = actor and not active.
+  if (target.staffId === actor.staffId) return "You can't deactivate yourself.";
+  // target.role <> 'mechanic' and not caller_is_admin.
+  if (target.role !== "mechanic" && actor.role !== "admin") {
+    return "Only an admin changes an admin's or a manager's access.";
+  }
   return null;
+}
+
+/**
+ * Why `actor` may not change `target`'s role, or null when they may.
+ * Mirrors update_staff's role branch (D93): only an active admin changes
+ * roles, never their own. The last active admin cannot be demoted either
+ * (trigger staff_keep_an_active_admin); that needs another active admin to
+ * try it, and the database refuses it with 55000.
+ */
+export function roleChangeBlocker(actor: Actor, target: Target): string | null {
+  if (!actor.active) return "Only active staff can change roles.";
+  // private.is_admin().
+  if (actor.role !== "admin") return "Only an admin changes roles.";
+  // target.id = actor.
+  if (target.staffId === actor.staffId) return "You can't change your own role.";
+  return null;
+}
+
+/**
+ * The roles `actor` may invite someone as. Mirrors create_staff (D93): an
+ * active admin invites any role; another active manage_staff holder
+ * invites mechanics only; anyone else invites nobody.
+ */
+export function invitableRoles(
+  actor: Pick<StaffDTO, "role" | "active" | "permissions">,
+): StaffRole[] {
+  if (!actor.active) return [];
+  if (actor.role === "admin") return [...ROLES];
+  if (hasPermission(actor, "manage_staff")) return ["mechanic"];
+  return [];
 }
 
 type AccessSubject = Pick<StaffDTO, "role" | "active" | "permissions">;
@@ -145,9 +255,11 @@ export function canViewSaleCosts(staff: AccessSubject): boolean {
 }
 
 /**
- * Recording a retail refund (money going out): D49 RETAIL-REFUND, admins
- * only. view_financial_reports is a read permission and never enough.
+ * Recording a retail refund (money going out): D94 REFUND-ROLES (amends
+ * D49), mirroring private.can_record_refunds(): an active admin or manager,
+ * by role. view_financial_reports is a read permission and never enough,
+ * and no exception grants it.
  */
 export function canRecordRefund(staff: Pick<StaffDTO, "role" | "active">): boolean {
-  return staff.active && staff.role === "admin";
+  return staff.active && (staff.role === "admin" || staff.role === "manager");
 }

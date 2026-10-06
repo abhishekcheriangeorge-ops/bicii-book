@@ -139,8 +139,8 @@ describe("hrefForRecord", () => {
     expect(hrefForRecord("sale", "s1")).toBe("/sales/s1");
   });
 
-  it("has no page yet for purchase orders (Phase 7)", () => {
-    expect(hrefForRecord("purchase_order", "po1")).toBeNull();
+  it("opens purchase orders in Purchasing (Phase 7)", () => {
+    expect(hrefForRecord("purchase_order", "po1")).toBe("/purchasing/orders/po1");
   });
 
   it("covers every short-ID kind", () => {

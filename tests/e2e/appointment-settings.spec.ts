@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { shiftShopDay, shopToday } from "../../src/lib/dates";
-import { SEED_PASSWORD, STAFF_EMAIL } from "../fixtures/ids";
+import { STAFF_EMAIL } from "../fixtures/ids";
 import { rpc, select, signInApi } from "./api";
 import { clearDay, openBookSheet, section, signIn, tagFor, toast } from "./helpers";
 
@@ -23,7 +23,7 @@ const SEEDED_SUNDAY = [{ opens_at: "09:00", closes_at: "13:00" }];
 test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({}, testInfo) => {
-  adminToken ||= await signInApi(STAFF_EMAIL.admin, SEED_PASSWORD);
+  adminToken ||= await signInApi(STAFF_EMAIL.admin);
   tag = tagFor(testInfo);
 });
 

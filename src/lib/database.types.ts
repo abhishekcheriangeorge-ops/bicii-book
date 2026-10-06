@@ -1165,6 +1165,20 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "inventory_movements_purchase_receipt_line_id_fkey";
+            columns: ["purchase_receipt_line_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_receipt_lines";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_movements_purchase_receipt_line_id_fkey";
+            columns: ["purchase_receipt_line_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_receipt_lines_staff";
+            referencedColumns: ["purchase_receipt_line_id"];
+          },
+          {
             foreignKeyName: "inventory_movements_reversal_of_id_fkey";
             columns: ["reversal_of_id"];
             isOneToOne: true;
@@ -1826,6 +1840,387 @@ export type Database = {
           },
         ];
       };
+      purchase_order_events: {
+        Row: {
+          actor_staff_id: string | null;
+          correlation_id: string | null;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["purchase_order_event_type"];
+          id: string;
+          payload: NonNullable<Json>;
+          purchase_order_id: string;
+          purchase_order_line_id: string | null;
+          purchase_receipt_id: string | null;
+          reason: string | null;
+        };
+        Insert: {
+          actor_staff_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["purchase_order_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          purchase_order_id: string;
+          purchase_order_line_id?: string | null;
+          purchase_receipt_id?: string | null;
+          reason?: string | null;
+        };
+        Update: {
+          actor_staff_id?: string | null;
+          correlation_id?: string | null;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["purchase_order_event_type"];
+          id?: string;
+          payload?: NonNullable<Json>;
+          purchase_order_id?: string;
+          purchase_order_line_id?: string | null;
+          purchase_receipt_id?: string | null;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_events_actor_staff_id_fkey";
+            columns: ["actor_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_order_events_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_order_totals_staff";
+            referencedColumns: ["purchase_order_id"];
+          },
+          {
+            foreignKeyName: "purchase_order_events_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_orders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_order_events_purchase_receipt_id_fkey";
+            columns: ["purchase_receipt_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_receipts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      purchase_order_lines: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          ordered_total: number | null;
+          product_id: string;
+          purchase_order_id: string;
+          quantity_ordered: number;
+          unit_cost: number;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          currency: string;
+          expected_at?: string | null;
+          id?: string;
+          notes?: string | null;
+          ordered_total?: never;
+          product_id: string;
+          purchase_order_id: string;
+          quantity_ordered: number;
+          unit_cost: number;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          expected_at?: string | null;
+          id?: string;
+          notes?: string | null;
+          ordered_total?: never;
+          product_id?: string;
+          purchase_order_id?: string;
+          quantity_ordered?: number;
+          unit_cost?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_lines_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_order_totals_staff";
+            referencedColumns: ["purchase_order_id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      purchase_orders: {
+        Row: {
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          po_number: string;
+          received_at: string | null;
+          status: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at: string | null;
+          submitted_by: string | null;
+          supplier_id: string;
+          supplier_reference: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          cancellation_reason?: string | null;
+          cancelled_at?: string | null;
+          cancelled_by?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency: string;
+          expected_at?: string | null;
+          id?: string;
+          notes?: string | null;
+          po_number?: string;
+          received_at?: string | null;
+          status?: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at?: string | null;
+          submitted_by?: string | null;
+          supplier_id: string;
+          supplier_reference?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          cancellation_reason?: string | null;
+          cancelled_at?: string | null;
+          cancelled_by?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          expected_at?: string | null;
+          id?: string;
+          notes?: string | null;
+          po_number?: string;
+          received_at?: string | null;
+          status?: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at?: string | null;
+          submitted_by?: string | null;
+          supplier_id?: string;
+          supplier_reference?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_cancelled_by_fkey";
+            columns: ["cancelled_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_orders_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_orders_submitted_by_fkey";
+            columns: ["submitted_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_orders_supplier_id_fkey";
+            columns: ["supplier_id"];
+            isOneToOne: false;
+            referencedRelation: "suppliers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      purchase_receipt_lines: {
+        Row: {
+          created_at: string;
+          currency: string;
+          id: string;
+          line_number: number;
+          location_id: string;
+          product_id: string;
+          purchase_order_line_id: string;
+          purchase_receipt_id: string;
+          quantity_received: number;
+          received_total: number | null;
+          unit_cost_actual: number;
+        };
+        Insert: {
+          created_at?: string;
+          currency: string;
+          id?: string;
+          line_number: number;
+          location_id: string;
+          product_id: string;
+          purchase_order_line_id: string;
+          purchase_receipt_id: string;
+          quantity_received: number;
+          received_total?: never;
+          unit_cost_actual: number;
+        };
+        Update: {
+          created_at?: string;
+          currency?: string;
+          id?: string;
+          line_number?: number;
+          location_id?: string;
+          product_id?: string;
+          purchase_order_line_id?: string;
+          purchase_receipt_id?: string;
+          quantity_received?: number;
+          received_total?: never;
+          unit_cost_actual?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_receipt_lines_location_id_fkey";
+            columns: ["location_id"];
+            isOneToOne: false;
+            referencedRelation: "locations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_receipt_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "purchase_receipt_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_receipt_lines_purchase_order_line_id_fkey";
+            columns: ["purchase_order_line_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_order_lines";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_receipt_lines_purchase_order_line_id_fkey";
+            columns: ["purchase_order_line_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_order_lines_staff";
+            referencedColumns: ["purchase_order_line_id"];
+          },
+          {
+            foreignKeyName: "purchase_receipt_lines_purchase_receipt_id_fkey";
+            columns: ["purchase_receipt_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_receipts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      purchase_receipts: {
+        Row: {
+          correlation_id: string | null;
+          created_at: string;
+          id: string;
+          idempotency_key: string;
+          notes: string | null;
+          purchase_order_id: string;
+          received_at: string;
+          received_by: string;
+          reference: string | null;
+        };
+        Insert: {
+          correlation_id?: string | null;
+          created_at?: string;
+          id?: string;
+          idempotency_key: string;
+          notes?: string | null;
+          purchase_order_id: string;
+          received_at: string;
+          received_by: string;
+          reference?: string | null;
+        };
+        Update: {
+          correlation_id?: string | null;
+          created_at?: string;
+          id?: string;
+          idempotency_key?: string;
+          notes?: string | null;
+          purchase_order_id?: string;
+          received_at?: string;
+          received_by?: string;
+          reference?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_receipts_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_order_totals_staff";
+            referencedColumns: ["purchase_order_id"];
+          },
+          {
+            foreignKeyName: "purchase_receipts_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_orders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_receipts_received_by_fkey";
+            columns: ["received_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       sale_lines: {
         Row: {
           consignment_item_id: string | null;
@@ -2437,6 +2832,115 @@ export type Database = {
           },
         ];
       };
+      supplier_products: {
+        Row: {
+          created_at: string;
+          currency: string;
+          last_received_at: string | null;
+          last_unit_cost: number | null;
+          lead_days: number | null;
+          preferred: boolean;
+          product_id: string;
+          supplier_id: string;
+          supplier_sku: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          currency: string;
+          last_received_at?: string | null;
+          last_unit_cost?: number | null;
+          lead_days?: number | null;
+          preferred?: boolean;
+          product_id: string;
+          supplier_id: string;
+          supplier_sku?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          currency?: string;
+          last_received_at?: string | null;
+          last_unit_cost?: number | null;
+          lead_days?: number | null;
+          preferred?: boolean;
+          product_id?: string;
+          supplier_id?: string;
+          supplier_sku?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "supplier_products_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "supplier_products_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "supplier_products_supplier_id_fkey";
+            columns: ["supplier_id"];
+            isOneToOne: false;
+            referencedRelation: "suppliers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      suppliers: {
+        Row: {
+          account_reference: string | null;
+          archived_at: string | null;
+          contact_name: string | null;
+          created_at: string;
+          email: string | null;
+          id: string;
+          name: string;
+          notes: string | null;
+          phone: string | null;
+          phone_digits: string | null;
+          search_text: string | null;
+          updated_at: string;
+          website: string | null;
+        };
+        Insert: {
+          account_reference?: string | null;
+          archived_at?: string | null;
+          contact_name?: string | null;
+          created_at?: string;
+          email?: string | null;
+          id?: string;
+          name: string;
+          notes?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          updated_at?: string;
+          website?: string | null;
+        };
+        Update: {
+          account_reference?: string | null;
+          archived_at?: string | null;
+          contact_name?: string | null;
+          created_at?: string;
+          email?: string | null;
+          id?: string;
+          name?: string;
+          notes?: string | null;
+          phone?: string | null;
+          phone_digits?: never;
+          search_text?: never;
+          updated_at?: string;
+          website?: string | null;
+        };
+        Relationships: [];
+      };
       work_order_assignments: {
         Row: {
           assigned_at: string;
@@ -2902,6 +3406,89 @@ export type Database = {
         };
         Relationships: [];
       };
+      purchase_order_lines_staff: {
+        Row: {
+          currency: string | null;
+          ordered_total: number | null;
+          product_id: string | null;
+          purchase_order_id: string | null;
+          purchase_order_line_id: string | null;
+          received_value: number | null;
+          unit_cost: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_order_totals_staff";
+            referencedColumns: ["purchase_order_id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_purchase_order_id_fkey";
+            columns: ["purchase_order_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      purchase_order_totals_staff: {
+        Row: {
+          currency: string | null;
+          ordered_total: number | null;
+          outstanding_total: number | null;
+          purchase_order_id: string | null;
+          received_total: number | null;
+        };
+        Relationships: [];
+      };
+      purchase_receipt_lines_staff: {
+        Row: {
+          currency: string | null;
+          purchase_receipt_id: string | null;
+          purchase_receipt_line_id: string | null;
+          received_total: number | null;
+          unit_cost_actual: number | null;
+        };
+        Insert: {
+          currency?: string | null;
+          purchase_receipt_id?: string | null;
+          purchase_receipt_line_id?: string | null;
+          received_total?: number | null;
+          unit_cost_actual?: number | null;
+        };
+        Update: {
+          currency?: string | null;
+          purchase_receipt_id?: string | null;
+          purchase_receipt_line_id?: string | null;
+          received_total?: number | null;
+          unit_cost_actual?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_receipt_lines_purchase_receipt_id_fkey";
+            columns: ["purchase_receipt_id"];
+            isOneToOne: false;
+            referencedRelation: "purchase_receipts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       selling_prices: {
         Row: {
           currency: string | null;
@@ -2963,6 +3550,52 @@ export type Database = {
             columns: ["category_id"];
             isOneToOne: false;
             referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      supplier_products_staff: {
+        Row: {
+          currency: string | null;
+          last_received_at: string | null;
+          last_unit_cost: number | null;
+          product_id: string | null;
+          supplier_id: string | null;
+        };
+        Insert: {
+          currency?: string | null;
+          last_received_at?: string | null;
+          last_unit_cost?: number | null;
+          product_id?: string | null;
+          supplier_id?: string | null;
+        };
+        Update: {
+          currency?: string | null;
+          last_received_at?: string | null;
+          last_unit_cost?: number | null;
+          product_id?: string | null;
+          supplier_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "supplier_products_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_costs";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "supplier_products_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "supplier_products_supplier_id_fkey";
+            columns: ["supplier_id"];
+            isOneToOne: false;
+            referencedRelation: "suppliers";
             referencedColumns: ["id"];
           },
         ];
@@ -3438,6 +4071,34 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      cancel_purchase_order: {
+        Args: { purchase_order_id: string; reason: string };
+        Returns: {
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          po_number: string;
+          received_at: string | null;
+          status: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at: string | null;
+          submitted_by: string | null;
+          supplier_id: string;
+          supplier_reference: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       check_in_appointment: {
         Args: {
           appointment_id: string;
@@ -3567,6 +4228,68 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "print_jobs";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_purchase_order: {
+        Args: {
+          expected_at?: string;
+          id: string;
+          notes?: string;
+          supplier_id: string;
+          supplier_reference?: string;
+        };
+        Returns: {
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          po_number: string;
+          received_at: string | null;
+          status: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at: string | null;
+          submitted_by: string | null;
+          supplier_id: string;
+          supplier_reference: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_purchase_order_from_low_stock: {
+        Args: { id: string; product_ids: string[]; supplier_id: string };
+        Returns: {
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          po_number: string;
+          received_at: string | null;
+          status: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at: string | null;
+          submitted_by: string | null;
+          supplier_id: string;
+          supplier_reference: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_orders";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -4003,6 +4726,13 @@ export type Database = {
           status: Database["public"]["Enums"]["customer_job_status"];
         }[];
       };
+      note_sign_in_attempt: {
+        Args: { buckets: string[]; window_seconds: number };
+        Returns: {
+          bucket_key: string;
+          hit_count: number;
+        }[];
+      };
       operational_exceptions: {
         Args: { max_rows?: number };
         Returns: {
@@ -4033,6 +4763,61 @@ export type Database = {
           opens_at: string;
           weekday: number;
         }[];
+      };
+      purchase_cost_defaults: {
+        Args: { product_ids: string[]; supplier_id: string };
+        Returns: {
+          product_id: string;
+          source: string;
+          unit_cost: unknown;
+        }[];
+      };
+      purchase_receipt_by_key: {
+        Args: { idempotency_key: string };
+        Returns: {
+          correlation_id: string | null;
+          created_at: string;
+          id: string;
+          idempotency_key: string;
+          notes: string | null;
+          purchase_order_id: string;
+          received_at: string;
+          received_by: string;
+          reference: string | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "purchase_receipts";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      receive_purchase: {
+        Args: {
+          idempotency_key: string;
+          lines: Json;
+          notes?: string;
+          purchase_order_id: string;
+          received_at?: string;
+          reference?: string;
+        };
+        Returns: {
+          correlation_id: string | null;
+          created_at: string;
+          id: string;
+          idempotency_key: string;
+          notes: string | null;
+          purchase_order_id: string;
+          received_at: string;
+          received_by: string;
+          reference: string | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_receipts";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       record_attachment: {
         Args: {
@@ -4124,6 +4909,67 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      remove_purchase_order_line: {
+        Args: { line_id: string; reason?: string };
+        Returns: {
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          ordered_total: number | null;
+          product_id: string;
+          purchase_order_id: string;
+          quantity_ordered: number;
+          unit_cost: number;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "purchase_order_lines";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      remove_supplier_product: {
+        Args: { product_id: string; supplier_id: string };
+        Returns: {
+          created_at: string;
+          currency: string;
+          last_received_at: string | null;
+          last_unit_cost: number | null;
+          lead_days: number | null;
+          preferred: boolean;
+          product_id: string;
+          supplier_id: string;
+          supplier_sku: string | null;
+          updated_at: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "supplier_products";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      reorder_suggestions: {
+        Args: { supplier_id?: string };
+        Returns: {
+          draft_po_numbers: string[];
+          name: string;
+          on_hand: number;
+          on_order: number;
+          preferred_supplier_id: string;
+          product_id: string;
+          reorder_point: number;
+          short_id: string;
+          sku: string;
+          suggested_quantity: number;
+          supplier_linked: boolean;
+          supplier_sku: string;
+        }[];
       };
       restock_unit: {
         Args: { location_id?: string; reason?: string; sale_line_id: string; unit_id: string };
@@ -4479,6 +5325,38 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      set_purchase_order_line: {
+        Args: {
+          expected_at?: string;
+          id: string;
+          notes?: string;
+          product_id: string;
+          purchase_order_id: string;
+          quantity_ordered: number;
+          reason?: string;
+          unit_cost: unknown;
+        };
+        Returns: {
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          ordered_total: number | null;
+          product_id: string;
+          purchase_order_id: string;
+          quantity_ordered: number;
+          unit_cost: number;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_order_lines";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       set_service_archived: { Args: { archived: boolean; service_id: string }; Returns: string };
       set_shop_hours: {
         Args: { active?: boolean; intervals: Json; weekday: number };
@@ -4513,6 +5391,33 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "staff";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      set_supplier_product: {
+        Args: {
+          lead_days?: number;
+          preferred?: boolean;
+          product_id: string;
+          supplier_id: string;
+          supplier_sku?: string;
+        };
+        Returns: {
+          created_at: string;
+          currency: string;
+          last_received_at: string | null;
+          last_unit_cost: number | null;
+          lead_days: number | null;
+          preferred: boolean;
+          product_id: string;
+          supplier_id: string;
+          supplier_sku: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "supplier_products";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -4643,6 +5548,34 @@ export type Database = {
           unit_short_id: string;
           value_at_cost: number;
         }[];
+      };
+      submit_purchase_order: {
+        Args: { purchase_order_id: string };
+        Returns: {
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          po_number: string;
+          received_at: string | null;
+          status: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at: string | null;
+          submitted_by: string | null;
+          supplier_id: string;
+          supplier_reference: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       today_dashboard: {
         Args: { on_day?: string };
@@ -4818,6 +5751,40 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      update_purchase_order: {
+        Args: {
+          expected_at: string;
+          notes: string;
+          purchase_order_id: string;
+          supplier_id: string;
+          supplier_reference: string;
+        };
+        Returns: {
+          cancellation_reason: string | null;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expected_at: string | null;
+          id: string;
+          notes: string | null;
+          po_number: string;
+          received_at: string | null;
+          status: Database["public"]["Enums"]["purchase_order_status"];
+          submitted_at: string | null;
+          submitted_by: string | null;
+          supplier_id: string;
+          supplier_reference: string | null;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "purchase_orders";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_service: {
         Args: {
           category_id?: string;
@@ -4865,6 +5832,7 @@ export type Database = {
       update_staff: {
         Args: {
           display_name?: string;
+          expected_role?: Database["public"]["Enums"]["staff_role"];
           reason?: string;
           role?: Database["public"]["Enums"]["staff_role"];
           target_staff_id: string;
@@ -5110,6 +6078,18 @@ export type Database = {
         | "archived"
         | "unarchived";
       publication_status: "draft" | "internal_only" | "public" | "sold" | "archived";
+      purchase_order_event_type:
+        | "created"
+        | "details_changed"
+        | "line_added"
+        | "line_changed"
+        | "line_removed"
+        | "submitted"
+        | "received"
+        | "status_changed"
+        | "cancelled";
+      purchase_order_status:
+        "draft" | "submitted" | "partially_received" | "received" | "cancelled";
       sale_source: "retail" | "online_shopify" | "work_order";
       sale_status: "recorded" | "partially_refunded" | "refunded" | "voided";
       schedule_entity: "shop_settings" | "shop_hours" | "closure_override" | "appointment_type";
@@ -5122,7 +6102,7 @@ export type Database = {
         | "reactivated"
         | "permission_granted"
         | "permission_revoked";
-      staff_role: "admin" | "staff";
+      staff_role: "admin" | "manager" | "mechanic";
       tracking_type: "quantity" | "unique";
       unit_status:
         | "available"
@@ -5483,6 +6463,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      product_on_order: {
+        Row: {
+          next_expected_at: string | null;
+          open_purchase_orders: number | null;
+          product_id: string | null;
+          quantity_on_order: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "low_stock";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_stock";
+            referencedColumns: ["product_id"];
+          },
+        ];
+      };
       product_stock: {
         Row: {
           active: boolean | null;
@@ -5518,6 +6522,39 @@ export type Database = {
           updated_at: string | null;
         };
         Relationships: [];
+      };
+      purchase_order_progress: {
+        Row: {
+          expected_at: string | null;
+          is_overdue: boolean | null;
+          last_received_at: string | null;
+          po_number: string | null;
+          po_status: Database["public"]["Enums"]["purchase_order_status"] | null;
+          product_id: string | null;
+          purchase_order_id: string | null;
+          purchase_order_line_id: string | null;
+          quantity_cancelled: number | null;
+          quantity_ordered: number | null;
+          quantity_outstanding: number | null;
+          quantity_received: number | null;
+          supplier_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "low_stock";
+            referencedColumns: ["product_id"];
+          },
+          {
+            foreignKeyName: "purchase_order_lines_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "product_stock";
+            referencedColumns: ["product_id"];
+          },
+        ];
       };
       stock_levels: {
         Row: {
@@ -5794,6 +6831,18 @@ export const Constants = {
         "unarchived",
       ],
       publication_status: ["draft", "internal_only", "public", "sold", "archived"],
+      purchase_order_event_type: [
+        "created",
+        "details_changed",
+        "line_added",
+        "line_changed",
+        "line_removed",
+        "submitted",
+        "received",
+        "status_changed",
+        "cancelled",
+      ],
+      purchase_order_status: ["draft", "submitted", "partially_received", "received", "cancelled"],
       sale_source: ["retail", "online_shopify", "work_order"],
       sale_status: ["recorded", "partially_refunded", "refunded", "voided"],
       schedule_entity: ["shop_settings", "shop_hours", "closure_override", "appointment_type"],
@@ -5807,7 +6856,7 @@ export const Constants = {
         "permission_granted",
         "permission_revoked",
       ],
-      staff_role: ["admin", "staff"],
+      staff_role: ["admin", "manager", "mechanic"],
       tracking_type: ["quantity", "unique"],
       unit_status: [
         "available",

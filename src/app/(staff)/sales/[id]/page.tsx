@@ -51,9 +51,10 @@ function lineHref(line: SaleLine): string {
  * money users, what the consignor is owed, paid separately; a bike's link
  * and that ownership is not transferred automatically). Staff with View
  * costs also see each line's cost, yield and Cult Commons and the totals
- * card. Refunds are listed for everyone; Record refund is for admins
- * (D49). Restock is per unit line still sold on this sale, for adjust_stock
- * holders (a consigned unit also needs manage_consignments, D46).
+ * card. Refunds are listed for everyone; Record refund is for admins and
+ * managers (D94). Restock is per unit line still sold on this sale, for
+ * adjust_stock holders (a consigned unit also needs manage_consignments,
+ * D46).
  */
 export default async function SalePage({ params }: PageProps<"/sales/[id]">) {
   const staff = await requireStaff();

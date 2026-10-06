@@ -47,9 +47,20 @@ export const PORTS = {
   auth: Number(process.env.BICII_AUTH_PORT ?? 9999),
   rest: Number(process.env.BICII_REST_PORT ?? 3001),
   storage: Number(process.env.BICII_STORAGE_PORT ?? 5000),
+  // The mail catcher (scripts/devstack/mailcatcher.mjs): Supabase Auth sends
+  // sign-in codes to its SMTP port; tests and people read them over HTTP.
+  smtp: Number(process.env.BICII_SMTP_PORT ?? 2525),
+  mailHttp: Number(process.env.BICII_MAIL_HTTP_PORT ?? 8025),
 };
 
 export const GATEWAY_URL = `http://127.0.0.1:${PORTS.gateway}`;
+
+/** The mail catcher's HTTP API (GET /messages/latest?to=...). Local only. */
+export const MAIL_URL = `http://127.0.0.1:${PORTS.mailHttp}`;
+/** Where the mail catcher keeps the messages it received (<id>.json + <id>.eml). */
+export const MAIL_DIR = path.join(STATE_DIR, "mail");
+/** Supabase Auth's email templates; the catcher serves them to the devstack's Auth. */
+export const TEMPLATES_DIR = path.join(ROOT, "supabase", "templates");
 
 /** The well-known Supabase local demo secret. Local only. */
 export const JWT_SECRET =
@@ -76,6 +87,15 @@ export function databaseUrl() {
   u.password = process.env.PGPASSWORD ?? "postgres";
   u.pathname = `/${process.env.PGDATABASE ?? DEFAULT_DB_NAME}`;
   return u.toString();
+}
+
+/**
+ * The devstack's own database (what db:reset builds and the services use):
+ * DATABASE_URL's server with PGDATABASE as the name, else bicii_dev. Lets a
+ * second checkout (a git worktree) run its own stack beside the first.
+ */
+export function devDatabaseUrl() {
+  return withDatabase(databaseUrl(), process.env.PGDATABASE ?? DEFAULT_DB_NAME);
 }
 
 /**
