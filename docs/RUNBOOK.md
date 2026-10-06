@@ -276,6 +276,29 @@ npx supabase@2.119.0 db push                        # apply pending migrations, 
   check `migration list` before every push so you know which project you
   are pointed at.
 
+### From GitHub Actions (the hosted project)
+
+[`migrate.yml`](../.github/workflows/migrate.yml) runs the same `db push`
+from GitHub, so nobody needs the database password on their machine. It
+runs on manual dispatch (Actions → "Migrate hosted database" → Run
+workflow, branch `main`) and on every push to `main` that changes
+`supabase/migrations/`, one run at a time. Each run prints the migration
+history, a `--dry-run`, applies the pending files and prints the history
+again.
+
+- The owner sets one GitHub Actions secret, `SUPABASE_DB_URL`: the
+  project's **session pooler** connection string (Project Settings →
+  Database → Connection string → Session pooler), with the database
+  password percent-encoded. It is never printed; never paste it into an
+  issue, a pull request or a chat.
+- It never passes `--include-seed` or `--include-all`. Hosted migrations
+  are append-only: a file that sorts before the newest applied migration
+  makes `db push` refuse. Rename such a file to a later timestamp (keeping
+  the order among its siblings) and check every object it redefines against
+  the live definition, then merge.
+- After a run that applied something, check Storage buckets (step 6 above)
+  and the Supabase advisors (security and performance).
+
 ### If `20261005005000_staff_session_revocation` refuses to apply
 
 Deactivating a staff member deletes their Supabase Auth sessions at once
