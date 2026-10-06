@@ -91,13 +91,14 @@ describe("navigation", () => {
     expect(TABS.map((t) => t.label)).toEqual(["Today", "Jobs", "Scan", "Inventory", "More"]);
   });
 
-  it("lists the nine More destinations, Sales right after Consignment", () => {
+  it("lists the ten More destinations, Sales and Shopify right after Consignment", () => {
     expect(MORE_ITEMS.map((i) => i.label)).toEqual([
       "Customers",
       "Bikes",
       "Appointments",
       "Consignment",
       "Sales",
+      "Shopify",
       "Purchasing",
       "Labels",
       "Reports",

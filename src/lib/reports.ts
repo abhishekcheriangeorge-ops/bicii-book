@@ -428,6 +428,7 @@ const EXCEPTION_LABELS: Readonly<Record<string, string>> = {
   negative_stock: "Below zero",
   unit_hold_stale: "Stale hold",
   currency_mismatch: "Other currency",
+  integration_failed: "Shopify needs attention",
 };
 
 /** The pill text for an exception kind ("Needs attention" for kinds this build does not know). */
@@ -472,6 +473,10 @@ export function exceptionCopy(
         text: "A line in another currency is left out of the totals",
         tone,
       };
+    case "integration_failed":
+      // Phase 10 (D86, admins only): the human message is the row's subject
+      // line; the fix happens in the Shopify queue.
+      return { text: "Fix it in the Shopify queue", tone: "danger" };
     default: {
       const what = [row.entityLabel, row.subjectLabel].filter(Boolean).join(" · ");
       return { text: what ? `Check ${what}` : "Something needs checking", tone };
@@ -517,6 +522,9 @@ export function exceptionHref(
     case "work_order_line":
       // The row names the line's job by its J- number; /q opens it.
       return row.entityLabel && isShortId(row.entityLabel) ? `/q/${row.entityLabel}` : null;
+    case "integration_job":
+      // Phase 10: the queue with that job's sheet open (admins only, D86).
+      return `/shopify/queue?job=${encodeURIComponent(row.entityId)}`;
     default:
       return null;
   }

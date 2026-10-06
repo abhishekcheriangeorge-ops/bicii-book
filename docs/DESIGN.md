@@ -168,6 +168,8 @@ The pattern every Server Action form follows (`staffAction` +
   page of `@page { size: <w>mm <h>mm; margin: 0 }`. `/labels` and
   `/labels/[jobId]` have `loading.tsx` like other record sections;
   `/settings/labels` (admins only) has none, keeping its real 403.
+- `/shopify` and everything under it (admins only, D86) have no
+  `loading.tsx`, so a non-admin gets a real 403.
 - `/q/[shortId]` has no `loading.tsx` on purpose: its job is a server
   `redirect()`, which must happen before anything streams.
 - `/settings/schedule` and `/settings/appointment-types` need only
@@ -631,7 +633,7 @@ consignor liability" (view_financial_reports and view_costs, D30) to
 | `ActivityList` | One flow's jobs from `work_order_activity_on`: J- number, status pill, Overdue badge, customer, bike, sale total; the heading's id is the flow tile's anchor. Checked in, Completed and Collected always; Started, Ready for collection and Cancelled when not empty; "Nothing happened on this day" for a quiet day. |
 | `AdjustmentList` | The day's adjustments and damaged stock: signed delta, P- link, reason, type · location · actor · time, a "Significant" badge (D33) and the value at cost when present. Significant ones first, then newest first; the first `ADJUSTMENT_ROWS` (5) listed and the rest behind a `<details>` "Show N more" (no JavaScript), so an opening stock count does not push "Needs attention" screens down. |
 | `LowStockList` | The first 5 of P4's `reporting.low_stock` (largest shortfall first) with `StockBadge`; "See all" opens `/inventory?filter=low`. |
-| `ExceptionList` | D34 exceptions, danger first: pill (tone and words; Overdue is danger, as on the Overdue tile and the board's badge, while Not collected and other warnings are waiting), short ID, subject, `exceptionCopy` sentence; rows link through `exceptionHref` (a line opens its job via `/q/J-…`); unknown kinds render a generic sentence; keyed by `exceptionKeys` (a product below zero at two locations is two rows); Today lists the 20 most urgent and, when there are more, says "Showing the 20 most urgent of 45" under them (Phase 9 makes it a link to `/reports/exceptions`); EmptyState "Nothing needs attention". |
+| `ExceptionList` | D34 exceptions, danger first: pill (tone and words; Overdue is danger, as on the Overdue tile and the board's badge, while Not collected and other warnings are waiting), short ID, subject, `exceptionCopy` sentence; rows link through `exceptionHref` (a line opens its job via `/q/J-…`; an `integration_failed` row, admins only (D86), shows "Shopify needs attention", the order or product, the human message as its subject line and "Fix it in the Shopify queue", and opens `/shopify/queue?job=<id>` with that job's sheet open); unknown kinds render a generic sentence; keyed by `exceptionKeys` (a product below zero at two locations is two rows); Today lists the 20 most urgent and, when there are more, says "Showing the 20 most urgent of 45" under them (Phase 9 makes it a link to `/reports/exceptions`); EmptyState "Nothing needs attention". |
 | `FinancialEntries` | `<details id="financial-entries">` "What makes up these figures" (open with `?entries=open`): the day's `financial_lines` grouped by job (J- link), description, quantity, sale, and yield and Cult Commons when visible; "Sold at a loss" and "Cost pending" badges. It adds nothing up. |
 | `WeekStrip` | "Last 7 days" ending at the day shown: completed, collected, and gross sales, yield and Cult Commons when visible; each day links to `/?day=`; the day shown has `aria-current="date"` and a bold row. A table from md, stacked cards on a phone. |
 | `SectionLoader`, `SectionSkeleton`, `SectionError` (`section-loader.tsx`) | The streaming pattern above. |
@@ -802,3 +804,51 @@ slot functions exactly, `status.ts`, `history.ts`, `time.ts`,
   (`src/lib/recent-searches.ts`: every access in try/catch, at most eight,
   newest first) when a query is submitted or a result opened, and shown
   before anything is typed. They never reach the server.
+
+### Shopify
+
+Phase 10 (SPEC §17, §26; PLAN D80–D89; ADR-020), components in
+`src/components/domain/shopify/`, reads and writes in
+`src/lib/domain/shopify.ts`, words and tones in `src/lib/shopify.ts`
+(every sync, job and event status, outcome and rejection reason has text;
+unit-tested), schemas in `src/lib/shopify-forms.ts`.
+
+| Component | Purpose |
+|---|---|
+| `OnlineCard` | The product page's "Online (Shopify)" card, every staff member: the **Publish online** `Switch` (manage_inventory; `useOptimistic`, toast "Published online" / "Taken offline"; disabled with the reason beside it: "Make the product public first.", customer-owned, archived, no price, or "Needs Manage inventory"); the sync status as a `StatusPill` (synced done, pending progress, error danger, unpublished and not synced neutral) with "Synced 3 min ago" (computed on the server) and "Online quantity 18 at Shop floor"; "Linked to a product made in Shopify: BICII sends price and stock only" for an external origin; on a failed sync the human reason in danger text; **Sync now** with a pending state; a "Test Shopify" badge in fake mode; a folded "Shopify details" with the product and variant gids and Copy (`CopyText`). The actions run only the job id the RPC returned. |
+| `QueueList` (client) | The queue's rows as buttons: the kind ("Order", "Refund", "Product sync"), subject, `StatusPill` (needs attention danger, waiting waiting, running progress, done done, dismissed neutral), the human reason clamped to two lines, "Attempt 3 of 8 · next try 2:05 pm" (Singapore time). A row opens a `Sheet` (the job sheet) with the full reason and `JobPanel`; `?job=<id>` opens it on arrival and closing drops the parameter. |
+| `JobPanel` (client) | Retry (primary, one tap, pending state, toast "Recorded as S-000123" or the new reason); per unmapped line with a variant **Link to a BICII product** (inside the job sheet the link form replaces the panel, so no sheet sits on a sheet; on the event page it opens `LinkVariantSheet`); a custom line says "Custom Shopify line — record it by hand if needed, then dismiss"; **Dismiss…** through `ReasonConfirm` (focus to the reason, confirm in another place, the 400 ms guard; an order's copy says its waiting refunds close too); "Open event" from the queue. |
+| `LinkVariantForm` / `LinkVariantSheet` | The line title, variant and product gids read-only, the product `SearchPicker` (`searchProductsForLinkAction` over `staff_search`, never a dropdown, SPEC §22), a required reason, **Link and retry**. |
+| `LinkCustomerButton` (sheet) | The Shopify customer gid and the order's email; same-email customers first, each labelled "Candidate — same email is not proof"; any customer through `CustomerPicker`; a required reason; the toast says how many earlier online sales show the customer through the Shopify ID (D86). |
+| `JsonView` (client) | A stored payload in dense monospace: "Wrap lines" toggle (`aria-pressed`), capped at 60vh until "Show all", Copy; horizontal scroll only inside the block. |
+| `ShopifySettingsForm` | `useActionState`: online location (`SegmentedControl` up to four locations, else a native `Select`), storefront address ("Used for the Buy online link on public item pages"), "Record Shopify test orders as sales" `Switch` with "Only for testing. Test orders would count as real sales.", and a reason field, required, shown when that switch changes; refused saves keep what was typed (`values`). |
+
+Screens (admins only, real 403s; filters are `LinkSegments` links so a
+view survives reload and sharing, as on `/sales`):
+
+- `/shopify`: a warning banner while test orders are recorded; `StatTile`s
+  linking to the lists (Needs attention, danger when above zero; Waiting
+  retries; Products online with synced / pending / failed; Events in the
+  last 24 hours); the Connection card (Live / Test (fake) / Not connected,
+  shop, pinned API version, the webhook address with Copy, whether the
+  webhook secret is set, a runbook link); the settings form.
+- `/shopify/queue`: Needs attention (default) / Waiting / Recent (done or
+  dismissed in 7 days); empty state "Nothing needs attention. Orders and
+  product syncs that fail show up here with what to do."
+- `/shopify/products`: All / Errors / Pending; name, P- number, status,
+  last synced, quantity pushed, the error, "Shopify-made" for an external
+  origin; a row opens the product.
+- `/shopify/events`: `SearchField` (`?q=` order name or webhook id) and All
+  / Failed / Rejected / Processed / Skipped; the topic in words ("Order
+  paid", "Refund", else the raw topic), subject, Singapore time,
+  "Delivered 2×", "Test", the outcome in a few words, the status; "First
+  30 matches" when cut off.
+- `/shopify/events/[id]` (`notFound()` for unknown or malformed ids):
+  Summary (the outcome in words, linking the sale; a refund says stock was
+  not touched, D7, D85), Delivery (ids, shop, API version, times,
+  deliveries, signature, the rejection reason in words), Processing
+  (attempts, the human error and code, the technical detail folded, the
+  job with `JobPanel`), Customer (orders), Headers ("Some headers were
+  shortened" when capped), Payload (`JsonView`; a rejected body is never
+  stored, D88; a purged one says "Payload removed after the retention
+  period").

@@ -97,6 +97,19 @@ export default async function SalePage({ params }: PageProps<"/sales/[id]">) {
               <Link href={`/customers/${sale.customer.id}`} className="font-medium underline">
                 {sale.customer.label}
               </Link>
+            ) : sale.shopifyCustomer?.linked ? (
+              // D86: linked after this sale was recorded; the sale itself is unchanged.
+              <span>
+                <Link
+                  href={`/customers/${sale.shopifyCustomer.linked.id}`}
+                  className="font-medium underline"
+                >
+                  {sale.shopifyCustomer.linked.label}
+                </Link>{" "}
+                (linked through Shopify)
+              </span>
+            ) : sale.shopifyCustomer ? (
+              <span>Shopify customer, not linked</span>
             ) : (
               <span>Walk-in</span>
             )}

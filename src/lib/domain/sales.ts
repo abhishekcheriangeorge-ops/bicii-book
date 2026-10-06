@@ -175,6 +175,13 @@ export type SaleDetail = {
   currency: string;
   notes: string | null;
   customer: { id: string; label: string } | null;
+  /**
+   * An online sale recorded before its Shopify customer was linked (D86):
+   * the sale stays without a customer (sales are immutable), and the
+   * customer now linked to its Shopify customer id is shown beside it.
+   * `linked` null: that Shopify customer is not linked yet.
+   */
+  shopifyCustomer: { linked: { id: string; label: string } | null } | null;
   recordedByName: string | null;
   lines: SaleLine[];
   refunds: SaleRefund[];
@@ -183,7 +190,7 @@ export type SaleDetail = {
 };
 
 const SALE_COLUMNS =
-  "id, sale_number, source, status, recognized_at, created_at, currency, notes, created_by, customer:customers(id, first_name, last_name, display_name, email, phone)";
+  "id, sale_number, source, status, recognized_at, created_at, currency, notes, created_by, shopify_customer_id, customer:customers(id, first_name, last_name, display_name, email, phone)";
 
 /** One sale with its lines (sale_lines_detail) and refunds; null if unknown. */
 export async function getSale(supabase: ServerSupabase, id: string): Promise<SaleDetail | null> {
@@ -253,6 +260,30 @@ export async function getSale(supabase: ServerSupabase, id: string): Promise<Sal
     at: r.created_at,
   }));
   const c = header.customer;
+  let shopifyCustomer: SaleDetail["shopifyCustomer"] = null;
+  if (!c && header.shopify_customer_id) {
+    const linked = unwrap(
+      await supabase
+        .from("customers")
+        .select("id, first_name, last_name, display_name, email, phone")
+        .eq("shopify_customer_id", header.shopify_customer_id)
+        .maybeSingle(),
+    );
+    shopifyCustomer = {
+      linked: linked
+        ? {
+            id: linked.id,
+            label: customerLabel({
+              firstName: linked.first_name,
+              lastName: linked.last_name,
+              displayName: linked.display_name,
+              email: linked.email,
+              phone: linked.phone,
+            }),
+          }
+        : null,
+    };
+  }
   return {
     id: header.id,
     saleNumber: header.sale_number,
@@ -274,6 +305,7 @@ export async function getSale(supabase: ServerSupabase, id: string): Promise<Sal
           }),
         }
       : null,
+    shopifyCustomer,
     recordedByName: nameOf(names, header.created_by),
     lines,
     refunds,

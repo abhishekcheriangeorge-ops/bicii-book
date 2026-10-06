@@ -267,3 +267,13 @@ export function LockIcon(props: IconProps) {
     </Icon>
   );
 }
+
+/** A shopping bag: online selling (Shopify). */
+export function BagIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 8h14l-1 12H6L5 8z" />
+      <path d="M9 8V6a3 3 0 0 1 6 0v2" />
+    </Icon>
+  );
+}

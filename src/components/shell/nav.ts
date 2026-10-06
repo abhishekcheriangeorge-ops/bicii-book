@@ -1,6 +1,7 @@
 import type { ComponentType, SVGProps } from "react";
 
 import {
+  BagIcon,
   BikeIcon,
   BoxIcon,
   CalendarIcon,
@@ -62,6 +63,12 @@ export const MORE_ITEMS: readonly NavItem[] = [
     label: "Sales",
     icon: ReceiptIcon,
     description: "In-store sales, refunds and restocks",
+  },
+  {
+    href: "/shopify",
+    label: "Shopify",
+    icon: BagIcon,
+    description: "Online sync, orders and errors",
   },
   {
     href: "/purchasing",

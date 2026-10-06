@@ -59,6 +59,33 @@ const negative = (location: string): OperationalException => ({
 });
 
 describe("ExceptionList", () => {
+  it("shows a Shopify failure with its order, the human message and a link to the queue (D86)", () => {
+    render(
+      <ExceptionList
+        rows={[
+          {
+            kind: "integration_failed",
+            severity: "danger",
+            entityType: "integration_job",
+            entityId: "e3000000-0000-4000-8000-000000000001",
+            entityLabel: "#1002",
+            subjectLabel:
+              'Order #1002: "BICII cotton cap" (Shopify variant 9199999999) is not linked to a BICII product.',
+            days: 1,
+            quantity: null,
+            since: "2026-10-05T11:45:00Z",
+          },
+        ]}
+      />,
+    );
+    const row = screen.getByRole("link");
+    expect(row).toHaveAttribute("href", "/shopify/queue?job=e3000000-0000-4000-8000-000000000001");
+    expect(row).toHaveTextContent("Shopify needs attention");
+    expect(row).toHaveTextContent("#1002");
+    expect(row).toHaveTextContent("is not linked to a BICII product");
+    expect(row).toHaveTextContent("Fix it in the Shopify queue");
+  });
+
   it("lists a product below zero at two locations as two rows, without a duplicate key", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     render(<ExceptionList rows={[negative("Shop floor"), negative("Workshop store")]} />);

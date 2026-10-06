@@ -483,38 +483,88 @@ Settings → Your profile.
   **New consignor liability** (also View costs) opens Consignment.
 - If it fails: a "Provisional: …" note means cost-pending lines are counted
   at 0. Refunds and restocks are not taken off yet (Phase 9).
+- Admins also see **Shopify needs attention** rows under Needs attention:
+  an online order or product sync BICII could not finish, with the reason;
+  the row opens it in the Shopify queue
+  ([Fix a Shopify order](#fix-a-shopify-order-that-needs-attention-admins)).
 
 ### Online orders from Shopify
-
-Phase 10 is being built: online orders and refunds are recorded by the
-database, the rules for publishing products online are in place, and the
-Shopify screens (the queue, the event inspector, Publish online, the sync
-status) come in a later step.
 
 - What happens: a paid Shopify order becomes a sale with source **Online**
   in Sales, at Shopify's prices after discounts (a 3 × $40 line with $20
   off is recorded as 2 × $33.33 and 1 × $33.34), dated when Shopify took
-  the order. The stock comes from the online location (the Shop floor).
-- When an order cannot be recorded (a product BICII cannot match, a unit
-  that already sold in the shop, too little stock, an order charged tax on
-  top), nothing is recorded. Admins see it under **Needs attention** on
-  Today, with a message saying what to do: link the product and retry, or
-  refund the order in Shopify and dismiss it with a reason.
+  the order. The stock comes from the online location (the Shop floor), and
+  the product's movements show it as **Sold online**. Shopify sending the
+  same order twice, or under a new webhook id, still records one sale.
 - A refund made in Shopify marks the sale Partly refunded or Refunded, like
   an in-store refund: the stock and the item's status do not change; use
-  **Restock…** if the item came back.
+  **Restock…** on the sale if the item came back.
 - A Shopify customer becomes a BICII customer only when an admin links
   them; a matching email is never enough.
-- Publishing online (staff with Manage inventory, when the screens arrive):
-  the product must be public, have a price ($0 counts), not be archived and
-  not belong to a customer. Shopify then shows BICII's price (a consigned
-  item at its asking price, as on its label) and the stock at the online
-  location; every later change is sent once, automatically, and **Sync
-  now** sends it again. Unpublishing hides it in Shopify (a product made in
-  Shopify is set to 0 instead). The public page shows **Buy online** only
-  while the item is available and its Shopify listing is up to date.
-- Admins set the online location, the storefront address and (with a
-  reason) whether test orders count.
+
+### Publish a product online
+
+- Who: staff with Manage inventory (everyone else sees the status, and the
+  switch says "Needs Manage inventory").
+- Steps: open the product → **Online (Shopify)** → switch on **Publish
+  online**. The toast says "Published online"; the card then shows
+  **Synced**, when, and the **Online quantity** at the online location.
+- It needs: the product public (Publication card), a price ($0 counts),
+  not archived and not customer-owned. When something is missing the reason
+  sits beside the switch, for example "Make the product public first."
+- Afterwards every stock, price, name or public-photo change is sent once,
+  automatically. **Sync now** sends it again; on a failed sync the card
+  shows the reason in red above it.
+- Switching it off hides the product in Shopify (draft, quantity 0). A
+  product linked to one made in Shopify says "Linked to a product made in
+  Shopify: BICII sends price and stock only" and never gets a Buy-online
+  link.
+- **Shopify details** (folded) shows the Shopify product and variant IDs to
+  copy. **Test Shopify** on the card means the app is talking to the
+  pretend Shopify used for testing.
+
+### Fix a Shopify order that needs attention (admins)
+
+- Where: Today → **Needs attention** shows a **Shopify needs attention**
+  row with the order and the problem in words; it opens **More → Shopify →
+  Queue** on that item. The queue's **Needs attention** list has them all.
+- Nothing was recorded for the order, so nothing has to be undone.
+- An unknown product ("… is not linked to a BICII product"): tap the item →
+  **Link to a BICII product** for the line → search the product by name or
+  P- number → give a reason → **Link and retry**. The toast says
+  "Recorded as S-000123"; later orders for that Shopify variant sell the
+  same product. A custom Shopify line has no product to link: record it by
+  hand if needed, then dismiss.
+- Too little stock, a unit already sold in the shop, or an order taxed on
+  top: fix the stock (or record it by hand) and tap **Retry**, or refund
+  the order in Shopify and **Dismiss…** it with a reason. Dismissing an
+  order also closes refunds of it that are waiting.
+- Items under **Waiting** are retried automatically (1 minute, doubling, up
+  to 8 tries); **Recent** shows what was done or dismissed in the last 7
+  days. **Open event** shows what Shopify sent.
+
+### Link a Shopify customer (admins)
+
+- Steps: **More → Shopify → Events** → open the order → **Customer** →
+  **Link to a BICII customer**. Customers with the same email are listed
+  first as "Candidate — same email is not proof"; any customer can be
+  searched. Give a reason (how you know it is them) → **Link customer**.
+- The link applies to later orders. Sales already recorded are not changed;
+  the toast says how many earlier online sales show the customer through
+  their Shopify ID.
+
+### Shopify settings and events (admins)
+
+- **More → Shopify**: the connection (Live, Test (fake) or Not connected),
+  the shop, the API version and the webhook address to give Shopify; the
+  online location; the storefront address (used for the Buy online link on
+  public item pages); and **Record Shopify test orders as sales**, which
+  needs a reason to change and shows a warning while it is on. Setup and
+  recovery: [RUNBOOK "Shopify"](RUNBOOK.md#shopify).
+- **Events** lists every webhook, searchable by order name or webhook id
+  and filterable (Failed, Rejected, Processed, Skipped). A delivery whose
+  signature did not match is **Rejected** and keeps no body; nothing was
+  recorded from it.
 
 ## Roles and limits
 
@@ -526,11 +576,11 @@ sale totals are visible to all; costs are not.
 
 | You have | What changes for you |
 |---|---|
-| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate, **Record refund** on a sale (D49), Settings → **Labels and printers** (the QR address, printers, label templates) and online orders that need attention (Shopify, D86) |
+| Admin | Everything below, plus shop hours, closures, booking capacity, appointment types, the Cult Commons rate, **Record refund** on a sale (D49), Settings → **Labels and printers** (the QR address, printers, label templates) and **More → Shopify** (settings, the queue, events, linking variants and customers, D86) |
 | View costs | Cost, yield and Cult Commons on jobs, lines, products, units, movements and sales (the sale sheet's preview and "Below cost" warning); Unit cost on manual lines and adjustments; the Cult Commons rate card; consignment money (balances, amounts owed, charges, payments, item history, agreement photos) read-only |
 | View financial reports | The Money section on Today (costs inside it also need View costs) |
 | Adjust stock | **Adjust stock** on a product; **Restock…** a unit sold on a sale (a consigned one also needs Manage consignments) |
-| Manage inventory | New and edited products and units, **Transfer**, publication, services, categories and locations; with Adjust stock also **Split off as unique item** |
+| Manage inventory | New and edited products and units, **Transfer**, publication, **Publish online** and **Sync now**, services, categories and locations; with Adjust stock also **Split off as unique item** |
 | Manage staff | Settings → Staff: invite, permissions and deactivation, only within your own permissions ([OPERATIONS.md](OPERATIONS.md#product-administration)) |
 | Manage consignments | **Receive item**, **New consignor**, edit and archive consignors, **Show payout details**, **Edit terms**, **Add charge** and **Void…**, **Return to consignor…**, **Record payment** and **Reverse…**; with Adjust stock, **Restock…** a consigned unit; sees consignment money |
 | Manage purchasing | Nothing yet on this branch |
