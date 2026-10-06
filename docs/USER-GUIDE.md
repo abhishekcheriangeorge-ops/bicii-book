@@ -4,20 +4,20 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: `feat/staff-roles` (2026-10-06): `feat/auth-email-otp` after
-its integration with the main line and purchasing, plus the three staff
-roles admin, manager and mechanic (not deployed; on a developer machine at
-http://localhost:3000). Staff sign in with an emailed code.
+Applies to: `feat/p8-labels` (2026-10-06): Phase 8 labels merged with
+the main line at `a1aebf6` (staff email sign-in, purchasing and the three
+staff roles admin, manager and mechanic); not deployed; on a developer machine at http://localhost:3000. Staff sign in
+with an emailed code.
 
 Last walkthrough: not walked through by a person. These flows are exercised
-by the E2E specs `tests/e2e/auth.spec.ts`, `workshop.spec.ts`,
-`workshop-board.spec.ts`, `inventory.spec.ts`, `inventory-publish.spec.ts`,
-`scan.spec.ts`, `appointments.spec.ts`, `appointment-settings.spec.ts`,
-`today.spec.ts`, `customers-bikes.spec.ts`, `staff.spec.ts`, `roles.spec.ts`,
-`consignment.spec.ts`, `consignment-journey.spec.ts`, `sales.spec.ts` and
-`purchasing.spec.ts`, on an iPhone 13 and an iPad viewport: 138 passed
-locally at the Phase 7 integration on 2026-10-05, and the latest green CI
-run on GitHub is [PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
+by the E2E specs in `tests/e2e/` (among them `auth`, `workshop`,
+`workshop-board`, `inventory`, `inventory-publish`, `scan`,
+`appointments`, `appointment-settings`, `today`, `customers-bikes`,
+`staff`, `roles`, `consignment`, `consignment-journey`, `sales`,
+`purchasing`, `print-view` and `labels`), on an iPhone 13 and
+an iPad viewport (counts and dates in [NOW.md](../NOW.md)); the latest
+green CI run is
+[PR #7 e2e](https://github.com/abhishekcheriangeorge-ops/bicii-book/actions/runs/37276834195/job/111655595521).
 Where a step below is not covered by a spec, it says so.
 
 ## Your first useful result
@@ -382,7 +382,10 @@ managers.
 - Success looks like: "Received 18 items. 2 still to come.", the order
   Partially received with "18 of 20 received · 2 to come", or Received when
   everything has come. The stock goes up once, and the product's cost and
-  the supplier's last cost become the actual cost (D5, D63).
+  the supplier's last cost become the actual cost (D5, D63). Each line of
+  the order's **Receipts** has **Print N labels** (N = the count received):
+  it opens the product's print sheet at that count, for anyone signed in
+  (`tests/e2e/purchasing.spec.ts`, journey 3).
 - If it fails: more than is to come is refused; raise the line's ordered
   quantity on the order first (D65). If the connection drops, the screen
   checks whether the delivery was recorded and either shows it or offers
@@ -416,7 +419,9 @@ managers.
   product starts as Draft). Add a photo with **Choose photos**, open it and
   choose **Public** in the viewer ("Photo is now public"). Then
   **Publish**. **What the public sees** previews the public listing and the
-  QR label URL is shown.
+  QR label URL is shown (the shop's public website address + `/q/` + the
+  short ID; "QR address not set" until an admin sets that address, and
+  then no label can be printed either).
 - Success looks like: toast "Published" and "Public" in the header.
   **Unpublish** makes it internal again ("Listing is internal only").
 - If it fails: Publish stays disabled and the card says what is missing,
@@ -437,7 +442,92 @@ managers.
   over a secure connection. Open the app over HTTPS (or on localhost)."
   (type the code instead; [RUNBOOK](RUNBOOK.md#the-camera-scanner-on-phones-and-ipads)).
   "Camera access is blocked. On iPhone: Settings → Safari → Camera → Allow,
-  then reload this page." Labels cannot be printed yet (Phase 8).
+  then reload this page." Labels printed against the shop's current public
+  address, or against the earlier one the app is configured to accept,
+  both scan.
+
+### Print labels and confirm them
+
+- Before you start: any staff member. Open the product (counted by
+  quantity), the unit or the bike: **Print label** is in the header and in
+  its **Labels** card. A unique product's labels are its units': its Labels
+  card links each U- number. A bike tag (B-) is for the workshop; a
+  customer who scans it sees "not found".
+- Steps: **Print label**. The sheet shows the label exactly as it will
+  print. **How many**: type a number, use − and +, or for a product tap 1,
+  5, 10, 20 or 50 (one print job is up to 500 labels of a product, or up
+  to 10 of a unit or bike; ask for more and the sheet says "Prints 500 now;
+  print again for the remaining 120."). **Printer**: a list of the printers,
+  each with what it does ("This device's print dialog", "Opens a PDF to
+  share or print"); this device's last printer is already chosen. **Label size** appears when an admin has added
+  more than one. Press **Print 10 labels**. In the print view with the
+  browser printer press **Print**, pick the label printer, paper at the
+  label size (58 × 40 mm), scale 100%, no margins. With the PDF printer
+  (iPhone and iPad) press **Open PDF**, then Share → Print with the same
+  paper and scale. **Print** and **Open PDF** stay at the top while you
+  scroll the labels. Then answer "Did all 10 labels print correctly?" ("Did
+  the label print correctly?" for one label), just below the title: **Yes,
+  all printed**, or **Something went wrong…**, say what went wrong and
+  **Mark as failed**.
+- Success looks like: "Marked as printed" (or "Marked as failed") and
+  links **Back to P-…** and **Print history**. The record's Labels card
+  lists its last three prints and **All label jobs**; **Labels** (More)
+  lists every print newest first; **To confirm** shows jobs sent but not
+  confirmed, **Failed** the failed ones with their reason; search by short
+  ID or name. A job's page shows the label exactly as it printed, the
+  printer's name and its type (Browser print or PDF download) on separate
+  rows.
+- Worth knowing: "Not public yet: anyone who scans this label sees 'not
+  found' until it is published." means the label works in the shop but not
+  for customers until the product is published (**What the public sees**
+  in the Labels card jumps to the preview). When the price changed since
+  the last printed label, the Labels card says "The price changed since the
+  last printed label (… → …). Reprint the labels on the shelf." A price of
+  0 prints as $0.00; a product with no price prints no price line.
+  Labels show the name, brand, price, condition (units), the bike's size
+  and colour or serial number, the SKU and the short ID: never a cost, a
+  consignor, an owner or a note. New stock from a purchase order is
+  labelled from the order's **Receipts**: **Print N labels** on a received
+  line opens the product's print sheet at the received count
+  ([R-029](RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+  resolved).
+- If it fails: a printed or failed job cannot be printed again as it was:
+  its print view shows what happened and **Print again**, which opens the
+  record's print sheet ("Print again · …", same count and printer) for a
+  new job with today's label, linked to the old one ("Reprint of"). After
+  printing it, Back returns to where you pressed Print again; it does not
+  open the sheet a second time. Print
+  label is disabled with the reason when the record is archived ("That
+  record is archived. Unarchive it before printing labels."), when the
+  shop's public website address is not set (ask an admin), or when there is
+  no label template. "This print was already started" means the job exists:
+  open the link to its print jobs, or press Print again for a new one. A
+  finished job's PDF link answers "This print job is finished. Print again
+  from the record to make a new job."
+
+### Set up label printing (admins)
+
+- Before you start: admin. **Settings → Labels and printers**.
+- Steps: **QR codes point to** shows the shop's public website address
+  every label encodes (a label for P-000123 opens `{address}/q/P-000123`).
+  **Change address**, type it (like https://bicii.sg), **Review the
+  change**, read what changes and **Change the address**. **Printers**:
+  tap a printer to rename it, nudge its **Calibration offset X / Y** in
+  0.5 mm steps when labels come out off-centre, switch it off, or **Make
+  default**; **Add printer** for another browser-print or PDF printer
+  (network and Bluetooth printers need Phase 12). **Label templates**: tap
+  one, or **Add template**, to set the size, QR size and margin, QR side,
+  which fields print, name lines and text size, watching the preview.
+- Success looks like: toasts "QR address saved", "… saved", "… is the
+  default printer".
+- If it fails: a malformed address shows "Use http:// or https://, a host
+  and an optional path, with no ? or # part, under 200 characters." A
+  template that does not fit says why under the preview (for example "The
+  QR code does not fit: at most 26.0 mm on this label.") and cannot be
+  saved. The default printer and default templates cannot be switched off:
+  make another the default first. Changing the address does not change
+  labels already printed: they keep opening the old address, so keep it
+  working (a redirect) ([OPERATIONS.md](OPERATIONS.md#product-administration)).
 
 ### Book and run an appointment
 
@@ -583,14 +673,15 @@ shown as a badge on Settings → Your profile and on Settings → Staff:
 
 | Role | What it lets you do |
 |---|---|
-| Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93) |
-| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings |
+| Admin | Everything: every permission below, **Record refund** on a sale, and the admin-only settings: shop hours, closures, booking capacity, appointment types, the Cult Commons rate, staff and roles (inviting or changing admins and managers, changing anyone's role) (D91, D93), and Settings → **Labels and printers** (the QR address, printers, label templates) |
+| Manager | Every permission below except Manage staff, and **Record refund** on a sale (D91, D94). Not the admin-only settings or Labels and printers |
 | Mechanic | The workshop: what everyone can do (next paragraph). Anything more only as extra access |
 
 Everyone signed in can use customers, bikes, photos, jobs and their lines,
 parts from stock, appointments and check-in, in-store sales, Scan, search,
-and read the schedule, appointment types, services and locations. Selling
-prices and sale totals are visible to all; costs are not.
+printing labels (and confirming or failing print jobs), and read the
+schedule, appointment types, services and locations. Selling prices and
+sale totals are visible to all; costs are not.
 
 **Extra access (exceptions).** An admin can give one person a single
 permission on top of their role (D92): for example a mechanic who orders
@@ -626,8 +717,7 @@ Everyone can open Purchasing, its orders and suppliers, and see what is
 ordered, received and still to come; costs on those screens need View
 costs or Manage purchasing (D60).
 
-Not available yet: **Labels** and **Reports** show "Phase 8 (QR and
-labels)" and "Phase 9 (Reporting)"
+Not available yet: **Reports** shows "Phase 9 (Reporting)"
 ([R-018](RISKS.md#r-018--four-sections-are-placeholder-pages)).
 There is no reschedule, no customer messaging and no data export. Help:
 ask the owner or an admin.

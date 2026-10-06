@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { PDFDocument } from "pdf-lib";
 
 import { PRODUCT, PRODUCT_SHORT_ID } from "../fixtures/ids";
 import {
@@ -10,12 +11,15 @@ import {
   tagFor,
   toast,
 } from "./helpers";
+import { labelPayloads, pdfLinkUris, qrPayloadFor } from "./label-helpers";
 
 /**
  * M1.4 inventory, on a phone and an iPad: SPEC §27.3 journey 3 without
- * labels and receiving (a product stocked by an opening count, used on a
- * job, returned by voiding the line and used again), a unique item on one
- * job only, and the permission boundary. Every record carries
+ * receiving (a product stocked by an opening count, labelled with ten
+ * identical QR labels through the PDF adapter, used on a job, returned by
+ * voiding the line and used again; receiving is Phase 7, on the parallel
+ * track, RISKS R-029), a unique item on one job only, and the permission
+ * boundary. Every record carries
  * tagFor(testInfo), and stock is asserted on the test's own product, so
  * runs and projects never see each other's counts.
  */
@@ -65,6 +69,49 @@ test("journey 3: a product is stocked, used on a job, returned to stock and used
     .getByRole("link", { name: new RegExp(name) });
   await expect(row).toContainText(product.shortId);
   await expect(row).toContainText("10 in stock");
+
+  // 2b. Ten labels through the PDF adapter (SPEC §31; PLAN D9, D56, D59):
+  // ten identical payloads, exactly the database QR base, on the print view
+  // and in the PDF; confirmed printed by hand. Printing moves no stock.
+  await page.goto(product.url);
+  const payload = qrPayloadFor(product.shortId);
+  await page.getByRole("button", { name: "Print label" }).first().click();
+  const printSheet = page.getByRole("dialog");
+  await expect(printSheet.getByRole("heading")).toHaveText(`Print labels · ${product.shortId}`);
+  await printSheet.getByRole("button", { name: "10 labels" }).click();
+  await printSheet.getByRole("radio", { name: "PDF download" }).click();
+  await printSheet.getByRole("button", { name: "Print 10 labels" }).click();
+  await expect(page).toHaveURL(/\/print\/labels\/[0-9a-f-]{36}$/);
+  const printJobId = page.url().split("/").at(-1)!;
+  await expect(page.locator("[data-label]")).toHaveCount(10);
+  expect(await labelPayloads(page)).toEqual(Array.from({ length: 10 }, () => payload));
+
+  const openPdf = page.getByRole("link", { name: "Open PDF" });
+  const pdfHref = await openPdf.getAttribute("href");
+  expect(pdfHref).toBe(`/api/labels/${printJobId}/pdf`);
+  const pdfResponse = await page.request.get(pdfHref!);
+  expect(pdfResponse.status()).toBe(200);
+  expect(pdfResponse.headers()["content-type"]).toBe("application/pdf");
+  const pdf = await PDFDocument.load(await pdfResponse.body(), { updateMetadata: false });
+  expect(pdf.getPageCount()).toBe(10);
+  expect(pdfLinkUris(pdf)).toEqual(Array.from({ length: 10 }, () => payload));
+
+  const [pdfTab] = await Promise.all([page.waitForEvent("popup"), openPdf.click()]);
+  await pdfTab.close();
+  await expect(
+    page.getByRole("heading", { name: "Did all 10 labels print correctly?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Yes, all printed" }).click();
+  await expect(toast(page, "Marked as printed")).toBeVisible();
+
+  await page.goto(`/labels?q=${encodeURIComponent(product.shortId)}`);
+  const printed = page
+    .getByRole("list", { name: "Print jobs" })
+    .locator(`a[href="/labels/${printJobId}"]`);
+  await expect(printed).toContainText("Printed");
+  await expect(printed).toContainText("10 ×");
+  await page.goto(product.url);
+  await expect(section(page, "Stock").getByText("10 in stock")).toBeVisible();
 
   // 3. A walk-in job; 1 × the product from Add part.
   const job = await createJobViaIntake(page, { tag });

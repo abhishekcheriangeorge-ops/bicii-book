@@ -238,6 +238,15 @@ test("journey 3, receiving: a double-tapped delivery is received once, sets the 
   );
   await expect(receipts).toContainText("18 ×");
   await expect(receipts).toContainText("$12.50 each");
+  // Phase 8 on the received line (R-029): "Print 18 labels" opens the
+  // product's print sheet at the received count; closed without printing.
+  await receipts.getByRole("link", { name: `Print 18 labels for ${name}` }).click();
+  await expect(page).toHaveURL(new RegExp(`/products/${productId(product.url)}\\?print=1&qty=18$`));
+  const printSheet = page.getByRole("dialog");
+  await expect(printSheet.getByRole("heading")).toHaveText(`Print labels · ${product.shortId}`);
+  await expect(printSheet.getByRole("button", { name: "Print 18 labels" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // 4. The product: 18 on hand (also after a reload), one Received +18
   // movement, the supplier with last cost $12.50 (D63), 2 on order.

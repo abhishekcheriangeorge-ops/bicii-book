@@ -3,14 +3,18 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { readMoney, section, signIn, tagFor, toast } from "./helpers";
+import { labelPayloads, qrPayloadFor } from "./label-helpers";
 
 /**
  * Journey 4 (SPEC §27.3), on a phone and an iPad: "Create unique
  * consignment bike -> label -> public page -> sale -> Cult Commons
  * calculation -> consignor outstanding -> partial/full settlement".
- * The label step is left out: labels are Phase 8. The public page is
- * checked through the product page's "What the public sees" panel, the
- * staff view of the public projection (as inventory-publish.spec.ts does).
+ * The label is one QR label for the bike's unit (U-; PLAN D57), whose
+ * payload is exactly the database QR base (D9) and whose price is the one
+ * selling price (D58). The public page is checked through the "What the
+ * public sees" panels on the product and unit pages, the staff view of the
+ * public projection reporting.public_items (as inventory-publish.spec.ts
+ * does); tests/db/labels.test.ts proves anon reads the same row.
  *
  * A new consignor; one consigned Colnago (owed $500, asking $1,000) with a
  * public listing photo (agreement photos stay internal, D52); published at
@@ -21,7 +25,7 @@ import { readMoney, section, signIn, tagFor, toast } from "./helpers";
  * access sees the sale total only (D48); paid $200 then $300 to Settled
  * (D47); Today's Consignment sales tile opens that day's Sales list, which
  * shows the sale.
- * Every record carries tagFor(testInfo).
+ * Every record carries tagFor(testInfo). window.print is stubbed.
  */
 
 const PHOTO = path.join(__dirname, "fixtures", "bike-photo.jpg");
@@ -32,6 +36,9 @@ test("journey 4: a consigned bike is listed, sold in store, its yield split and 
 }, testInfo) => {
   test.setTimeout(300_000);
   const tag = tagFor(testInfo);
+  await page.addInitScript(() => {
+    window.print = () => {};
+  });
   const consignorName = `Consignor ${tag}`;
   const bikeName = `Colnago Master ${tag}`;
 
@@ -61,7 +68,9 @@ test("journey 4: a consigned bike is listed, sold in store, its yield split and 
   const itemUrl = page.url();
   const header = page.locator("header").filter({ has: page.getByRole("heading", { level: 1 }) });
   const itemShortId = (await header.getByText(/^C-\d{6}$/).textContent())!.trim();
-  await expect(header.getByRole("link", { name: /^U-\d{6}$/ })).toBeVisible();
+  const unitLink = header.getByRole("link", { name: /^U-\d{6}$/ });
+  await expect(unitLink).toBeVisible();
+  const unitShortId = (await unitLink.textContent())!.trim();
   await expect(header.getByText("For sale", { exact: true })).toBeVisible();
 
   // 3. A listing photo, made public; the agreement photos offer no Public (D52).
@@ -88,6 +97,7 @@ test("journey 4: a consigned bike is listed, sold in store, its yield split and 
   // 4. Publish the product: the public sees it available at the asking price, no cost.
   await header.getByRole("link", { name: /^U-\d{6}$/ }).click();
   await expect(page).toHaveURL(/\/units\/[0-9a-f-]{36}$/);
+  const unitUrl = page.url();
   await page.getByRole("heading", { level: 1 }).getByRole("link").click();
   await expect(page).toHaveURL(/\/products\/[0-9a-f-]{36}$/);
   const productUrl = page.url();
@@ -103,6 +113,39 @@ test("journey 4: a consigned bike is listed, sold in store, its yield split and 
   await expect(preview).toContainText("$1,000.00");
   await expect(preview).toContainText("Available");
   await expect(preview).not.toContainText("$500.00");
+
+  // 4b. One label for the bike's unit (D57): its U- payload on the database
+  // QR base (D9), the asking price (D58), never the payout, cost or
+  // consignor; confirmed printed (D59). The unit's public panel shows the
+  // same name and price, and nothing internal.
+  await page.goto(unitUrl);
+  await page.getByRole("button", { name: "Print label" }).first().click();
+  const printSheet = page.getByRole("dialog");
+  await expect(printSheet.getByRole("heading")).toHaveText(`Print labels · ${unitShortId}`);
+  await expect(printSheet.getByLabel("How many")).toHaveValue("1");
+  await printSheet.getByRole("radio", { name: "This device (browser print)" }).click();
+  await printSheet.getByRole("button", { name: "Print 1 label" }).click();
+  await expect(page).toHaveURL(/\/print\/labels\/[0-9a-f-]{36}$/);
+  const label = page.locator("[data-label]");
+  await expect(label).toHaveCount(1);
+  expect(await labelPayloads(page)).toEqual([qrPayloadFor(unitShortId)]);
+  // The drawn name may be shortened with "…"; the label's accessible name is whole.
+  await expect(
+    label.getByRole("img", { name: `Label: ${bikeName}, $1,000.00, ${unitShortId}`, exact: true }),
+  ).toBeVisible();
+  await expect(label).not.toContainText(/\$500|cost|consign|internal/i);
+  const labelPrice = (await label.locator('[data-field="price"]').textContent())!.trim();
+  expect(labelPrice).toBe("$1,000.00");
+  await page.getByRole("button", { name: "Print", exact: true }).click();
+  await page.getByRole("button", { name: "Yes, all printed" }).click();
+  await expect(toast(page, "Marked as printed")).toBeVisible();
+
+  await page.goto(unitUrl);
+  const unitPreview = page.getByRole("region", { name: "What the public sees" });
+  await expect(unitPreview).toContainText(bikeName);
+  await expect(unitPreview).toContainText(labelPrice);
+  await expect(unitPreview).toContainText("Available");
+  await expect(unitPreview).not.toContainText(/cost|consign|internal|\$500/i);
 
   // 5. Sell it from its item page at the asking price.
   await page.goto(itemUrl);

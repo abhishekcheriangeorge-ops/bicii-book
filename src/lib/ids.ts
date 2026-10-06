@@ -47,6 +47,26 @@ export function isShortId(input: string): boolean {
   return parseShortId(input) !== null;
 }
 
+/**
+ * A usable QR base (PLAN D9, ADR-017): http or https (lower case), a host,
+ * an optional path, no query, fragment or whitespace, at most 200
+ * characters. The same rule as the database's
+ * shop_settings_public_site_url_check and private.qr_payload, so the Admin
+ * shows a QR URL exactly when the database would print one
+ * (tests/fixtures/qr-bases.ts drives both).
+ */
+export const QR_BASE_PATTERN = /^https?:\/\/[^/?#\s]+(\/[^?#\s]*)?$/;
+export const QR_BASE_MAX_LENGTH = 200;
+
+export function isValidQrBase(base: unknown): base is string {
+  return (
+    typeof base === "string" &&
+    // Code points, as Postgres char_length counts them.
+    [...base].length <= QR_BASE_MAX_LENGTH &&
+    QR_BASE_PATTERN.test(base)
+  );
+}
+
 /** The QR payload for a short ID: `{base}/q/{shortId}`. */
 export function qrPayload(base: string, shortId: string): string {
   const parsed = parseShortId(shortId);

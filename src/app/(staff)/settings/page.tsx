@@ -5,6 +5,7 @@ import {
   CalendarIcon,
   ChevronRightIcon,
   ClockIcon,
+  PrinterIcon,
   ShareIcon,
   UserIcon,
   UsersIcon,
@@ -64,6 +65,16 @@ export default async function SettingsPage() {
       description: "What can be booked, how long it takes, and online booking",
       icon: CalendarIcon,
     },
+    ...(staff.role === "admin"
+      ? [
+          {
+            href: "/settings/labels",
+            label: "Labels and printers",
+            description: "QR address, printers and label sizes",
+            icon: PrinterIcon,
+          },
+        ]
+      : []),
     {
       href: "/settings/install",
       label: "Install the app",

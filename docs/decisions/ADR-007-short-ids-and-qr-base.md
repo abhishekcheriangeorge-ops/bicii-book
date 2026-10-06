@@ -5,6 +5,12 @@ default, not individually confirmed by the owner); the QR base source stays
 open until Phase 8. Decision owner: Abhishek Cherian George (owner) for
 business meaning; defaults proposed by the build agent.
 
+Status update 2026-10-05 (Phase 8): the QR base is decided in
+[ADR-017](ADR-017-labels-and-qr-base.md): `shop_settings.public_site_url`,
+computed by `private.qr_payload` with no fallback;
+`NEXT_PUBLIC_PUBLIC_SITE_URL` stays only as an additional scan base. The
+short-ID format and URL shape below stand.
+
 ## Context
 
 SPEC §15 and §24 require human-readable short IDs and QR labels that open a
@@ -33,7 +39,7 @@ through `src/lib/qr.ts`, so Phase 8's choice is a change in one file.
 
 - A label encodes the environment's public site URL; a label printed for
   another environment's URL is "Not a BICII label" to this one's scanner
-  ([RISKS R-013](../RISKS.md#r-013--qr-base-undecided-until-phase-8)).
+  ([RISKS R-013](../RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address)).
 - Phase 8 must keep the environment's base in `scanBases()` so earlier
   labels still scan.
 - Short-ID sequences are never reused (see DATA-MODEL §17).

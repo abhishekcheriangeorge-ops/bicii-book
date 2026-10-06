@@ -145,7 +145,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <div
       data-sheet-exempt=""
       className={cn(
-        "pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 pb-4 md:items-end md:px-6 md:pb-6",
+        // print:hidden: a printed page (label sheets) never carries a toast.
+        "pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 pb-4 md:items-end md:px-6 md:pb-6 print:hidden",
         // Phones: above the tab bar (4rem + the raised Scan disc), so a toast
         // never covers Scan. md+: the rail is on the left, so the corner is
         // free. An open Sheet moves both above its footer (--toast-inset-bottom).

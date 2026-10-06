@@ -859,6 +859,59 @@ export const EXPECTED_SALE: Record<SeedSale, SaleExpectation> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Phase 8: labels (DATA-MODEL §12, §18 "Phase 8 part").
+// ---------------------------------------------------------------------------
+
+/**
+ * The seeded shop_settings.public_site_url: the DATABASE QR base
+ * (private.qr_payload, D9). Every printed payload is exactly
+ * `${SHOP.publicSiteUrl}/q/${shortId}`. Distinct from E2E_PUBLIC_SITE_URL in
+ * tests/fixtures/public-site.ts, the environment's scan-only base
+ * (NEXT_PUBLIC_PUBLIC_SITE_URL, an extra accepted base in scanBases()).
+ */
+export const SHOP = { publicSiteUrl: "http://localhost:4000" } as const;
+
+/**
+ * public.label_templates.id: the built-in 58 x 40 mm defaults, one per kind,
+ * inserted by the labels migration (production needs them), not the seed.
+ */
+export const LABEL_TEMPLATE = {
+  product: "1ab00000-0000-4000-8000-000000000001",
+  unit: "1ab00000-0000-4000-8000-000000000002",
+  bike: "1ab00000-0000-4000-8000-000000000003",
+} as const;
+
+/**
+ * public.printer_profiles.id, inserted by the labels migration: browser
+ * ("This device (browser print)", the default, sort 0) and pdf ("PDF
+ * download", sort 1).
+ */
+export const PRINTER_PROFILE = {
+  browser: "a8000000-0000-4000-8000-000000000001",
+  pdf: "a8000000-0000-4000-8000-000000000002",
+} as const;
+
+/**
+ * public.print_jobs.id (seed "Phase 8"), on the default templates:
+ *   productPrinted   PRODUCT.barTape (P-000011) x 10, browser, printed by
+ *                    mechanic1, 2 days ago.
+ *   unitFailed       UNIT.colnago (U-000001, bike B-000011) x 1, pdf, failed
+ *                    "Label roll ran out halfway through", admin, yesterday.
+ *   unitReprint      reprint of unitFailed, same unit x 1, pdf, printed, admin.
+ *   bikeUnconfirmed  BIKE.tanTarmac (B-000001) x 1, browser, rendered (not
+ *                    confirmed), mechanic2, today.
+ *   productQueued    PRODUCT.barTape x 10, pdf, queued, mechanic1, today
+ *                    (E2E renders and downloads it; nothing changes its status).
+ */
+export const PRINT_JOB = {
+  productPrinted: "a9000000-0000-4000-8000-000000000001",
+  unitFailed: "a9000000-0000-4000-8000-000000000002",
+  unitReprint: "a9000000-0000-4000-8000-000000000003",
+  bikeUnconfirmed: "a9000000-0000-4000-8000-000000000004",
+  productQueued: "a9000000-0000-4000-8000-000000000005",
+} as const;
+
 /**
  * Purchasing (Phase 7): public.suppliers.id. The seed links them to Phase 4
  * products with set_supplier_product (supplier SKU, lead days, preferred):

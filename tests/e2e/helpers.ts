@@ -242,10 +242,23 @@ export async function createJobViaIntake(
   return { id, jobNumber: (await heading.textContent())!.trim() };
 }
 
-/** Creates a counted product through New product and returns its page's URL and P- number. */
+/**
+ * Creates a counted product through New product and returns its page's URL
+ * and P- number. Leave `reorderPoint` out
+ * unless the test needs one: a product at or below its reorder point stays
+ * in reporting.low_stock after the run, and Today lists only the first five
+ * low-stock products (largest shortfall first), so leftovers from earlier
+ * specs would push the seeded ones off the list `today.spec.ts` checks.
+ */
 export async function createProduct(
   page: Page,
-  { name, sku, price, cost, reorderPoint }: Record<string, string>,
+  {
+    name,
+    sku,
+    price,
+    cost,
+    reorderPoint,
+  }: { name: string; sku: string; price: string; cost: string; reorderPoint?: string },
 ): Promise<{ url: string; shortId: string }> {
   await page.goto("/inventory");
   await page.getByRole("button", { name: "New product" }).first().click();
@@ -258,7 +271,7 @@ export async function createProduct(
   await sheet.getByLabel("SKU").fill(sku);
   await sheet.getByLabel("Sale price", { exact: true }).fill(price);
   await sheet.getByLabel("Cost", { exact: true }).fill(cost);
-  await sheet.getByLabel("Reorder point").fill(reorderPoint);
+  if (reorderPoint !== undefined) await sheet.getByLabel("Reorder point").fill(reorderPoint);
   await sheet.getByRole("button", { name: "Add product" }).click();
   await expect(page).toHaveURL(/\/products\/[0-9a-f-]{36}$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);

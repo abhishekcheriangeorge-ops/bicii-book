@@ -17,8 +17,9 @@ const values = {
   NEXT_PUBLIC_SUPABASE_URL: GATEWAY_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
-  // Placeholder for the public website (QR base, PLAN D9) when running both
-  // locally; replace with the public site's dev URL if you run it.
+  // An extra accepted scan base (src/lib/qr.ts scanBases). The QR base itself
+  // is shop_settings.public_site_url (PLAN D9; the seed sets
+  // http://localhost:4000).
   NEXT_PUBLIC_PUBLIC_SITE_URL: "http://localhost:4000",
 };
 

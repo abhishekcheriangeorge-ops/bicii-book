@@ -11,13 +11,14 @@ export type NumberInputKind = "money" | "quantity" | "decimal";
 
 export type NumberInputProps = Omit<
   ComponentPropsWithRef<"input">,
-  "type" | "inputMode" | "value" | "defaultValue" | "onChange" | "prefix" | "size"
+  "type" | "inputMode" | "value" | "defaultValue" | "onChange" | "prefix" | "size" | "step"
 > & {
   /**
    * money: two decimals, currency prefix, decimal keypad.
    * quantity: a count with optional −/+ steppers; whole numbers on the
    *   numeric keypad, or up to `decimals` places on the decimal keypad.
-   * decimal: free decimal (rates).
+   * decimal: free decimal (rates, millimetres); with `stepper`, −/+ move
+   *   by `step` (print offsets: 0.5 mm).
    */
   kind?: NumberInputKind;
   /**
@@ -33,8 +34,15 @@ export type NumberInputProps = Omit<
   onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
   /** Currency symbol shown before money values. Default "$" (SGD). */
   currencySymbol?: string;
-  /** Show −/+ buttons (quantity only). */
+  /** Show −/+ buttons (quantity, or decimal with `step`). */
   stepper?: boolean;
+  /**
+   * decimal only: what each −/+ press adds or takes (default 1). The result
+   * is rounded to the step's decimal places (step 0.5: 1.24 + 0.5 = 1.74,
+   * shown as 1.7) and clamped to min/max. The steppers are also how a
+   * phone enters a negative value: iOS's decimal keypad has no minus key.
+   */
+  step?: number;
   /** Bounds used by the steppers; typed input is validated server-side. */
   minValue?: number;
   maxValue?: number;
@@ -69,6 +77,7 @@ export function NumberInput({
   onChange,
   currencySymbol = "$",
   stepper = false,
+  step: stepSize = 1,
   decimals = 0,
   minValue,
   maxValue,
@@ -92,14 +101,23 @@ export function NumberInput({
 
   // Decimal arithmetic on the text, so a fraction survives a step (1.5 + 1
   // is 2.5, not 2) and nothing passes through a float.
-  const step = (delta: number) => {
-    let next = (fractional ? currentNumber : currentNumber.trunc()).plus(delta);
+  const step = (direction: 1 | -1) => {
+    let next: Decimal;
+    if (kind === "decimal") {
+      const by = new Decimal(String(stepSize));
+      next = currentNumber
+        .plus(by.times(direction))
+        .toDecimalPlaces(by.decimalPlaces(), Decimal.ROUND_HALF_UP);
+    } else {
+      next = (fractional ? currentNumber : currentNumber.trunc()).plus(direction);
+    }
     if (minValue !== undefined) next = Decimal.max(minValue, next);
     if (maxValue !== undefined) next = Decimal.min(maxValue, next);
-    update(next.toString());
+    // Never "-0".
+    update(next.isZero() ? "0" : next.toString());
   };
 
-  const showStepper = stepper && kind === "quantity";
+  const showStepper = stepper && (kind === "quantity" || kind === "decimal");
 
   const input = (
     <div className="relative min-w-0 flex-1">

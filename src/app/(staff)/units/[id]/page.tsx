@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { HeaderPrintLabel, LabelsCard } from "@/components/domain/labels-card";
 import { HistoryList, MovementList } from "@/components/domain/movement-list";
-import { CopyText } from "@/components/domain/copy-text";
 import { PhotoGrid } from "@/components/domain/photo-grid";
-import { PublicPreviewPanel } from "@/components/domain/public-preview";
+import { PUBLIC_PREVIEW_ID, PublicPreviewPanel } from "@/components/domain/public-preview";
+import { QrLabelUrl } from "@/components/domain/qr-label-url";
 import { RecordSaleButton } from "@/components/domain/record-sale-sheet";
 import { RestockControl } from "@/components/domain/sale-controls";
 import { ShortId } from "@/components/domain/short-id";
@@ -20,10 +21,12 @@ import { CONSIGNED_STOCK_NOTE } from "@/lib/consignment";
 import { consignmentForUnit } from "@/lib/domain/consignment";
 import { formatDateTime } from "@/lib/dates";
 import { getUnit, listLocations } from "@/lib/domain/inventory";
+import { getLabelContext, resolvePrintPreset } from "@/lib/domain/labels";
 import { saleForUnit } from "@/lib/domain/sales";
 import { publicationLabel, unitStatusLabel, unitStatusTone } from "@/lib/inventory";
 import { describeUnitEvent } from "@/lib/inventory-history";
 import { formatMoney } from "@/lib/money";
+import { parsePrintParams } from "@/lib/printing/print-sheet";
 import { qrUrl } from "@/lib/qr";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -51,9 +54,11 @@ const OWNERSHIP_LABELS: Record<string, string> = {
  * Phase 6: Sell (any staff, D48) while it is available and shop-owned or
  * consigned; "Sold on S-…" when a sale sold it, with Restock for
  * adjust_stock holders (a consigned unit also needs manage_consignments,
- * D46).
+ * D46). Phase 8: Print label (any staff) and the Labels card (D56–D59):
+ * one label per unit, its U- QR, a linked bike's size and colour line
+ * (D57); `?print=1&qty=N&reprint={job}` opens the print sheet preset.
  */
-export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
+export default async function UnitPage({ params, searchParams }: PageProps<"/units/[id]">) {
   const staff = await requireStaff();
   const { id } = await params;
   if (!isUuid(id)) notFound();
@@ -69,10 +74,12 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
   // D50: consigned stock is never written off; D44: its consignment card.
   const consigned = unit.ownershipType === "consignment";
   const seesConsignmentMoney = canViewConsignmentMoney(staff);
-  const [qr, consignment, sale] = await Promise.all([
+  const [qr, consignment, sale, labels, preset] = await Promise.all([
     qrUrl(unit.shortId),
     consigned ? consignmentForUnit(supabase, unit.id) : Promise.resolve(null),
     unit.status === "sold" ? saleForUnit(supabase, unit.id) : Promise.resolve(null),
+    getLabelContext(supabase, { kind: "unit", entityId: unit.id }),
+    searchParams.then((sp) => resolvePrintPreset(supabase, "unit", unit.id, parsePrintParams(sp))),
   ]);
   const sellable =
     unit.status === "available" &&
@@ -130,48 +137,53 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
             </p>
           ) : null}
         </div>
-        {manage || canAdjust || sellable ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {sellable ? (
-              <RecordSaleButton
-                label="Sell"
-                viewCosts={viewCosts}
-                preset={{ q: unit.shortId, unitId: unit.id }}
-              />
-            ) : null}
-            {manage ? (
-              <EditUnitButton
-                unit={{
-                  id: unit.id,
-                  serialNumber: unit.serialNumber,
-                  condition: unit.condition,
-                  ownSalePrice: unit.ownSalePrice,
-                  ...(viewCosts ? { cost: unit.cost ?? null } : {}),
-                  internalNotes: unit.internalNotes,
-                  consigned,
-                }}
-                viewCosts={viewCosts}
-              />
-            ) : null}
-            {manage && inStock ? (
-              <StockTransferButton
-                subject={{
-                  kind: "unit",
-                  productId: unit.product.id,
-                  unitId: unit.id,
-                  name: `${unit.shortId} ${unit.product.name}`,
-                  fromLocationId: unit.location.id,
-                  locations: locations.locations.map((l) => ({
-                    locationId: l.id,
-                    name: l.name,
-                    active: l.active,
-                    onHand: l.id === unit.location.id ? 1 : 0,
-                  })),
-                }}
-              />
-            ) : null}
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <HeaderPrintLabel
+            kind="unit"
+            entityId={unit.id}
+            shortId={unit.shortId}
+            ctx={labels}
+            preset={preset}
+          />
+          {sellable ? (
+            <RecordSaleButton
+              label="Sell"
+              viewCosts={viewCosts}
+              preset={{ q: unit.shortId, unitId: unit.id }}
+            />
+          ) : null}
+          {manage ? (
+            <EditUnitButton
+              unit={{
+                id: unit.id,
+                serialNumber: unit.serialNumber,
+                condition: unit.condition,
+                ownSalePrice: unit.ownSalePrice,
+                ...(viewCosts ? { cost: unit.cost ?? null } : {}),
+                internalNotes: unit.internalNotes,
+                consigned,
+              }}
+              viewCosts={viewCosts}
+            />
+          ) : null}
+          {manage && inStock ? (
+            <StockTransferButton
+              subject={{
+                kind: "unit",
+                productId: unit.product.id,
+                unitId: unit.id,
+                name: `${unit.shortId} ${unit.product.name}`,
+                fromLocationId: unit.location.id,
+                locations: locations.locations.map((l) => ({
+                  locationId: l.id,
+                  name: l.name,
+                  active: l.active,
+                  onHand: l.id === unit.location.id ? 1 : 0,
+                })),
+              }}
+            />
+          ) : null}
+        </div>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -288,6 +300,15 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
         </Card>
       ) : null}
 
+      <LabelsCard
+        kind="unit"
+        entityId={unit.id}
+        shortId={unit.shortId}
+        ctx={labels}
+        isAdmin={staff.role === "admin"}
+        publicPreviewId={PUBLIC_PREVIEW_ID}
+      />
+
       <Card title="Public listing">
         <div className="flex flex-col gap-4">
           <p className="text-sm text-dust-700">
@@ -297,11 +318,8 @@ export default async function UnitPage({ params }: PageProps<"/units/[id]">) {
             </Link>
             .
           </p>
-          <div className="flex flex-col gap-1">
-            <h3 className="font-display text-xs font-bold tracking-wide uppercase">QR label URL</h3>
-            <CopyText value={qr} label="QR label URL" />
-          </div>
-          <PublicPreviewPanel preview={unit.publicPreview} />
+          <QrLabelUrl value={qr} isAdmin={staff.role === "admin"} />
+          <PublicPreviewPanel preview={unit.publicPreview} id={PUBLIC_PREVIEW_ID} />
         </div>
       </Card>
 

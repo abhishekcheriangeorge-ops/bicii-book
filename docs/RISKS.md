@@ -241,32 +241,35 @@ URLs, or customer data in this file.
 ## R-009 — The seven-PR stack is unmerged and the purchasing track forks from PR #6
 
 - Category: operational gap.
-- Status and owner: partly resolved; owner (merges), build agent
+- Status and owner: mostly resolved; owner (merges), build agent
   (integration). The heading is kept so links stay valid.
 - Trigger: integrating the parallel tracks into `main`.
-- Impact: the stack (PRs #1–#7), the docs stack (#8) and Phase 6 (#11)
-  are merged into `main` (6042e6e). `feat/p7-purchasing` forked from PR
-  #6's head d3e2101; `main` is now merged into it (a merge commit, no
-  rebase) with every conflict resolved keeping both sides, `staff_search`
-  carrying both tracks' kinds, and the seed's Phase 7 part after Phase 6's.
-  That integration is local only until pushed, and its PR (#9) still has
-  to be reviewed and merged. The email sign-in work (`feat/auth-email-otp`,
-  PR #10, forked from Phase 5's head) now has `origin/feat/p7-purchasing`
-  merged into it (2026-10-06, a merge commit, local only), so PR #10 is
-  main + purchasing + email codes and merges after #9. Labels
-  (`feat/p8-labels`) and Shopify, on the other worktree, are not on `main`
-  yet.
-- Evidence and confidence: high; `git log --oneline origin/main`,
-  `git merge-base` before the merge (d3e2101) and the merge commit's two
-  parents (a0fc1d2, 6042e6e); the gates on the merged branch are in
-  [NOW.md](../NOW.md).
+- Impact: the stack (PRs #1–#7), the docs stack (#8), Phase 6 (#11),
+  purchasing (#9), staff email sign-in (#10) and the staff roles (#13)
+  are merged into `main` (`a1aebf6` on 2026-10-06). Labels (Phase 8,
+  `feat/p8-labels`) is not: `origin/main` is merged into `feat/p8-labels`
+  (a merge commit, no rebase; local only until pushed) with every conflict
+  resolved keeping both sides: the seed runs Phase 7's part after Phase
+  6's and before Phase 8's print jobs; the labels risks that collided with
+  purchasing's R-030–R-032 became R-075–R-077; the labels owner questions
+  became rows 21–22 after main's 15–20; the API-surface allow-list holds
+  both the label and the purchasing grants; and the labels E2E's signed-in
+  customer gets its session through the API, because the login form now
+  signs non-staff out (D70). No function, view, policy, grant, trigger or
+  type is defined both by the labels migration and by a purchasing,
+  sign-in or roles migration ([DATA-MODEL](DATA-MODEL.md#authority-applied-state-and-implementation-status)
+  "Authority"), so no reconciling migration was needed. Shopify (Phase 10,
+  `feat/p10-shopify`, stacked on labels) and reporting (Phase 9) are on
+  their own branches.
+- Evidence and confidence: high; `git merge-base` before the merge
+  (c791d4b), the merge commit's parents (3f09d22 and a1aebf6); the gates on
+  the merged tree are in [NOW.md](../NOW.md).
 - Workaround or containment: each integration reruns every gate on the
   merged tree.
-- Next action: push `feat/p7-purchasing` and `feat/auth-email-otp`, let CI
-  and the `e2e` label run on PRs #9 and #10, merge #9 then #10; then
-  integrate labels the same way.
-- Revisit trigger: PR #9 or #10 merges.
-- Last checked: 2026-10-06.
+- Next action: push `feat/p8-labels`, open its PR against `main`, let CI
+  and the `e2e` label run, and merge; then bring Shopify up to date.
+- Revisit trigger: the labels PR merges.
+- Last checked: 2026-10-06 (the merge of `main` into `feat/p8-labels`).
 
 ## R-010 — E2E is not a required check, and branch protection is unverified
 
@@ -322,32 +325,65 @@ URLs, or customer data in this file.
 - Status and owner: open; owner (printer models).
 - Trigger: Phase 8 (labels) and Phase 12 (hardware adapter).
 - Impact: [SPEC §16](SPEC.md#16-label-printing) forbids hard-coding a
-  printer protocol before inspecting BICII's printers. Phase 8 is not
-  built; Phase 12 waits for the printer models. Until then printing will be
-  browser print / PDF only.
-- Evidence and confidence: high; `/labels` is a placeholder page reading
-  "Arrives in Phase 8 (QR and labels)" (R-018).
-- Workaround or containment: browser print/PDF fallback, planned for Phase 8.
-- Next action: owner names the label printer models and label sizes.
-- Revisit trigger: Phase 8 starts.
+  printer protocol before inspecting BICII's printers. Phase 8 shipped the
+  `browser` and `pdf` adapters only (`network_raw` and `bluetooth` exist
+  in the enum but `printer_profiles_adapter_available` refuses them) and
+  58 × 40 mm built-in templates, a size not checked against BICII's label
+  stock; a hardware adapter is Phase 12 and waits for the printer models.
+- Evidence and confidence: high; `src/lib/printing/adapters/` (browser,
+  pdf), `supabase/migrations/20261004003800_labels.sql`; journey 3 prints
+  ten labels through the PDF adapter and journey 4 one through the browser
+  adapter (`tests/e2e/inventory.spec.ts`,
+  `tests/e2e/consignment-journey.spec.ts`, Phase 8 step 4).
+- Workaround or containment: browser print (AirPrint on iPad/iPhone) or
+  the PDF profile; admins add templates for other label sizes and offsets
+  per printer in Labels and printers ([RUNBOOK "Label printers"](RUNBOOK.md#label-printers)).
+- Next action: owner names the label printer models and label sizes;
+  Phase 12 then builds the hardware adapter.
+- Revisit trigger: the printer models are known, or Phase 12 starts.
 - Last checked: 2026-10-05.
 
-## R-013 — QR base undecided until Phase 8
+## R-013 — Changing the QR base leaves printed labels on the old address
 
-- Category: unverified assumption.
-- Status and owner: open; build agent, Phase 8.
-- Trigger: printing or scanning labels across environments.
-- Impact: the QR base is `NEXT_PUBLIC_PUBLIC_SITE_URL` until Phase 8 decides
-  between it and `shop_settings.public_site_url` (D9). A label encoding
-  another environment's public site URL is shown as "Not a BICII label" by
-  this environment's scanner. The Admin shows the QR URL as text today; no
-  QR image is rendered and no label printed yet.
-- Evidence and confidence: high; `src/lib/qr.ts` (`getQrBase`,
-  `scanBases`), `src/lib/scan.ts`.
-- Workaround or containment: type the short ID into Scan or Search.
-- Next action: Phase 8 decides the base and keeps the environment's base in
-  `scanBases()` ([ADR-007](decisions/ADR-007-short-ids-and-qr-base.md)).
-- Revisit trigger: Phase 8 starts.
+- Category: compromise (D9 decided by Phase 8,
+  [ADR-017](decisions/ADR-017-labels-and-qr-base.md)).
+- Status and owner: open (residual); owner (the public address), build
+  agent (procedures).
+- Trigger: an admin changes `shop_settings.public_site_url` after labels
+  were printed, or the public site moves.
+- Impact: the QR base is now `shop_settings.public_site_url`, computed only
+  by `private.qr_payload` with no fallback (decided 2026-10-05, Phase 8
+  step 1). Labels already printed keep encoding the address they were
+  printed with; after a change they open the old address unless the old
+  site redirects `/q/{short_id}`, and the Admin scanner accepts them only
+  if that base is still one of `scanBases()` (the database base and the
+  environment's `NEXT_PUBLIC_PUBLIC_SITE_URL`). Until an admin sets a valid
+  address nothing prints (`public_site_url_invalid`), which is intended.
+- Evidence and confidence: high; `private.qr_payload` and
+  `shop_settings_public_site_url_check` in
+  `supabase/migrations/20261004003800_labels.sql`;
+  `tests/db/labels.test.ts` ("QR payload (D9)"). Since Phase 8 step 2 the
+  Admin displays QR URLs from the same column (`getQrBase()` / `qrUrl()`
+  in `src/lib/qr.ts`, "QR address not set" when unusable) and scans both
+  bases (`scanBases()`): `tests/unit/qr-base.test.ts` (parity with
+  `tests/fixtures/qr-bases.ts`), `tests/unit/qr-base-sources.test.ts`, and
+  `tests/e2e/print-view.spec.ts`, whose environment base
+  (`http://localhost:4001`) differs from the seeded database base
+  (`http://localhost:4000`): the product page shows the database URL and
+  manual entry accepts both. Phase 8 step 4: journeys 3 and 4 assert every
+  printed payload (print view and PDF link) equals the database base
+  exactly (`tests/e2e/inventory.spec.ts`,
+  `tests/e2e/consignment-journey.spec.ts`).
+- Workaround or containment: keep the old public address redirecting
+  `/q/*`, and keep the old address as the environment's
+  `NEXT_PUBLIC_PUBLIC_SITE_URL` so the Admin scanner still accepts its
+  labels; reprint labels after a move (Print again keeps the history).
+- Next action: none in the app for the residual; the RUNBOOK says to set
+  the address before the first print and not to change it casually. Only
+  one earlier address can be accepted through the environment; more would
+  need a list of retired bases (not planned).
+- Revisit trigger: the public site's address changes; Phase 11 builds the
+  public `/q` route.
 - Last checked: 2026-10-05.
 
 ## R-014 — Camera scanning needs HTTPS or localhost
@@ -440,17 +476,18 @@ URLs, or customer data in this file.
 ## R-018 — Four sections are placeholder pages
 
 - Category: known limitation.
-- Status and owner: open; build agent (Phases 8–9). Consignment stopped
-  being a placeholder in Phase 6 step 3 and Purchasing in Phase 7 (on the
-  main line since the integration on `feat/p7-purchasing`); the heading is
-  kept so links stay valid.
-- Trigger: staff open Labels or Reports.
-- Impact: those pages render the `ComingSoon` component
-  (`src/components/shell/coming-soon.tsx`), which names the phase they
-  arrive in; none of their features exist on this branch.
-- Evidence and confidence: high; `src/app/(staff)/{labels,reports}/page.tsx`.
+- Status and owner: open; build agent (Phase 9). Consignment stopped
+  being a placeholder in Phase 6 step 3, Purchasing in Phase 7 (on the
+  main line since the integration on `feat/p7-purchasing`) and Labels in
+  Phase 8 (the print history, printing from the record pages, and Labels
+  and printers); Reports remains. The heading is kept so links stay valid.
+- Trigger: staff open Reports.
+- Impact: the page renders the `ComingSoon` component
+  (`src/components/shell/coming-soon.tsx`), which names the phase it
+  arrives in; none of its features exist on this branch.
+- Evidence and confidence: high; `src/app/(staff)/reports/page.tsx`.
 - Workaround or containment: none.
-- Next action: Phases 8 (other worktree) and 9.
+- Next action: Phase 9 (other worktree).
 - Revisit trigger: each phase ends.
 - Last checked: 2026-10-05.
 
@@ -459,17 +496,20 @@ URLs, or customer data in this file.
 - Category: known defect (documentation).
 - Status and owner: accepted; build agent.
 - Trigger: reading ADR-001 A1 as the current stack.
-- Impact: ADR-001 names Next.js 16.2 and the `qrcode` package; `package.json`
-  has `next` 16.3.8, `react` 19.2.8 and no `qrcode` dependency (labels are
-  not built). ADR-001 is kept as the historical record.
-- Evidence and confidence: high; `package.json` on 2026-10-05.
+- Impact: ADR-001 names Next.js 16.2 and the `qrcode` package;
+  `package.json` has `next` 16.3.8 and `react` 19.2.8. `qrcode` is
+  installed since Phase 8 step 2 (1.5.4, with `pdf-lib` 1.17.1 and
+  `@pdf-lib/standard-fonts` 1.0.0), so only the version names differ.
+  ADR-001 is kept as the historical record.
+- Evidence and confidence: high; `package.json` on 2026-10-05 (Phase 8
+  step 2; unchanged at the end of Phase 8, step 4).
 - Workaround or containment: `package.json` is authoritative for versions;
   [ARCHITECTURE.md](ARCHITECTURE.md#current-system) states the installed
   versions, and ADR-001's status lines point to it and to the later
   decision records.
 - Next action: none; a later decision record supersedes ADR-001 A1 only if
   the stack choice itself changes.
-- Revisit trigger: a QR rendering library is chosen (Phase 8).
+- Revisit trigger: the stack choice itself changes.
 - Last checked: 2026-10-05.
 
 ## R-020 — A bike record consigned once cannot be consigned again
@@ -501,10 +541,10 @@ URLs, or customer data in this file.
 
 - Category: deliberate shortcut.
 - Status and owner: accepted (D49, build default, owner to confirm);
-  owner, with Phase 9's refund-reporting row (working name DR5).
+  owner, with Phase 9's refund-reporting row (in D100–D119).
 - Trigger: an admin or a manager records a refund on a sale
-  (`record_sale_refund`, D94), or
-  staff restock a sold unit (`restock_unit`).
+  (`record_sale_refund`, D94), or staff restock a sold unit
+  (`restock_unit`).
 - Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
   Today and the financial reports) keep every sale line at its snapshot:
   a refunded or restocked sale still counts in gross sales, yield and Cult
@@ -715,6 +755,63 @@ URLs, or customer data in this file.
 - Revisit trigger: the owner's answer, Phase 9 reporting, or the first
   closed-period request.
 - Last checked: 2026-10-05.
+
+## R-028 — The main-line decision range D43–D59 is exhausted
+
+- Category: process gap.
+- Status and owner: open; orchestrator and owner.
+- Trigger: the next main-line phase needs a new D-row (for example
+  Shopify, Phase 10, or Phase 9 reporting's refund row).
+- Impact: [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) reserves
+  D43–D59 for this line and D60 and up for the purchasing track (D60–D66
+  on `feat/p7-purchasing`). Phase 8 took D56–D59, the last four numbers,
+  so there was no free main-line number; a later phase picking one on its
+  own risked a collision at the integration step.
+- Evidence and confidence: high. Resolved by the orchestrator's allocation
+  of 2026-10-06, now stated in PLAN §6's introduction,
+  [decisions/README.md](decisions/README.md), AGENTS.md's maintenance
+  contract and [ENGINEERING.md](ENGINEERING.md): D60–D69 purchasing,
+  D70–D79 staff email sign-in, D80–D89 Shopify (used by Phase 10, ADR-020),
+  D90–D99 staff roles, D100–D119 Phase 9 reporting, D120–D139 Phase 11
+  public site, D140 and up later; ADR-018 to ADR-023 likewise; and the
+  RISKS ranges in AGENTS.md (R-028–R-029 labels, R-030–R-034 purchasing,
+  R-035–R-039 email sign-in, R-040–R-049 Shopify, R-050–R-054 roles,
+  R-055–R-064 reporting, R-065–R-074 public site). At the merge of `main`
+  into `feat/p8-labels` (2026-10-06) the D-rows and records met without a
+  collision (D56–D59, D60–D66, D70–D72, D90–D94); the labels
+  risks numbered R-030–R-032 before the ranges existed collided with
+  purchasing's and became R-075–R-077, with every link updated.
+- Workaround or containment: none needed.
+- Next action: none; each phase uses only its own range.
+- Revisit trigger: a phase exhausts its range.
+- Last checked: 2026-10-06 (the merge of `main` into `feat/p8-labels`).
+
+## R-029 — The purchase receive screen has no "Print N labels" shortcut yet
+
+- Category: compromise (integration deferred).
+- Status and owner: resolved at the merge of `main` into `feat/p8-labels`
+  (2026-10-06); build agent. The heading is kept so links stay valid.
+- Trigger: staff receive a purchase order and want labels for what came in.
+- Impact: Phase 8 built labels where purchasing (Phase 7) did not exist.
+  Now that both are on this branch, receiving returns to the order, and
+  every line of the order's **Receipts** has "Print N labels" (N = the
+  quantity received): the product page with its print sheet open at that
+  count (`printLabelsPath`, the `?print=1&qty=N` deep link the record pages
+  already read). A purchase line is always a counted product (D62), so the
+  label is the product's; above 500 the sheet prints 500 and says how many
+  remain (D56). Nothing is printed until staff press Print, so a receipt
+  never creates a print job by itself. The lost-response banner of the
+  receive screen ("This delivery was recorded …") links to the order, where
+  the shortcut is.
+- Evidence and confidence: high; `src/app/(staff)/purchasing/(browse)/orders/[id]/page.tsx`,
+  `src/lib/printing/links.ts` (`tests/unit/printing/job.test.ts` "links");
+  journey 3's receiving step in `tests/e2e/purchasing.spec.ts` clicks
+  "Print 18 labels" on the receipt and finds the sheet at "Print 18
+  labels".
+- Workaround or containment: none needed.
+- Next action: none.
+- Revisit trigger: receiving gains unique items (a unit per label, D57).
+- Last checked: 2026-10-06.
 
 ## R-030 — A wrong delivery cannot be reversed, only adjusted
 
@@ -1199,3 +1296,93 @@ URLs, or customer data in this file.
 - Next action: run the public site's CI after any change to these objects.
 - Revisit trigger: any migration that touches them.
 - Last checked: 2026-10-06.
+
+## R-075 — Label output is unverified on a real label printer and on iOS
+
+- Category: verification gap.
+- Status and owner: open; owner (a test print on the shop's printer).
+  Phase 8 step 3 added the record pages' print sheet and the printers'
+  calibration offsets (editable in Labels and printers); still nothing has
+  been printed on a printer.
+- Trigger: the first real print on the shop's label printer, from an
+  iPhone or iPad (browser print) or through the PDF (Share → Print).
+- Impact: the label sheet and the PDF are tested in Chromium and in code
+  (`tests/unit/printing/`: every element inside the label, the QR decoded
+  back to the exact payload with ZXing from a rasterised SVG; the PDF's
+  page size and link; `tests/e2e/print-view.spec.ts`: one label per page
+  under print media; `tests/e2e/labels.spec.ts`: 10 labels with the exact
+  payload, a 50 × 30 mm template's `@page` size, `window.print` stubbed;
+  Phase 8 step 4's journey 3: ten labels through the PDF adapter, the PDF
+  fetched as `application/pdf` with ten pages and ten identical link URIs,
+  the PDF tab opened in Chromium and closed), never on a printer. Unknowns: whether iOS Safari
+  honours `@page { size: 58mm 40mm; margin: 0 }` for a label printer or
+  scales the page; whether the device draws "Helvetica, Arial" with the
+  Helvetica metrics the layout was measured with (a wider substitute is
+  clipped at the label edge, never spilled); how a 500-label job
+  (`<use>` copies of one label) behaves on an older iPad.
+- Evidence and confidence: medium; `src/lib/printing/compose.ts`,
+  `label-svg.tsx`, `adapters/`; no printer in the build environment.
+- Workaround or containment: the PDF profile (exact page size, standard
+  fonts) when browser print scales; printer offsets (±5 mm, per profile)
+  for a shifted print; staff confirm or fail every job (D59), so a bad
+  print is recorded and reprinted.
+- Next action: a test print of each built-in template on the shop's
+  printer from an iPad, both profiles, before go-live; note the result in
+  the RUNBOOK's labels section.
+- Revisit trigger: the first real print, or Phase 12's hardware adapter.
+- Last checked: 2026-10-05.
+
+## R-076 — Print success is confirmed by hand
+
+- Category: operational shortcut (D59, by design).
+- Status and owner: open; owner (whether staff keep up with confirming),
+  build agent (Phase 12's hardware adapter).
+- Trigger: staff press Print (or Open PDF) and walk away without answering
+  "Did all N labels print correctly?".
+- Impact: a browser cannot report whether the printer succeeded
+  (`window.print()` returns nothing; a PDF tab tells the app nothing), so a
+  job stays `rendered` until someone marks it printed or failed. Unconfirmed
+  jobs accumulate under Labels → To confirm; the record's "price changed
+  since the last printed label" warning (D58) counts only confirmed
+  (`printed`) jobs, so an unconfirmed reprint does not clear it.
+- Evidence and confidence: high; `src/components/domain/print-job-controls.tsx`
+  (Print then the confirmation), `listPrintJobs` filter `open`
+  (`src/lib/domain/labels.ts`), `lastPrintedPrice` (status `printed`);
+  journeys 3 and 4 (Phase 8 step 4) confirm their jobs by hand after Open
+  PDF and Print.
+- Workaround or containment: the confirmation appears on the print view
+  right after Print and again on the job's page; To confirm lists every
+  open job with who started it; nothing reprints automatically.
+- Next action: owner decides whether To confirm needs a count on Today or
+  a periodic clean-up; Phase 12's network adapter can report success
+  itself.
+- Revisit trigger: To confirm regularly holds more than a day's prints, or
+  Phase 12.
+- Last checked: 2026-10-05.
+
+## R-077 — One Phase 8 commit is undocumented and fails E2E on its own
+
+- Category: process gap (commit history, not code).
+- Status and owner: open; the orchestrator (who opens the pull request).
+- Trigger: `git bisect` or a review stepping through `feat/p8-labels`
+  commit by commit.
+- Impact: commit `41c1a5c` (step 3's screens: the print sheet, the Labels
+  card, the record pages' Print label and `/settings/labels`) changes no
+  file under `docs/` and not NOW.md, against the AGENTS.md contract (docs
+  "in the same commit as the code"); the docs arrive in the next commit,
+  `abe7e6c`. At `41c1a5c` `npm run test:e2e` is also red: the Labels card's
+  `<ul aria-label="Units to label">` matches `getByRole("list", { name:
+  "Units" })` (Playwright matches names as case-insensitive substrings) in
+  `tests/e2e/inventory.spec.ts` and `sales.spec.ts`, a strict-mode
+  failure; `abe7e6c` renames it "Unit labels". Business semantics are
+  untouched and the branch head is complete and green.
+- Evidence and confidence: high; `git show --stat 41c1a5c` (21 files, all
+  under `src/` and `tests/`), `git show abe7e6c` (the docs and the rename),
+  the Phase 8 review.
+- Workaround or containment: none needed in the tree.
+- Next action: when the pull request is opened, squash `41c1a5c` and
+  `abe7e6c`, or say in its documentation-impact answer that `41c1a5c`'s
+  documentation and the E2E selector fix are in `abe7e6c`, so bisecting
+  does not stop on a red, undocumented commit.
+- Revisit trigger: the Phase 8 pull request.
+- Last checked: 2026-10-05.

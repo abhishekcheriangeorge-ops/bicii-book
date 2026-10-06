@@ -1,42 +1,68 @@
 # Current state
 
-Updated: 2026-10-06 18:24 SGT by the go-live session (GO-LIVE, see
-`HANDOVER.md` on `handover/go-live`), on `claude/brave-clarke-kfqhgt` from
-`main` 5f688c6: Phase 11 step 1 (the public site's backend) is built and
-tested locally; go-live is under way. Evidence checked: `git status`,
-`git log origin/main`, the hosted Supabase project's migration history
-(read-only), the Vercel project's deployments, the `migrate.yml` runs.
-Earlier rows keep the evidence of their own phase.
+Updated: 2026-10-06 19:25 SGT by the go-live session (GO-LIVE, see
+`HANDOVER.md` on `handover/go-live`), on `claude/brave-clarke-kfqhgt`
+restarted from `main` a0f9a90 (PR #15 merged): labels joins `main`. The
+build session's integrated labels head, 01cb3da (`main` a1aebf6 merged
+into `feat/p8-labels`, gate green, see its row below), is merged here with
+the commits `main` gained since (PRs #14 and #15). Evidence checked:
+`git fetch`, `git log`, `git merge-base` (a1aebf6), the hosted project's
+migration history (read-only), the `migrate.yml` runs; the gate on this
+merge is in the last rows below. Earlier rows keep the evidence of their
+own phase.
 
 ## Return in two minutes
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
 - On `main`: phases 0–7, staff email sign-in, staff roles (PRs #1–#11,
-  #13) and the hosted migration workflow (PR #14, `migrate.yml`).
+  #13), the hosted migration workflow (PR #14, `migrate.yml`) and the
+  public site's backend (PR #15, Phase 11 step 1). This branch adds
+  Phase 8, labels (PR #12's work, integrated).
 - Go-live state (2026-10-06): the Vercel project is linked to this
   repository and deploys `main` to production (functions in sin1); the
   sign-in page answers 200. The hosted database still has only
   `20261004000100_foundation`: `migrate.yml` stops at its first step
-  because the `SUPABASE_DB_URL` Actions secret is not set (owner). The
-  Vercel project lacks `SUPABASE_SERVICE_ROLE_KEY` (owner; without it
-  nobody can sign in). The first admin waits for the loaded database.
-- Current objective: Phase 11, the public site
+  because the `SUPABASE_DB_URL` Actions secret is not set (owner; three
+  runs, the last on the push of PR #15). The Vercel project lacks
+  `SUPABASE_SERVICE_ROLE_KEY` (owner; without it nobody can sign in). The
+  first admin waits for the loaded database.
+- Current objective: merge the build session's work in order (labels,
+  then Shopify, then reporting) and Phase 11
   ([PLAN Phase 11](docs/PLAN.md#phase-11--public-site-integration-in-the-bicii-repo),
   D120–D125, [ADR-023](docs/decisions/ADR-023-public-site.md)). Step 1
-  (this repository): `20261006103000_public_site` with
-  `claim_my_customer`, `bookable_slots` and the customer Storage policy;
-  `tests/db/public-site.test.ts`. Step 2 (repository `bicii`): the
-  screens, merged only after the Admin is live on the same database.
+  (this repository) is on `main`; step 2, the screens in repository
+  `bicii`, merges only after the Admin is live on the same database.
 - Next action: the owner sets `SUPABASE_DB_URL` (Actions secret) and
   `SUPABASE_SERVICE_ROLE_KEY` (Vercel, production); then dispatch
   `migrate.yml`, run the advisors, create the first admin
-  (george@chaosactive.com) and sign in. In parallel: merge PR #12 (labels)
-  once the build session pushes its integrated head, then Shopify, then
-  reporting, renaming their migrations past everything live
-  (`HANDOVER.md` "Migrations after go-live").
-- Owner questions: 18 (D70–D72), 19 (SMTP provider), 20 (D92, D93) and
-  30 (the public-site defaults D120–D125) in
+  (george@chaosactive.com) and sign in. An admin sets the QR address
+  before the first print
+  ([RUNBOOK](docs/RUNBOOK.md#labels-the-qr-address-before-the-first-print)).
+  Shopify, then reporting, follow labels; while the hosted database holds
+  only the foundation their migrations need no renaming, and once it is
+  loaded they are renamed past everything live (`HANDOVER.md` "Migrations
+  after go-live").
+- Phase 8 in one line: labels encode only
+  `{shop_settings.public_site_url}/q/{short_id}` (no fallback: nothing
+  prints until an admin sets the address; the environment's address is
+  only an extra scan base), print 1–500 per job for a product and 1–10
+  for a unit or bike, label unique items per unit, price through
+  `private.selling_price` (NULL no price line, 0 → $0.00), never carry
+  cost, consignor, ownership or notes, render from the job's snapshot only
+  while the job is open, and are confirmed printed or failed by staff. The
+  anonymous half of SPEC §31 is proven at the database (`labels.test.ts`:
+  anon and staff read identical `reporting.public_items` rows) and shown
+  to staff in "What the public sees" until Phase 11. New stock from a
+  purchase order is labelled from the order's receipts ("Print N labels",
+  [R-029](docs/RISKS.md#r-029--the-purchase-receive-screen-has-no-print-n-labels-shortcut-yet),
+  resolved at the merge); untested on a real printer and iOS
+  ([R-075](docs/RISKS.md#r-075--label-output-is-unverified-on-a-real-label-printer-and-on-ios));
+  print success is confirmed by hand
+  ([R-076](docs/RISKS.md#r-076--print-success-is-confirmed-by-hand)).
+- Owner questions: 18 (D70–D72), 19 (SMTP provider), 20 (D92, D93), 21
+  (the label defaults D56–D59) and 30 (the public-site defaults
+  D120–D125) in
   [PRODUCT.md](docs/PRODUCT.md#open-assumptions-and-owner-questions); the
   Supabase dashboard checklist in `HANDOVER.md` (SMTP, templates, Auth
   settings, rate limits, site URL).
@@ -64,40 +90,42 @@ a separate, label-triggered run. All listed results are success.
 | Consignment screens and consigned job parts (Phase 6 step 3: D4, D27 changed, D44–D48, D50–D52) | Yes, `feat/p6-consignment` 2137316, 5627bb0, ecc90f1 and the step 3 docs commit: `/consignment` (consignors, items), `/consignment/consignors/[id]`, `/consignment/items/[id]`, intake, terms, charges, returns, settlements and reversals; consigned stock in Add part; consigned stock marked on the product, unit and job pages; `C-` scan and search | Locally at ecc90f1 + docs: `npm run check` pass, `npm run check:types` pass, `npm test` 91 files / 1341 tests passed, `npm run test:e2e` 110 passed on phone and tablet (12.4 min; its web server ran `npm run build`, pass), docs link check 34 files / 520 links / 0 problems | Not deployed |
 | Sales screens, refunds, restocks, Today and nav wiring, journey 4 (Phase 6 step 4: D7, D46, D48, D49, D51, D53) | Yes, `feat/p6-consignment` 67b1607, b65484a, 543760f, eccd687 and the closing docs commit: `/sales`, `/sales/[id]`, `RecordSaleSheet` / `SaleablePicker`, `RefundSheet`, `RestockControl`; Sell on the consignment item, unit and product pages; "Sold on S-…" with Restock on the unit page; `S-` in `/q` and the `sale` search kind; Sales in More; Today's consignment tiles linked | Locally: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 92 files / 1364 tests passed, `npm run build` pass (inside `test:e2e`), `npm run test:e2e` 118 passed on phone and tablet (13.3 min; an earlier run had 2 failures, the Today past-day note's old wording in `today.spec.ts`, fixed in eccd687), docs link check 34 files / 528 links / 0 problems | Not deployed |
 | Phase 6 review fixes (D54, D55; D47 after archiving; the Shopify-key refusal; one-transaction intake; D48 list count; UI fixes; refund and restock races) | Yes, `feat/p6-consignment` 32f19e6 (the follow-up commit corrects DATA-MODEL's authority and applied state, PLAN's Phase 6 test list and this file's owner-question list) | Locally: `npm run db:reset` pass (37 migrations, seed applied), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.8 min; its web server ran `npm run build`, pass), docs link check 34 files / 543 links / 0 problems; rerun at the documentation follow-up: `npm run db:reset` pass (`37\|20261004003700`), `npm run db:types` no diff, `npm run check` pass, `npm run check:types` pass, `npm test` 93 files / 1384 tests passed, `npm run test:e2e` 118 passed on phone and tablet (11.6 min, build inside, no failures, flaky or skipped), docs link check 34 files / 545 links / 0 problems | Not deployed |
-| Labels (Phase 8) | On `feat/p8-labels` in the other worktree; not on this branch | Not verified here | Not deployed |
+| Labels database (Phase 8 step 1: D9 base, D56–D59) | Database only, `feat/p8-labels` 1294e36 (decisions), 2c4f6a3 (migration `20261004003800_labels`, seed, types, tests, docs); no screens yet | Locally at 2c4f6a3: `npm run db:reset` pass (`38\|20261004003800`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass, `npm test` 95 files / 1414 tests passed (incl. `labels.test.ts` 25 tests, `labels-concurrency.test.ts` 5 tests, `meta.test.ts`); `test:e2e` not run (no screen changed); docs link check 35 files / 581 links / 0 problems (after this update) | Not deployed |
+| Printing library, QR base in the app, print view, PDF route, print history (Phase 8 step 2: D9, D56, D58, D59) | Yes, `feat/p8-labels` 967b99b (QR addresses from shop settings), cd4bbb6 (printing, domain, actions, views, route, history, docs) and the commit with this update | Locally at cd4bbb6: `npm run check` pass, `npm test` 106 files / 1559 tests passed (incl. `tests/unit/printing/` with ZXing decoding the rasterised QR, `qr-base`, `qr-base-sources`, `print-job-controls`, `tests/db/labels-domain.stack.test.ts`), `npm run build` pass, `npm run test:e2e` 130 passed on phone and tablet (14.4 min; build inside; `print-view.spec.ts` 6 × 2), docs link check 35 files / 589 links / 0 problems (after this update); `check:types` not run (no migration) | Not deployed |
+| Print flow on the record pages, Labels and printers settings, labels E2E (Phase 8 step 3: D9, D56–D59) | Yes, `feat/p8-labels` 41c1a5c (code and unit tests) and the commit with this update (E2E, docs): `PrintLabelButton` / `PrintLabelSheet`, the Labels card on product, unit and bike pages, `?print=1&qty=N&reprint=…`, `/settings/labels` (QR address, printers, templates), the decimal `NumberInput` stepper | Locally on the final tree: `npm run check` pass, `npm test` 108 files / 1587 tests passed (after `npm run db:reset` and a devstack restart; `print-label.test.tsx`, `printing/print-sheet.test.ts`, the decimal stepper, `publicSiteUrlInputSchema`, `resolvePrintPreset`), `npm run test:e2e` 146 passed on phone and tablet (14.5 min; build inside, pass; `labels.spec.ts` 8 × 2; a first run had 4 failures, a "Units" list-name clash in `inventory.spec.ts` and `sales.spec.ts`, fixed by naming the Labels card's list "Unit labels"), docs link check 35 files / 597 links / 0 problems; `check:types` not run (no migration) | Not deployed |
+| Journey label steps and Phase 8 closing docs (Phase 8 step 4: D9, D56–D59) | Yes, `feat/p8-labels` afaf288 (journey 3: ten identical labels through the PDF adapter; journey 4: one U- label for the consigned bike at the price "What the public sees" shows; shared `tests/e2e/label-helpers.ts`) and the closing docs commit with this update | Locally on the final tree: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 108 files / 1587 tests passed (after `npm run db:reset` and a devstack restart), `npm run test:e2e` 146 passed, 73 on phone and 73 on tablet, 0 failed (14.2 min; `npm run build` inside, pass), docs link check 35 files / 624 links / 0 problems (on the final docs) | Not deployed |
+| Phase 8 review fixes | Yes, `feat/p8-labels`, the commit with this update: the bike page asks for labels only after `notFound()` (an unknown bike is a 404 again) and `label_preview`'s P0002 is "unavailable" (`not_found`); the print view keeps only Back, status and Print / Open PDF sticky, the confirmation in the flow; printing from a `?print=1` deep link replaces its history entry, and `createPrintJobAction` refreshes; printers are a radio list in the sheet; "Did the label print correctly?" for one; the job page's printer name and type on separate rows; the template sheet's field errors on their fields after a change or Save; tests: a signed-in customer gets 403 from the PDF route and the print view, the default-printer and default-template races, the stack test independent of E2E residue, the unit label E2E on a unit it creates | Locally on the final tree: `npm run check` pass, `npm run check:types` pass (no diff), `npm test` 109 files / 1597 tests passed (before and right after an E2E run, on a `bicii_dev` holding its jobs), `npm run test:e2e` 150 passed, 75 on phone and 75 on tablet (13.3 min; `npm run build` inside, pass; a first run had 2 failures, the new unit label test asserting a condition the label truncates, fixed), the two new races fail with `create_print_job`'s retry cut to one attempt (migration restored), docs link check 35 files / 625 links / 0 problems | Not deployed |
 | Staff roles (D90–D94: admin, manager and mechanic; `private.role_implies`; "Extra access" exceptions; role administration; refunds for managers; seed `manager@bicii.test`; staff screens with the role picker and invites by role) | Yes, `feat/staff-roles`: 0657397, 28de036 (database), bfc5ea2, dd94665 (app model, guards, refunds, profile), ae9763b, 080a796 (staff screens, E2E), a5441dd and the evidence commit (integration review, documentation), then the review-fixes commit after b83ce42; local only, not pushed | Locally after the review fixes (one-time clean-up of implied exceptions in `20261006000200` via `private.drop_implied_exceptions()`; two-connection D92 race tests; `update_staff` `expected_role` with `staff_role_changed`; shared `REASON_MAX_LENGTH`; manager wording; `ExtraAccessBadge`; focus on Cancel; PLAN D11, R-052, R-054): `npm run db:reset` pass (`47\|20261006000300`), `npm run db:types` committed (the `expected_role` argument), `npm run check` pass, `npm run check:types` pass, `BICII_REQUIRE_STACK=1 npm test` 113 files / 1686 tests passed (unit 57 / 738, database 56 / 948; both new concurrency tests failed once by hand with the refusal trigger's lock weakened to `FOR KEY SHARE`, then the lock was restored), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (15.1 min, no failures, flaky or skipped), docs link check 37 files / 691 links / 0 problems. Before that, locally (database `bicii_dev_wt`) after the step 4 review fixes (a5441dd): `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 113 files / 1680 tests passed (unit 57 / 737, database 56 / 943), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 158 passed on phone and tablet (16.8 min, no failures, flaky or skipped; it reset the database: 47 migrations, `47\|20261006000300`, seed applied), docs link check 37 files / 690 links / 0 problems. Earlier steps: step 1 112 / 1632 and 152 E2E; step 2 112 / 1669 and 152 E2E; step 3 113 / 1680 and 158 E2E, all passing | Not deployed |
+| Merge of `origin/main` (a1aebf6: purchasing, email sign-in, staff roles) into labels; labels risks R-075–R-077; receipts' Print N labels (R-029); the manager labels test | Yes, `feat/p8-labels`: the merge commit (conflict resolutions, `sessionCookiesFor`, `createProduct`'s optional reorder point, the manager labels test, every document) and the follow-up commit with this update (`printLabelsPath` and the receipt link, the journey 3 step, docs) | Locally on the merged tree with the follow-up (database `bicii_dev`): `npm run db:reset` pass (`48|20261006000300`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check` pass, `npm run check:types` pass (no diff), `BICII_REQUIRE_STACK=1 npm test` 129 files / 1900 tests passed (unit 70 / 904, database 59 / 996; 116 s, no skips), `npm run build` pass, `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e` 190 passed, 95 per project, 0 failed, flaky or skipped (20.2 min; build inside, pass), docs link check 38 files / 0 problems | Not deployed |
 | Hosted migrations from GitHub Actions (`migrate.yml`: history, dry run, `db push`, history; never seed or `--include-all`) | Yes, PR #14 merged (5f688c6) | CI on the PR: check, test, build passed; dispatched twice on `main`, both stopped at "Check the connection secret is set" (secret missing) | Workflow on `main`; hosted database not loaded |
 | Public site backend (Phase 11 step 1: `claim_my_customer`, `bookable_slots`, customer photo policy; D120–D125) | Yes, `claude/brave-clarke-kfqhgt`, migration `20261006103000_public_site` | Locally (database `bicii_dev`, devstack on this container): `npm run db:reset` pass (48 migrations), `npm run db:types` committed, `tests/db/public-site.test.ts` 27 passed, `meta` and `media-storage` passed; full gate in the pull request's CI | Not deployed |
+| Labels joins `main` (01cb3da merged with `main` a0f9a90; conflicts in NOW, DATA-MODEL, PRODUCT and RISKS kept both sides; no object defined by both `20261004003800_labels` and `20261006103000_public_site`) | Yes, `claude/brave-clarke-kfqhgt`, the merge commit with this update | Locally on this merge (database `bicii_dev`): `npm run db:reset` pass (`49|20261006103000`, seed applied; devstack restarted), `npm run db:types` no diff, `npm run check` pass, `BICII_REQUIRE_STACK=1 npm test` 130 files / 1927 tests passed (a first run hit the devstack's stale Auth connection after the reset in `stack.smoke`; passed after the restart), docs link check 39 files / 801 links / 0 problems, the public site's journey 6 (repository `bicii`, `npm run test:e2e`) 20 passed against this database; E2E in the pull request's CI | Not deployed |
 | Phase 9 reporting, Shopify, public-site screens, hardware adapter | Reporting and Shopify on the build session's branches (not on `main`); public-site screens are Phase 11 step 2 | Not verified here | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
 ## Work location and continuation
 
-- `main` on origin (6042e6e) holds PRs #1–#8 and #11: the stack through
-  appointments, the docs stack and Phase 6. The local `main` ref is stale;
-  use `origin/main`.
-- `feat/staff-roles` (this worktree, `/home/user/bicii-book-wt`): created
-  from `feat/auth-email-otp` at 85077c9; the roles commits 0657397,
-  28de036 (step 1), bfc5ea2, dd94665 (step 2), ae9763b, 080a796 (step 3)
-  the step 4 review and documentation commits and the review-fixes
-  commit, all committed locally and not pushed (no `origin/feat/staff-roles`). Its pull request goes
-  against `main` after PR #10 merges.
-- `feat/auth-email-otp` (85077c9, local and origin equal): the merge
-  38db51b with `origin/feat/p7-purchasing`, the documentation commit
-  35d7a63 and the integration review fixes. PR #10 is its pull request; it
-  merges after PR #9.
-- `feat/p7-purchasing` (7fed53f, local and origin equal) is PR #9.
-- Other branches: `feat/p8-labels` and then `feat/p10-shopify` are built in
-  `/home/user/bicii-book`, the other worktree, with its own database
-  `bicii_dev`; they are not on `main`.
-- This worktree runs its own devstack and database: source `.wt-env`
-  (`PGDATABASE=bicii_dev_wt`, the `BICII_*_PORT` variables including the
-  mail catcher's `BICII_SMTP_PORT` and `BICII_MAIL_HTTP_PORT`, and
-  `E2E_PORT=3200`) before every command
-  ([ENGINEERING.md](docs/ENGINEERING.md#prerequisites-and-access)).
+- `main` on origin (a1aebf6) holds PRs #1–#11 and #13: the stack through
+  appointments, the docs stack, Phase 6, purchasing, staff email sign-in
+  and the staff roles. The local `main` ref is stale; use `origin/main`.
+- `feat/p8-labels` (head: the follow-up commit with this update, on the
+  merge of `origin/main` a1aebf6 into 3f09d22, 2026-10-06): committed
+  locally, not pushed (`origin/feat/p8-labels` is 3f09d22, the end of
+  Phase 8 with its review fixes). Stacked on `feat/p6-consignment`
+  (c791d4b, now in `main`). Step 1:
+  1294e36, 2c4f6a3, c5de022; step 2: 967b99b, cd4bbb6, 9608931; step 3:
+  41c1a5c, abe7e6c; step 4: afaf288 and 0dc6a41; review fixes: 3f09d22.
+  Origin
+  holds an older orchestrator auto-save, `wip/feat/p8-labels` (889294d,
+  not reviewed).
+- `feat/p6-consignment` (c791d4b): merged into `main` (PR #11).
+- Parallel track: a second worktree of this clone (`/home/user/bicii-book-wt`,
+  see `git worktree list`) builds Phase 9 reporting on
+  `feat/p9-reporting` with its own database `bicii_dev_wt` and ports; this
+  checkout never touches it.
 - Local-only artifacts (git-ignored): `.env.local`, `.devstack/` (with
-  `.devstack/mail/`), `test-results/`.
+  `.devstack/mail/`, the mail catcher's codes), `test-results/`.
 
 ## Attention and links
 
@@ -105,8 +133,7 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-001](docs/RISKS.md#r-001--nothing-is-deployed),
   [R-002](docs/RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery),
   [R-003](docs/RISKS.md#r-003--the-devstack-differs-from-hosted-supabase).
-  Next in play: merging the integrated purchasing branch, then email
-  sign-in (PR #10), then labels
+  Next in play: the labels PR
   ([R-009](docs/RISKS.md#r-009--the-seven-pr-stack-is-unmerged-and-the-purchasing-track-forks-from-pr-6)).
 - Decisions needed: [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions);
   Phase 6 adds rows 9 (confirm D44–D55; D54 and D55 came from the review),
@@ -119,20 +146,13 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   13 (D55: should backdating an in-store sale more than a few days need
   a permission?,
   [R-027](docs/RISKS.md#r-027--a-sale-can-be-backdated-without-limit-by-any-staff-member))
-  and 14 (how long consignors' personal and payout details are kept, and
-  whether payout-detail changes are recorded,
+  and 14 (consignor data retention,
   [R-026](docs/RISKS.md#r-026--consignor-personal-and-payout-details-are-kept-indefinitely-with-no-change-history));
-  Phase 7 adds rows 15 (confirm D61–D66), 16 (a reverse-receipt for a
-  wrong delivery,
-  [R-030](docs/RISKS.md#r-030--a-wrong-delivery-cannot-be-reversed-only-adjusted))
-  and 17 (unique items on purchase orders,
-  [R-033](docs/RISKS.md#r-033--unique-items-bought-from-a-supplier-have-no-purchase-order));
-  email sign-in adds rows 18 (confirm D70–D72) and 19 (which SMTP provider
-  sends the codes,
-  [R-039](docs/RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)),
-  and treats row 1 as answered (the owner's "D11" is the sign-in method;
-  the delegation ceiling itself stays a build default, not individually
-  confirmed, and is restated for roles by D93); staff roles add row 20
-  (confirm D92 and D93's build defaults,
-  [R-053](docs/RISKS.md#r-053--the-staff-roles-build-defaults-d92-and-d93-are-unconfirmed)).
+  Phase 7 adds rows 15–17, email sign-in 18–19 and the staff roles 20
+  (main's numbering, unchanged by the merge); Phase 8 adds rows 21
+  (confirm D56–D59 and the D9 base: no fallback, and changing the address
+  orphans printed labels,
+  [R-013](docs/RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address))
+  and 22 (the decision ranges, answered,
+  [R-028](docs/RISKS.md#r-028--the-main-line-decision-range-d43d59-is-exhausted)).
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).

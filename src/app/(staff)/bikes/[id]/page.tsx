@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ArchiveControl } from "@/components/domain/archive-control";
 import { EditBikeButton } from "@/components/domain/bike-sheet";
 import { JobHistoryList } from "@/components/domain/job-history";
+import { HeaderPrintLabel, LabelsCard } from "@/components/domain/labels-card";
 import { PhotoGrid } from "@/components/domain/photo-grid";
 import { ShortId } from "@/components/domain/short-id";
 import { TransferOwnershipButton } from "@/components/domain/transfer-sheet";
@@ -18,7 +19,9 @@ import { formatDate, formatDateTime } from "@/lib/dates";
 import { listPhotos } from "@/lib/domain/attachments";
 import { getBike, type OwnershipEvent } from "@/lib/domain/bikes";
 import { getBikeStockUnit } from "@/lib/domain/inventory";
+import { getLabelContext, resolvePrintPreset } from "@/lib/domain/labels";
 import { unitStatusLabel, type UnitStatus } from "@/lib/inventory";
+import { parsePrintParams } from "@/lib/printing/print-sheet";
 import { listWorkOrdersForBike } from "@/lib/domain/workshop";
 import { createClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/uuid";
@@ -41,10 +44,13 @@ function describe(event: OwnershipEvent): string {
  * details and archiving. A bike that is (or was) a unique stock unit links
  * to it ("In stock as U-… · Available"); while it is in stock it cannot be
  * transferred to a customer or archived (bike_in_stock), and those
- * controls show that message.
+ * controls show that message. Phase 8: Print label (any staff) prints the
+ * bike's B- tag (D57: workshop only, a public scan shows "not found"),
+ * disabled with the reason while the bike is archived; the Labels card;
+ * `?print=1&qty=N&reprint={job}` opens the print sheet preset.
  */
-export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
-  await requireStaff();
+export default async function BikePage({ params, searchParams }: PageProps<"/bikes/[id]">) {
+  const staff = await requireStaff();
   const { id } = await params;
   if (!isUuid(id)) notFound();
   const supabase = await createClient();
@@ -55,6 +61,12 @@ export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
     getBikeStockUnit(supabase, id),
   ]);
   if (!bike) notFound();
+  // Labels only for a bike that exists (as on the product and unit pages):
+  // an unknown id is a 404, never the label code's "not found" error.
+  const [labels, preset] = await Promise.all([
+    getLabelContext(supabase, { kind: "bike", entityId: id }),
+    searchParams.then((sp) => resolvePrintPreset(supabase, "bike", id, parsePrintParams(sp))),
+  ]);
   const archived = bike.archivedAt !== null;
   const details = [
     { label: "Serial number", value: bike.serialNumber, mono: true },
@@ -86,7 +98,14 @@ export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
             {" · "}Registered {formatDate(bike.createdAt)}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-start gap-2">
+          <HeaderPrintLabel
+            kind="bike"
+            entityId={bike.id}
+            shortId={bike.shortId}
+            ctx={labels}
+            preset={preset}
+          />
           <EditBikeButton
             bike={{
               id: bike.id,
@@ -133,6 +152,14 @@ export default async function BikePage({ params }: PageProps<"/bikes/[id]">) {
           canAdd={!archived}
         />
       </Card>
+
+      <LabelsCard
+        kind="bike"
+        entityId={bike.id}
+        shortId={bike.shortId}
+        ctx={labels}
+        isAdmin={staff.role === "admin"}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card
