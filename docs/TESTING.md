@@ -538,6 +538,27 @@ label PDF route are); `env.test.ts` (the Shopify and cron variables: the
 shop domain format, fake with a token or in Vercel production refused,
 live needs the domain and token, blank is unset).
 
+Phase 10 step 4 (the Shopify screens): `shopify-screens.test.tsx` (every
+product sync, job and event status has a word and the agreed tone:
+synced done, pending progress, error danger, unpublished and not synced
+neutral; needs attention danger, queued waiting, running progress, done
+done, dismissed neutral; every rejection reason and every stored outcome
+has its sentence, a refund says stock was not touched and keeps shipping
+and the excess apart; the event row notes; "Attempt 3 of 8 · next try
+2:05 pm" in Singapore time; `parseUnmappedLines` from an event's result,
+custom lines included, malformed input empty; the URL filters; why
+Publish online is disabled, never for switching it off; "3 min ago"; the
+action schemas: a reason to dismiss, to link a variant (both gids of the
+right kind) or a customer (a gid, never an email), and to change the
+test-order switch, an https storefront with its trailing slash trimmed;
+`JsonView` unwrapped and capped, then wrapped and Show all, Copy);
+`reports.test.ts` (`integration_failed`: "Shopify needs attention", "Fix it
+in the Shopify queue" in danger, `/shopify/queue?job=<id>`; every kind the
+view emits has its own label; an unknown later kind still renders);
+`today-components.test.tsx` (an `integration_failed` row in
+`ExceptionList` with the order, the message and the queue link);
+`auth-helpers.test.ts` (Shopify in More, after Sales).
+
 ### Database (SPEC §27.2 and §23)
 
 Each invariant from SPEC §23 has at least one test, named after it:
@@ -1121,6 +1142,50 @@ test in `labels.test.ts` ("reporting.public_items returns identical rows to
 anon and to staff"). The suite's run counts are recorded with the
 command in [ENGINEERING.md](ENGINEERING.md#commands).
 
+Phase 10 step 4 (`shopify.spec.ts`, phone and iPad; Shopify is the
+in-memory fake, `playwright.config.mts` sets the fixtures' secret and shop;
+every order id and name, refund id and webhook id carries the project and
+a timestamp; the Playwright `request` fixture POSTs to
+`/api/shopify/webhooks` with `webhookHeaders()` from
+`tests/fixtures/shopify.ts`). Journey 5 on the project's own
+`SHOPIFY_PRODUCT.e2ePhone` / `e2eTablet`: the product is made public (a
+public photo, Publish) unless it already is; on-hand N is read; **Publish
+online** → toast "Published online", the card shows Synced and "Online
+quantity N at Shop floor"; the variant and product gids are read from
+"Shopify details"; an `orders/paid` for 1 × that variant (with a Shopify
+customer) is POSTed → 200, the identical delivery again → 200, the same
+order under a new webhook id → 200; the page is reloaded until on-hand is
+N−1, then again after 2 s (still N−1), and the recent movements show
+exactly one more "Sold online"; `/shopify/events?q=<order name>` shows the
+first event Processed, "Delivered 2×", "Recorded as S-…" and the second
+"Already recorded (S-…)"; the event's Summary links the sale and its
+Customer card says "Not linked" with **Link to a BICII customer**; a
+`refunds/create` (one line, one transaction, 5.00) → 200, its event says
+"Refund of $5.00 recorded; stock untouched", and on-hand is still N−1 (D7,
+D85). A retry that finds the product already published skips the publish
+assertions (a new server's fake no longer holds the product, so a sync may
+defer). Unmapped variant on `e2eLinkPhone` / `e2eLinkTablet`: an order for
+`gid://shopify/ProductVariant/9800000001` (phone) or `…02` (tablet) → the
+queue's Needs attention row names the line ("… is not linked to a BICII
+product"); Today's Needs attention lists "Shopify needs attention" with
+"Fix it in the Shopify queue" and opens `/shopify/queue?job=…` with the
+job's sheet; **Link to a BICII product** → the product SearchPicker by
+P- number, a reason, **Link and retry** → toast "Recorded as S-…", on-hand
+M−1, and the product card shows the variant and "Linked to a product made
+in Shopify"; on a retry where the variant is already linked the order
+records at once (M−1). Bad signature: a POST signed with another secret →
+401; the Rejected filter finds it by webhook id with "Signature did not
+match"; its page shows the signature Invalid and "Body not stored…" with
+no JSON; on-hand unchanged. Boundaries: mechanic2 gets a real 403 on
+`/shopify` and `/shopify/queue`, sees the product's sync status with the
+switch disabled and "Needs Manage inventory" and no Sync now; an anonymous
+GET of `/api/cron/integrations` is 401, not a redirect. Overview: More →
+Shopify; the test-orders warning, Connection "Test (fake)" and the webhook
+address, the Needs attention tile; switching the test-order setting and
+saving without a reason shows the field error and saves nothing;
+`/shopify/products` lists P-000027 Synced; `/shopify/queue?view=recent`
+marks Recent.
+
 Critical journeys, added with the phases that build them, against the seeded
 database, signed in as the seeded admin and mechanic:
 
@@ -1145,8 +1210,10 @@ database, signed in as the seeded admin and mechanic:
    page is the staff "What the public sees" panel over `public_items`, and
    anon's identical read is the database test, until Phase 11 serves
    `/q/[shortId]` on the public site).
-5. Shopify: publish product → simulate `orders/paid` POST to the webhook route
-   with a valid HMAC → stock −1 once; POST the same payload again → unchanged.
+5. Shopify (`shopify.spec.ts` since Phase 10 step 4, below): publish
+   online → signed `orders/paid` POSTs (twice under one webhook id, once
+   under another) → stock −1 once → the events show one recorded sale and
+   one duplicate → a refund moves no stock.
 6. (Later, in the public-site repo) customer sign-in sees only own data.
 
 ## Seed data
