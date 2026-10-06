@@ -4,8 +4,9 @@ Audience: BICII staff and mechanics using the Admin on a phone in the
 workshop or an iPad at the counter. Admins: shop settings, staff and
 permissions are in [OPERATIONS.md](OPERATIONS.md#product-administration).
 
-Applies to: `feat/auth-email-otp` after its integration with the main line
-and purchasing (2026-10-06; not deployed; on a developer machine at
+Applies to: `feat/staff-roles` (2026-10-06): `feat/auth-email-otp` after
+its integration with the main line and purchasing, plus the three staff
+roles admin, manager and mechanic (not deployed; on a developer machine at
 http://localhost:3000). Staff sign in with an emailed code.
 
 Last walkthrough: not walked through by a person. These flows are exercised

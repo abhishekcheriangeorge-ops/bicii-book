@@ -899,7 +899,11 @@ History one "Role changed from Mechanic to Manager" with the admin and the
 reason and "Extra access: Manage purchasing removed" with the same reason;
 the list row reads "Everything except staff management"; the colleague
 signs in and their profile shows Manager and Record refunds; the admin
-then deactivates them so no extra active staff remain. `staff.spec.ts`'s
+then deactivates them so no extra active staff remain. On the phone
+project that test runs at 375 px wide (an iPhone SE) and checks that the
+admin's own row, the invite form, the colleague's page and the change-role
+sheet do not scroll sideways (`expectNoSideScroll`); on the iPad at its own
+width. `staff.spec.ts`'s
 invite test also checks "They join as a Mechanic." and "Set extra access".
 
 Phase 1 spec (`customers-bikes.spec.ts`; every record it creates carries a

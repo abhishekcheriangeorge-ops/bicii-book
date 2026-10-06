@@ -772,6 +772,15 @@ describe.skipIf(!isolatedDatabase())("who administers which role (D93)", () => {
       ]) {
         await failsWith(tx, () => tx.query(sql, [mo.staffId]), { code: "42501" });
       }
+      // A rename of their own row is still allowed, as before the roles
+      // (D93 build default; PRODUCT owner question 20, RISKS R-053).
+      expect(
+        await scalar(
+          tx,
+          "select (public.update_staff($1, display_name => 'Mo Self')).display_name",
+          [mo.staffId],
+        ),
+      ).toBe("Mo Self");
     });
   });
 

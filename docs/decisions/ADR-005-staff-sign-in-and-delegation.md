@@ -19,6 +19,11 @@ The owner's note "D11 changed" is read as the sign-in method, as the
 orchestrator's owner-decision list records. The sections below are kept as
 written on 2026-10-05.
 
+Since [ADR-021](ADR-021-staff-roles.md) (2026-10-06): D11 is restated for
+the roles admin, manager and mechanic by D93 (only admins act on admins and
+managers; a non-admin `manage_staff` holder invites and acts on mechanics
+only, within this ceiling).
+
 ## Context
 
 SPEC §4 asks for staff authentication and granular permissions, but does

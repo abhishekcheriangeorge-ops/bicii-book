@@ -78,7 +78,9 @@ document is corrected.
   (the second worktree's database, `PGDATABASE=bicii_dev_wt`;
   `npm run test:e2e` resets the same database),
   `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev_wt -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
-  printed `47|20261006000300` (every file applied).
+  printed `47|20261006000300` (every file applied, the three staff
+  roles migrations included; checked again at the roles integration
+  review, step 4).
 - CI: the `check` job diffs the generated types against a throwaway
   database built from the migrations, and the `test` and E2E jobs run
   `npm run db:reset` (migrations, then the seed) before testing
@@ -96,7 +98,7 @@ the `20261004` prefix; Phase 7's keep `20261005`). For planned tables, the rows 
 
 | Section | Status | Where, or what is missing |
 |---|---|---|
-| §1 Identity and authorization | Implemented | `000200_staff`, `000300_staff_management`, `000500_staff_history`; staff email sign-in: `20261005005000_staff_session_revocation` (D71) and `20261005006000_sign_in_throttle` (D72); staff roles (D90–D94): `20261006000100_staff_role_values`, `20261006000200_staff_role_permissions`, `20261006000300_staff_role_administration` (screens: later steps of the roles phase) |
+| §1 Identity and authorization | Implemented | `000200_staff`, `000300_staff_management`, `000500_staff_history`; staff email sign-in: `20261005005000_staff_session_revocation` (D71) and `20261005006000_sign_in_throttle` (D72); staff roles (D90–D94): `20261006000100_staff_role_values`, `20261006000200_staff_role_permissions`, `20261006000300_staff_role_administration`, all three applied locally (`47\|20261006000300`; screens: `src/app/(staff)/settings/staff/`, `src/app/(staff)/settings/profile/`; integration-reviewed 2026-10-06) |
 | §2 Customers, bikes, attachments | Implemented | `000600_customers`, `000700_bikes`, `000800_media_storage`, `000900_attachments`, `001000_customer_access`, `001100_staff_search` |
 | §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2) |
 | §4 Workshop | Implemented | `001300_work_orders`, `001500_workshop_rpcs`, `001600_workshop_customer_access`, `001700_workshop_search` |

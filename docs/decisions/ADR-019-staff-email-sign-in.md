@@ -72,7 +72,10 @@ nothing about staff, so Phase 11 can read customer codes from it too.
 
 The staff roles (D90–D99, ADR-021) change who may invite; the public site
 starts signing customers in (Phase 11); the first hosted project is set
-up; Auth's `/otp` behaviour for unknown emails changes.
+up; Auth's `/otp` behaviour for unknown emails changes. Since
+[ADR-021](ADR-021-staff-roles.md) (2026-10-06): the roles trigger fired
+and was reviewed; invites now pick a role (D93), and the sign-in method,
+D70–D72 and R-035 to R-039 are unchanged.
 
 ## Evidence and links
 

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { SALE, SALE_NUMBER, STAFF, WORK_ORDER } from "../fixtures/ids";
 import { section, signIn, signInAs, tagFor, toast } from "./helpers";
+import { expectNoSideScroll } from "./purchasing-helpers";
 
 /**
  * Staff roles (PLAN D90-D94) on a phone and an iPad: what a manager sees
@@ -144,6 +145,9 @@ test("an admin changes a role and the change shows in history", async ({
   const email = `e2e-role-${testInfo.project.name}-${Date.now()}@bicii.test`;
   const reason = `Runs the floor on weekends ${tag}`;
 
+  // The narrowest phone the Admin supports (an iPhone SE, 375 px), so the
+  // side-scroll checks below hold for it as well as the iPhone 13 project.
+  if (testInfo.project.name === "phone") await page.setViewportSize({ width: 375, height: 667 });
   await signIn(page, "admin");
 
   // Their own row: the picker is there but off, with the reason.
@@ -160,6 +164,7 @@ test("an admin changes a role and the change shows in history", async ({
   await expect(section(page, "Extra access")).toContainText(
     "Admins have every permission; there is nothing extra to grant.",
   );
+  await expectNoSideScroll(page);
 
   // Invite a colleague: an admin picks the role; Mechanic is chosen first.
   await page.goto("/settings/staff/new");
@@ -169,6 +174,8 @@ test("an admin changes a role and the change shows in history", async ({
     "aria-checked",
     "true",
   );
+  // The role picker and each role's description fit the phone.
+  await expectNoSideScroll(page);
   await page.getByLabel("Name").fill(name);
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Invite" }).click();
@@ -188,6 +195,8 @@ test("an admin changes a role and the change shows in history", async ({
   await extra.getByRole("switch", { name: "Manage purchasing" }).click();
   await expect(toast(page, "Manage purchasing granted")).toBeVisible();
   await expect(history).toContainText("Extra access: Manage purchasing granted");
+  // The person page (role picker, extra access, access, history) fits a phone.
+  await expectNoSideScroll(page);
 
   // Change the role to Manager, with a reason.
   const roles = section(page, "Role").getByRole("radiogroup", { name: "Role" });
@@ -204,6 +213,7 @@ test("an admin changes a role and the change shows in history", async ({
   await expect(sheet).toContainText(
     "Their extra access to Manage purchasing is included in the new role and will be removed.",
   );
+  await expectNoSideScroll(page);
   await sheet.getByLabel("Why?").fill(reason);
   await sheet.getByRole("button", { name: "Change role", exact: true }).click();
   await expect(toast(page, `${name} is now a Manager`)).toBeVisible();

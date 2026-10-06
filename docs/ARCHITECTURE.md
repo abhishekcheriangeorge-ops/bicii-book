@@ -4,8 +4,9 @@ Owner: the build agent, reviewed by the product owner (Abhishek Cherian
 George). Implementation inspected: `c6bf6d0` on 2026-10-05 (application code
 identical to `b34bbcd`, the head of PR #7); the Phase 6 and Phase 7 rows were
 added at their phases, Phase 7's at its integration with the main line on
-`feat/p7-purchasing`, and the staff email sign-in rows at its integration
-on `feat/auth-email-otp` (2026-10-06).
+`feat/p7-purchasing`, the staff email sign-in rows at its integration
+on `feat/auth-email-otp` (2026-10-06), and the staff roles rows on
+`feat/staff-roles` (2026-10-06, ADR-021).
 
 This page describes the system as it is built. The decision of record is
 [ADR-001](ADR-001-architecture.md), whose body stays as written in PR #1;
