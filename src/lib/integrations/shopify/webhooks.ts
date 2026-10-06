@@ -161,7 +161,8 @@ export async function handleShopifyWebhook(
 
   const topic = header(request, "x-shopify-topic");
   const webhookId = header(request, "x-shopify-webhook-id");
-  const logBase = { correlationId, topic, webhookId };
+  // The default logger is bound to the correlation id already.
+  const logBase = { topic, webhookId };
 
   // 2. Too large by its own account: not read, not stored.
   const declared = Number(request.headers.get("content-length") ?? "");
