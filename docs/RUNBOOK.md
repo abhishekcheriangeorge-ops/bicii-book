@@ -412,8 +412,9 @@ development store before connecting the shop.
    case; a delivery naming any other shop is refused and kept as
    `shop_domain_mismatch` evidence).
 4. In the Admin, an admin sets the online location and the storefront URL
-   (the `/shopify` settings, Phase 10 step 4; until then
-   `set_shopify_settings`). The storefront URL drives the public Buy-online
+   (**More → Shopify → Settings**, which calls `set_shopify_settings`; the
+   Connection card there shows the webhook address to give Shopify, the
+   pinned API version and whether the webhook secret is set). The storefront URL drives the public Buy-online
    link (`storefront_url/products/<handle>`, D84) and nothing else.
    `accept_test_orders` stays **off** in production: Shopify's test
    notifications are then stored as skipped `test_order` evidence and
@@ -467,7 +468,7 @@ Sync now, or the daily run
 To run the queue by hand: `curl -H "Authorization: Bearer $CRON_SECRET"
 https://<admin host>/api/cron/integrations`.
 
-Reading the queue: the Shopify screens (Phase 10 step 4) show each job's
+Reading the queue: `/shopify/queue` and `/shopify/events` show each job's
 status, attempts, next attempt and the human message, and the event
 inspector shows each delivery (admins only: payloads hold customer data,
 D86). Integration failures also appear in Today's exceptions for admins.

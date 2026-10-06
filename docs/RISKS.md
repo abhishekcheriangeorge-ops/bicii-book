@@ -306,7 +306,8 @@ URLs, or customer data in this file.
   recording, the queue, order and refund processing, D80–D89) and step 2
   the outbound sync's database side (what to push, the queue, the results);
   step 3 the service layer (the GraphQL and fake adapters, the webhook and
-  cron routes, the queue and sync runners); the screens follow in step 4.
+  cron routes, the queue and sync runners); step 4 the screens (Phase 10
+  is complete; E2E journey 5 runs against the in-memory fake only).
   Everything is tested against payloads written from Shopify's documented
   REST shapes (`tests/fixtures/shopify.ts`), never against a real store,
   so payload and API drift would not be caught: in particular whether a
@@ -938,7 +939,8 @@ URLs, or customer data in this file.
 ## R-042 — Earlier online sales keep no customer after a Shopify customer is linked
 
 - Category: deliberate limitation (D86).
-- Status and owner: accepted; build agent (screens, step 4).
+- Status and owner: accepted; build agent (Phase 9 reports, the sales
+  list).
 - Trigger: an admin links a BICII customer to a Shopify customer who
   already has online sales.
 - Impact: a recorded sale is immutable except its status (Phase 6,
@@ -952,10 +954,18 @@ URLs, or customer data in this file.
   linking is explicit".
 - Workaround or containment: the link's result says how many earlier sales
   exist.
-- Next action: step 4's customer and sale screens show the link through
-  `shopify_customer_id`; Phase 9 reports join the same way.
-- Revisit trigger: step 4; Phase 9 customer reports.
-- Last checked: 2026-10-06.
+- Step 4 (built): the sale page shows "<customer> (linked through
+  Shopify)" for such a sale, and the event inspector shows the linked
+  customer through the same id. Not yet: the Sales list still says
+  "Walk-in" for them, and the customer page does not list their online
+  sales. The customer link is proven by the database tests and the unit
+  tests of its wording, not by an E2E test (linking a seeded customer
+  would be permanent across runs).
+- Next action: the Sales list and the customer page join through
+  `customers.shopify_customer_id`; Phase 9 reports join the same way.
+- Revisit trigger: Phase 9 customer reports; staff asking why an online
+  sale shows Walk-in.
+- Last checked: 2026-10-06 (Phase 10 step 4).
 
 ## R-043 — Phase 9 must widen the integration exceptions function
 

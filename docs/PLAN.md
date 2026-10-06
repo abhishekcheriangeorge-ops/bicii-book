@@ -715,6 +715,52 @@ queue, webhook and cron handlers), the routes `api/shopify/webhooks` and
 variables, the unit tests, `tests/db/shopify-gid-parity.test.ts` and
 `tests/db/shopify.stack.test.ts`, and [RUNBOOK "Shopify"](RUNBOOK.md#shopify).
 
+Shipped (Phase 10 as a whole, on `feat/p10-shopify`, stacked on
+`feat/p8-labels`): migrations `20261004003900_shopify_integration`
+(settings, sync rows, events, the queue, the audit trail, webhook
+recording, the gid and backoff helpers, the owner-only purge),
+`20261004004000_shopify_order_processing` (`private.sell_line` with
+`shopify_line_part`, order and refund processing, retry, dismiss, the
+variant and customer links, `private.integration_exceptions` in
+`reporting.operational_exceptions`) and
+`20261004004100_shopify_product_sync` (the online price, Publish online,
+Sync now, the settings RPC, the deferred enqueue triggers, the worker's
+state and result RPCs, `reporting.shopify_sync_status`,
+`public_items.buy_online_url`), and the Phase 10 seed. Modules:
+`src/lib/integrations/shopify/` (the GraphQL and in-memory adapters, HMAC,
+desired state, the sync, queue, webhook and cron handlers),
+`src/lib/domain/shopify.ts`, `src/lib/shopify.ts` (words and tones) and
+`src/lib/shopify-forms.ts`. Routes: `POST /api/shopify/webhooks`, `GET
+/api/cron/integrations` (Vercel cron every 5 minutes, `CRON_SECRET`), and
+the admin-only screens `/shopify` (connection, settings, tiles),
+`/shopify/queue` (Needs attention / Waiting / Recent: Retry, Link to a
+BICII product, Dismiss with a reason), `/shopify/products`,
+`/shopify/events` and `/shopify/events/[id]` (the event inspector with the
+customer link); the product page's Online (Shopify) card for every staff
+member (Publish online and Sync now with manage_inventory, which run only
+the job id the RPC returned); Today's `integration_failed` exception row
+("Shopify needs attention", opening the queue on that job, admins only);
+an online sale recorded before its customer was linked shows that customer
+on its page; Shopify in More. Decisions: D80–D89
+([ADR-020](decisions/ADR-020-shopify.md)); D80–D88 are build defaults for
+the owner to confirm, and D89's tax basis (is the store tax-inclusive?)
+and Shopify POS (does the shop sell through it?) stay OPEN (owner
+questions 17–19). Refund netting and the Cult Commons claw-back stay
+owner question 12 /
+[R-021](RISKS.md#r-021--reports-overstate-net-sales-after-a-refund-or-restock)
+for Phase 9's refund-reporting row (in D100–D119): online refunds are
+financial only and net nothing yet (D7, D49, D85). Tests: the database
+files `shopify-webhooks.test.ts`, `shopify-sync.test.ts`,
+`shopify-gid-parity.test.ts` and `shopify.stack.test.ts`; the unit tests
+of the service layer and `shopify-screens.test.tsx`, `reports.test.ts`,
+`today-components.test.tsx`; E2E `shopify.spec.ts` (journey 5 with a
+replay under a new webhook id, the unmapped-variant link on its own
+product, Today's exception row, the rejected delivery, the refund that
+moves no stock, the access boundaries and the overview). Not verified
+against a real Shopify store
+([R-011](RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only),
+[R-047](RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)).
+
 - Migrations: integration_events, shopify_product_sync,
   integration_retry_queue; RPCs `process_shopify_order_paid`,
   `process_shopify_refund`.

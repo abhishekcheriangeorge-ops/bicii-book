@@ -33,6 +33,17 @@ implements D83, D84, D87 and D88 in TypeScript where the database cannot
 (the HMAC, the Shopify calls, the per-instance rejected limit, the cron).
 Its design choices are below ("Service layer").
 
+Status update 2026-10-06 (Phase 10 step 4, built): the screens are built
+and the phase is complete on `feat/p10-shopify`: the product page's Online
+card (D84, D86), the admin-only `/shopify` overview and settings, queue
+(retry, link a variant then retry, dismiss with a reason), products and
+events with the inspector and the customer link (D86), and Today's
+`integration_failed` row opening the queue. No new decision; the app runs
+only the job id an RPC returned. E2E journey 5 (`tests/e2e/shopify.spec.ts`)
+proves the replay rule, the unmapped-variant link, the rejected delivery
+and the refund on phone and iPad. D80–D88 remain "build default, owner to
+confirm"; D89's tax basis and Shopify POS points remain OPEN.
+
 ## Context
 
 SPEC §17 asks for Shopify as the online channel: BICII is the operational

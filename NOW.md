@@ -1,8 +1,8 @@
 # Current state
 
-Updated: 2026-10-06, Phase 10 (Shopify) step 3 of 4 complete (the
-integration service layer), on `feat/p10-shopify` (stacked on
-`feat/p8-labels` at 3f09d22). Evidence checked: `git status`, `git log`, `git worktree list`
+Updated: 2026-10-06, Phase 10 (Shopify) complete: step 4 of 4 (the
+screens, Today's exception row, E2E journey 5, the closing docs) on
+`feat/p10-shopify` (stacked on `feat/p8-labels` at 3f09d22). Evidence checked: `git status`, `git log`, `git worktree list`
 and `git for-each-ref refs/heads refs/remotes` at the start and end of the
 step; local gates on the final tree (below). Earlier rows: their own gates
 as recorded.
@@ -11,7 +11,8 @@ as recorded.
 
 - Purpose: the staff Admin for BICII's workshop, over one Supabase backend
   shared with the public site ([PRODUCT.md](docs/PRODUCT.md)).
-- Current objective: Phase 10 (Shopify), built in four steps
+- Current objective: Phase 10 (Shopify) is complete and awaits its PR;
+  it was built in four steps
   ([PLAN Phase 10](docs/PLAN.md#phase-10--shopify), decisions D80–D89 in
   [ADR-020](docs/decisions/ADR-020-shopify.md)). Step 1 is done: ef1a613
   (the decision ranges per track, D80–D89, R-028 resolved), 8ea4dbd
@@ -24,22 +25,32 @@ as recorded.
   is done: 92b3335 (adapters, HMAC, gids, env), c56143b (desired state,
   sync and queue runners), 37f4c37 (webhook and cron routes, `vercel.json`,
   proxy matcher, E2E env, the live-stack test, docs, R-047–R-049), 27a7be8
-  (log fix) plus the commit with this update. Committed locally, not
-  pushed.
-- Next action: Phase 10 step 4, the screens: Publish online and the sync
-  status on the product page (running the job id `set_publish_online` /
-  `request_product_sync` return through `runJobById`), the admin queue
-  (retry, dismiss), the event inspector, variant and customer links, the
-  `/shopify` settings showing `shopifyConnection()`, and E2E journey 5
-  (a signed `orders/paid` POST to `/api/shopify/webhooks` with the
-  fixtures' secret, which `playwright.config.mts` already sets).
-  `origin/feat/p8-labels` now
-  equals 3f09d22 (pushed by the orchestrator); its PR answers the
-  documentation-impact question (for Phase 8 see
-  [R-032](docs/RISKS.md#r-032--one-phase-8-commit-is-undocumented-and-fails-e2e-on-its-own)).
-  The owner answers rows 17–19 of the
-  [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions)
-  (D89 tax basis and Shopify POS; confirm D80–D88).
+  (log fix) and 3f5970b. Committed locally, not pushed.
+- Step 4 is done: 132a1ae (the product page's Online card, Publish online
+  and Sync now), 3892eeb (the admin `/shopify` screens, the queue, the
+  event inspector, the links, Today's `integration_failed` row, Shopify in
+  More, the linked customer on an online sale's page, unit tests, DESIGN,
+  USER-GUIDE), 3407fec (`tests/e2e/shopify.spec.ts`, TESTING) and the
+  closing docs commit with this update. Committed locally, not pushed.
+- Next action: the orchestrator pushes `feat/p10-shopify` and opens its PR
+  against `main`, answering the documentation-impact question of
+  [.github/pull_request_template.md](.github/pull_request_template.md)
+  (docs changed: PLAN, PRODUCT, USER-GUIDE, DESIGN, ARCHITECTURE,
+  DATA-MODEL, TESTING, ENGINEERING, OPERATIONS, RUNBOOK, RISKS, ADR-020,
+  NOW). The orchestrator reports PRs #1–#8 and #11 merged into `main` on
+  2026-10-06 (its statement; locally `origin/main` is 6042e6e "Merge pull
+  request #11 from …/feat/p6-consignment" as of the last fetch). The owner
+  answers D89's OPEN points and confirms D80–D88 (rows 17–19 of the
+  [owner questions](docs/PRODUCT.md#open-assumptions-and-owner-questions)).
+- Phase 10 step 4 in one line: every staff member sees a product's
+  Shopify status on its page; manage_inventory switches **Publish online**
+  and runs **Sync now** (the action runs only the job id the RPC returned);
+  admins get **More → Shopify** (connection, settings, tiles), the queue
+  (Retry, Link to a BICII product then retry, Dismiss with a reason), the
+  products and events lists and the event inspector (outcome in words,
+  delivery evidence, the customer link, never by email; JsonView), all real
+  403s for anyone else; Today's Needs attention shows "Shopify needs
+  attention" rows that open the queue on that job.
 - Phase 10 step 3 in one line: every Shopify call is in
   `src/lib/integrations/shopify/` behind the `ShopifyAdmin` interface (the
   GraphQL adapter pinned to 2026-10, or the in-memory fake with
@@ -126,7 +137,8 @@ a separate, label-triggered run. All listed results are success.
 | Shopify inbound database (Phase 10 step 1: D80–D89) | Database only, `feat/p10-shopify` ef1a613 (decisions), 8ea4dbd (migrations `20261004003900`, `20261004004000`, seed, types, fixtures, tests, docs); no route, service layer or screens | Locally on the final tree: `npm run db:reset` pass (`40\|20261004004000`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check:types` pass (no diff), `npm run check` pass, `npm test` 111 files / 1666 tests passed (incl. `shopify-webhooks.test.ts` 61 tests, `meta.test.ts`, `shopify-fixtures.test.ts`), `npm run test:e2e` 152 passed on phone and tablet (16.4 min; build inside, pass; run beside the parallel track's E2E), docs link check 36 files / 666 links / 0 problems | Not deployed |
 | Shopify outbound database (Phase 10 step 2: D81, D83, D84, D86, D87) | Database only, `feat/p10-shopify` 4196a90 (migration `20261004004100_shopify_product_sync`, seed, types, fixtures, tests, docs); no service layer, route or screens | Locally on the final tree: `npm run db:reset` pass (`41\|20261004004100`, seed applied; devstack restarted), `npm run db:types` committed, `npm run check:types` pass (no diff, after staging), `npm run check` pass, `npm test` 112 files / 1694 tests passed (incl. `shopify-sync.test.ts` 28 tests, `shopify-webhooks.test.ts`, `inventory-publication.test.ts` with the new column, `labels.test.ts`, `meta.test.ts`), docs link check 37 files / 670 links / 0 problems (with this update); `npm run test:e2e` not run (no screen changed) | Not deployed |
 | Shopify service layer (Phase 10 step 3: D81, D83, D84, D87, D88) | Yes, `feat/p10-shopify` 92b3335, c56143b, 37f4c37, 27a7be8: `src/lib/integrations/shopify/` (config, ids, hmac, admin, graphql-admin, fake-admin, fake-ids, client, desired-state, deps, sync, queue, webhooks, cron), `src/app/api/shopify/webhooks/route.ts`, `src/app/api/cron/integrations/route.ts`, `vercel.json`, the proxy matcher, `SHOPIFY_ADAPTER` / `CRON_SECRET` in env.ts; no migration, no screen | Locally on the final tree: `npm run check` pass; `npm test` 123 files / 1849 tests passed (unit 71 / 878, db 52 / 971; with `BICII_REQUIRE_STACK=1`, so `shopify.stack.test.ts` ran, both on the persisted `bicii_dev` and again right after E2E reset it); `npm run build` pass; `npm run test:e2e` 150 passed on phone and tablet, 0 failed (15.0 min; build inside; same 150 tests as the Phase 8 review, no spec changed); a manual smoke of the built app on a scratch port: cron 401 without the bearer and 200 with the summary, a signed webhook 200 then `duplicate: true`, a bad HMAC 401, GET 405; docs link check 36 files / 711 links / 0 problems; `db:reset`, `db:types`, `check:types` not run (no migration) | Not deployed |
-| Phase 9 reporting, Shopify screens (Phase 10 step 4), public-site integration, hardware adapter | No | Not built | Not deployed |
+| Shopify screens, Today's integration row, journey 5 (Phase 10 step 4: D80–D89) | Yes, `feat/p10-shopify` 132a1ae, 3892eeb, 3407fec and the closing docs commit: the product page's Online (Shopify) card; `/shopify`, `/shopify/queue`, `/shopify/products`, `/shopify/events`, `/shopify/events/[id]` (admins); `src/lib/domain/shopify.ts`, `src/lib/shopify.ts`, `src/lib/shopify-forms.ts`, `src/components/domain/shopify/`; `integration_failed` in `src/lib/reports.ts`; no migration | Locally on the final tree: `npm run check` pass; `npm test` 124 files / 1873 tests passed (unit 72 / 902; `BICII_REQUIRE_STACK=1`; before and after E2E reset `bicii_dev`); `npm run test:e2e` 160 passed, 80 per project, 0 failed (15.0 min; `npm run build` inside, pass; `shopify.spec.ts` 5 × 2; earlier runs of that spec alone failed on test timing — a streamed product page read too early, a click not yet navigated — and on a retry path that assumed the in-memory Shopify survived a server restart; all fixed in the spec); docs link check 36 files / 724 links / 0 problems; `db:reset`, `db:types`, `check:types` not run (no migration) | Not deployed |
+| Phase 9 reporting, public-site integration, hardware adapter | No | Not built | Not deployed |
 
 Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
 
@@ -137,10 +149,11 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   drafts, pushed and equal to origin.
 - `feat/docs-stack` (6507449): pushed, equal to `origin/feat/docs-stack`.
 - `feat/p10-shopify` (head: the commit with this update): stacked on
-  `feat/p8-labels` (3f09d22); Phase 10 steps 1–3 committed locally, not
+  `feat/p8-labels` (3f09d22); Phase 10 complete, committed locally, not
   pushed (`git for-each-ref` shows no `origin/feat/p10-shopify`): ef1a613,
   8ea4dbd, 792ce96 (step 1), 4196a90, 8ec0fba (step 2), 92b3335, c56143b,
-  37f4c37, 27a7be8 and the commit with this update (step 3).
+  37f4c37, 27a7be8, 3f5970b (step 3), 132a1ae, 3892eeb, 3407fec and the
+  commit with this update (step 4).
 - `feat/p8-labels` (3f09d22, equal to `origin/feat/p8-labels` on
   2026-10-06; the rest of this entry is as of Phase 8): stacked on
   `feat/p6-consignment` (c791d4b, equal to `origin/feat/p6-consignment`
@@ -204,5 +217,11 @@ Command-level evidence: [ENGINEERING.md](docs/ENGINEERING.md#commands).
   [R-048](docs/RISKS.md#r-048--the-rejected-delivery-limit-is-per-server-instance)
   (the rejected limit is per instance) and
   [R-049](docs/RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)
-  (jobs wait for the cron, a webhook or staff; Hobby crons are daily).
+  (jobs wait for the cron, a webhook or staff; Hobby crons are daily);
+  step 4 updated
+  [R-042](docs/RISKS.md#r-042--earlier-online-sales-keep-no-customer-after-a-shopify-customer-is-linked)
+  (the sale page shows a later-linked customer; the Sales list and the
+  customer page do not yet) and
+  [R-011](docs/RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only)
+  (built; still fixture-tested only).
 - Running costs, backups, recovery: none yet ([OPERATIONS.md](docs/OPERATIONS.md)).

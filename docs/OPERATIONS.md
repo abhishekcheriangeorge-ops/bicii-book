@@ -103,8 +103,9 @@ customer links (with a reason) and the settings (online location,
 storefront URL, `accept_test_orders` with a reason), because payloads hold
 customer data; staff with `manage_inventory` publish products online, run
 Sync now and retry product-sync jobs; every staff member sees each
-product's sync status. The screens come in Phase 10 step 4; until then
-the database RPCs are the only way to change the integration. Connecting
+product's sync status. Screens: **More → Shopify** (admins: settings,
+queue, products, events) and the product page's **Online (Shopify)** card
+([USER-GUIDE](USER-GUIDE.md#publish-a-product-online)). Connecting
 the store, secrets, the cron and the go-live checks:
 [RUNBOOK "Shopify"](RUNBOOK.md#shopify).
 
@@ -292,7 +293,7 @@ outage would be noticed by a user. There is no incident record location
 | "Sign-in is unavailable right now. Try again in a minute." | Nobody can sign in | Auth log (`.devstack/logs/auth.log` locally) | `npm run devstack:status` | Engineering |
 | "You don't have permission to do that." or a 403 page | One task blocked | The person's permissions in Settings → Staff | Compare with [USER-GUIDE "Roles and limits"](USER-GUIDE.md#roles-and-limits) | Admin |
 | CI `check:types` fails | PR cannot merge cleanly | Job log | `npm run db:types` locally | Engineering |
-| An online order is missing from Sales, or a product's Shopify stock is stale | Online sale not recorded or Shopify oversells | Admins: Today's exceptions and the Shopify queue (step 4); logs `shopify webhook` / `shopify product sync` lines by correlation id | Is the cron running (`/api/cron/integrations` answers 401 without the bearer, 503 without `CRON_SECRET`)? Are webhooks answering 200? | Admin, then engineering ([RUNBOOK](RUNBOOK.md#shopify-resolving-problems)) |
+| An online order is missing from Sales, or a product's Shopify stock is stale | Online sale not recorded or Shopify oversells | Admins: Today's exceptions ("Shopify needs attention") and `/shopify/queue`; logs `shopify webhook` / `shopify product sync` lines by correlation id | Is the cron running (`/api/cron/integrations` answers 401 without the bearer, 503 without `CRON_SECRET`)? Are webhooks answering 200? | Admin, then engineering ([RUNBOOK](RUNBOOK.md#shopify-resolving-problems)) |
 
 ## Recovery
 

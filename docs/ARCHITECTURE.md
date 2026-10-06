@@ -161,7 +161,8 @@ the browser printer.
 
 Built in Phase 10 step 1 as database functions and in step 3 as the
 service layer (`src/lib/integrations/shopify/`: the webhook and cron
-routes, the queue runners); the screens are step 4
+routes, the queue runners); the screens in step 4 (the admin queue,
+event inspector and links under `/shopify`, Today's exception row)
 ([ADR-020](decisions/ADR-020-shopify.md), D80–D89).
 
 1. **Store first.** `POST /api/shopify/webhooks` (outside the proxy;
@@ -213,7 +214,7 @@ deliveries.
 Built in Phase 10 step 2 as database functions
 (`20261004004100_shopify_product_sync.sql`) and in step 3 as the sync
 runner (`runProductSync` in `src/lib/integrations/shopify/sync.ts`); the
-Publish online toggle and sync status are step 4
+Publish online toggle and sync status on the product page in step 4
 ([ADR-020](decisions/ADR-020-shopify.md), D81, D83, D84, D86, D87).
 
 1. **Publish.** Staff with manage_inventory call `set_publish_online`
@@ -277,6 +278,7 @@ PostgREST with the fake Shopify.
 | Supabase clients | [server.ts](../src/lib/supabase/server.ts), [browser.ts](../src/lib/supabase/browser.ts), [service.ts](../src/lib/supabase/service.ts) | anon key + session; service-role key (server only) | no data access |
 | Service-role use | [src/lib/admin/](../src/lib/admin/) (staff logins via the Auth admin API) | `SUPABASE_SERVICE_ROLE_KEY` | staff cannot be invited; bypasses RLS, so imports are restricted by ESLint |
 | Shopify integration layer (Phase 10 step 3; D80–D89, [ADR-020](decisions/ADR-020-shopify.md)) | [src/lib/integrations/shopify/](../src/lib/integrations/shopify/): `config.ts` (pinned API version, topics, limits), `ids.ts` (gids, handles), `hmac.ts`, `admin.ts` (the `ShopifyAdmin` interface and `ShopifyError`), `graphql-admin.ts` (live), `fake-admin.ts` / `fake-ids.ts` (in memory), `client.ts` (`getShopifyAdmin`, `shopifyConnection`), `desired-state.ts` (pure), `deps.ts` (`IntegrationDeps`), `sync.ts` (`runProductSync`), `queue.ts` (`runJob`, `runJobById`, `runDueJobs`), `webhooks.ts` (`handleShopifyWebhook`), `cron.ts` (`handleCronRequest`); routes [api/shopify/webhooks](../src/app/api/shopify/webhooks/route.ts) (POST, HMAC) and [api/cron/integrations](../src/app/api/cron/integrations/route.ts) (GET, bearer), both Node runtime with `maxDuration` 60, both outside the proxy matcher; [vercel.json](../vercel.json) cron every 5 minutes | the service-role client and the Shopify RPCs (DATA-MODEL §16); `SHOPIFY_*`, `CRON_SECRET` | webhooks are refused or not stored (Shopify retries for a while); syncs wait in the queue with a human message; no sale or stock is ever recorded outside the RPCs |
+| Shopify screens (Phase 10 step 4; D84, D86) | [src/lib/domain/shopify.ts](../src/lib/domain/shopify.ts) (reads over the RLS client: `getProductOnline` for any staff, `getShopifyOverview`, `listSyncedProducts`, `listQueue`, `getQueueJob`, `listEvents`, `getEvent` for admins; writes only through the staff RPCs; `describeRun` reads back a job's result for the toast); [src/lib/shopify.ts](../src/lib/shopify.ts) (pure words and tones) and [shopify-forms.ts](../src/lib/shopify-forms.ts); Publish online and Sync now in `src/app/(staff)/inventory/actions.ts` (manage_inventory) and the admin actions in `src/app/(staff)/shopify/actions.ts`, which run only the job id an RPC returned through `runJobById` with the service-role deps; the product page's `OnlineCard`; `/shopify`, `/shopify/queue`, `/shopify/products`, `/shopify/events`, `/shopify/events/[id]` (admins only, no `loading.tsx`); components in `src/components/domain/shopify/`; Today's `integration_failed` row through `src/lib/reports.ts` | RLS-scoped client and the staff RPCs; the integration layer for running a job | the screens error; online orders keep being stored and processed by the routes and the cron |
 | Error mapping | [src/lib/db-errors.ts](../src/lib/db-errors.ts) | P0001 codes, constraint names | users see the generic error |
 | Logging and server errors | [src/instrumentation.ts](../src/instrumentation.ts), [src/lib/logger.ts](../src/lib/logger.ts) | pino to stdout | no trace of failures (no retention or alerting, [R-002](RISKS.md#r-002--no-backups-monitoring-alerting-or-exercised-recovery)) |
 | PWA shell | [public/sw.js](../public/sw.js), [src/app/manifest.ts](../src/app/manifest.ts) | browser | no install or offline page |
