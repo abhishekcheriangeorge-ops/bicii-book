@@ -1245,8 +1245,18 @@ URLs, or customer data in this file.
   replace the view with fifteen columns. If the placeholder overwrote
   Phase 10's body, admins would never see a failed Shopify job; if the
   signatures differed, whichever migration ran second would fail.
-- Evidence and confidence: high for this branch, medium for the merged
-  one (not yet run). `20261006001300` creates the placeholder inside a
+- Evidence and confidence: high for this branch; medium-high for the
+  merged one (simulated, not yet the real merge). On 2026-10-06 a scratch
+  database built from this branch's migrations plus Phase 10's four files
+  (`20261004003800`–`…4100`, read with `git show feat/p10-shopify:…`, so
+  in merged filename order) and this branch's seed applied every
+  migration; Phase 10's body of `private.integration_exceptions()` was
+  kept (it reads `needs_attention`), the view had 15 columns, and a
+  `needs_attention` product_sync job was listed for the admin as
+  `integration_failed` (entity `integration_job`, issue
+  `integration_failed`, title the P- ID, detail the error) and counted in
+  their `exceptions_now` (4), while mechanic2 saw none (3); the scratch
+  database was dropped. `20261006001300` creates the placeholder inside a
   `DO` block guarded by `to_regprocedure('private.integration_exceptions()')
   is null`, with exactly Phase 10's signature (read with `git show
   feat/p10-shopify:supabase/migrations/20261004004000_shopify_order_processing.sql`),
