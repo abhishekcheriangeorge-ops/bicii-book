@@ -2389,3 +2389,280 @@ select pg_temp.seed_print_job(
   'a8000000-0000-4000-8000-000000000002', 'queued',
   '5a000000-0000-4000-8000-000000000002', null,
   pg_temp.seed_at(0, '10:00'), null, null);
+
+-- ===========================================================================
+-- Phase 10: Shopify (DATA-MODEL.md §18 "Phase 10 part"; ids in
+-- tests/fixtures/ids.ts SHOPIFY_*). Written as the owner. The seed runs
+-- without a signed-in staff member, so it never calls a staff RPC: the
+-- settings, products, their opening stock, the one public photo and the
+-- Shopify ids are written directly (the products as Phase 4's are, with
+-- the admin named in request.jwt.claims), and the webhooks go through the
+-- real service-role RPCs (record_shopify_webhook, then
+-- process_shopify_event), exactly as the webhook route will call them.
+--   settings      online location = Shop floor (D83), Shopify location
+--                 9300000001, storefront https://shop.bicii.example,
+--                 accept_test_orders TRUE (dev/E2E only; production never
+--                 runs the seed, D89).
+--   products      P-000027 .. P-000033 on a fresh build, shop-owned,
+--                 quantity-tracked, SGD price / cost, opening stock at the
+--                 Shop floor 30 days back:
+--                   syncedTyre     12, PUBLIC (one public product photo,
+--                                  no Storage object), linked to Shopify
+--                                  product 9000000000 + n / variant
+--                                  9100000000 + n (n = its short id
+--                                  number; Step 3's fake adapter ids);
+--                   e2ePhone, e2eTablet          20 each (journey 5, one
+--                                  per Playwright project; not published);
+--                   e2eLinkPhone, e2eLinkTablet  20 each, no Shopify ids
+--                                  (the unmapped-variant journey);
+--                   stack          50, not published (Step 3's live-stack
+--                                  test);
+--                   stackExternal  50, no ids (linked to a Shopify-made
+--                                  product by that test).
+--   webhooks      seed-webhook-0001 orders/paid #1001: 1 x syncedTyre,
+--                 processed 8 shop days back (outside SEED_DAYS 0-6) ->
+--                 one online sale S-000005 and one online_sale movement;
+--                 seed-webhook-0002 refunds/create of 5.00 on #1001 ->
+--                 refund_recorded (S-000005 partially_refunded), no
+--                 movement; seed-webhook-0003 orders/paid #1002 for the
+--                 unmapped variant 9199999999 "BICII cotton cap" -> failed,
+--                 its job needs_attention (one admin-only integration_failed
+--                 exception); seed-webhook-0004 a rejected delivery
+--                 (hmac_invalid, no payload).
+--   sync row      LAST: syncedTyre published and synced (origin bicii, its
+--                 handle and inventory item, pushed a day ago at its
+--                 on-hand and selling price); desired_hash NULL, so the
+--                 first real sync pushes it once.
+-- ===========================================================================
+insert into public.shopify_settings (id, online_location_id, shopify_location_id, storefront_url, accept_test_orders)
+values (1, '1c000000-0000-4000-8000-000000000001', 'gid://shopify/Location/9300000001',
+        'https://shop.bicii.example', true);
+
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+
+-- One INSERT each so the short IDs follow this order.
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, description, created_at)
+values ('d1000000-0000-4000-8000-000000000001', null, 'Pirelli P Zero Race 700x28c tyre',
+  'Pirelli', 'ca000000-0000-4000-8000-000000000007', 'quantity', 'internal_only', 95.00, 55.00,
+  'Tubeless-ready road racing tyre, also sold online.', pg_temp.seed_at(30, '07:30'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, description, created_at)
+values ('d1000000-0000-4000-8000-000000000002', null, 'Online journey bottle (phone)',
+  'BICII', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 25.00, 10.00,
+  'E2E journey 5 fixture (phone project).', pg_temp.seed_at(30, '07:30'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, description, created_at)
+values ('d1000000-0000-4000-8000-000000000003', null, 'Online journey bottle (tablet)',
+  'BICII', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 25.00, 10.00,
+  'E2E journey 5 fixture (tablet project).', pg_temp.seed_at(30, '07:30'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, description, created_at)
+values ('d1000000-0000-4000-8000-000000000004', null, 'Online link musette (phone)',
+  'BICII', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 18.00, 7.00,
+  'E2E unmapped-variant fixture (phone project).', pg_temp.seed_at(30, '07:30'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, description, created_at)
+values ('d1000000-0000-4000-8000-000000000005', null, 'Online link musette (tablet)',
+  'BICII', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 18.00, 7.00,
+  'E2E unmapped-variant fixture (tablet project).', pg_temp.seed_at(30, '07:30'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, description, created_at)
+values ('d1000000-0000-4000-8000-000000000006', null, 'Stack sync stickers',
+  'BICII', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 12.00, 5.00,
+  'Live-stack sync fixture (Phase 10 step 3).', pg_temp.seed_at(30, '07:30'));
+insert into public.products
+  (id, sku, name, brand, category_id, tracking_type, publication_status, default_sale_price,
+   default_direct_cost, description, created_at)
+values ('d1000000-0000-4000-8000-000000000007', null, 'Stack external stickers',
+  'BICII', 'ca000000-0000-4000-8000-000000000010', 'quantity', 'internal_only', 12.00, 5.00,
+  'Live-stack fixture linked to a product made in Shopify (Phase 10 step 3).', pg_temp.seed_at(30, '07:30'));
+
+-- Opening stock at the Shop floor, written as Phase 4's is (what
+-- adjust_stock writes), one minute apart from 09:00, 30 days back.
+insert into public.inventory_movements
+  (product_id, inventory_unit_id, location_id, quantity_delta, movement_type, reason,
+   unit_cost_snapshot, request_id, currency, created_by, created_at)
+select r.product_id, null, '1c000000-0000-4000-8000-000000000001', r.qty, 'stock_adjustment',
+       'Opening stock count', p.default_direct_cost, r.request_id, p.currency,
+       '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(30, '09:00') + (r.ord - 1) * interval '1 minute'
+from (values
+  ('d1000000-0000-4000-8000-000000000101'::uuid, 'd1000000-0000-4000-8000-000000000001'::uuid, 12, 1),
+  ('d1000000-0000-4000-8000-000000000102', 'd1000000-0000-4000-8000-000000000002', 20, 2),
+  ('d1000000-0000-4000-8000-000000000103', 'd1000000-0000-4000-8000-000000000003', 20, 3),
+  ('d1000000-0000-4000-8000-000000000104', 'd1000000-0000-4000-8000-000000000004', 20, 4),
+  ('d1000000-0000-4000-8000-000000000105', 'd1000000-0000-4000-8000-000000000005', 20, 5),
+  ('d1000000-0000-4000-8000-000000000106', 'd1000000-0000-4000-8000-000000000006', 50, 6),
+  ('d1000000-0000-4000-8000-000000000107', 'd1000000-0000-4000-8000-000000000007', 50, 7)
+) as r (request_id, product_id, qty, ord)
+join public.products p on p.id = r.product_id
+order by r.ord;
+
+-- syncedTyre is public (D26 needs a price and a public photo; the photo row
+-- has no Storage object in a seeded database, so the Admin shows it
+-- broken) and linked to its Shopify product, with a reason in its history.
+insert into public.attachments
+  (id, entity_type, entity_id, storage_bucket, storage_path, media_type, visibility, caption, width, height,
+   created_at)
+values ('d1000000-0000-4000-8000-000000000201', 'product', 'd1000000-0000-4000-8000-000000000001',
+  'media-public',
+  'product/d1000000-0000-4000-8000-000000000001/d1000000-0000-4000-8000-000000000201.jpg',
+  'image/jpeg', 'public', 'P Zero Race, side view', 1600, 1200, pg_temp.seed_at(30, '07:40'));
+update public.products set publication_status = 'public' where id = 'd1000000-0000-4000-8000-000000000001';
+select private.set_change_reason('Seed: linked to the Shopify product BICII created for it');
+update public.products p
+set shopify_product_id = 'gid://shopify/Product/' || (9000000000 + substring(p.short_id from 3)::bigint),
+    shopify_variant_id = 'gid://shopify/ProductVariant/' || (9100000000 + substring(p.short_id from 3)::bigint)
+where p.id = 'd1000000-0000-4000-8000-000000000001';
+select private.set_change_reason(null);
+
+select set_config('request.jwt.claims', '', false);
+
+-- One webhook through the real RPCs: recorded (SHA-256 and size of the
+-- body's text), then processed when it was stored as pending.
+create function pg_temp.seed_webhook(
+  webhook_id text, topic text, body jsonb, triggered timestamptz
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  raw text := body::text;
+  ev record;
+begin
+  select * into ev
+  from public.record_shopify_webhook(
+    topic, webhook_id, 'seed-event-' || substring(webhook_id from 14), 'bicii-test.myshopify.com', '2026-07',
+    triggered,
+    jsonb_build_object(
+      'x-shopify-topic', topic, 'x-shopify-webhook-id', webhook_id,
+      'x-shopify-shop-domain', 'bicii-test.myshopify.com', 'x-shopify-api-version', '2026-07',
+      'x-shopify-triggered-at', to_char(triggered at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+    ),
+    body, encode(sha256(convert_to(raw, 'UTF8')), 'hex'), octet_length(raw), true, null, null
+  );
+  if ev.event_status = 'pending' then
+    perform public.process_shopify_event(ev.event_id);
+  end if;
+  return ev.event_id;
+end;
+$$;
+
+-- #1001: one syncedTyre at its price, 8 shop days back (D80: recognised at
+-- processed_at; GST included).
+select pg_temp.seed_webhook(
+  'seed-webhook-0001', 'orders/paid',
+  jsonb_build_object(
+    'id', 7000001001, 'admin_graphql_api_id', 'gid://shopify/Order/7000001001', 'name', '#1001',
+    'order_number', 1001, 'currency', 'SGD',
+    'processed_at', to_char(pg_temp.seed_at(8, '14:20') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'taxes_included', true, 'total_tax', '7.84',
+    'total_tax_set', jsonb_build_object('shop_money', jsonb_build_object('amount', '7.84', 'currency_code', 'SGD')),
+    'test', false, 'source_name', 'web', 'financial_status', 'paid',
+    'customer', jsonb_build_object('id', 7200000001, 'email', 'online.buyer@example.com'),
+    'line_items', jsonb_build_array(jsonb_build_object(
+      'id', 7100001001,
+      'product_id', 9000000000 + (select substring(short_id from 3)::bigint from public.products
+                                   where id = 'd1000000-0000-4000-8000-000000000001'),
+      'variant_id', 9100000000 + (select substring(short_id from 3)::bigint from public.products
+                                   where id = 'd1000000-0000-4000-8000-000000000001'),
+      'title', 'Pirelli P Zero Race 700x28c tyre', 'variant_title', null, 'quantity', 1, 'current_quantity', 1,
+      'price', '95.00',
+      'price_set', jsonb_build_object('shop_money', jsonb_build_object('amount', '95.00', 'currency_code', 'SGD')),
+      'discount_allocations', '[]'::jsonb
+    ))
+  ),
+  pg_temp.seed_at(8, '14:20') + interval '2 seconds'
+);
+
+-- 5.00 back on #1001 (D85: one sale_refunds row, no movement).
+select pg_temp.seed_webhook(
+  'seed-webhook-0002', 'refunds/create',
+  jsonb_build_object(
+    'id', 7300000001, 'admin_graphql_api_id', 'gid://shopify/Refund/7300000001', 'order_id', 7000001001,
+    'note', 'Scuffed sidewall; 5.00 back agreed with the customer',
+    'transactions', jsonb_build_array(jsonb_build_object(
+      'id', 7400000001, 'kind', 'refund', 'status', 'success', 'amount', '5.00', 'currency', 'SGD'
+    )),
+    'refund_line_items', jsonb_build_array(jsonb_build_object(
+      'id', 7500000001, 'line_item_id', 7100001001, 'quantity', 1, 'restock_type', 'no_restock',
+      'subtotal', '5.00',
+      'subtotal_set', jsonb_build_object('shop_money', jsonb_build_object('amount', '5.00', 'currency_code', 'SGD'))
+    ))
+  ),
+  pg_temp.seed_at(7, '10:00')
+);
+
+-- #1002: a variant BICII does not know (SPEC §17.1: nothing recorded, the
+-- event waits in the queue for an admin).
+select pg_temp.seed_webhook(
+  'seed-webhook-0003', 'orders/paid',
+  jsonb_build_object(
+    'id', 7000001002, 'admin_graphql_api_id', 'gid://shopify/Order/7000001002', 'name', '#1002',
+    'order_number', 1002, 'currency', 'SGD',
+    'processed_at', to_char(pg_temp.seed_at(1, '19:45') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'taxes_included', true, 'total_tax', '2.39', 'test', false, 'source_name', 'web',
+    'financial_status', 'paid', 'customer', null,
+    'line_items', jsonb_build_array(jsonb_build_object(
+      'id', 7100001002, 'product_id', 9099999999, 'variant_id', 9199999999, 'title', 'BICII cotton cap',
+      'variant_title', null, 'quantity', 1, 'current_quantity', 1, 'price', '29.00',
+      'price_set', jsonb_build_object('shop_money', jsonb_build_object('amount', '29.00', 'currency_code', 'SGD')),
+      'discount_allocations', '[]'::jsonb
+    ))
+  ),
+  pg_temp.seed_at(1, '19:45') + interval '3 seconds'
+);
+
+-- A delivery whose signature did not verify (D88): evidence only.
+select public.record_shopify_webhook(
+  'orders/paid', 'seed-webhook-0004', null, 'bicii-test.myshopify.com', '2026-07', null,
+  '{"x-shopify-topic": "orders/paid", "x-shopify-webhook-id": "seed-webhook-0004", "x-shopify-hmac-sha256": "not-a-valid-signature"}'::jsonb,
+  null, encode(sha256(convert_to('{"id": 7000009999}', 'UTF8')), 'hex'), octet_length('{"id": 7000009999}'),
+  false, 'hmac_invalid', null
+);
+
+-- LAST: syncedTyre's sync row, published and synced as if pushed a day ago
+-- (D84). desired_hash NULL: the first real sync pushes it once. The seed
+-- runs in one transaction and the Phase 10 step 2 enqueue triggers are
+-- deferred to commit, so they are fired now, while no product has a sync
+-- row (they queue nothing); then any product-sync job the seed produced is
+-- closed.
+set constraints all immediate;
+set constraints all deferred;
+insert into public.shopify_product_sync (
+  product_id, publish_online, sync_status, shopify_origin, shopify_inventory_item_id, shopify_handle,
+  last_pushed_at, last_checked_at, last_pushed_quantity, last_pushed_price, desired_hash, api_version,
+  publish_changed_by, publish_changed_at
+)
+select p.id, true, 'synced', 'bicii',
+       'gid://shopify/InventoryItem/' || (9200000000 + substring(p.short_id from 3)::bigint),
+       private.shopify_handle(p.short_id), now() - interval '1 day', now() - interval '1 day',
+       private.stock_on_hand(p.id, '1c000000-0000-4000-8000-000000000001'),
+       private.selling_price(p.id, null), null, '2026-07',
+       '5a000000-0000-4000-8000-000000000001', pg_temp.seed_at(9, '09:00')
+from public.products p
+where p.id = 'd1000000-0000-4000-8000-000000000001'
+on conflict (product_id) do update
+  set publish_online = excluded.publish_online, sync_status = excluded.sync_status,
+      shopify_origin = excluded.shopify_origin, shopify_inventory_item_id = excluded.shopify_inventory_item_id,
+      shopify_handle = excluded.shopify_handle, last_pushed_at = excluded.last_pushed_at,
+      last_checked_at = excluded.last_checked_at, last_pushed_quantity = excluded.last_pushed_quantity,
+      last_pushed_price = excluded.last_pushed_price, desired_hash = excluded.desired_hash,
+      api_version = excluded.api_version, publish_changed_by = excluded.publish_changed_by,
+      publish_changed_at = excluded.publish_changed_at;
+update public.integration_retry_queue
+set status = 'done', resolved_at = now(), locked_at = null
+where kind = 'product_sync' and status in ('queued', 'running')
+  and product_id in (
+    'd1000000-0000-4000-8000-000000000001', 'd1000000-0000-4000-8000-000000000002',
+    'd1000000-0000-4000-8000-000000000003', 'd1000000-0000-4000-8000-000000000004',
+    'd1000000-0000-4000-8000-000000000005', 'd1000000-0000-4000-8000-000000000006',
+    'd1000000-0000-4000-8000-000000000007'
+  );

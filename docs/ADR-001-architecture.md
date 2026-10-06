@@ -184,6 +184,18 @@ the devstack's loopback Storage host would need
 thumbnails become a bandwidth problem, Supabase Storage image
 transformations (a paid hosted feature) are the place to add sizes.
 
+Webhook and cron routes (revised in Phase 10 step 3): the two Route
+Handlers that act without a session, `api/shopify/webhooks` (POST,
+authenticated by the Shopify HMAC of the raw body) and
+`api/cron/integrations` (GET, `Authorization: Bearer <CRON_SECRET>`), are
+excluded from the `proxy.ts` matcher, run on the Node runtime with
+`maxDuration = 60`, and stay thin: each calls one handler in
+`src/lib/integrations/shopify/`, which is the only code that holds the
+service-role client and the only code that calls Shopify (through the
+`ShopifyAdmin` adapter). Work after the webhook response runs in
+`after()`. See [ARCHITECTURE "Shopify inbound flow"](ARCHITECTURE.md#shopify-inbound-flow)
+and [ADR-020](decisions/ADR-020-shopify.md).
+
 ### A6. Caching
 
 `cacheComponents` stays off. The app is authenticated and operational; every
@@ -244,7 +256,9 @@ bicii-book/
         labels/ , reports/ , settings/ , scan/
       api/
         shopify/webhooks/route.ts
-        health/route.ts
+        cron/integrations/route.ts   (Phase 10 step 3; vercel.json schedules it)
+        labels/[jobId]/pdf/route.ts  (Phase 8)
+        health/route.ts              (planned; not built)
       manifest.ts
       forbidden.tsx, unauthorized.tsx, not-found.tsx, error.tsx
     components/
@@ -257,7 +271,10 @@ bicii-book/
       domain/                customers.ts, bikes.ts, workshop.ts, lines.ts,
                              inventory.ts, consignment.ts, purchasing.ts,
                              appointments.ts, reports.ts
-      integrations/shopify/  client.ts, webhooks.ts, sync.ts
+      integrations/shopify/  client.ts, webhooks.ts, sync.ts, plus (Phase 10
+                             step 3) config, ids, hmac, admin, graphql-admin,
+                             fake-admin, fake-ids, desired-state, deps,
+                             queue, cron
       printing/              templates.ts, adapters/{browser,pdf}.ts
       money.ts, ids.ts, env.ts, logger.ts, database.types.ts
   tests/

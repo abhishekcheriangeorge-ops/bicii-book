@@ -247,29 +247,37 @@ URLs, or customer data in this file.
 - Impact: the stack (PRs #1–#7), the docs stack (#8), Phase 6 (#11),
   purchasing (#9), staff email sign-in (#10) and the staff roles (#13)
   are merged into `main` (`a1aebf6` on 2026-10-06). Labels (Phase 8,
-  `feat/p8-labels`) is not: `origin/main` is merged into `feat/p8-labels`
-  (a merge commit, no rebase; local only until pushed) with every conflict
-  resolved keeping both sides: the seed runs Phase 7's part after Phase
-  6's and before Phase 8's print jobs; the labels risks that collided with
-  purchasing's R-030–R-032 became R-075–R-077; the labels owner questions
-  became rows 21–22 after main's 15–20; the API-surface allow-list holds
-  both the label and the purchasing grants; and the labels E2E's signed-in
-  customer gets its session through the API, because the login form now
-  signs non-staff out (D70). No function, view, policy, grant, trigger or
-  type is defined both by the labels migration and by a purchasing,
+  `feat/p8-labels`) and Shopify (Phase 10, `feat/p10-shopify`, stacked on
+  labels) are not. Each merged `origin/main` on its own (merge commits, no
+  rebase), and `feat/p8-labels` (with its "Print N labels" follow-up) is
+  then merged into `feat/p10-shopify` (2026-10-06; local only until
+  pushed), so `feat/p10-shopify` holds main, labels and Shopify. Every
+  conflict kept both sides: the seed runs Phase 7's part after Phase 6's
+  and before Phase 8's print jobs and Phase 10's Shopify part (Phase 7
+  creates no products, so the Phase 10 short IDs P-000027 … P-000033 are
+  unchanged); the labels risks that collided with purchasing's
+  R-030–R-032 are R-075–R-077; the owner questions of labels and Shopify
+  are rows 21–25 after main's 15–20; the API-surface allow-list holds the
+  label, Shopify and purchasing grants; the service role's allow-list
+  gained `note_sign_in_attempt`; and the labels E2E's signed-in customer
+  gets its session through the API, because the login form now signs
+  non-staff out (D70). No function, view, policy, grant, trigger or type
+  is defined both by a labels or Shopify migration and by a purchasing,
   sign-in or roles migration ([DATA-MODEL](DATA-MODEL.md#authority-applied-state-and-implementation-status)
-  "Authority"), so no reconciling migration was needed. Shopify (Phase 10,
-  `feat/p10-shopify`, stacked on labels) and reporting (Phase 9) are on
-  their own branches.
-- Evidence and confidence: high; `git merge-base` before the merge
-  (c791d4b), the merge commit's parents (3f09d22 and a1aebf6); the gates on
-  the merged tree are in [NOW.md](../NOW.md).
+  "Authority"), so no reconciling migration was needed for the merge.
+  Reporting (Phase 9) is on its own branch.
+- Evidence and confidence: high; `git merge-base --all` before the merge
+  (a1aebf6 and 3f09d22), the merge commit's parents; the gates on the
+  merged tree are in [NOW.md](../NOW.md).
 - Workaround or containment: each integration reruns every gate on the
   merged tree.
-- Next action: push `feat/p8-labels`, open its PR against `main`, let CI
-  and the `e2e` label run, and merge; then bring Shopify up to date.
-- Revisit trigger: the labels PR merges.
-- Last checked: 2026-10-06 (the merge of `main` into `feat/p8-labels`).
+- Next action: push `feat/p8-labels` and `feat/p10-shopify` (the latter
+  contains labels and main), open the labels PR against `main` and then
+  the Shopify PR (or the Shopify PR alone, which contains labels), let CI
+  and the `e2e` label run, and merge.
+- Revisit trigger: the labels or Shopify PR merges.
+- Last checked: 2026-10-06 (the merge of `feat/p8-labels` into
+  `feat/p10-shopify`).
 
 ## R-010 — E2E is not a required check, and branch protection is unverified
 
@@ -303,21 +311,36 @@ URLs, or customer data in this file.
 ## R-011 — Shopify is not built and will be fixture-tested only
 
 - Category: validation gap.
-- Status and owner: open; build agent, Phase 10.
-- Trigger: Phase 10.
-- Impact: no Shopify integration exists on this branch (only the reserved
-  id columns `customers.shopify_customer_id`, `products.shopify_product_id`
-  and `products.shopify_variant_id`). When built, its webhook
-  and sync code will be tested against signed fixture payloads only until a
-  real or development store is connected, so API and payload drift would not
-  be caught.
-- Evidence and confidence: high; no `src/lib/integrations/` directory and no
-  Shopify tables on this branch; PLAN Phase 10 plans fixture payloads.
-- Workaround or containment: none needed yet.
-- Next action: at Phase 10, the owner provides a development store, and a
-  test against it is added before go-live.
-- Revisit trigger: Phase 10 starts.
-- Last checked: 2026-10-05, repository tree.
+- Status and owner: open; build agent (Phase 10), owner (a development
+  store).
+- Trigger: Phase 10 and go-live of the online channel.
+- Impact: Phase 10 step 1 built the inbound database side (webhook
+  recording, the queue, order and refund processing, D80–D89) and step 2
+  the outbound sync's database side (what to push, the queue, the results);
+  step 3 the service layer (the GraphQL and fake adapters, the webhook and
+  cron routes, the queue and sync runners); step 4 the screens (Phase 10
+  is complete; E2E journey 5 runs against the in-memory fake only).
+  Everything is tested against payloads written from Shopify's documented
+  REST shapes (`tests/fixtures/shopify.ts`), never against a real store,
+  so payload and API drift would not be caught: in particular whether a
+  tax-inclusive store's refund line `subtotal` includes tax
+  (`private.shopify_refund_line_amount`), whether refund transactions
+  carry shop money, and the order-edit case of
+  [R-044](#r-044--an-edited-order-with-a-discounted-line-records-a-lower-price).
+- Evidence and confidence: high; `tests/db/shopify-webhooks.test.ts` uses
+  only fixture payloads; no store credentials exist.
+- Workaround or containment: unknown or malformed payloads fail safe:
+  nothing is recorded and the event waits for an admin
+  (`shopify_payload_invalid`, D82).
+- Next action: the owner provides a development store; the build agent
+  works through
+  [RUNBOOK "Verify before go-live"](RUNBOOK.md#shopify-verify-before-go-live)
+  (added in step 3) and records the results there; the outbound calls'
+  own unverified assumptions are
+  [R-047](#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store).
+- Revisit trigger: a development store is connected; Shopify's pinned API
+  version changes.
+- Last checked: 2026-10-06, Phase 10 step 3.
 
 ## R-012 — Label printer hardware is unknown
 
@@ -540,10 +563,12 @@ URLs, or customer data in this file.
 ## R-021 — Reports overstate net sales after a refund or restock
 
 - Category: deliberate shortcut.
-- Status and owner: accepted (D49, build default, owner to confirm);
-  owner, with Phase 9's refund-reporting row (in D100–D119).
+- Status and owner: accepted (D49, build default, owner to confirm; D85
+  applies it to online refunds); owner, with Phase 9's refund-reporting
+  row (in D100–D119).
 - Trigger: an admin or a manager records a refund on a sale
-  (`record_sale_refund`, D94), or staff restock a sold unit
+  (`record_sale_refund`, D94), a Shopify refund is recorded
+  (`process_shopify_refund`, Phase 10), or staff restock a sold unit
   (`restock_unit`).
 - Impact: `reporting.financial_lines` and `reporting.daily_summary` (and so
   Today and the financial reports) keep every sale line at its snapshot:
@@ -566,8 +591,10 @@ URLs, or customer data in this file.
   not change these figures yet", the Sales list marks Partly refunded /
   Refunded and Restocked, and `tests/e2e/sales.spec.ts` shows a partial
   refund on the sale and in the list.
-- Next action: Phase 9 decides the refund-reporting row (DR5) for retail
-  and online refunds together.
+- Next action: Phase 9 decides the refund-reporting row (in D100–D119) for
+  retail and online refunds together; Phase 10's online refunds net
+  nothing either (`tests/db/shopify-webhooks.test.ts` proves
+  `financial_lines` unchanged by an online refund).
 - Revisit trigger: the first real refund, or Phase 9's reports.
 - Last checked: 2026-10-05, the migration and tests above.
 
@@ -759,10 +786,10 @@ URLs, or customer data in this file.
 ## R-028 — The main-line decision range D43–D59 is exhausted
 
 - Category: process gap.
-- Status and owner: open; orchestrator and owner.
+- Status and owner: resolved 2026-10-06; orchestrator.
 - Trigger: the next main-line phase needs a new D-row (for example
   Shopify, Phase 10, or Phase 9 reporting's refund row).
-- Impact: [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) reserves
+- Impact: [PLAN §6](PLAN.md#6-open-decisions-for-the-owner) reserved
   D43–D59 for this line and D60 and up for the purchasing track (D60–D66
   on `feat/p7-purchasing`). Phase 8 took D56–D59, the last four numbers,
   so there was no free main-line number; a later phase picking one on its
@@ -777,14 +804,15 @@ URLs, or customer data in this file.
   RISKS ranges in AGENTS.md (R-028–R-029 labels, R-030–R-034 purchasing,
   R-035–R-039 email sign-in, R-040–R-049 Shopify, R-050–R-054 roles,
   R-055–R-064 reporting, R-065–R-074 public site). At the merge of `main`
-  into `feat/p8-labels` (2026-10-06) the D-rows and records met without a
-  collision (D56–D59, D60–D66, D70–D72, D90–D94); the labels
+  into `feat/p10-shopify` (2026-10-06) the D-rows and records met without a
+  collision (D56–D59, D60–D66, D70–D72, D80–D89, D90–D94); the labels
   risks numbered R-030–R-032 before the ranges existed collided with
   purchasing's and became R-075–R-077, with every link updated.
 - Workaround or containment: none needed.
 - Next action: none; each phase uses only its own range.
 - Revisit trigger: a phase exhausts its range.
-- Last checked: 2026-10-06 (the merge of `main` into `feat/p8-labels`).
+- Last checked: 2026-10-06 (the merge of `feat/p8-labels` into
+  `feat/p10-shopify`).
 
 ## R-029 — The purchase receive screen has no "Print N labels" shortcut yet
 
@@ -1087,6 +1115,308 @@ URLs, or customer data in this file.
   RUNBOOK step 2 against staging and records what differs.
 - Revisit trigger: R-001.
 - Last checked: 2026-10-06, RUNBOOK.
+
+## R-040 — Shopify webhook payloads hold customer personal data until purged by hand
+
+- Category: data protection gap.
+- Status and owner: open; owner (retention), build agent.
+- Trigger: any Shopify order or refund webhook.
+- Impact: `integration_events.payload` keeps each order's body as
+  received, with the buyer's name, email, addresses and phone, for as long
+  as the row exists. Only admins can read it (D86, RLS), but nothing
+  removes it automatically: the owner-only
+  `private.purge_integration_events(older_than)` (at least 30 days) must be
+  run by hand, and failed or pending events are never purged (D88). This
+  adds to [R-016](#r-016--no-retention-or-deletion-policy-for-customer-personal-data).
+  The payload is also what recognises a dismissed refund delivered again
+  under a new webhook id (D87: a dismissal is final, matched on the
+  refund id in the stored payload): after its payload is purged, such a
+  redelivery of a refund of a recorded sale would be recorded. Orders are
+  matched on the stored order gid, which a purge keeps. Shopify retries
+  keep their webhook id, so this needs a new id at least 30 days later.
+- Evidence and confidence: high;
+  `supabase/migrations/20261004003900_shopify_integration.sql` (no cron);
+  `tests/db/shopify-webhooks.test.ts` "Webhook evidence is immutable".
+- Workaround or containment: admin-only access; the purge function;
+  rejected deliveries never store a body.
+- Next action: the owner decides a retention period (owner question 4);
+  OPERATIONS then schedules the purge.
+- Revisit trigger: go-live of the online channel; a deletion request.
+- Last checked: 2026-10-06.
+
+## R-041 — An online order for more consigned stock than one consignment holds fails
+
+- Category: deliberate limitation (D45).
+- Status and owner: accepted; owner.
+- Trigger: an online order line for a consignment-owned quantity product
+  whose quantity is more than any single active consignment has at the
+  online location, although several consignments together would cover it.
+- Impact: a sale line draws from exactly one consignment item (D45/D54),
+  so `private.sell_line` refuses the line and the whole order is not
+  recorded; it waits as `shopify_insufficient_stock` or
+  `shopify_sale_refused` for an admin, who records it by hand as two sales
+  lines or refunds it in Shopify (D82).
+- Evidence and confidence: high; `tests/db/shopify-webhooks.test.ts`
+  "Consignment sale creates correct liability and yield" (the second order
+  of two jerseys when one is left).
+- Workaround or containment: keep consigned quantity stock online only
+  from one consignment at a time, or sell it in store.
+- Next action: none unless it happens; revisit with D45.
+- Revisit trigger: the first such order.
+- Last checked: 2026-10-06.
+
+## R-042 — Earlier online sales keep no customer after a Shopify customer is linked
+
+- Category: deliberate limitation (D86).
+- Status and owner: accepted; build agent (Phase 9 reports, the sales
+  list).
+- Trigger: an admin links a BICII customer to a Shopify customer who
+  already has online sales.
+- Impact: a recorded sale is immutable except its status (Phase 6,
+  `sales_enforce_rules`), so the link applies only to orders recorded after
+  it; earlier online sales keep `customer_id` null and carry only
+  `sales.shopify_customer_id`. Any list or report keyed on
+  `sales.customer_id` misses them until the screens join through
+  `customers.shopify_customer_id` (step 4).
+- Evidence and confidence: high; `link_shopify_customer` returns
+  `earlier_online_sales`; `tests/db/shopify-webhooks.test.ts` "Customer
+  linking is explicit".
+- Workaround or containment: the link's result says how many earlier sales
+  exist.
+- Step 4 (built): the sale page shows "<customer> (linked through
+  Shopify)" for such a sale, and the event inspector shows the linked
+  customer through the same id. Not yet: the Sales list still says
+  "Walk-in" for them, and the customer page does not list their online
+  sales. The customer link is proven by the database tests and the unit
+  tests of its wording, not by an E2E test (linking a seeded customer
+  would be permanent across runs).
+- Next action: the Sales list and the customer page join through
+  `customers.shopify_customer_id`; Phase 9 reports join the same way.
+- Revisit trigger: Phase 9 customer reports; staff asking why an online
+  sale shows Walk-in.
+- Last checked: 2026-10-06 (Phase 10 step 4).
+
+## R-043 — Phase 9 must widen the integration exceptions function
+
+- Category: integration debt.
+- Status and owner: open; the build agent of Phase 9.
+- Trigger: Phase 9 appends its columns (`issue, short_id, title, detail,
+  amount, currency`) to `reporting.operational_exceptions`.
+- Impact: Phase 10 built `private.integration_exceptions()` in Phase 5's
+  nine-column shape and added it to the view with `union all`; a Phase 9
+  replacement of the view that widens only the other branches fails to
+  create, or drops the integration rows if the branch is forgotten.
+- Evidence and confidence: high;
+  `supabase/migrations/20261004004000_shopify_order_processing.sql`,
+  DATA-MODEL §14; Phase 9 is not built on this branch.
+- Workaround or containment: none needed until Phase 9.
+- Next action: Phase 9 replaces `private.integration_exceptions()` with
+  the wider columns in the same migration that widens the view, and keeps
+  `tests/db/shopify-webhooks.test.ts` "Integration failures are
+  operational exceptions" green.
+- Revisit trigger: Phase 9 or the integration step.
+- Last checked: 2026-10-06.
+
+## R-044 — An edited order with a discounted line records a lower price
+
+- Category: shortcut (D80), unverified against Shopify.
+- Status and owner: open; build agent (step 3, with a development store).
+- Trigger: an order edited in Shopify after payment so that a discounted
+  line's `current_quantity` is below its `quantity`.
+- Impact: BICII records `price × current_quantity − Σ the line's discount
+  allocations`. If Shopify keeps the allocations of the original quantity,
+  the recorded line total is lower than what the remaining items were
+  charged, understating sales, yield and Cult Commons for that order (a
+  fully removed line is ignored and correct).
+- Evidence and confidence: medium; the rule is in
+  `process_shopify_order_paid`; no real edited-order payload has been
+  inspected (R-011).
+- Workaround or containment: order edits after payment are rare; the sale
+  shows Shopify's order name, so staff can compare with Shopify.
+- Next action: inspect an edited order on a development store; if
+  allocations are not adjusted, prorate them by `current_quantity /
+  quantity` in the one place the line total is computed.
+- Revisit trigger: a development store is connected.
+- Last checked: 2026-10-06.
+
+## R-045 — The Buy-online link follows overall availability, not online stock
+
+- Category: deliberate shortcut (D84).
+- Status and owner: accepted for now; build agent (Phase 11 decides how it
+  shows the link), owner.
+- Trigger: a published, synced product whose stock is only at a location
+  other than the online location (e.g. all units in the workshop store).
+- Impact: `reporting.public_items.availability` counts stock and units at
+  every location, and `buy_online_url` follows the row's availability, so
+  the public page can show **Buy online** while Shopify, which only sees
+  the online location (D83), shows the item sold out. The shopper reaches
+  a sold-out Shopify page; no sale is recorded wrongly (an order BICII
+  cannot fulfil waits for an admin, D82). Since the Phase 10 review the
+  link never sells something other than the page shows: a unit row gets
+  it only when it is the unit an online order takes (the oldest
+  available, non-customer-owned, non-archived unit at the online
+  location, D81), and a unique product's row only when its shown price
+  equals the online price. What remains is only this sold-out case, on a
+  product (quantity) row.
+- Evidence and confidence: high; the view definition in
+  `20261004004100_shopify_product_sync.sql` and
+  `tests/db/shopify-sync.test.ts` "Buy online link" and "links only what
+  Shopify sells".
+- Workaround or containment: keep online stock at the online location;
+  staff move stock with a transfer.
+- Next action: Phase 11 or the owner decides whether the link should
+  require stock at the online location (a column change only, in the one
+  view).
+- Revisit trigger: Phase 11 builds the public `/q` page, or the shop keeps
+  sellable stock at a second location.
+- Last checked: 2026-10-06, Phase 10 review fixes.
+
+## R-046 — The product-sync queue is coarse
+
+- Category: deliberate shortcut (D83, D84).
+- Status and owner: accepted for now; build agent (step 3 measures it).
+- Trigger: busy online periods, frequent stock changes, products that were
+  pushed and then unpublished.
+- Impact: `product_sync_state.orders_in_flight` is shop-wide: any orders/paid
+  event of the last 10 minutes that is pending (or failed with its job
+  queued or running) reports an order in flight for every product, so the
+  worker may defer stock pushes of unrelated products by up to a few
+  minutes. A product pushed once keeps being queued on every change after
+  it is unpublished (`private.enqueue_product_sync` queues anything pushed
+  before), so the worker runs syncs that end `unchanged`. Neither records
+  anything wrong; both cost Shopify API calls and delay.
+- Evidence and confidence: medium; the rules are in
+  `20261004004100_shopify_product_sync.sql`; no volume has been measured
+  (no store, R-011).
+- Workaround or containment: one queued job per product and the desired
+  hash keep repeats cheap; the worker skips the push when the hash is
+  unchanged.
+  Step 3 measured the cost rather than volume: a sync whose desired hash
+  equals the last push makes **no** Shopify call (proven in
+  `tests/unit/shopify-sync.test.ts` and `tests/db/shopify.stack.test.ts`),
+  so the repeat syncs of an unpublished, drafted product cost one
+  `product_sync_state` read and one `record_product_sync_result` each.
+  Every online order, though, costs one extra 2-minute deferral of its
+  product's next push: the order lowers Shopify's count before BICII
+  records it, so the push's compare quantity (the last pushed quantity) is
+  stale once, and the worker waits before overwriting (D83, step 3's
+  `runProductSync` step 7).
+- Next action: kept as built in step 3 (no database change); revisit the
+  in-flight scope (only orders naming the product's variant) and the
+  per-order deferral (compare with Shopify's count less the order just
+  recorded) after measuring on a development store.
+- Revisit trigger: Shopify API throttling or visible delay in a development
+  store.
+- Last checked: 2026-10-06, Phase 10 step 3.
+
+## R-047 — The live Shopify adapter is unverified against a real store
+
+- Category: validation gap (D83, D84).
+- Status and owner: open; build agent, owner (a development store).
+- Trigger: the first connection to a real store; a Shopify API version
+  upgrade.
+- Impact: `src/lib/integrations/shopify/graphql-admin.ts` was written from
+  Shopify's documentation without a store to run it against. Assumptions
+  that could be wrong: the `productSet` input shape (`productOptions`,
+  `variants[].optionValues`, the SKU on `inventoryItem.sku`, media through
+  `files`); `inventorySetQuantities`' compare field `changeFromQuantity`
+  (older versions: `compareQuantity` plus `ignoreCompareQuantity`), its
+  stale-compare error codes (`CHANGE_FROM_QUANTITY_STALE`,
+  `COMPARE_QUANTITY_STALE`) and the `@idempotent(key:)` directive; whether
+  a product created by productSet is stocked at the online location before
+  the first inventory write; whether productSet without a variant price
+  keeps the price; the `locations` query's `isActive`. A wrong field name
+  fails every push as `shopify_bad_response` (retried, then needs
+  attention after 8 attempts); a wrong stale code would make a moved count
+  a non-retriable `shopify_user_error` instead of the 2-minute deferral.
+  No money or stock is recorded wrongly: the ledger never depends on a
+  push. A further hazard is configuration: a Preview deployment runs on
+  the staging database, whose short IDs and so Shopify handles
+  (`bicii-<short id>`) repeat production's, and a product with no sync
+  row is upserted by handle; with the live store's token, a preview's
+  Publish online or Sync now would overwrite a live product with staging
+  data. The RUNBOOK gives Preview no live-store values, and the client
+  keeps the live adapter off when `VERCEL_ENV=preview` unless
+  `SHOPIFY_ALLOW_PREVIEW=true` (set only for a development store;
+  `tests/unit/shopify-fake-admin.test.ts` "which Shopify a deployment
+  talks to").
+- Evidence and confidence: medium; `tests/unit/shopify-graphql-admin.test.ts`
+  proves what BICII sends and how it maps answers, against a mocked fetch
+  only. The idempotency key is BICII's own: a UUID-shaped SHA-256 of the
+  inventory item, desired hash, job id and phase (deviation from the
+  brief's `${productId}:${hash}`, so Sync now and a retry after a moved
+  count are not swallowed by Shopify's idempotency replay).
+- Workaround or containment: the fake adapter for every test and E2E;
+  Shopify is off until the variables are set.
+- Next action: work through
+  [RUNBOOK "Verify before go-live"](RUNBOOK.md#shopify-verify-before-go-live)
+  on a development store and correct the documents and the tests together.
+- Revisit trigger: a development store exists; `SHOPIFY_API_VERSION`
+  changes; Preview deployments get Shopify variables.
+- Last checked: 2026-10-06, Phase 10 review fixes.
+
+## R-048 — The rejected-delivery limit is per server instance
+
+- Category: deliberate shortcut (D88).
+- Status and owner: accepted for now; build agent.
+- Trigger: a burst of unsigned or wrongly signed POSTs to
+  `/api/shopify/webhooks`.
+- Impact: the limit of 30 stored rejected deliveries a minute is an
+  in-memory sliding window in each server process
+  (`SlidingWindowLimiter` in `webhooks.ts`). On Vercel every function
+  instance has its own window and a cold start resets it, so a burst
+  spread over many instances can store more than 30 a minute (each bad
+  body is still one row with a delivery count, D88, and never a payload).
+  Above the limit deliveries are only logged
+  (`shopify_rejected_rate_limited`), so a real misconfiguration during a
+  burst leaves fewer rows to inspect.
+- Evidence and confidence: high; `tests/unit/shopify-webhook-handler.test.ts`
+  "the 31st rejected delivery".
+- Workaround or containment: the platform's own firewall or rate limiting
+  in front of the route; the owner purges rejected rows by hand
+  (`private.purge_integration_events`).
+- Next action: if hosted logs show rejected bursts, move the limit into
+  the database (a count of rejected rows in the last minute in
+  `record_shopify_webhook`) or the platform firewall.
+- Revisit trigger: hosted deployment; any rejected-delivery burst in the
+  logs.
+- Last checked: 2026-10-06, Phase 10 step 3.
+
+## R-049 — Queued integration jobs wait for a trigger
+
+- Category: operational dependency (D87).
+- Status and owner: open; owner (the Vercel plan), build agent.
+- Trigger: a Vercel Hobby plan; a quiet shop; a failed result write.
+- Impact: nothing runs jobs on its own except the cron
+  (`/api/cron/integrations`, every 5 minutes in `vercel.json`) and the
+  work after each webhook (its own event, then up to 5 due jobs). Vercel's
+  Hobby plan allows only crons that run at most once a day and **fails
+  the deployment** of a more frequent one, so with `vercel.json` as
+  committed the Admin cannot deploy on Hobby at all; the Hobby fallback is
+  a daily schedule in `vercel.json` plus an external scheduler. Without
+  that scheduler a retry backing off a minute, a deferred stock push
+  (D83) or a refund waiting for its order can wait until the next
+  webhook, staff action or the daily run. A runner claims a job only
+  while that job's worst case (four Shopify calls at the 10 s timeout plus
+  5 s) still ends 5 s before the function's `maxDuration` (60 s), so a
+  slow Shopify no longer runs a claimed job past the limit
+  (`tests/unit/shopify-cron-route.test.ts` "the runner's time budget").
+  If the platform stops the function anyway, or a runner cannot store a
+  result (the database unreachable), the job stays `running` and is
+  reclaimed only after 10 minutes.
+- Evidence and confidence: high for the Hobby limit: Vercel's page
+  "Cron jobs: usage and pricing" (last updated 2026-07-15) says
+  expressions that run more than once a day fail during deployment on
+  Hobby; not checked against the owner's account (no Vercel project,
+  R-001).
+- Workaround or containment: a Pro plan, or on Hobby a daily schedule plus
+  an external scheduler calling the cron route with the bearer every 5
+  minutes ([RUNBOOK](RUNBOOK.md#shopify-the-cron-and-the-queue)); staff
+  Retry and Sync now run their job immediately.
+- Next action: the owner chooses the Vercel plan before the first
+  deployment of this branch (RUNBOOK "Verify before go-live" item 9).
+- Revisit trigger: the Vercel project is created.
+- Last checked: 2026-10-06, Phase 10 review fixes.
 
 ## R-050 — Managers record refunds with no second approval
 

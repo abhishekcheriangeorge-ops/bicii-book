@@ -329,11 +329,11 @@ describe("exceptions (D34)", () => {
 
   it("renders a kind from a later phase without throwing", () => {
     const copy = exceptionCopy(
-      "integration_failed",
-      exception({ severity: "danger", entityLabel: "S-000004", subjectLabel: "Shopify order" }),
+      "purchase_overdue",
+      exception({ severity: "danger", entityLabel: "PO-000004", subjectLabel: "Supplier order" }),
     );
-    expect(copy).toEqual({ text: "Check S-000004 · Shopify order", tone: "danger" });
-    expect(exceptionLabel("integration_failed")).toBe("Needs attention");
+    expect(copy).toEqual({ text: "Check PO-000004 · Supplier order", tone: "danger" });
+    expect(exceptionLabel("purchase_overdue")).toBe("Needs attention");
     expect(
       exceptionCopy("mystery", exception({ entityLabel: null, subjectLabel: null })).text,
     ).toBe("Something needs checking");
@@ -356,6 +356,40 @@ describe("exceptions (D34)", () => {
       exceptionHref(exception({ entityType: "work_order_line", entityLabel: null })),
     ).toBeNull();
     expect(exceptionHref(exception({ entityType: "consignor" }))).toBeNull();
+  });
+
+  it("says a Shopify failure needs fixing in the queue, and opens that job there (Phase 10, D86)", () => {
+    const row = exception({
+      kind: "integration_failed",
+      severity: "danger",
+      entityType: "integration_job",
+      entityId: "e3000000-0000-4000-8000-000000000001",
+      entityLabel: "#1002",
+      subjectLabel: 'Order #1002: "BICII cotton cap" (Shopify variant 9199999999) is not linked',
+    });
+    expect(exceptionLabel("integration_failed")).toBe("Shopify needs attention");
+    expect(exceptionCopy("integration_failed", row)).toEqual({
+      text: "Fix it in the Shopify queue",
+      tone: "danger",
+    });
+    // Even if a later view sent it as a warning, a stuck integration is danger.
+    expect(exceptionCopy("integration_failed", { ...row, severity: "warning" }).tone).toBe(
+      "danger",
+    );
+    expect(exceptionHref(row)).toBe("/shopify/queue?job=e3000000-0000-4000-8000-000000000001");
+  });
+
+  it("has a pill label for every kind the database emits", () => {
+    for (const kind of [
+      "overdue_job",
+      "uncollected_job",
+      "negative_stock",
+      "unit_hold_stale",
+      "currency_mismatch",
+      "integration_failed",
+    ]) {
+      expect(exceptionLabel(kind), kind).not.toBe("Needs attention");
+    }
   });
 });
 

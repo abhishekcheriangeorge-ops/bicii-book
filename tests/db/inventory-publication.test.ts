@@ -27,7 +27,12 @@ import {
   type PublicationStatus,
 } from "@/lib/inventory";
 
-import { CUSTOMER, PRODUCT_CATEGORY, STAFF } from "../fixtures/ids";
+import {
+  CUSTOMER,
+  PRODUCT_CATEGORY,
+  SEEDED_PUBLIC_PRODUCT_SHORT_IDS,
+  STAFF,
+} from "../fixtures/ids";
 import { customerClaims, linkCustomerLogin } from "./customer-fixtures";
 import { actAs, connect, inTransaction, isolatedDatabase, scalar } from "./harness";
 import {
@@ -76,6 +81,9 @@ const PUBLIC_COLUMNS = [
   "availability",
   "photos",
   "updated_at",
+  // Phase 10 step 2 (D84): the Buy-online link, null unless published,
+  // synced and available.
+  "buy_online_url",
 ];
 
 const shortIdOf = (tx: pg.Client, table: string, id: string) =>
@@ -176,10 +184,16 @@ describe.skipIf(!isolatedDatabase())(
 
         await actAs(tx, ANON);
         const items = await publicItems(tx);
-        // Only the three published products and the published one's unit;
-        // the seed publishes nothing.
+        // Only the three published products and the published one's unit,
+        // besides the seed's own published products (Phase 10's syncedTyre).
         expect(items.map((i) => i.short_id).sort()).toEqual(
-          [sid.pump, sid.soldOut, sid.frame, frameUnit.short_id].sort(),
+          [
+            sid.pump,
+            sid.soldOut,
+            sid.frame,
+            frameUnit.short_id,
+            ...SEEDED_PUBLIC_PRODUCT_SHORT_IDS,
+          ].sort(),
         );
         // Unknown and unpublished IDs are equally absent (the /q page 404s).
         for (const missing of [sid.draft, "P-999999", "U-999999"]) {
@@ -441,9 +455,13 @@ describe.skipIf(!isolatedDatabase())(
         await actAs(tx, ADMIN);
         await publishProduct(tx, productId);
 
+        const bell = await shortIdOf(tx, "products", productId);
         await actAs(tx, ANON);
         const anon = await publicItems(tx);
-        expect(anon).toHaveLength(1);
+        // The bell and the seed's own published products (Phase 10).
+        expect(anon.map((i) => i.short_id).sort()).toEqual(
+          [bell, ...SEEDED_PUBLIC_PRODUCT_SHORT_IDS].sort(),
+        );
         await actAs(tx, customerClaims(authUserId));
         expect(await publicItems(tx)).toEqual(anon);
         await actAs(tx, MECHANIC2);

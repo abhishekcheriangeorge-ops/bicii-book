@@ -35,7 +35,8 @@ commands in [ENGINEERING.md](ENGINEERING.md).
 | Vercel project | Hosting the Admin | **Not set up** | n/a | n/a |
 | Domain, DNS | Admin and public site addresses | None known for the Admin | Unknown | n/a |
 | Email delivery (SMTP) | Auth email: staff sign-in codes (D10) and customers' codes on the public site (Phase 11, D120) | **Not set up**; a custom SMTP provider is required on every hosted project ([RUNBOOK](RUNBOOK.md#hosted-supabase-projects-staging-and-production)) | Unknown | Nobody can sign in ([R-039](RISKS.md#r-039--hosted-email-delivery-and-auth-settings-are-unverified)) |
-| Shopify store | Phase 10 integration | None connected | Unknown | n/a ([R-011](RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only)) |
+| Shopify store and its custom app | Phase 10 integration: online orders and refunds in, product price and stock out | None connected; the custom app's token and webhook secret go into Vercel Production only (`SHOPIFY_ADMIN_TOKEN`, `SHOPIFY_WEBHOOK_SECRET`, `SHOPIFY_SHOP_DOMAIN`; [RUNBOOK](RUNBOOK.md#shopify)). Preview gets no live-store values: Shopify off, or a separate development store with `SHOPIFY_ALLOW_PREVIEW=true` | Unknown | Online orders wait in the queue (Shopify retries refused webhooks); syncs retry ([R-011](RISKS.md#r-011--shopify-is-not-built-and-will-be-fixture-tested-only), [R-047](RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)) |
+| Vercel cron (`vercel.json`) | Runs due integration jobs every 5 minutes behind `CRON_SECRET` (D87) | Not set up (no Vercel project) | The 5-minute schedule needs a Pro plan: on Hobby a sub-daily cron **fails the deployment**, so Hobby needs a daily schedule in `vercel.json` plus an external 5-minute scheduler ([RUNBOOK](RUNBOOK.md#shopify-the-cron-and-the-queue)); choose the plan before the first deployment | Retries and deferred syncs wait for the next webhook or staff action ([R-049](RISKS.md#r-049--queued-integration-jobs-wait-for-a-trigger)) |
 | Label printer | Phase 8 and 12 | Models unknown; Phase 8 prints through the browser or a PDF (untested on a real printer, [R-075](RISKS.md#r-075--label-output-is-unverified-on-a-real-label-printer-and-on-ios)). Printing needs `shop_settings.public_site_url` set ([RUNBOOK](RUNBOOK.md#labels-the-qr-address-before-the-first-print)) | Unknown | Nothing prints while the address is unset ([R-012](RISKS.md#r-012--label-printer-hardware-is-unknown), [R-013](RISKS.md#r-013--changing-the-qr-base-leaves-printed-labels-on-the-old-address)) |
 
 Not established: account custody (organisation or personal ownership), a
@@ -57,7 +58,7 @@ describe (planned; never exercised).
 
 | Environment | App | Database | Auth, Storage, integrations | Configuration source |
 |---|---|---|---|---|
-| Local devstack | http://localhost:3000 (`npm run dev`); E2E serves a production build on :3100 | `bicii_dev` on Postgres 16 at 127.0.0.1:5432 | Supabase Auth :9999, PostgREST :3001, Storage :5000 behind the gateway :54321; public local demo keys; no email, no Shopify | `npm run devstack:env` writes `.env.local`; shell variables for the scripts ([ENGINEERING.md](ENGINEERING.md#prerequisites-and-access)) |
+| Local devstack | http://localhost:3000 (`npm run dev`); E2E serves a production build on :3100 | `bicii_dev` on Postgres 16 at 127.0.0.1:5432 | Supabase Auth :9999, PostgREST :3001, Storage :5000 behind the gateway :54321; public local demo keys; no email; Shopify off, or the in-memory fake with `SHOPIFY_ADAPTER=fake` (E2E sets it) | `npm run devstack:env` writes `.env.local`; shell variables for the scripts ([ENGINEERING.md](ENGINEERING.md#prerequisites-and-access)) |
 | CI (GitHub Actions) | `next build`; `next start` on :3100 for E2E | A `postgres:16` service container per job | The devstack with the local demo keys; no secrets | [`ci.yml`](../.github/workflows/ci.yml): `check`, `test (unit + db)`, `build` on pull requests (opened, synchronize, reopened), pushes to `main` and manual dispatch. [`e2e.yml`](../.github/workflows/e2e.yml): pull requests labelled `e2e`, nightly at 02:23 Singapore time, manual dispatch. [`migrate.yml`](../.github/workflows/migrate.yml): `db push` to the hosted project on manual dispatch and on pushes to `main` that change `supabase/migrations/` |
 | Preview / staging | **Not set up** | `bicii-staging` planned | Planned | [RUNBOOK](RUNBOOK.md#hosted-supabase-projects-staging-and-production) |
 | Production | **Not set up** | `bicii-prod` planned | Planned | [RUNBOOK](RUNBOOK.md#vercel-environment-setup) |
@@ -92,6 +93,22 @@ the app; never exercised on a hosted project). After
 3. Make a test print on the shop's label printer
    ([RUNBOOK "Label printers"](RUNBOOK.md#label-printers)).
 4. Invite staff (below).
+
+**Shopify data retention** (owner, by hand; D88): webhook bodies keep
+customer details until purged with `private.purge_integration_events`
+([RUNBOOK](RUNBOOK.md#shopify-purging-old-webhook-data)); no retention
+period is set yet ([R-040](RISKS.md#r-040--shopify-webhook-payloads-hold-customer-personal-data-until-purged-by-hand)).
+**Who administers the Shopify integration** (D86): admins only for the
+event inspector, the queue (retry, dismiss with a reason), variant and
+customer links (with a reason) and the settings (online location,
+storefront URL, `accept_test_orders` with a reason), because payloads hold
+customer data; staff with `manage_inventory` publish products online, run
+Sync now and retry product-sync jobs; every staff member sees each
+product's sync status. Screens: **More → Shopify** (admins: settings,
+queue, products, events) and the product page's **Online (Shopify)** card
+([USER-GUIDE](USER-GUIDE.md#publish-a-product-online)). Connecting
+the store, secrets, the cron and the go-live checks:
+[RUNBOOK "Shopify"](RUNBOOK.md#shopify).
 
 **Roles** (D90-D94, [ADR-021](decisions/ADR-021-staff-roles.md)). Every
 person is an Admin, a Manager or a Mechanic. Admins have every permission
@@ -315,6 +332,9 @@ procedure (no hosted project exists, 2026-10-05).
 - [Creating the first admin in a hosted project](RUNBOOK.md#creating-the-first-admin-in-a-hosted-project)
 - [Rotating keys and passwords](RUNBOOK.md#rotating-keys-and-passwords)
 - [Vercel environment setup](RUNBOOK.md#vercel-environment-setup)
+- [Shopify](RUNBOOK.md#shopify): the custom app, webhooks, environment,
+  the cron and queue, API version upgrade, secret rotation, verify before
+  go-live, purging old webhook data
 - [CI](RUNBOOK.md#ci): the `e2e` label exists and has run on PRs #2 to #7;
   required checks on `main` are unverified (R-010).
 
@@ -356,6 +376,7 @@ outage would be noticed by a user. There is no incident record location
 | Staff report that no sign-in code arrives | That person cannot sign in | Auth logs for `over_email_send_rate_limit`; the Admin's warnings `auth.request_code`; the SMTP provider's sending log (hosted) | Send a code to the owner's address (hosted: Users → Send magic link; locally: the mail catcher) | Engineering, then the owner (SMTP provider) |
 | "You don't have permission to do that." or a 403 page | One task blocked | The person's permissions in Settings → Staff | Compare with [USER-GUIDE "Roles and limits"](USER-GUIDE.md#roles-and-limits) | Admin |
 | CI `check:types` fails | PR cannot merge cleanly | Job log | `npm run db:types` locally | Engineering |
+| An online order is missing from Sales, or a product's Shopify stock is stale | Online sale not recorded or Shopify oversells | Admins: Today's exceptions ("Shopify needs attention") and `/shopify/queue`; logs `shopify webhook` / `shopify product sync` lines by correlation id | Is the cron running (`/api/cron/integrations` answers 401 without the bearer, 503 without `CRON_SECRET`)? Are webhooks answering 200? | Admin, then engineering ([RUNBOOK](RUNBOOK.md#shopify-resolving-problems)) |
 
 ## Recovery
 

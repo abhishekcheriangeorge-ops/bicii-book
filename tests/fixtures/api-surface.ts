@@ -156,6 +156,17 @@ export const AUTHENTICATED_FUNCTIONS: readonly string[] = [
   "public.set_default_label_template(uuid)",
   "public.set_default_printer_profile(uuid)",
   "public.set_print_job_status(uuid, print_status, text)",
+  // Shopify (Phase 10, D86): admins retry inbound jobs, dismiss, and link
+  // variants and customers; manage_inventory retries product-sync jobs
+  "public.dismiss_integration_job(uuid, text)",
+  "public.link_shopify_customer(uuid, text, text)",
+  "public.link_shopify_variant(uuid, text, text, text)",
+  "public.retry_integration_job(uuid)",
+  // Shopify outbound (Phase 10 step 2, D84, D86): manage_inventory
+  // publishes online and asks for a sync; admins change the settings
+  "public.request_product_sync(uuid)",
+  "public.set_publish_online(uuid, boolean)",
+  "public.set_shopify_settings(uuid, text, boolean, text)",
   // Customer self-service (Phase 1): the caller's own rows only
   "public.my_bike_attachments(uuid)",
   "public.my_bikes()",
@@ -285,6 +296,17 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "public.label_templates": ["INSERT", "SELECT", "UPDATE"],
   "public.print_jobs": ["SELECT"],
   "public.printer_profiles": ["INSERT", "SELECT", "UPDATE"],
+  // Shopify (Phase 10, D86): read-only; every write is an RPC. Events, the
+  // queue and the audit trail return rows to admins only (payloads hold
+  // customer personal data); the settings and sync rows to active staff.
+  "public.integration_audit_events": ["SELECT"],
+  "public.integration_events": ["SELECT"],
+  "public.integration_retry_queue": ["SELECT"],
+  "public.shopify_product_sync": ["SELECT"],
+  "public.shopify_settings": ["SELECT"],
+  // Phase 10 step 2: every staff member reads a product's sync status
+  // (security_invoker; the open-job columns follow the queue's admin RLS)
+  "reporting.shopify_sync_status": ["SELECT"],
   // Purchasing (Phase 7): staff read suppliers, POs, lines, receipts and
   // progress; manage_purchasing writes suppliers (column grants) and
   // everything else through RPCs. SELECT on supplier_products,
@@ -305,6 +327,26 @@ export const AUTHENTICATED_RELATIONS: Readonly<Record<string, readonly string[]>
   "reporting.product_on_order": ["SELECT"],
   "reporting.purchase_order_progress": ["SELECT"],
 };
+
+/**
+ * Functions the service role may call. Staff email sign-in (PLAN D72)
+ * added note_sign_in_attempt, which the sign-in action calls with the
+ * service-role key before every code request and check (src/lib/admin/).
+ * Phase 10 added exactly the Shopify webhook and queue RPCs, which the
+ * webhook route and the cron call with the service-role key, and the
+ * product sync's state and result RPCs the sync worker calls
+ * (DATA-MODEL §16). Nothing in `private`.
+ */
+export const SERVICE_ROLE_FUNCTIONS: readonly string[] = [
+  "public.note_sign_in_attempt(text[], integer)",
+  "public.claim_integration_jobs(integer, uuid)",
+  "public.process_shopify_event(uuid)",
+  "public.process_shopify_order_paid(uuid)",
+  "public.process_shopify_refund(uuid)",
+  "public.product_sync_state(uuid)",
+  "public.record_product_sync_result(uuid, uuid, text, text, text, text, text, integer, money_amount, text, text, text, text, boolean)",
+  "public.record_shopify_webhook(text, text, text, text, text, timestamp with time zone, jsonb, jsonb, text, integer, boolean, integration_rejection_reason, text)",
+];
 
 /**
  * Views that run with their owner's rights (security_invoker off) and are

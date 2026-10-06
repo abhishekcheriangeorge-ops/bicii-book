@@ -409,7 +409,10 @@ export const ROUNDING_JOB: JobExpectation = {
  *   awaiting collection J-000002, J-000003, H5, H6
  *   overdue (D20)       J-000006 (checked in 8 days back), H7 (11)
  *   low stock           cableKit, hydraulicHose, sealant (Phase 4)
- *   exceptions (D34)    SEED_EXCEPTIONS
+ *   exceptions (D34)    SEED_EXCEPTIONS, plus (Phase 10) the seeded
+ *                       integration_failed row of #1002's unmapped variant,
+ *                       which only an admin sees (D86): 4 for the admin
+ *                       this snapshot is read as, 3 for anyone else
  * Tests that run after others have added rows assert "at least" these.
  */
 export const SEED_SNAPSHOT = {
@@ -421,7 +424,7 @@ export const SEED_SNAPSHOT = {
   open_jobs_now: 9,
   overdue_now: 2,
   low_stock_now: 3,
-  exceptions_now: 3,
+  exceptions_now: 4,
 } as const;
 
 /**

@@ -45,15 +45,17 @@ This section was added by the documentation retrofit (2026-10-05, inspected
 at `c6bf6d0`). The numbered sections below are never renumbered; code and
 migration comments cite them as "DATA-MODEL §n".
 
-**Authority.** The schema source is the 49 files in
+**Authority.** The schema source is the 52 files in
 [supabase/migrations/](../supabase/migrations/), from
 `20261004000100_foundation.sql` to
 `20261006103000_public_site.sql` (Phase 6 added `20261004003300` to
-`20261004003700`; Phase 8, labels, added `20261004003800_labels.sql`;
-Phase 7, purchasing, integrated onto the main line on
-`feat/p7-purchasing`, added `20261005000100` to `20261005000500`, which
-sort after every `20261004…` file; staff email sign-in, integrated on
-`feat/auth-email-otp`, added
+`20261004003700`; Phase 8, labels, added `20261004003800_labels.sql` and
+Phase 10, Shopify, `20261004003900_shopify_integration.sql`,
+`20261004004000_shopify_order_processing.sql` and
+`20261004004100_shopify_product_sync.sql`; Phase 7, purchasing,
+integrated onto the main line on `feat/p7-purchasing`, added
+`20261005000100` to `20261005000500`, which sort after every `20261004…`
+file; staff email sign-in, integrated on `feat/auth-email-otp`, added
 `20261005005000_staff_session_revocation` and
 `20261005006000_sign_in_throttle`, which sort after purchasing's and
 create only new objects: no function, view, policy, grant or trigger they
@@ -68,20 +70,27 @@ replace, with the same signatures, `private.has_permission`,
 `20261006103000_public_site`, which creates only new objects:
 `claim_my_customer`, `bookable_slots`,
 `private.customer_can_read_media` and the Storage policy
-`media_internal_select_customer`, D120–D125). The labels migration sorts
-before the purchasing, sign-in, roles and public-site ones, and no
-function, view, policy, grant, trigger or type it creates is created or
-replaced by any of them (checked at the merge of `main` into
-`feat/p8-labels`, 2026-10-06, by matching every `create` in
-`20261004003800_labels.sql` against the `20261005…` and `20261006…`
-files, and again for `20261006103000_public_site` when labels joined
-`main`): its only change to an existing object is
-`shop_settings_public_site_url_check`, which no later migration touches.
-So the label guards (`private.require_staff`, `private.require_admin`,
-`private.is_staff`, `private.is_admin`) follow the roles unchanged: every
-role prints labels, and label templates, printers and the QR address stay
-role `admin` only (D91; a manager is not an admin).
-`tests/db/labels.test.ts` proves both for a manager.
+`media_internal_select_customer`, D120–D125). The labels and Shopify
+migrations sort before the purchasing, sign-in, roles and public-site
+ones, and no function, view, policy, grant, trigger or type that
+`20261004003800_labels.sql` or `20261004003900` to `20261004004100`
+(Shopify) creates or replaces is created or replaced by any of them
+(checked at the merge of `main` into `feat/p8-labels`, and again at the
+merge of `feat/p8-labels` into `feat/p10-shopify`, 2026-10-06, by
+matching every `create`, `create or replace`, `drop`, `alter`, `grant` and
+`revoke` target of those four files against the `20261005…` and
+`20261006…` files, and for `20261006103000_public_site` when labels and
+then Shopify joined `main`): the labels migration's only change to an
+existing object is `shop_settings_public_site_url_check`, and the Shopify
+migrations' are new columns on `products`, `customers` and `sales`,
+which no later migration touches. So the label and Shopify guards
+(`private.require_staff`, `private.require_admin`, `private.is_staff`,
+`private.is_admin`, `private.has_permission`) follow the roles unchanged:
+every role prints labels, and label templates, printers and the QR
+address stay role `admin` only (D91; a manager is not an admin;
+`tests/db/labels.test.ts` proves both for a manager); a manager holds
+`manage_inventory` (Publish online, Sync now) by role, while the Shopify
+settings stay `require_admin` (D86, D91).
 [src/lib/database.types.ts](../src/lib/database.types.ts) is generated from
 them by `npm run db:types`, and CI fails when it drifts
 (`npm run check:types` in [ci.yml](../.github/workflows/ci.yml)).
@@ -93,11 +102,11 @@ document is corrected.
 
 **Applied state.**
 
-- Local: on 2026-10-06, after `npm run db:reset` on `feat/p8-labels`
+- Local: on 2026-10-06, after `npm run db:reset` on `feat/p10-shopify`
   merged with the main line (`a1aebf6`; `npm run test:e2e` resets the
   same database),
   `psql postgresql://postgres:postgres@127.0.0.1:5432/bicii_dev -Atc "select count(*), max(version) from supabase_migrations.schema_migrations"`
-  printed `48|20261006000300` (every file applied).
+  printed `51|20261006000300` (every file applied).
 - CI: the `check` job diffs the generated types against a throwaway
   database built from the migrations, and the `test` and E2E jobs run
   `npm run db:reset` (migrations, then the seed) before testing
@@ -120,19 +129,19 @@ the `20261004` prefix; Phase 7's keep `20261005`). For planned tables, the rows 
 | §3 Shop hours and appointments | Implemented | `002700_appointment_enum_values` to `003200_appointment_reporting` (Phase 2); `bookable_slots` in `20261006103000_public_site` (Phase 11) |
 | §4 Workshop | Implemented | `001300_work_orders`, `001500_workshop_rpcs`, `001600_workshop_customer_access`, `001700_workshop_search` |
 | §5 Services and line items | Implemented | `001200_workshop_catalog`, `001400_work_order_lines`, `001500_workshop_rpcs`; consigned-part columns `003300_consignment`, their rules `003400_consignment_job_parts` (D44) |
-| §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; `003300_consignment` adds the units' consignment foreign key, ownership rules and the consignment branch of `private.selling_price`; the sale-line columns have their foreign keys since `003500_sales`; Shopify reference columns wait for Phase 10; `supplier_products` is Phase 7's (§10) |
+| §6 Catalog and inventory | Implemented | `001800_inventory`, `002100_inventory_publication`, `002200_inventory_search`; `003300_consignment` adds the units' consignment foreign key, ownership rules and the consignment branch of `private.selling_price`; the sale-line columns have their foreign keys since `003500_sales`; the Shopify id rules (gid checks; `shopify_product_id` no longer unique, D84) since `003900_shopify_integration`; `supplier_products` is Phase 7's (§10) |
 | §7 Inventory movement ledger | Implemented | `001800_inventory`, `001900_inventory_jobs`, `002000_inventory_reporting`; `003300_consignment` adds the consignment foreign key, D50's movement rules and `private.record_linked_movement`; `003500_sales` adds the sale-line foreign keys and `inventory_movements_restock_once`; `20261005000300_purchase_receiving` adds the receipt-line foreign key, `inventory_movements_purchase_received_has_receipt_line` and `private.record_receipt_movement` |
-| §8 Sales | Implemented | `sales`, `sale_lines`, `sale_refunds`, `private.sell_line`, `record_retail_sale`, `restock_unit`, `record_sale_refund` (`003500_sales`; the partial unique index `sale_lines_unit_sells_once` replaces this section's plain `unique`, D46). Screens: Phase 6 step 4 (`src/app/(staff)/sales/`, `src/lib/domain/sales.ts`). Shopify orders reuse `private.sell_line` in Phase 10 |
+| §8 Sales | Implemented | `sales`, `sale_lines`, `sale_refunds`, `private.sell_line`, `record_retail_sale`, `restock_unit`, `record_sale_refund` (`003500_sales`; the partial unique index `sale_lines_unit_sells_once` replaces this section's plain `unique`, D46). Screens: Phase 6 step 4 (`src/app/(staff)/sales/`, `src/lib/domain/sales.ts`). Shopify orders reuse `private.sell_line` since Phase 10 step 1 (`004000_shopify_order_processing` replaces it with the same body plus `shopify_line_part`; `003900` adds the Shopify columns and `sale_lines_shopify_line_part_key`, D80) |
 | §9 Consignment | Implemented | Phase 6 step 1: consignors, items, charges, item history, returns, `reporting.consignment_item_position`, consigned job parts (`003300_consignment`, `003400_consignment_job_parts`; D44–D52); step 2: settlements, reversals, the ledgers and the balance rule (`003600_consignment_settlements`; D46, D47). Screens: step 3 (`src/app/(staff)/consignment/`, `src/lib/domain/consignment.ts`); selling a consigned item in store: step 4 (Sell on the item page, `/sales`) |
 | §10 Suppliers and purchasing | Implemented | Phase 7: `20261005000100_suppliers`, `…0200_purchase_orders`, `…0300_purchase_receiving`, `…0400_purchasing_search`, `…0500_purchasing_reorder` (D60–D66). Screens: `src/app/(staff)/purchasing/`, `src/lib/domain/purchasing.ts`, `src/lib/domain/suppliers.ts`. Purchases are shop-owned quantity products only (D62; consigned products are refused, `purchase_line_not_shop_owned`) |
 | §11 QR identity and publication | Partly | Built: short IDs, publication rules, `reporting.public_items`, staff `/q/[shortId]`, scanner (`002100_inventory_publication`); the database QR base and payload (`private.qr_payload`, `003800_labels`, D9); the Admin's QR display and scan bases on the database base (`src/lib/qr.ts`, Phase 8 step 2). `C-` resolves to the consignment item page since Phase 6 step 3, `S-` to the sale page since step 4, `PO-` to the purchase order since Phase 7. Missing: the public `/q` route (Phase 11) |
 | §12 Label printing | Partly | Database built (`003800_labels`, Phase 8 step 1: templates, printer profiles, print jobs, label content, RPCs, built-in rows); `src/lib/printing/`, `src/lib/domain/labels.ts`, the print view, the PDF route and the print history (step 2); the record pages' Labels card and the settings screens are steps 3–4; hardware adapters Phase 12 |
-| §13 Shopify integration | Planned | Phase 10; only reserved columns exist (`customers.shopify_customer_id`, the product Shopify ids) |
-| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `purchase_order_progress` and `product_on_order` (Phase 7). Missing: `stock_reconciliation` (Phase 9), `shopify_sync_status` (Phase 10) |
-| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48), purchasing (Phase 7, D60) and labels (Phase 8 step 1); rows for integrations are design |
-| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`), and the fourteen purchasing RPCs (Phase 7, `receive_purchase(purchase_order_id, idempotency_key, lines, reference, received_at, notes)` among them) and the five label RPCs (Phase 8 step 1); the Shopify processors are design |
+| §13 Shopify integration | Partly | Inbound built (Phase 10 step 1: `003900_shopify_integration`, `004000_shopify_order_processing`: settings, sync rows, events, the queue, the audit trail, webhook recording, order and refund processing, retry, dismiss and the links; D80–D89). Outbound database built (step 2: `004100_shopify_product_sync`: the online price, Publish online, Sync now, the settings RPC, the deferred enqueue triggers, the sync worker's state and result RPCs, `reporting.shopify_sync_status`, `public_items.buy_online_url`). Service layer built (step 3: `src/lib/integrations/shopify/`, the webhook and cron routes; no schema change). Screens built (step 4: the product page's Online card, `/shopify` and its queue, products, events and inspector, `src/lib/domain/shopify.ts`; no schema change). Not verified against a real store ([R-047](RISKS.md#r-047--the-live-shopify-adapter-is-unverified-against-a-real-store)) |
+| §14 Reporting views | Partly | Built: `stock_levels`, `product_stock`, `low_stock`, `public_items`, `financial_lines`, `daily_summary`, `work_order_activity`, `operational_exceptions`, `appointment_daily`, and `work_order_totals` / `work_order_totals_staff` (in `public`). `consignment_item_position`, `consignor_item_ledger`, `consignor_ledger` (Phase 6; no API grant; the consignor ledgers are built and read through `list_consignors` and `consignor_statement`); `financial_lines` has its sale branch and `daily_summary` its consignment columns since `003700_consignment_reporting`. `purchase_order_progress` and `product_on_order` (Phase 7). `operational_exceptions` has its `integration_failed` rows since `004000_shopify_order_processing` (admins only, D86). `shopify_sync_status` and `public_items.buy_online_url` since `004100_shopify_product_sync` (Phase 10 step 2). Missing: `stock_reconciliation` (Phase 9) |
+| §15 Row-level security matrix | Partly | Rows for every built table are implemented and tested, including consignment (Phase 6 step 1), sales and settlements (step 2, D48), purchasing (Phase 7, D60), labels (Phase 8 step 1) and the Shopify integration tables (Phase 10 step 1, D86); the rows of later phases are design |
+| §16 RPC catalogue | Partly | Rows marked "Built" exist, including the five consignment item RPCs (Phase 6 step 1) and the five sale and settlement write RPCs and six read RPCs (step 2), all with screens since steps 3 and 4 (deviations from the original rows: `record_retail_sale`, `restock_unit(unit_id, sale_line_id, location_id, reason)`, `return_consignment_item(return_id, item_id, reason, quantity, location_id)`), the fourteen purchasing RPCs (Phase 7, `receive_purchase(purchase_order_id, idempotency_key, lines, reference, received_at, notes)` among them), the five label RPCs (Phase 8 step 1), the five Shopify service-role RPCs and four staff RPCs (Phase 10 step 1), and the two sync-worker RPCs and three staff RPCs of the outbound sync (step 2); the rows of later phases are design |
 | §17 Sequences and short IDs | Implemented | `000100_foundation` (all seven prefixes); C is used from Phase 6 step 1 (`consignment_items`), S from step 2 (`sales`), PO from Phase 7 (`purchase_orders`) |
-| §18 Seed data | Implemented | Phase 1–5, Phase 2, Phase 6, Phase 7 and Phase 8 parts are in `supabase/seed.sql`, in that order (Phase 8's last) |
+| §18 Seed data | Implemented | Phase 1–5, Phase 2, Phase 6, Phase 7, Phase 8 and Phase 10 parts are in `supabase/seed.sql`, in that order (Phase 10's last) |
 
 **Access summary.** The matrix is [§15](#15-row-level-security-matrix) and
 the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
@@ -144,8 +153,8 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 | staff (active) | base tables through RLS; cost columns hidden | `private.is_staff()`, column grants, `*_staff` views | `staff-rls`, `work-order-lines`, `inventory-catalog` |
 | staff with a permission (by role or as an exception) | costs, inventory writes, stock changes, financial reports, staff management, consignment money, purchasing (`manage_purchasing` held as an exception also sees purchase costs on purchasing surfaces, D60). A manager holds every permission except `manage_staff` by role (D91) | `private.require_permission` / `has_permission` (through `private.role_implies`) in RPCs; `private.can_view_purchase_costs()` | `staff-roles`, `permission-helpers`, `reporting-access`, `staff-management`, `inventory-ledger`, `purchasing-access` |
 | manager or admin | retail refunds (D94, a role check: `private.can_record_refunds()`) | `record_sale_refund` | `staff-roles`, `sales` |
-| admin | everything above plus settings, hours, rates, roles, admin and manager staff (D93), and label templates, printers and the QR address (D9, D56) | `private.require_admin()`, `private.is_admin()` | `staff-roles`, `staff-management`, `staff-history`, `schedule-settings`, `labels` |
-| service role | bypasses RLS; used only in `src/lib/admin/`: the Auth admin API (invites without a password) and `note_sign_in_attempt` (D72, the only function granted to it alone) | ESLint import restriction, `server-only`; `note_sign_in_attempt` is revoked from anon and authenticated | `sign-in-throttle` (anon and staff get 42501) |
+| admin | everything above plus settings, hours, rates, roles, admin and manager staff (D93), label templates and printers, and the Shopify integration's events, queue, audit trail, dismissals, links and `integration_failed` exceptions (D86) | `private.require_admin()`, `private.is_admin()` | `staff-roles`, `staff-management`, `staff-history`, `schedule-settings`, `labels`, `shopify-webhooks` |
+| service role | bypasses RLS; exactly the allow-listed functions (`SERVICE_ROLE_FUNCTIONS`), nothing in `private`: in `src/lib/admin/` the Auth admin API (invites without a password) and `note_sign_in_attempt` (D72); since Phase 10 the Shopify webhook, queue and sync-worker RPCs (`src/lib/integrations/shopify/`) | grants (each revoked from anon and authenticated), ESLint import restriction, `server-only` | `meta` ("service_role can execute exactly the allow-listed functions"), `sign-in-throttle` (anon and staff get 42501), `shopify-webhooks` |
 
 **Lifecycle.**
 
@@ -190,7 +199,7 @@ the pattern is [ADR-003](decisions/ADR-003-customer-access.md).
 - Errors: business refusals are `P0001` with a stable snake_case code in
   `MESSAGE`, mapped to user messages in
   [src/lib/db-errors.ts](../src/lib/db-errors.ts) (§16).
-- Shopify: designed in §13, planned for Phase 10.
+- Shopify: inbound built in §13 (Phase 10 step 1): the service-role RPCs the webhook route and cron call (`record_shopify_webhook`, `claim_integration_jobs`, `process_shopify_event`); the outbound sync and `reporting.public_items.buy_online_url` (the Buy-online rule Phase 11 reads, D84) came in step 2, and the service layer that calls them (`src/lib/integrations/shopify/`) in step 3.
 
 ## 1. Identity and authorization
 
@@ -1094,7 +1103,13 @@ products
   default_direct_cost money_amount null ≥ 0  -- no column grant: product_costs
   currency char(3) not null default 'SGD'
   reorder_point integer null ≥ 0           -- low stock: on_hand <= reorder_point
-  shopify_product_id text null unique, shopify_variant_id text null unique  -- Phase 10
+  shopify_product_id text null, shopify_variant_id text null unique  -- Phase 10 (D84)
+     -- gids (products_shopify_product_id_format / _variant_id_format);
+     -- shopify_product_id is NOT unique (index products_shopify_product_id_idx):
+     -- several BICII products may link variants of one Shopify product
+     -- (a justified deviation from this section's first draft, D84). No
+     -- UPDATE grant: links change only through link_shopify_variant (§16)
+     -- and step 2's sync.
   active boolean not null default true
   search_text text generated (name, brand, sku; trigram index)
   created_by uuid null -> staff, created_at, updated_at, archived_at
@@ -1431,6 +1446,12 @@ sales                                      -- immutable except status; never del
   customer_id uuid null -> customers
   work_order_id uuid null -> work_orders   -- reserved, no UI
   shopify_order_id text null unique, shopify_order_name text null   -- Phase 10
+     -- gid Order (sales_shopify_order_id_format)
+  shopify_customer_id text null            -- Phase 10: the order's Shopify customer (gid);
+                                           --   customer_id only when already linked (D86)
+  integration_event_id uuid null -> integration_events   -- Phase 10: the event that recorded it
+  -- sales_shopify_shape: an online_shopify sale has a shopify_order_id; any
+  --   other sale carries none of the three Shopify columns
   recognized_at timestamptz not null       -- recognition (§14); past allowed
                                            --   (D55: never before the stock was
                                            --   with the shop), never > now() + 5 min
@@ -1456,8 +1477,10 @@ sale_lines                                 -- written only by private.sell_line
   cult_commons_rate_snapshot rate_fraction (the rate at recognized_at)
   currency char(3)
   sale_total, cost_total, yield_total, cult_commons_share   -- generated as in §5
-  shopify_line_item_id text null unique    -- written only at insert (Phase 10);
+  shopify_line_item_id text null          -- gid LineItem; written only at insert (Phase 10);
                                            --   record_retail_sale refuses the key
+  shopify_line_part smallint null          -- D80: 1 / 2 for a split uneven quantity line;
+                                           --   needs a line id (sale_lines_shopify_line_part_check)
   restocked_at timestamptz null, restocked_by null -> staff   -- once, by restock_unit
   created_at
   checks: sale_lines_unit_quantity_one, sale_lines_consignment_payout
@@ -1465,15 +1488,21 @@ sale_lines                                 -- written only by private.sell_line
     sale_lines_restock_unit_only, sale_lines_restock_shape
   unique index sale_lines_unit_sells_once (inventory_unit_id)
     where inventory_unit_id is not null and restocked_at is null
+  unique index sale_lines_shopify_line_part_key
+    (shopify_line_item_id, inventory_unit_id, shopify_line_part) nulls not distinct
+    where shopify_line_item_id is not null   -- replaces the single-column unique
+    (Phase 10, D80): one sale line per unit, or two parts, per Shopify line
   -- sale_lines_immutable: only restocked_at / restocked_by change, once,
   --   from null; no DELETE
 
 sale_refunds                               -- append-only (sale_refund_immutable)
-  id uuid PK (client id), sale_id -> sales, shopify_refund_id text null unique,
+  id uuid PK (client id), sale_id -> sales, shopify_refund_id text null unique (gid Refund),
   amount money_amount (> 0), currency, reason text (1..500),
-  restocked boolean not null default false -- Phase 10 records Shopify's flag;
-                                           --   it never moves stock
-  recorded_by, created_at
+  restocked boolean not null default false -- always false: Phase 10 keeps Shopify's
+                                           --   restock claims in the event result (D85);
+                                           --   a refund never moves stock (D7)
+  recorded_by (null for a Shopify refund), integration_event_id null -> integration_events,
+  created_at
 ```
 
 Deviation from the original design (D46): `sale_lines.inventory_unit_id` is
@@ -1494,7 +1523,7 @@ override it (D53). NULL price → `sale_price_required`; NULL cost →
 (`insufficient_stock`).
 
 A refund is a financial fact (D7, D49). It does not touch stock or units;
-reports do not net it in Phase 6. Putting a unique item back on the floor
+reports do not net it (Phase 6, and Phase 10 for online refunds, D85). Putting a unique item back on the floor
 is a separate staff action (`restock_unit`) that writes a `return` movement
 linked to the sale line, marks the line restocked and flips the unit back to
 `available`, with a reason.
@@ -2216,55 +2245,274 @@ Archived records keep their jobs readable (SPEC §23).
 
 ## 13. Shopify integration
 
-```
-integration_events   (every inbound webhook, before any processing)
-  id bigint identity PK
-  provider text not null default 'shopify'
-  topic text not null                      -- 'orders/paid', 'refunds/create', …
-  external_event_id text not null          -- X-Shopify-Webhook-Id
-  shop_domain text, api_version text
-  payload jsonb not null
-  headers jsonb not null
-  hmac_valid boolean not null
-  received_at timestamptz not null default now()
-  status integration_event_status not null default 'pending'
-     -- enum: pending | processed | skipped | failed
-  attempts integer not null default 0
-  processed_at timestamptz, last_error text, correlation_id uuid
-  unique (provider, external_event_id)
+Inbound built in Phase 10 step 1 (`20261004003900_shopify_integration.sql`,
+`20261004004000_shopify_order_processing.sql`; PLAN D80–D89, ADR-020);
+the outbound product sync is step 2, the service layer step 3 (built:
+`src/lib/integrations/shopify/`, no schema change), the screens step 4
+(`src/lib/domain/shopify.ts` reads these tables and views through RLS and
+writes only through the staff RPCs; no schema change). This replaces the first draft (bigint ids, a `dead` job status,
+Shopify ids on the sync row): ids are uuids, a job a person must act on is
+`needs_attention`, and Shopify product and variant ids live ONLY on
+`products` (§6). Every Shopify id is stored as a gid
+(`gid://shopify/<Kind>/<digits>`, `private.shopify_gid`, checked on every
+column).
 
-shopify_product_sync
+```
+shopify_settings      (single row id = 1; seeded, never by a migration)
+  online_location_id uuid not null -> locations     -- D83: the online stock
+  shopify_location_id text null (gid Location)      -- filled by the first sync
+  storefront_url text null (https://…, ≤ 200)       -- read only through buy_online_url (step 2)
+  accept_test_orders boolean not null default false -- D89; true in the dev/E2E seed only
+  updated_at, updated_by -> staff
+
+shopify_product_sync  (one row per product BICII publishes or links)
   product_id uuid PK -> products
   publish_online boolean not null default false
-  sync_status sync_status not null default 'not_synced'
+  sync_status shopify_sync_status not null default 'not_synced'
      -- enum: not_synced | pending | synced | error | unpublished
-  shopify_product_id, shopify_variant_id, shopify_inventory_item_id text
-  last_pushed_at, last_pulled_at timestamptz
-  last_error text, desired_hash text       -- hash of last pushed payload
-  updated_at
+  shopify_origin text null ('bicii' | 'external', D84)
+  shopify_inventory_item_id text null unique (gid InventoryItem)
+  shopify_handle text null                 -- bicii-<short id>; null when external
+  last_pushed_at, last_checked_at, last_pushed_quantity (≥ 0), last_pushed_price,
+  desired_hash (sha-256 hex; the API version is part of it), api_version,
+  last_error_code, last_error (≤ 1000), publish_changed_by/at, created_at, updated_at
 
-integration_retry_queue
-  id, integration_event_id null, kind text, payload jsonb, attempts,
-  next_attempt_at, last_error, status (queued | running | done | dead)
+integration_events    (every inbound webhook, stored before processing)
+  id uuid PK, provider 'shopify', topic (≤ 100)
+  external_event_id text (≤ 200)           -- X-Shopify-Webhook-Id; 'missing:' || sha for
+                                           --   a rejected delivery without one
+  shopify_event_id, shop_domain, api_version, triggered_at (X-Shopify-Triggered-At)
+  subject (≤ 200)                          -- '#1042'; 'Refund <id> of #1042' (the name of
+                                           --   the order's delivery), else 'Refund <id> of order <id>'
+  shopify_order_gid (gid Order)            -- the order an event is about; never raises
+  test_delivery boolean                    -- payload test or header X-Shopify-Test (D89)
+  payload jsonb null                       -- null when rejected or purged (D88)
+  payload_purged_at, headers jsonb (capped: 16 lower-cased keys, ≤ 512 chars,
+     'x-bicii-truncated' when cut), body_sha256 (hex), body_bytes (≥ 0)
+  hmac_valid boolean, rejection_reason integration_rejection_reason null
+     -- enum: hmac_invalid | webhook_secret_missing | shop_not_configured |
+     --   shop_domain_mismatch | missing_headers | body_not_json
+  received_at, delivery_count (≥ 1), last_delivered_at
+  status integration_event_status   -- pending | processed | skipped | failed | rejected
+  attempts, processed_at
+  outcome text (sale_recorded | duplicate_order | refund_recorded | duplicate_refund |
+     no_money_refunded | refund_not_allocated | topic_not_handled | test_order |
+     pos_order | order_not_recorded | earlier_delivery_skipped | dismissed)
+  result jsonb                             -- the sale and lines, a refund's amounts, or
+                                           --   unmapped_lines (admin only)
+  last_error_code, last_error (the human message), last_error_detail (SQLSTATE: message
+     of an unexpected error), sale_id -> sales, correlation_id, created_at, updated_at
+  checks: integration_events_rejected_shape (rejected ⇔ a reason; a reason ⇒ no
+    payload; no reason ⇒ hmac_valid), integration_events_payload_present
+  unique index integration_events_external_id_key (provider, external_event_id)
+    where rejection_reason is null         -- D88: a forgery never squats the key
+  unique index integration_events_rejected_body_key (rejection_reason, body_sha256)
+    where rejection_reason is not null     -- one row per bad body
+  -- integration_events_guard (every role, the owner too): only the processing
+  --   columns change; DELETE and clearing a payload only under
+  --   private.purge_integration_events (integration_event_immutable)
+
+integration_retry_queue   (the visible queue, SPEC §26)
+  id uuid PK, kind integration_job_kind (shopify_event | product_sync)
+  integration_event_id null -> integration_events, product_id null -> products
+     (exactly one, by kind)
+  status integration_job_status   -- queued | running | done | needs_attention | dismissed
+  attempts (claims), max_attempts (default 8, 1..50), next_attempt_at, locked_at,
+  last_error_code, last_error, last_retried_by/at, resolved_at, resolved_by,
+  resolution_reason (≤ 500; required when an admin dismisses), created_at, updated_at
+  unique: one open job per event; one queued and one running product sync per product
+
+integration_audit_events  (append-only: integration_history_append_only)
+  id, event_type integration_audit_type (publish_online_changed | sync_requested |
+  variant_linked | customer_linked | job_retried | job_dismissed | settings_changed),
+  product_id, customer_id, job_id, integration_event_id, actor_staff_id, reason,
+  payload ({from, to} …), correlation_id, created_at
 ```
 
-Processing `orders/paid` is `process_shopify_order_paid(event_id)`:
+**Recording** (`record_shopify_webhook`, service role). A rejected
+delivery is stored without its body and never queued (D88). A verified one
+is inserted `on conflict (provider, external_event_id)`: a repeat only
+counts the delivery. A new event is skipped at once (no job) when its topic
+is not `orders/paid` or `refunds/create` (`topic_not_handled`), when it is
+a test delivery and test orders are not accepted (`test_order`), or when it
+is a POS order (`pos_order`, D89); otherwise it gets a queued
+`shopify_event` job.
 
-1. Lock the `integration_events` row; if `status = processed` return.
-2. Upsert `sales` by `shopify_order_id` (unique). If it exists, return.
-3. For each Shopify line item, map `variant_id → products.shopify_variant_id`;
-   unmapped lines go to the retry queue with a human-readable reason and the
-   event is marked `failed` (nothing partial is committed).
-4. Insert `sale_lines` and one `online_sale` movement per line; mark unique
-   units `sold` and consignment items `sold`.
-5. Mark the event `processed`.
+**Processing an order** (`process_shopify_order_paid`, through
+`process_shopify_event`), one transaction:
 
-All of that is one transaction. Delivering the webhook ten times yields one
-sale, one set of movements.
+1. Lock the event row; a processed, skipped or rejected event only closes
+   its job and returns what it stored. Count the attempt.
+2. Inside one plpgsql subtransaction: validate the REST payload
+   (`shopify_payload_invalid` names the field); take the advisory lock
+   'bicii.shopify.order:' ‖ order gid; if a sale with that
+   `shopify_order_id` exists the outcome is `duplicate_order` (and the
+   order's other open deliveries close the same way); if another
+   `orders/paid` event of the order is `skipped` (dismissed, test or POS)
+   the event is skipped / `earlier_delivery_skipped`: a dismissal is final
+   for the order (D87), whatever the webhook id. Check the
+   settings, the shop currency (D35) and the tax basis (D89). Map every
+   line `variant_id → products.shopify_variant_id`; any unmapped or custom
+   line is one `shopify_variant_unmapped`. Insert the sale header (lock
+   order 0; `recognized_at` = the payload's `processed_at`, else the
+   trigger time, else receipt, D80; the customer only through a linked
+   `customers.shopify_customer_id`, D86), then `lock_stock` per product,
+   the oldest available units of each unique product at the online location
+   FOR UPDATE in id order (D81), their items and every active item of each
+   consigned quantity product, and the on-hand of each quantity product
+   (D82). Write the lines through `private.sell_line(sale, n, line,
+   'online_sale')`, priced by `private.shopify_split_amount` so they sum to
+   Shopify's discounted line totals (D80); refresh unique products'
+   publication last (D26).
+3. On success the event is `processed` (`sale_recorded`, `result` = the
+   sale and its lines), its job `done`, the order's other `pending` or
+   `failed` deliveries (another webhook id) `processed` / `duplicate_order`
+   with the sale and their jobs `done`
+   (`private.shopify_close_order_siblings`, id order, SKIP LOCKED), so the
+   queue and Today keep no failure for a recorded order, and any refund
+   job waiting for the order is queued now (D87). On failure nothing of step 2 survives: the
+   event is `failed` with the code and a human message (`result` keeps the
+   unmapped lines), and its job (created if none) is `needs_attention`, or
+   `queued` with `private.integration_backoff` for a transient code
+   (`shopify_unexpected_error`, `shopify_refund_order_unknown`,
+   `shopify_settings_missing`) until `max_attempts`.
 
-Outbound: `publish_online` on a product enqueues a sync job; the service layer
-(`src/lib/integrations/shopify/`) owns every Shopify API call. Nothing in a
-component or route handler talks to Shopify directly.
+Event codes and their messages are stored on the event and its job (staff
+read them): `shopify_variant_unmapped`, `shopify_unit_unavailable`,
+`shopify_insufficient_stock`, `shopify_currency_mismatch`,
+`shopify_tax_basis_unsupported`, `shopify_payload_invalid`,
+`shopify_settings_missing`, `shopify_refund_order_unknown`,
+`shopify_sale_refused` (a `sell_line` refusal, its detail quoted) and
+`shopify_unexpected_error` (retried; SQLSTATE in `last_error_detail`).
+
+**Processing a refund** (`process_shopify_refund`): the same lock, replay,
+test and subtransaction pattern; the order's advisory lock, then the sale
+FOR UPDATE. A known refund id (a `sale_refunds.shopify_refund_id`, or
+another delivery of the same refund id that is `processed`) is
+`duplicate_refund`; another delivery of the same refund id that is
+`skipped` makes it skipped / `earlier_delivery_skipped` (a dismissal is
+final, D87; matched on the stored payloads' refund id, so it holds until
+the owner purges them, R-040). No sale: a skipped
+`orders/paid` event of that order (dismissed, test or POS) makes it
+`order_not_recorded`; otherwise `shopify_refund_order_unknown` (retried, and
+queued again when the order is recorded). The amount (D85) is the
+line-attributable refund (Σ `private.shopify_refund_line_amount` of the
+refund lines, else Σ successful refund transactions), never above the
+transactions or the sale's remaining total; 0 money is `no_money_refunded`,
+0 allocated `refund_not_allocated`. One `sale_refunds` row (recorded_by
+null, restocked false), the sale `refunded` or `partially_refunded` as
+`record_sale_refund` decides; shipping, the excess and per-line details
+stay in `result`. No movement, unit, item, line or settlement changes (D7).
+
+Delivering a webhook ten times yields one event; processing it ten times
+yields one sale and one movement per line (`inventory_movements_sale_line_once`).
+
+**Staff side** (§16): `retry_integration_job`, `dismiss_integration_job`
+(dismissing an order is final for it: unless a sale exists, its other
+open deliveries and its waiting refunds close too), `link_shopify_variant`
+(mapping only, D84) and `link_shopify_customer` (never by email; recorded
+sales are never edited, D86), each with an `integration_audit_events` row.
+The service layer (`src/lib/integrations/shopify/`, step 3) owns every
+Shopify API call and is the only caller of the service-role RPCs:
+`handleShopifyWebhook` calls `record_shopify_webhook`, the queue runners
+call `claim_integration_jobs` (one job at a time; by id for the job an RPC
+returned), `process_shopify_event`, `product_sync_state` and
+`record_product_sync_result`. Nothing in a component or route handler
+talks to Shopify directly.
+
+**Outbound product sync** (step 2, `20261004004100_shopify_product_sync.sql`;
+D81, D83, D84, D86, D87):
+
+- **The online price** is `private.shopify_online_price(product_id)`:
+  `private.selling_price` (D58) for the oldest (created_at, id) available,
+  non-customer-owned, non-archived unit at the online location of a unique
+  product (no unit when there is none), or for no unit for a quantity
+  product (a consigned one's FIFO item asking price, D45, else the
+  default). The publish check, `product_sync_state` and so Shopify read it;
+  nothing reads `default_sale_price` for an online price. NULL is missing;
+  0 is a price (D24 as amended).
+- **Effectively online** (`private.shopify_effective_online`): Publish
+  online on, product active, not archived, not customer-owned, and public,
+  or a unique product whose publication is `sold` (pushed at quantity 0).
+- **Publish online** (`set_publish_online`, manage_inventory) refuses an
+  archived product (`shopify_product_archived`), a customer-owned one
+  (`shopify_not_saleable`), one that is not public
+  (`shopify_requires_public`) or without an online price
+  (`shopify_price_missing`). It upserts the sync row (`publish_online`,
+  `publish_changed_by/at`; never the handle) and queues the product; it
+  returns the queued job's id so the app runs exactly that job (non-admins
+  never read the queue). Unpublishing a product never pushed is
+  `not_synced` and dismisses its queued job; a pushed one is queued to be
+  drafted (BICII-created) or set to quantity 0 (external).
+- **Queueing** (`private.enqueue_product_sync`): nothing unless the sync row
+  is published, was pushed before (`last_pushed_at`), or has a push
+  running; so a product only linked to a variant of a Shopify-made product
+  is never pushed until staff publish it. Otherwise it dismisses the
+  product's `needs_attention` sync jobs ("Superseded by a newer change"),
+  inserts a queued `product_sync` job `on conflict do nothing` on the
+  one-queued-per-product index, marks the row `pending` and returns the
+  queued job's id.
+- **What queues a product** (deferred constraint triggers, run at commit;
+  `private.shopify_enqueue_product_change`): every `inventory_movements`
+  insert; a change of `products` name, description, brand, SKU, default
+  price, publication, active or archived; an `inventory_units` insert or a
+  change of status, location, price, ownership or archived; a
+  `consignment_items.asking_price` change (`update_consignment_terms`); a
+  public product photo inserted, deleted or changing visibility or entity.
+  `shopify_settings.online_location_id` changing queues every published or
+  pushed product at once (an immediate trigger). The triggers are
+  deferred, not the brief's statement-level trigger, because a sale writes
+  its movements before `refresh_unique_publication` locks the product (lock
+  order 7): an immediate trigger taking the sync row there would invert
+  the order against a product edit or `set_publish_online` and deadlock.
+  Inside one transaction the job appears at commit (tests:
+  `set constraints all immediate`).
+- **Sync now** (`request_product_sync`, manage_inventory): needs a published
+  or pushed product (`shopify_not_published`); clears `desired_hash` so the
+  next run pushes in full, and returns the queued job, due now.
+- **The worker's input** (`product_sync_state`, service role): name,
+  description, brand, SKU, the online price, `effective_online`, the
+  available quantity at the online location floored at 0 (the ledger for a
+  quantity product; available, non-customer-owned, non-archived units for a
+  unique one), `unit_price_conflicts` (short IDs of those units whose own
+  selling price differs from the online price: the worker refuses, D81),
+  the public product photo paths oldest first, the handle
+  (`bicii-<short id>` unless the origin is `external`), the Shopify ids,
+  inventory item and location, the last hash and pushed quantity (the
+  compare quantity, D83), and `orders_in_flight` (an orders/paid event
+  received in the last 10 minutes that is pending, or failed with its job
+  queued or running).
+- **The worker's result** (`record_product_sync_result`, service role):
+  `pushed` stores the Shopify product and variant ids on `products` when
+  missing (reason "Created in Shopify by the BICII sync"; different ids, or
+  a BICII-created Shopify product another product carries, →
+  `shopify_ids_conflict`; a variant on another product →
+  `products_shopify_variant_id_key`), origin `bicii` unless already
+  `external`, the inventory item, the handle (BICII-created only), the
+  pushed quantity, price, hash and API version, clears the errors, fills
+  `shopify_settings.shopify_location_id` when missing and finishes the job;
+  `unchanged` records the check and clears the errors. Both settle the
+  status: `pending` when another sync is queued, `synced` when effectively
+  online, `not_synced` when never pushed, else `unpublished`; and dismiss
+  older `needs_attention` syncs ("Resolved by a later sync"). `deferred`
+  (D83) re-queues the job two minutes out without consuming an attempt;
+  `failed` (D87) sets `error` with the human message and re-queues with
+  `private.integration_backoff` when retriable and attempts remain, else
+  `needs_attention`. When another job is already queued for the product, a
+  re-queue dismisses this job and pushes the queued one's next attempt out
+  instead (one queued per product). `job_id` may be NULL; a job closed
+  meanwhile is left closed; an unknown outcome is 22023.
+- **Settings** (`set_shopify_settings`, admin): the only editor of the row
+  and of `storefront_url` (https or NULL, trailing slashes trimmed);
+  creates the row when absent; the online location must exist (P0002) and,
+  when it changes, be active (`location_inactive`); changing
+  `accept_test_orders` needs a reason (D89, `reason_required`); same values
+  change nothing; one `settings_changed` audit row `{from, to}`.
+
+Lock order (extends the consignment migration's header): `shopify_settings`
+FOR UPDATE, when taken, before 7 (products); then 8, the `shopify_product_sync`
+rows (ascending product id when several), then the product's
+`integration_retry_queue` rows.
 
 ## 14. Reporting views (schema `reporting`)
 
@@ -2286,7 +2534,7 @@ never exposed.
 | `daily_summary` | Built (Phase 5). One row per shop day from the earliest activity day (check-in, recognised entry or movement; today when none) to `private.shop_today()`, zero-filled; columns fixed in this order: 1 `day`; 2–7 `jobs_checked_in`, `jobs_started`, `jobs_completed`, `jobs_ready_for_collection`, `jobs_collected`, `jobs_cancelled` (flows: jobs whose CURRENT stamp falls that day, D31); 8 `currency` (`private.shop_currency()`); 9 `lines_recognised`; 10–14 `gross_sales`, `cogs`, `yield_total`, `cult_commons_share` (Σ entry shares, D1), `bicii_yield_after_cc` (shop-currency `financial_lines` by `recognized_day`); 15 `loss_lines`, 16 `loss_total` (≤ 0); 17 `parts_consumed_qty`, 18 `parts_consumed_lines`, 19 `parts_returned_qty` (reversals of job consumptions); 20 `stock_adjustments`, 21 `significant_stock_adjustments` (D33); 22 `appointments_scheduled`, 23 `appointments_arrived`, 24 `appointments_no_show` (Built, Phase 2 `…3200`, D41: `appointment_daily`'s `booked`, `arrived` and `no_shows` of that day, 0 when none; the series also starts at the earliest appointment's shop day and still ends at `private.shop_today()`); 25 `consignment_sales` integer, 26 `consignment_sales_total` numeric, 27 `new_consignor_liability` numeric (Built, Phase 6 step 2, zero-filled: over that day's shop-currency `financial_lines` entries with a `consignment_item_id`, i.e. sale lines and completed jobs' lines that sold consigned stock: the number of distinct documents, Σ their `sale_total`, and Σ round(quantity × the source line's `consignor_payout_snapshot`, 2)). Retail sales reach the money columns 9–16 through `financial_lines`; the reconcile invariants hold (the day's money columns are its entries' sums). Integer counts and numeric money with explicit casts; Phase 9 appends new measures only after column 27. |
 | `appointment_daily` | Built (Phase 2, D41 APPT-COUNTS). One row per shop day that has appointments, by SCHEDULED day (`private.shop_day(starts_at)`) and CURRENT status: `day`, `booked` (not cancelled), `expected` (booked or confirmed), `arrived` (arrived, checked_in or completed), `checked_in` (checked_in or completed), `no_shows`, `cancelled`, all integer. security_invoker, granted to no API role (it calls `private.shop_day`); read through `public.appointment_daily` (zero-filled) and daily_summary's columns 22–24. Phase 9's activity report reads it. |
 | `work_order_activity` | Built (Phase 5). One row per job: `work_order_id`, `job_number`, `status` (enum), `customer_id`, `bike_id`, `lead_mechanic_id`, `appointment_id`, `currency` text; the CURRENT stamps `checked_in_at`, `started_at`, `completed_at`, `ready_for_collection_at`, `collected_at`, `cancelled_at` and their shop days `checked_in_day`, `started_day`, `completed_day`, `ready_day`, `collected_day`, `cancelled_day`; `is_open`; `is_overdue` (D20: open and `now() - checked_in_at > interval '7 days'`); `age_days` (open: today − check-in day; else completion or cancellation day − check-in day); `days_to_start`, `days_to_complete`; `days_awaiting_collection` (completed/ready: today − completion day; collected: collection day − completion day); `time_to_complete` interval. Integer days and intervals only. A reopened job's completion stamps are its latest ones (D15). |
-| `operational_exceptions` | Built (Phase 5, D34). Columns in order: `kind`, `severity` ('danger' \| 'warning'), `entity_type` ('work_order', 'product', 'inventory_unit', 'work_order_line'), `entity_id`, `entity_label` (job number or P-/U- short ID), `subject_label` (customer · bike, or the product name, with the location for negative stock), `days`, `quantity`, `since`. Kinds: `overdue_job` (warning, which only orders it after danger rows: the UI shows Overdue in the danger tone, as everywhere else; exactly D20, 7 = `OVERDUE_AFTER_DAYS`, strictly more than 7 × 24 h), `uncollected_job` (warning; completed or ready, completed ≥ 7 shop days ago), `negative_stock` (danger; `stock_levels.on_hand < 0`, quantity = on-hand), `unit_hold_stale` (danger; a held_for_customer unit with no live inventory line on an open job; since = its last status change), `currency_mismatch` (danger; a would-be-recognised line not in the shop currency, excluded from totals). Kinds are text: Phase 6 (unit_state_mismatch, unsettled_consignment), Phase 9 (more kinds; columns `issue, short_id, title, detail, amount, currency` appended at the end) and Phase 10 (integration_failed) replace the view keeping these columns first. |
+| `operational_exceptions` | Built (Phase 5, D34). Columns in order: `kind`, `severity` ('danger' \| 'warning'), `entity_type` ('work_order', 'product', 'inventory_unit', 'work_order_line'), `entity_id`, `entity_label` (job number or P-/U- short ID), `subject_label` (customer · bike, or the product name, with the location for negative stock), `days`, `quantity`, `since`. Kinds: `overdue_job` (warning, which only orders it after danger rows: the UI shows Overdue in the danger tone, as everywhere else; exactly D20, 7 = `OVERDUE_AFTER_DAYS`, strictly more than 7 × 24 h), `uncollected_job` (warning; completed or ready, completed ≥ 7 shop days ago), `negative_stock` (danger; `stock_levels.on_hand < 0`, quantity = on-hand), `unit_hold_stale` (danger; a held_for_customer unit with no live inventory line on an open job; since = its last status change), `currency_mismatch` (danger; a would-be-recognised line not in the shop currency, excluded from totals). Kinds are text: Phase 6 (unit_state_mismatch, unsettled_consignment), Phase 9 (more kinds; columns `issue, short_id, title, detail, amount, currency` appended at the end) and Phase 10 (integration_failed) replace the view keeping these columns first. Built (Phase 10 step 1, `…4000_shopify_order_processing`): the view is replaced with this definition unchanged plus `union all` of `private.integration_exceptions()`, the extension point for integration rows (same nine columns): one `integration_failed` row (danger, `entity_type` 'integration_job', the job id, the event subject or the product's short ID, `subject_label` = the human message ≤ 300, days since the job was created) per `needs_attention` job, for admins only (D86; zero rows for anyone else, so `today_dashboard.exceptions_now` counts them for admins only). When Phase 9 appends `issue, short_id, title, detail, amount, currency` it must widen `private.integration_exceptions()` too ([R-043](RISKS.md#r-043--phase-9-must-widen-the-integration-exceptions-function)). |
 | `work_order_totals` / `work_order_totals_staff` | Running totals per job; the staff variant includes cost and yield. |
 | `stock_levels` | Built (Phase 4): on-hand (`sum(quantity_delta)`) and `last_movement_at` per product and location from the ledger. security_invoker, SELECT to authenticated (staff rows only through RLS). |
 | `product_stock` | Built (Phase 4): every product with on-hand across locations (0 when none), available and held units, `negative_locations` (locations below zero) and `below_reorder` (quantity product, reorder point set, on_hand <= reorder_point). security_invoker. |
@@ -2296,8 +2544,8 @@ never exposed.
 | `purchase_order_progress` | Built (Phase 7). One row per PO line: `purchase_order_id`, `po_number`, `supplier_id`, `po_status`, `purchase_order_line_id`, `product_id`, `quantity_ordered`, `quantity_received` (sum of receipt lines, 0 when none), `quantity_outstanding` (ordered − received, ≥ 0, for draft/submitted/partially_received, else 0), `quantity_cancelled` (the same remainder when cancelled, D61), `expected_at` (the line's, else the PO's), `last_received_at` (latest receipt `received_at`), `is_overdue` (submitted/partially_received, outstanding > 0 and expected_at < `private.purchasing_shop_today()`). security_invoker, SELECT to authenticated, no cost column. `private.purchasing_shop_today()` is a security definer wrapper of Phase 5's `private.shop_today()` (EXECUTE to authenticated), not a competing calendar helper: authenticated has no EXECUTE on the Phase 5 helpers. |
 | `product_on_order` | Built (Phase 7). Per product with something outstanding on submitted or partially received POs (never drafts, D66): `product_id`, `quantity_on_order`, `open_purchase_orders`, `next_expected_at`. security_invoker, SELECT to authenticated. |
 | `low_stock` + `product_on_order` → `public.reorder_suggestions` | Built (Phase 7, D66 D-REORDER). Not a view: the staff RPC in §16 joins `low_stock` (the products, kept only when `products.ownership_type = 'shop_owned'`, D62), `product_on_order` (on order, submitted and partially received only) and `supplier_products`, and computes `private.suggested_reorder_quantity(reorder_point, on_hand, on_order)` = max(2 × reorder_point − on_hand − on_order, 0), NULLs as 0 (immutable SQL, no grant). No cost column. |
-| `shopify_sync_status` | Per published product. |
-| `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at`; price from `private.selling_price`; public photos only. Definer view, security_barrier, SELECT for anon and authenticated. Rules in §11. |
+| `shopify_sync_status` | Built (Phase 10 step 2, D86). One row per product with a sync row: `product_id`, `short_id`, `name`, `tracking_type`, `publication_status`, `publish_online`, `shopify_origin`, `sync_status`, `last_pushed_at`, `last_pushed_quantity`, `last_error_code`, `last_error`, `shopify_product_id`, `shopify_variant_id`, and the open sync job (`open_job_id`, `open_job_status`, `open_job_next_attempt_at`: running, else queued, else needs_attention). security_invoker, SELECT to authenticated: active staff read the rows; the job columns are NULL for non-admins (the queue's RLS); customers and anon read nothing. |
+| `public_items` | Built (Phase 4): the only thing anon can read about inventory, Phase 11's /q contract. Published (public or sold) products and their units with exactly `kind, short_id, slug, name, description, brand, category, condition, sale_price, currency, availability, photos, updated_at, buy_online_url`; price from `private.selling_price`; public photos only. `buy_online_url` (Phase 10 step 2, D84; the single Buy-online rule Phase 11 reads) = `shopify_settings.storefront_url ‖ '/products/' ‖ shopify_product_sync.shopify_handle`, only when the row's own `availability` is `available`, `publish_online`, `sync_status = 'synced'`, the origin is `bicii` with a handle, and the storefront is set, and the row is what Shopify sells (D81, D58): a unit row only when it is the unit an online order takes (the oldest available, non-customer-owned, non-archived unit at `online_location_id`, as `private.shopify_online_price`), a product row only when its `sale_price` is not distinct from the online price (for a unique product, `selling_price` of that unit); otherwise NULL (an external-origin product never has one). It exposes no Shopify id, sync state, cost or payload. Definer view (it reads the sync row and settings as its owner), security_barrier, SELECT for anon and authenticated. Rules in §11. |
 
 Materialise `daily_summary` only if measured to be slow; refresh then runs
 `after()` completion/sale mutations.
@@ -2398,7 +2646,9 @@ written out, e.g. `A, M or P(view_costs)`.
 | reporting.purchase_order_progress, product_on_order | S (security_invoker over staff-only RLS; no cost columns) | — | — | — |
 | label_templates, printer_profiles | Built (Phase 8 step 1): S; C and anon none | A (RLS `*_insert_admin`; column grants: templates id, name, kind, width_mm, height_mm, layout, active; profiles id, name, adapter, config, active, sort_order; never `is_default` or `created_by`) | A (column grants: templates name, width_mm, height_mm, layout, active; profiles name, config, active, sort_order); `is_default` only via RPC `set_default_label_template` / `set_default_printer_profile` (A) | never (switch off) |
 | print_jobs | Built (Phase 8 step 1): S; C and anon none | RPC `create_print_job` (S) | RPC `set_print_job_status` (S; status columns only, D59) | never (`print_job_immutable`) |
-| integration_events, retry queue, sync | A | service role only | service role / RPC | — |
+| integration_events, integration_retry_queue, integration_audit_events | A (D86: payloads and messages name customers); service role SELECT | RPC only: `record_shopify_webhook` (service role); jobs also `claim_integration_jobs`, the processors, `retry_integration_job`, `dismiss_integration_job`; audit rows by the staff RPCs | RPC only; events immutable except processing columns (`integration_event_immutable`), audit append-only | never (events: only `private.purge_integration_events`, owner by hand, rejected rows ≥ 30 days old, D88) |
+| shopify_settings, shopify_product_sync | S (sync status and the online location, D86); service role SELECT | seed; RPC `set_shopify_settings` (A; creates the row when absent), `set_publish_online` (P(manage_inventory)), `link_shopify_variant` (A) | RPC `set_shopify_settings` (A; `accept_test_orders` only with a reason, D89), `set_publish_online`, `request_product_sync` (P(manage_inventory)), `record_product_sync_result` (service role), the deferred enqueue triggers (`sync_status` pending) | never |
+| reporting.shopify_sync_status | S (security_invoker; job columns admins only through the queue's RLS) | — | — | — |
 | reporting.* financial views (financial_lines, daily_summary, work_order_activity, operational_exceptions) | no grants (not even SELECT to authenticated); via RPCs: S for counts; P(view_financial_reports) for money rows; cost columns P(view_costs) (FIN-ACCESS D30) | — | — | — |
 | reporting.public_items | everyone: anon and authenticated (definer view, published rows and public columns only; the only anonymous inventory surface; anon has USAGE on `reporting` for it and EXECUTE on `private.selling_price`, which it calls) | — | — | — |
 
@@ -2520,11 +2770,11 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `today_dashboard(on_day date = null)` → `day, is_today, generated_at, can_see_financials, can_see_costs`, daily_summary columns 2–27, `received_now, waiting_now, ready_to_start_now, in_progress_now, awaiting_collection_now, open_jobs_now, overdue_now, low_stock_now, exceptions_now, cost_pending_lines` | S | Built (Phase 5). Null = today; a future day → `report_range_invalid`. Reads `public.daily_summary(d, d)` (gating in one place). The `*_now` snapshot (D31; BOARD_GROUPS: received+diagnosing, awaiting_customer+awaiting_parts+paused, ready_to_start, in_progress, completed+ready_for_collection, open, D20 overdue, `reporting.low_stock` rows, `operational_exceptions` rows) only when d is today, else NULL. `cost_pending_lines` = d's shop-currency entries with `cost_pending` (D14), NULL without view_financial_reports. |
 | `work_order_activity_on(on_day date = null)` → `work_order_id, job_number, status, customer_id, customer_label, bike_id, bike_title, lead_mechanic_name, checked_in_at, started_at, completed_at, ready_for_collection_at, collected_at, cancelled_at, checked_in_on_day, started_on_day, completed_on_day, ready_on_day, collected_on_day, cancelled_on_day, is_open, is_overdue, age_days, sale_total, currency` | S | Built (Phase 5). Jobs with at least one current stamp on that shop day (null = today), by job number; `customer_label` = `private.customer_label`, `bike_title` = brand model variant (bikeTitle rule), `sale_total` sale only (`work_order_totals`). |
 | `stock_adjustments_on(on_day date = null)` → `movement_id, created_at, movement_type, product_id, product_short_id, product_name, inventory_unit_id, unit_short_id, location_name, quantity_delta, reason, actor_name, significant, value_at_cost, currency` | S; value_at_cost P(view_costs) | Built (Phase 5). `stock_adjustment` and `damaged` movements of that shop day (null = today), newest first; `significant` per D33 for every staff member; `value_at_cost` = \|delta\| × coalesce(snapshot, product default, 0), NULL without view_costs (D30). |
-| `operational_exceptions(max_rows integer = 50)` → `kind, severity, entity_type, entity_id, entity_label, subject_label, days, quantity, since` | S | Built (Phase 5, D34). Danger first, then oldest `since`; max_rows clamped to 1..200. Phase 9 drops and recreates it with appended columns. |
+| `operational_exceptions(max_rows integer = 50)` → `kind, severity, entity_type, entity_id, entity_label, subject_label, days, quantity, since` | S | Built (Phase 5, D34). Danger first, then oldest `since`; max_rows clamped to 1..200. Phase 9 drops and recreates it with appended columns. Since Phase 10 step 1 the view also carries `integration_failed` rows, for admins only (D86). |
 | `financial_lines(from_day date, to_day date)` → the 32 `reporting.financial_lines` columns in order | P(view_financial_reports) (42501 otherwise) | Built (Phase 5). Null bounds as daily_summary; at most 31 days inclusive (`report_range_invalid`); PostgREST returns ≤ 1000 rows, so callers page with `.range()`. Without view_costs `unit_direct_cost`, `cult_commons_rate`, `cost_total`, `yield_total`, `cult_commons_share`, `bicii_yield_after_cc`, `is_loss` are NULL. By recognized_at, document_number, source_line_id. |
 | `work_order_yield(target_work_order_id uuid)` → `work_order_id, job_number, status, currency, line_count, sale_total, cost_total, yield_total, cult_commons_share, bicii_yield_after_cc, loss_line_count, loss_total, cult_commons_rates numeric[], recognized_at, recognized_day, cost_pending_count` | P(view_costs) (42501 otherwise) | Built (Phase 5). The job's live lines whether or not it is completed (running economics; equals `work_order_totals_staff`); rates = distinct snapshot rates ascending; recognized_at = `completed_at` (NULL while open, cancelled or reopened, D32). Unknown job P0002. |
 | `record_retail_sale(sale_id uuid, lines jsonb, customer_id uuid = null, recognized_at timestamptz = null, notes text = null)` → `sale_result (sale_id, sale_number, status, recognized_at, replayed)` | S (D48) | Built (Phase 6 step 2). Deviates from the original row `record_retail_sale(lines[], customer_id, recognized_at, idempotency_key)`: the client's `sale_id` is the idempotency key. (1) Shape: null `sale_id` 22004; `lines` a JSON array of 1–50 (`sale_lines_required`, `sale_too_many_lines`); a unit twice `sale_duplicate_unit`; unknown customer P0002; `recognized_at` > now() + 5 min `sale_recognized_in_future` (past allowed, down to the stock's arrival: `private.sell_line`'s `sale_before_stock`, D55); a line with a `shopify_line_item_id` key `sale_line_invalid` (only Phase 10 writes one); the request fingerprint (`private.sale_request_fingerprint`: lines in order as {unit, product, location, quantity, price as money_amount text, item, shopify}, customer, recognized_at as given in UTC, trimmed notes; 22P02 / 23514 from its casts). (2) Header insert `on conflict (id) do nothing` (lock order 0; `recognized_at = coalesce(arg, now())`, shop currency): a replay with the same fingerprint returns the sale with `replayed` true (after the customer was archived or the unit sold by it, too), another payload `sale_conflict`. (3) `customer_archived`. (4) Locks: stock of every product (ascending), units, items. (5) `private.sell_line(sale, i, line, 'retail_sale')` per line in order. (6) `refresh_unique_publication` per unique product sold. Never returns a cost. |
-| `private.sell_line(p_sale sales, p_line_number integer, p_line jsonb, p_movement_type movement_type)` → `sale_lines` | no grants | Built (Phase 6 step 2): THE single sale-line writer; Phase 10 calls it with `'online_sale'` and may replace it with the same signature to read more keys. The caller holds every lock. `p_line` is `{inventory_unit_id, unit_sale_price?, shopify_line_item_id?}` or `{product_id, location_id, quantity, consignment_item_id?, unit_sale_price?, shopify_line_item_id?}`; anything else `sale_line_invalid`. Unit: P0002; `unit_already_sold` (sold), `unit_not_available` (any other status or archived), `ownership_not_saleable` (customer-owned), `currency_mismatch`; consigned: `consignment_item_not_active`, cost = agreed + live shop charges, payout = agreed. Quantity: P0002, `product_archived`, `product_inactive`, `sale_product_is_unique`, `ownership_not_saleable`, `currency_mismatch`, `sale_quantity_invalid` (integer 1..999), `location_id` 22004, location P0002 / `location_inactive`, `insufficient_stock` (never below zero); consigned: the named item (P0002, `sale_line_invalid` for another product's, `consignment_item_not_active`, `consignment_quantity_unavailable` when its stock at that location is short) or the FIFO head with the quantity at that location (D54; `consignment_quantity_unavailable`), price `coalesce(arg, item asking, product default)`, cost = payout = agreed; shop: price `coalesce(arg, selling_price)`, cost the product default. D55: the sale's `recognized_at` before a consigned item's `received_at` or a unit's latest restock is `sale_before_stock`. NULL price `sale_price_required`, NULL cost `sale_cost_missing` (0 is valid, D24). Rate at `recognized_at`. Writes the line, one movement through `private.record_linked_movement` (−qty, the sale line, the item, cost snapshot), a unit → `sold` at `recognized_at` with `sold_sale_line_id`, and the item's status. |
+| `private.sell_line(p_sale sales, p_line_number integer, p_line jsonb, p_movement_type movement_type)` → `sale_lines` | no grants | Built (Phase 6 step 2): THE single sale-line writer; Phase 10 calls it with `'online_sale'` and may replace it with the same signature to read more keys. The caller holds every lock. `p_line` is `{inventory_unit_id, unit_sale_price?, shopify_line_item_id?}` or `{product_id, location_id, quantity, consignment_item_id?, unit_sale_price?, shopify_line_item_id?}`; anything else `sale_line_invalid`. Unit: P0002; `unit_already_sold` (sold), `unit_not_available` (any other status or archived), `ownership_not_saleable` (customer-owned), `currency_mismatch`; consigned: `consignment_item_not_active`, cost = agreed + live shop charges, payout = agreed. Quantity: P0002, `product_archived`, `product_inactive`, `sale_product_is_unique`, `ownership_not_saleable`, `currency_mismatch`, `sale_quantity_invalid` (integer 1..999), `location_id` 22004, location P0002 / `location_inactive`, `insufficient_stock` (never below zero); consigned: the named item (P0002, `sale_line_invalid` for another product's, `consignment_item_not_active`, `consignment_quantity_unavailable` when its stock at that location is short) or the FIFO head with the quantity at that location (D54; `consignment_quantity_unavailable`), price `coalesce(arg, item asking, product default)`, cost = payout = agreed; shop: price `coalesce(arg, selling_price)`, cost the product default. D55: the sale's `recognized_at` before a consigned item's `received_at` or a unit's latest restock is `sale_before_stock`. NULL price `sale_price_required`, NULL cost `sale_cost_missing` (0 is valid, D24). Rate at `recognized_at`. Writes the line, one movement through `private.record_linked_movement` (−qty, the sale line, the item, cost snapshot), a unit → `sold` at `recognized_at` with `sold_sale_line_id`, and the item's status. Phase 10 step 1 replaced it (`…4000_shopify_order_processing`) with the same signature and body except: `shopify_line_part` joins both key allow-lists and is written to `sale_lines.shopify_line_part` (D80); no other change. |
 | `restock_unit(unit_id uuid, sale_line_id uuid, location_id uuid = null, reason text = null)` → `unit_status_result` | P(adjust_stock); a consigned unit also P(manage_consignments) (D46) | Built (Phase 6 step 2). Deviates from the original row `restock_unit(unit_id, location_id, reason)`: it names the sale line, which is also the replay key. Null ids 22004; `reason_required` / `reason_too_long`. Locks: a consigned unit's consignor FOR SHARE (0b), `lock_stock` (the unit's product, read unlocked), its bike, the unit, its item. Line P0002; another unit's line `restock_line_mismatch`; an already restocked line returns the unit's status with no write (even if it was sold again since); the consigned-unit permission (42501); an archived consignor `consignor_archived` (D47); status ≠ sold `unit_not_sold`; `sold_sale_line_id` ≠ the line `restock_line_mismatch` (a unit sold through a job is never restocked, D44); a customer-owned bike `bike_with_customer` (D29); location P0002 / `location_inactive`. With the reason: the line `restocked_at/by`; a `return` +1 movement linked to the line (and item), cost = the line's cost snapshot; the unit `available` at that location with `sold_sale_line_id` null; the item's status (sold → active, event with the reason); `refresh_unique_publication` (sold → public). The sale and refunds are untouched (D7). |
 | `record_sale_refund(refund_id uuid, sale_id uuid, amount money_amount, reason text)` → `sale_refunds` | A or M (D94 amends D49: `private.can_record_refunds()`, a role check; 42501 otherwise, whatever permissions or exceptions the caller holds) | Built (Phase 6 step 2; guard replaced in `20261006000200_staff_role_permissions`, body unchanged). 22004 on nulls; replay by refund id (same sale, amount and trimmed reason → the row, else `sale_refund_conflict`); `reason_required` / `reason_too_long`; the sale FOR UPDATE (P0002); `sale_voided`; amount > sale total − earlier refunds `refund_exceeds_sale`; `restocked` false; status `refunded` when refunds reach the total, else `partially_refunded`. No movement, no unit change (D7). |
 | `create_consignment_item(item_id, consignor_id, location_id, agreed_amount_owed, asking_price = null, product_id = null, product_name = null, brand = null, description = null, category_id = null, tracking_type = 'unique', quantity integer = 1, serial_number = null, condition = null, received_at = null, agreement_notes = null, internal_notes = null, new_product_id = null, new_unit_id = null, bike_id = null, new_consignor jsonb = null)` → `consignment_item_result (item_id, short_id, status, product_id, inventory_unit_id)` | P(manage_consignments) | Built (Phase 6 step 1; `new_consignor` from the Phase 6 review). `new_consignor` `{display_name, phone?, email?, customer_id?}` (other keys 22023) creates the consignor `consignor_id` inside the intake's transaction, so a refused intake leaves none and a retry stores edited details; its normalised fields join the fingerprint; an existing consignor with that id and other details is `consignor_conflict`; the consignors table's checks and `consignors_customer_id_key` apply. (a) 22004 on null ids or agreed amount; `consignment_quantity_invalid`, `consignment_unique_quantity_one`, `consignment_received_in_future` (> 5 minutes ahead), `consignment_bike_requires_unique`. (b) The request's advisory lock, then replay by item id with a fingerprint of consignor, location, product, lower(trimmed name), tracking, quantity, agreed and asking (as text: "500" = "500.00") and bike: a match returns the item as it is now (even after the consignor was archived), else `consignment_item_conflict`. (c) The consignor FOR SHARE (P0002, `consignor_archived`); location P0002 / `location_inactive`; an existing product must be active, not archived, consignment-owned (`product_not_consignment`) and of that tracking (`consignment_tracking_mismatch`); none needs a name (`consignment_product_required`). (d) `lock_stock(product)`; a new draft consignment-owned product (price = asking, no default cost, shop currency); a bike FOR UPDATE with Phase 4's rules (D51); a unique item's unit through `private.register_unit` (consignment, sale price = asking, cost = agreed, the bike, the item); the item; one `consignment_received` movement (+quantity, cost snapshot = agreed, request_id = item id, the item); `refresh_unique_publication` for an existing unique product. |
@@ -2558,8 +2808,21 @@ and would print the hidden columns (costs) to any caller through PostgREST.
 | `remove_supplier_product(supplier_id, product_id)` → setof `supplier_products` | P(manage_purchasing) | Deletes the link; no row on a replay. |
 | `reorder_suggestions(supplier_id = null)` → `table(product_id, short_id, sku, name, on_hand, reorder_point, on_order, suggested_quantity, supplier_linked, preferred_supplier_id, supplier_sku, draft_po_numbers text[])` | S | Built (Phase 7, D66 D-REORDER; `20261005000500_purchasing_reorder.sql`). The shop-owned `reporting.low_stock` products (a consigned product below its reorder point is never listed, D62); `on_order` from `reporting.product_on_order` (submitted and partially received POs, never drafts); `suggested_quantity` = max(2 × reorder_point − on_hand − on_order, 0); `supplier_linked` / `supplier_sku` relative to the given supplier (false / null without one); `preferred_supplier_id` whatever was asked; `draft_po_numbers` the draft POs (any supplier) already holding the product, ascending, `{}` when none. Ordered by supplier_linked desc, suggested_quantity desc, name. No cost column (D60). |
 | `create_purchase_order_from_low_stock(id, supplier_id, product_ids uuid[])` → `purchase_orders` | P(manage_purchasing) | Built (Phase 7, D66). 22004 for a null id/supplier or a null element; null or empty selection → `reorder_nothing_selected`; more than 100 ids → 22023. Replay by id with `create_purchase_order`'s mechanism (FOR UPDATE first, insert only when absent, `purchase_orders_pkey` unique_violation fallback, never ON CONFLICT): the same supplier returns the PO unchanged with no line added and the PO sequence untouched; another supplier → `purchase_order_conflict`. Else `supplier_archived` / P0002, a draft in `private.shop_currency()`, then one line per DISTINCT product in ascending id with `set_purchase_order_line`'s checks (P0002, `purchase_line_unique_product`, `purchase_line_not_shop_owned`, `purchase_line_product_inactive`, `purchase_currency_mismatch`, `purchase_line_duplicate_product`): quantity max(suggestion computed now, 1), capped at the line limit 100000; unit cost `private.default_purchase_unit_cost` (supplier last cost, else product cost incl. 0, else 0). `line_added` events come from the trigger, without a reason. Locks only the new PO row; products and stock are read unlocked. |
-| `process_shopify_order_paid(event_id)` | service role | §13. |
-| `process_shopify_refund(event_id)` | service role | `sale_refunds`; no stock. |
+| `record_shopify_webhook(topic, webhook_id, shopify_event_id, shop_domain, api_version, triggered_at, headers jsonb, payload jsonb, body_sha256, body_bytes, hmac_valid, rejection_reason, correlation_id)` → `event_id, duplicate, event_status, job_id` | service role only | Built (Phase 10 step 1, D88, D89). 22004 / 22023 on shape; headers capped (16 lower-cased keys, ≤ 512 characters, `x-bicii-truncated`); rejected → one row per (reason, body sha) with no payload and no job; verified → dedupe on the webhook id (a repeat counts the delivery, no new job); a new event is skipped (`topic_not_handled`, `test_order`, `pos_order`) or gets a queued `shopify_event` job (`job_id`). |
+| `claim_integration_jobs(max_jobs integer, only_job_id uuid = null)` → setof `integration_retry_queue` | service role only | Built (Phase 10 step 1, D87). Dismisses a running product sync stalled 10 minutes when its product has a queued one; claims up to clamp(max_jobs, 1, 50) jobs: queued and due (or the one named, even before it is due) or running and stalled 10 minutes, oldest due first, `FOR UPDATE SKIP LOCKED`, one product sync per product and never beside a fresh running one; each → running, `locked_at` now, attempts + 1. |
+| `process_shopify_order_paid(event_id)` / `process_shopify_refund(event_id)` / `process_shopify_event(event_id)` → `event_status, outcome, sale_id, error_code, error_message` | service role only | Built (Phase 10 step 1, D80–D82, D85, D87, D89): §13's algorithm; `process_shopify_event` dispatches by topic (others → skipped `topic_not_handled`). P0002 unknown event; 22023 wrong topic. Business failures never raise: they return `failed` with the code and the human message and leave the job `needs_attention` (or queued with backoff when transient). |
+| `retry_integration_job(job_id)` → `integration_retry_queue` | A; P(manage_inventory) for product-sync jobs only (42501 otherwise) | Built (Phase 10 step 1, D86, D87). The job FOR UPDATE (P0002); done/dismissed → `integration_job_closed`; running → unchanged; else queued now with `max_attempts` ≥ attempts + 3, `last_retried_by/at`; audit `job_retried`. |
+| `dismiss_integration_job(job_id, reason)` → `integration_retry_queue` | A | Built (Phase 10 step 1, D86, D87). `reason_required` / `reason_too_long` (`private.require_reason`); running → `integration_job_running`; done/dismissed → `integration_job_closed`; dismissed with the reason; a `shopify_event` job's event → skipped / `dismissed` (keeps its last error); an `orders/paid` event of an order with no sale is final for the order (D87): every `orders/paid` event of the order is locked in id order, its other open deliveries' queued or needs_attention jobs are dismissed ('Another delivery of this order was dismissed: ' ‖ reason; their events skipped / `dismissed`), and the order's waiting refund jobs close ('The order was dismissed: ' ‖ reason; their events skipped / `order_not_recorded`); a later delivery of the order is `earlier_delivery_skipped`. audit `job_dismissed` {closed_refund_job_ids, closed_order_job_ids}. |
+| `link_shopify_variant(product_id, shopify_product_id, shopify_variant_id, reason)` → `shopify_product_sync` | A | Built (Phase 10 step 1, D84). Numeric ids or gids (`shopify_gid_invalid`); reason required; the product FOR UPDATE; another variant already on it, or a Shopify product BICII created for another product → `shopify_ids_conflict`; a variant on another product → 23505 `products_shopify_variant_id_key`; sets the two product columns with the reason (P4's history records `details_changed`); upserts the sync row as `external` (unless `bicii`), no handle, Publish online untouched; same ids → no-op; audit `variant_linked` {from, to}. |
+| `link_shopify_customer(customer_id, shopify_customer_id, reason)` → `shopify_customer_link_result (customer_id, shopify_customer_id, earlier_online_sales)` | A | Built (Phase 10 step 1, D86). A composite result (a `returns table` would clash with the argument names). Reason required; the customer FOR UPDATE; a different id already linked → `shopify_customer_already_linked`; an id on another customer → 23505 `customers_shopify_customer_id_key`; never by email; recorded sales are never edited (`earlier_online_sales` counts the online sales of that Shopify customer still without a customer); same id → no-op; audit `customer_linked`. |
+| `private.integration_exceptions()` → P5's nine exception columns | no API role | Built (Phase 10 step 1, D86): §14. |
+| `private.purge_integration_events(older_than interval)` → `rejected_deleted, payloads_purged` | owner only, by hand (no API role, no cron) | Built (Phase 10 step 1, D88). 22023 under 30 days; deletes rejected rows last delivered before then; clears the payload of processed/skipped events processed before then (`payload_purged_at`), never failed, pending or open-job events. |
+| `set_publish_online(product_id, publish)` → `shopify_publish_result (product_id, publish_online, sync_status, job_id)` | P(manage_inventory) | Built (Phase 10 step 2, D84, D86). A composite result (a `returns table` cannot reuse the argument name). Locks the product (P0002). Publishing: `shopify_product_archived`, `shopify_not_saleable` (customer-owned), `shopify_requires_public`, `shopify_price_missing` (`private.shopify_online_price` NULL; 0 is a price), in that order. Same value: the current state, `job_id` NULL, no job, no audit. Otherwise upserts the sync row and queues the product; `job_id` is the queued job this call created or reused (the app runs exactly that one); unpublishing a never-pushed product is `not_synced`, its queued job dismissed, `job_id` NULL. One `publish_online_changed {from, to}` audit row. |
+| `request_product_sync(product_id)` → uuid | P(manage_inventory) | Built (Phase 10 step 2, D86). Sync now: `shopify_not_published` unless published or pushed before; clears `desired_hash` (a full push), returns the queued job (created or reused), due now. One `sync_requested` audit row per call. |
+| `set_shopify_settings(online_location_id, storefront_url, accept_test_orders, reason)` → `shopify_settings` | A | Built (Phase 10 step 2, D83, D84, D89). 22004 without a location or `accept_test_orders`; the location must exist (P0002) and be active when it changes (`location_inactive`); storefront https or NULL (`shopify_settings_storefront_url_check`), trailing slashes trimmed; a reason is required when `accept_test_orders` changes (`reason_required`), optional otherwise; creates the row when absent; same values: unchanged, no audit. A new online location queues every published or pushed product. One `settings_changed {from, to}` audit row. |
+| `product_sync_state(product_id)` → `shopify_product_sync_state` (§13's fields) | service role only | Built (Phase 10 step 2, D81, D83, D84). The sync worker's input (§13). P0002 unknown product; `shopify_settings_missing`. Never a cost. |
+| `record_product_sync_result(product_id, job_id, outcome, shopify_product_id, shopify_variant_id, shopify_inventory_item_id, shopify_location_id, pushed_quantity, pushed_price, desired_hash, api_version, error_code, error_message, retriable)` → `shopify_product_sync` | service role only | Built (Phase 10 step 2, D83, D84, D87). Outcomes `pushed`, `unchanged`, `deferred`, `failed` (§13); 22023 for another; 22004 when a push lacks its ids or quantity or a failure its message; `shopify_ids_conflict`; lock order settings → product → sync row → job. |
+| `private.shopify_online_price(product_id)` → money_amount; `private.enqueue_product_sync(product_id)` → uuid | no API role | Built (Phase 10 step 2): §13. |
 | `grant_permission(target_staff_id, permission)` / `revoke_permission(…)` | A, or P(manage_staff) on a mechanic within the D11 ceiling (D93: a non-admin's target must be a mechanic, never themselves; never `manage_staff`; only permissions they hold) | Exception rows (`granted_by` = caller); replay-safe (no row change, no event). `grant_permission` refuses a permission the target's role implies (P0001 `permission_implied_by_role`, D92) before inserting; revoking a row that does not exist returns null. One `permission_granted` / `permission_revoked` event; the revoke event keeps the removed row's `granted_by`/`granted_at`. |
 | `set_staff_active(target_staff_id, active, reason)` | A, or P(manage_staff) on a mechanic (D93) | Deactivating needs a reason (P0001 `reason_required`; `reason_too_long` over 500). Nobody deactivates themselves; only an admin changes an admin's or a manager's status (42501); the last active admin stays (55000). One `deactivated`/`reactivated` event with the reason; replaying the current state is a no-op. Deactivation also deletes the person's Supabase Auth sessions (trigger `staff_revoke_sessions`, D71). |
 | `note_sign_in_attempt(buckets, window_seconds)` | service role only (the Admin's login actions) | Counts one sign-in attempt in each bucket for the current fixed window and returns the counts (PLAN D72, §1 "Sign-in attempt counters"); 22023 for malformed arguments. Not callable with the anon key or a user session. |
@@ -2904,8 +3167,8 @@ settlements, `7c` reversals, `7e` returns (`CONSIGNOR`, `CONSIGNMENT_ITEM`,
   proves them.
 
 Phase 7 part (done): **purchasing, built through the RPCs.** A section
-after the Phase 6 part of `supabase/seed.sql` (before Phase 8's print
-jobs), run with `request.jwt.claims` naming Asha
+after the Phase 6 part of `supabase/seed.sql` (before Phase 8's print jobs
+and Phase 10's Shopify part), run with `request.jwt.claims` naming Asha
 Admin (reset to '' afterwards), so PO history, the `purchase_received`
 movements and the supplier last costs are what the app writes. It runs after
 the Phase 6 part and creates no products, units, bikes or customers, so
@@ -2983,10 +3246,10 @@ rows exactly as `create_print_job` does, so their QR payloads use the
 seeded `public_site_url` `http://localhost:4000` (`SHOP.publicSiteUrl`, the
 database QR base; E2E's `E2E_PUBLIC_SITE_URL` in
 `tests/fixtures/public-site.ts` is the environment's scan-only base).
-Times use `pg_temp.seed_at`. No product is published by the seed
-(publishing needs a public photo, and other specs rely on the seed's
-publication states); tests build published fixtures in their own
-transactions.
+Times use `pg_temp.seed_at`. No product is published by the Phase 8 part
+(publishing needs a public photo); tests build published fixtures in their
+own transactions. Since Phase 10 the seed publishes exactly one product
+(below), listed in `SEEDED_PUBLIC_PRODUCT_SHORT_IDS`.
 
 - `productPrinted`: P-000011 bar tape × 10, browser, printed; requested
   and confirmed by Marcus (mechanic1); created d2 11:00, rendered 11:01,
@@ -2999,3 +3262,48 @@ transactions.
   not confirmed; Nur (mechanic2); today 09:30.
 - `productQueued`: P-000011 × 10, PDF, queued; Marcus; today 10:00 (E2E
   renders and downloads it read-only; nothing changes its status).
+
+Phase 10 part (step 1): **Shopify**, at the very end of the seed (fixed
+ids `d1000000-…`, exported from `tests/fixtures/ids.ts` as
+`SHOPIFY_PRODUCT`, `SHOPIFY_PRODUCT_SHORT_ID`, `SHOPIFY_GID`,
+`SHOPIFY_SETTINGS`, `SHOPIFY_WEBHOOK_ID`, `SHOPIFY_ORDER`). The seed runs
+without a signed-in staff member, so it writes the settings, products,
+stock, photo, Shopify ids and sync row directly as the owner (the products
+as Phase 4's, with the admin in `request.jwt.claims`) and sends the
+webhooks through the real service-role RPCs (`record_shopify_webhook`, then
+`process_shopify_event`), as the webhook route will.
+
+- `shopify_settings`: online location Shop floor, Shopify location
+  `gid://shopify/Location/9300000001`, storefront
+  `https://shop.bicii.example`, `accept_test_orders` true (dev/E2E only;
+  production never runs the seed).
+- Products P-000027 … P-000033, shop-owned, quantity-tracked, opening stock
+  at the Shop floor 30 days back: `syncedTyre` (Pirelli P Zero Race,
+  95.00 / 55.00, 12; the only PUBLIC seeded product, with one public product
+  photo row that has no Storage object; linked to
+  `gid://shopify/Product/9000000027` / `ProductVariant/9100000027`),
+  `e2ePhone` / `e2eTablet` (20 each, journey 5), `e2eLinkPhone` /
+  `e2eLinkTablet` (20 each, no ids; the unmapped-variant journey), `stack`
+  and `stackExternal` (50 each; step 3's live-stack test).
+- Webhooks: `seed-webhook-0001` orders/paid #1001, 1 × syncedTyre at 95.00,
+  processed 8 shop days back at 14:20 (outside `SEED_DAYS` 0–6, so the
+  daily fixtures are unchanged) → S-000005 (online, customer null, Shopify
+  customer `7200000001`), one `online_sale` −1; `seed-webhook-0002`
+  refunds/create 5.00 on #1001 → one `sale_refunds` row, S-000005
+  `partially_refunded`, no movement; `seed-webhook-0003` orders/paid #1002
+  for the unmapped variant `9199999999` "BICII cotton cap" → failed, its job
+  `needs_attention` (one admin-only `integration_failed` exception, so an
+  admin's `exceptions_now` is 4: `SEED_SNAPSHOT`); `seed-webhook-0004` a
+  rejected delivery (`hmac_invalid`, no payload).
+- Last, syncedTyre's sync row: published, `synced`, origin `bicii`, handle
+  `bicii-p-000027`, inventory item `9200000027`, pushed a day ago at its
+  on-hand (11) and selling price (95.00), `desired_hash` NULL so the first
+  real sync pushes it once. The seed is one transaction and step 2's
+  enqueue triggers are deferred to commit, so the seed fires them
+  (`set constraints all immediate`) before inserting the row, while no
+  product has one; they queue nothing, and any product-sync job is closed.
+  syncedTyre's `public_items.buy_online_url` is
+  `https://shop.bicii.example/products/bicii-p-000027`.
+- `tests/db/shopify-webhooks.test.ts` "Seeded integration data is
+  consistent" and `tests/db/shopify-sync.test.ts` "Seeded sync data is
+  consistent" prove them.

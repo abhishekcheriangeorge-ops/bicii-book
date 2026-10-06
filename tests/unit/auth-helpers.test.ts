@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { MORE_ITEMS, TABS, isActive, isItemActive, isMoreActive } from "@/components/shell/nav";
+import {
+  MORE_ITEMS,
+  TABS,
+  isActive,
+  isItemActive,
+  isMoreActive,
+  moreItemsFor,
+} from "@/components/shell/nav";
 import {
   PERMISSIONS,
   ROLES,
@@ -115,18 +122,29 @@ describe("navigation", () => {
     expect(TABS.map((t) => t.label)).toEqual(["Today", "Jobs", "Scan", "Inventory", "More"]);
   });
 
-  it("lists the nine More destinations, Sales right after Consignment", () => {
+  it("lists the ten More destinations, Sales and Shopify right after Consignment", () => {
     expect(MORE_ITEMS.map((i) => i.label)).toEqual([
       "Customers",
       "Bikes",
       "Appointments",
       "Consignment",
       "Sales",
+      "Shopify",
       "Purchasing",
       "Labels",
       "Reports",
       "Settings",
     ]);
+  });
+
+  it("lists the ten destinations for admins and nine for others: Shopify is admin-only (D86)", () => {
+    expect(moreItemsFor(true)).toHaveLength(10);
+    const others = moreItemsFor(false).map((i) => i.label);
+    expect(others).toHaveLength(9);
+    expect(others).not.toContain("Shopify");
+    expect(MORE_ITEMS.filter((i) => i.adminOnly).map((i) => i.href)).toEqual(["/shopify"]);
+    // The More tab still lights up on an admin-only section.
+    expect(isMoreActive("/shopify/queue")).toBe(true);
   });
 
   it("matches sections by prefix, and Today only exactly", () => {
