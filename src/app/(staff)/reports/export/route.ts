@@ -17,12 +17,15 @@ import {
   type ExportRows,
 } from "@/lib/report-exports";
 import { shopToday } from "@/lib/dates";
+import { isUuid } from "@/lib/uuid";
 import { createClient } from "@/lib/supabase/server";
 
 /**
  * CSV exports of the period reports (Phase 9; SPEC §19.2, §22; ADR-001 A2,
  * A7): GET /reports/export?kind=…&period=…&date=…|from=…&to=…&basis=…&by=…
- * (&key=… for one group's lines).
+ * (&key=… for one group's lines); the Phase 9 step 4 snapshot kinds
+ * exceptions, stock and units (&all=1, &product=<uuid> for the last two)
+ * ignore the period.
  *
  * The app's first Route Handler. It is a public endpoint as far as Next is
  * concerned and the (staff) layout does not run for it: proxy.ts sends a
@@ -50,20 +53,28 @@ export async function GET(request: NextRequest): Promise<Response> {
     return plain(400, "That report row does not exist.");
   }
 
+  // stock and units (Phase 9 step 4): the reconciliation's scope and product.
+  const productParam = search.get("product");
+  const productId = productParam && isUuid(productParam) ? productParam.toLowerCase() : null;
+  if (productParam !== null && productId === null) {
+    return plain(400, "That product does not exist.");
+  }
+  const onlyIssues = search.get("all") !== "1";
+
   const correlationId = await getCorrelationId();
   const showCosts = hasPermission(staff, "view_costs");
   let rows = 0;
   let outcome = "ok";
   try {
     const supabase = await createClient();
-    const data = await fetchRows(kind, supabase, { ...params, key });
+    const data = await fetchRows(kind, supabase, { ...params, key, onlyIssues, productId });
     rows = data.length;
     const csv = toCsv(exportColumns(kind, showCosts), data);
     return new Response(csv, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${exportFilename(kind, params)}"`,
+        "Content-Disposition": `attachment; filename="${exportFilename(kind, params, shopToday())}"`,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
       },

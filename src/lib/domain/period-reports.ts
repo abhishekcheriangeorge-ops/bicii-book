@@ -424,8 +424,12 @@ export const EXPORT_TOO_LARGE_MESSAGE = "Too many rows to export. Choose a short
 
 /** An export that cannot be written: the figures moved under it (409) or it is too large (413). */
 export class ExportError extends DomainError {
-  constructor(readonly reason: "changed" | "too_large") {
-    super(reason === "changed" ? EXPORT_CHANGED_MESSAGE : EXPORT_TOO_LARGE_MESSAGE);
+  constructor(
+    readonly reason: "changed" | "too_large",
+    /** A message for this export kind (default: the period exports' wording). */
+    message?: string,
+  ) {
+    super(message ?? (reason === "changed" ? EXPORT_CHANGED_MESSAGE : EXPORT_TOO_LARGE_MESSAGE));
     this.name = "ExportError";
   }
 }

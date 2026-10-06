@@ -2186,6 +2186,14 @@ execution time, ms; targets: month < 300, year < 1,500, a line-items page
 | `report_activity`; `report_activity_by_mechanic` | 31 | 316; 20 |
 | `report_stock_value` (now) | 15 | — |
 
+Re-run at the end of Phase 9 (step 4, 2026-10-06, same bench and data
+shape on a fresh clone; the machine is shared, so ±20% is noise): summary
+month 53–97 / year 259–297; series 59 (month), 522 (year by day), 337
+(year by month); breakdown 37 (month), 502 job, 312 product, 407
+mechanic, 310 category (year); line items 8, 56, 42; activity 46 / 318,
+by mechanic 23; stock value 18. Every target is still met; the moves are
+within the noise (step 4 changed no SQL).
+
 **Phase 9 reconciliation and exception rules (PLAN D106–D108, [ADR-022](decisions/ADR-022-reporting.md#2026-10-06-stock-reconciliation-and-operational-exceptions-d106d108)).**
 
 - No `inventory_balances` cache (D106): the ledger sum is the stock. A
@@ -2241,6 +2249,14 @@ execution time, ms):
 | `operational_exceptions(200)` (1,503 rows before the cap) | < 500 | 390 (973 before the two fixes above) |
 | `report_exception_counts()` | < 150 | 257 (585 before); missed, R-059 |
 | `today_dashboard(null)` | < 150 | 8,837: `public.daily_summary(d, d)` alone takes 6,400–8,400 (Phase 5's view, unchanged here); missed, R-059 |
+
+Step 4's re-run (2026-10-06, 3,008 units): stock reconciliation 48
+(issues) and 59 (all, 629 rows), unit reconciliation 62 and 90 (all, the
+1,000-row cap of 3,008), `operational_exceptions(200)` 402,
+`report_exception_counts()` 259 (still missed), `today_dashboard(null)`
+9,512 (still missed, R-059). The Exceptions screen calls the list and the
+counts in parallel; the `/reports` count Badge calls the counts in its own
+Suspense boundary.
 
 ## 15. Row-level security matrix
 

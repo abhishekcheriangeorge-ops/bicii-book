@@ -329,11 +329,11 @@ describe("exceptions (D34)", () => {
 
   it("renders a kind from a later phase without throwing", () => {
     const copy = exceptionCopy(
-      "integration_failed",
-      exception({ severity: "danger", entityLabel: "S-000004", subjectLabel: "Shopify order" }),
+      "purchase_overdue",
+      exception({ severity: "danger", entityLabel: "PO-000004", subjectLabel: "Supplier order" }),
     );
-    expect(copy).toEqual({ text: "Check S-000004 · Shopify order", tone: "danger" });
-    expect(exceptionLabel("integration_failed")).toBe("Needs attention");
+    expect(copy).toEqual({ text: "Check PO-000004 · Supplier order", tone: "danger" });
+    expect(exceptionLabel("purchase_overdue")).toBe("Needs attention");
     expect(
       exceptionCopy("mystery", exception({ entityLabel: null, subjectLabel: null })).text,
     ).toBe("Something needs checking");

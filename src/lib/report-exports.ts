@@ -7,6 +7,11 @@
  * fetcher table is typed against EXPORT_KINDS, so adding a kind is one
  * entry here and one fetcher there.
  *
+ * Phase 9 step 4 adds three snapshot kinds for any active staff member:
+ * `exceptions` (D108 filters the rows per caller in the database), and the
+ * stock reconciliation's `stock` and `units` (D106; `all=1` and
+ * `product=<uuid>` as on the screen). None has a cost column.
+ *
  * Cost-gated columns (`costs: true`, D30) are OMITTED from the header and
  * the rows when the caller lacks view_costs: the database already returns
  * NULL for them, and an empty column would read like a figure of nothing.
@@ -24,6 +29,8 @@ import type {
   SeriesBucket,
   StockValueRow,
 } from "@/lib/period-reports";
+import type { StockReconciliationRow, UnitReconciliationRow } from "@/lib/reconciliation";
+import type { OperationalException } from "@/lib/reports";
 
 /** A CSV column, marked when it is cost-derived (view_costs, D30). */
 export type ExportColumn<T> = CsvColumn<T> & { costs?: true };
@@ -53,6 +60,10 @@ export type ExportRows = {
   lines: ReportLine;
   stock_value: StockValueRow;
   mechanics: MechanicActivity;
+  // Phase 9 step 4: snapshots of now, for any active staff member.
+  exceptions: OperationalException;
+  stock: StockReconciliationRow;
+  units: UnitReconciliationRow;
 };
 
 export type ExportKind = keyof ExportRows;
@@ -63,7 +74,16 @@ export const EXPORT_KIND_VALUES = [
   "lines",
   "stock_value",
   "mechanics",
+  "exceptions",
+  "stock",
+  "units",
 ] as const satisfies readonly ExportKind[];
+
+/**
+ * Kinds that are a snapshot of now, whatever period the URL carries: their
+ * file is named by the day of the export, not by a period and basis.
+ */
+export const SNAPSHOT_KINDS: ReadonlySet<ExportKind> = new Set(["exceptions", "stock", "units"]);
 
 export const exportKindSchema = z.enum(EXPORT_KIND_VALUES);
 
@@ -189,6 +209,55 @@ export const EXPORT_KINDS: {
       int("open_now", (r) => r.openNow),
     ],
   },
+  // The caller's exceptions (public.operational_exceptions already applies
+  // D108's per-kind visibility, so the rows are what the screen shows).
+  exceptions: {
+    permission: null,
+    title: "exceptions",
+    columns: [
+      text("kind", (r) => r.kind),
+      text("severity", (r) => r.severity),
+      text("issue", (r) => r.issue),
+      text("short_id", (r) => r.shortId ?? r.entityLabel),
+      text("title", (r) => r.title),
+      text("detail", (r) => r.detail),
+      money("amount", (r) => r.amount),
+      text("currency", (r) => r.currency),
+      { header: "since", kind: "datetime", value: (r) => r.since },
+    ],
+  },
+  // Stock reconciliation (D106): read-only, no cost column.
+  stock: {
+    permission: null,
+    title: "products by location",
+    columns: [
+      text("product_short_id", (r) => r.productShortId),
+      text("product", (r) => r.productName),
+      text("tracking", (r) => r.trackingType),
+      text("location", (r) => r.locationName),
+      int("ledger_on_hand", (r) => r.ledgerOnHand),
+      int("units_in_stock", (r) => r.unitsInStock),
+      text("issue", (r) => r.issue),
+    ],
+  },
+  units: {
+    permission: null,
+    title: "unique items",
+    columns: [
+      text("unit_short_id", (r) => r.unitShortId),
+      text("product", (r) => r.productName),
+      text("status", (r) => r.status),
+      text("location", (r) => r.locationName),
+      text("ledger_location", (r) => r.ledgerLocationName),
+      int("ledger_on_hand", (r) => r.ledgerOnHand),
+      int("expected_on_hand", (r) => r.expectedOnHand),
+      text("disposition", (r) => r.disposition),
+      text("disposition_ref", (r) => r.dispositionRef),
+      text("issue", (r) => r.issue),
+      text("issue_detail", (r) => r.issueDetail),
+      { header: "last_movement_at", kind: "datetime", value: (r) => r.lastMovementAt },
+    ],
+  },
 };
 
 /** The columns `kind` writes for a caller with or without view_costs. */
@@ -229,11 +298,17 @@ export function breakdownTotalRow(summary: PeriodSummary): BreakdownCsvRow {
   };
 }
 
-/** `bicii-<kind>-<basis>-<from>_<to>.csv` (safe characters only). */
+/**
+ * `bicii-<kind>-<basis>-<from>_<to>.csv`, or `bicii-<kind>-<asOf>.csv` for
+ * a snapshot kind (SNAPSHOT_KINDS) given the shop day of the export (safe
+ * characters only).
+ */
 export function exportFilename(
   kind: ExportKind,
   params: Pick<ReportParams, "basis" | "from" | "to">,
+  asOf?: string,
 ): string {
+  if (asOf && SNAPSHOT_KINDS.has(kind)) return `bicii-${kind}-${asOf}.csv`;
   return `bicii-${kind}-${params.basis}-${params.from}_${params.to}.csv`;
 }
 

@@ -6,6 +6,7 @@ import type { PeriodSummary } from "@/lib/period-reports";
 import {
   EXPORT_KINDS,
   EXPORT_KIND_VALUES,
+  SNAPSHOT_KINDS,
   breakdownTotalRow,
   exportColumns,
   exportFilename,
@@ -27,7 +28,8 @@ describe("the export kind table", () => {
   it("lists every kind once and parses only those", () => {
     expect([...EXPORT_KIND_VALUES].sort()).toEqual(Object.keys(EXPORT_KINDS).sort());
     expect(exportKindSchema.safeParse("breakdown").success).toBe(true);
-    expect(exportKindSchema.safeParse("exceptions").success).toBe(false);
+    expect(exportKindSchema.safeParse("exceptions").success).toBe(true);
+    expect(exportKindSchema.safeParse("everything").success).toBe(false);
     expect(exportKindSchema.safeParse(null).success).toBe(false);
   });
 
@@ -139,5 +141,95 @@ describe("the export kind table", () => {
     expect(exportHref("lines", { period: "day", date: "2026-10-03" }, { key: "none" })).toBe(
       "/reports/export?kind=lines&period=day&date=2026-10-03&key=none",
     );
+  });
+});
+
+describe("the snapshot exports (Phase 9 step 4; D106–D108)", () => {
+  it("lets any active staff member export exceptions, stock and units", () => {
+    for (const kind of ["exceptions", "stock", "units"] as const) {
+      expect(EXPORT_KINDS[kind].permission, kind).toBeNull();
+      expect(mayExport(kind, canAs("mechanic")), kind).toBe(true);
+      expect(mayExport(kind, canAs("manager")), kind).toBe(true);
+      // No cost column, so nothing differs without view_costs.
+      expect(headers(kind, false), kind).toEqual(headers(kind, true));
+    }
+    expect(SNAPSHOT_KINDS).toEqual(new Set(["exceptions", "stock", "units"]));
+  });
+
+  it("writes the brief's exception columns", () => {
+    expect(headers("exceptions", false)).toEqual([
+      "kind",
+      "severity",
+      "issue",
+      "short_id",
+      "title",
+      "detail",
+      "amount",
+      "currency",
+      "since",
+    ]);
+    expect(headers("stock", false)).toEqual([
+      "product_short_id",
+      "product",
+      "tracking",
+      "location",
+      "ledger_on_hand",
+      "units_in_stock",
+      "issue",
+    ]);
+    expect(headers("units", false)).toContain("disposition_ref");
+  });
+
+  it("writes an exception row as received, a formula-like title as text and no amount as empty", () => {
+    const csv = toCsv(exportColumns("exceptions", false), [
+      {
+        kind: "unsettled_consignment",
+        severity: "warning",
+        entityType: "consignment_item",
+        entityId: "c4000000-0000-4000-8000-000000000001",
+        entityLabel: "C-000007",
+        subjectLabel: "=cmd · Brompton",
+        days: 45,
+        quantity: null,
+        since: "2026-08-22T04:00:00Z",
+        issue: "unsettled_consignment",
+        shortId: "C-000007",
+        title: "C-000007 · =cmd",
+        detail: "=HYPERLINK()",
+        amount: "300.00",
+        currency: "SGD",
+      },
+      {
+        kind: "overdue_job",
+        severity: "warning",
+        entityType: "work_order",
+        entityId: "d5000000-0000-4000-8000-000000000007",
+        entityLabel: "J-000017",
+        subjectLabel: null,
+        days: 11,
+        quantity: null,
+        since: null,
+        issue: "overdue_job",
+        shortId: "J-000017",
+        title: "J-000017",
+        detail: null,
+        amount: null,
+        currency: null,
+      },
+    ]);
+    const lines = csv.split("\r\n");
+    expect(lines[1]).toBe(
+      "unsettled_consignment,warning,unsettled_consignment,C-000007,C-000007 · =cmd,'=HYPERLINK(),300.00,SGD,2026-08-22 12:00",
+    );
+    expect(lines[2]).toBe("overdue_job,warning,overdue_job,J-000017,J-000017,,,,");
+  });
+
+  it("names a snapshot by the day it was taken", () => {
+    const params = { basis: "sale", from: "2026-10-05", to: "2026-10-11" } as const;
+    expect(exportFilename("units", params, "2026-10-06")).toBe("bicii-units-2026-10-06.csv");
+    expect(exportFilename("breakdown", params, "2026-10-06")).toBe(
+      "bicii-breakdown-sale-2026-10-05_2026-10-11.csv",
+    );
+    expect(exportHref("stock", { all: "1" })).toBe("/reports/export?kind=stock&all=1");
   });
 });

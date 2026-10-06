@@ -178,7 +178,11 @@ export async function getLowStockItems(
     }));
 }
 
-/** Operational exceptions (D34), danger first then oldest; at most `max` (the RPC clamps to 1..200). */
+/**
+ * Operational exceptions (D34; extended by Phase 9, D106-D108) the caller
+ * may see (D108), danger first then oldest; at most `max` (the RPC clamps
+ * to 1..200). The one mapper of public.operational_exceptions.
+ */
 export async function getOperationalExceptions(
   supabase: ServerSupabase,
   max: number,
@@ -196,6 +200,13 @@ export async function getOperationalExceptions(
       days: n.days,
       quantity: n.quantity,
       since: n.since,
+      // Phase 9's appended columns (D106-D108); the amount is the database's.
+      issue: n.issue,
+      shortId: n.short_id,
+      title: n.title,
+      detail: n.detail,
+      amount: moneyOrNull(n.amount, n.currency),
+      currency: n.currency,
     };
   });
 }
